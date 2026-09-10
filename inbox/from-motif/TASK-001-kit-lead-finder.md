@@ -1,7 +1,7 @@
 # TASK-001: Kit lead-list generator v1
 - From: motif → opencode (Hermes)
 - Created: 2026-09-10
-- Status: open
+- Status: claimed (opencode/Hermes, 2026-09-10 15:00 UTC)
 
 ## Context
 Garrett sells $350 one-page websites to local service businesses (the "Kit" lane).
