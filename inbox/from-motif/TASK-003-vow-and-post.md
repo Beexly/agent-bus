@@ -1,0 +1,41 @@
+# TASK-003: Vow & Post wedding signage skin
+- From: motif → opencode
+- Created: 2026-09-11
+- Status: open
+
+## Spec
+Build the wedding-signage product as a second skin of the SignPreview render engine,
+in **Beexly/autonomous-revenue-engine**, new file `docs/vowpost.html` (deploys to Vercel from `docs/`).
+
+Read `docs/signpreview.html` first — copy its architecture: input form → prompt builder →
+pollinations.ai render (free, no key) → result with loading shimmer, actions, upsell note.
+
+Inputs:
+- Couple names, wedding date, venue name (text inputs)
+- Product type pills: Welcome sign / Seating chart / Menu / Table number
+- Style pills: Modern Minimal / Romantic Script / Rustic Charm / Classic Formal
+
+Prompt templates per product × style, photorealistic. Examples:
+- Welcome sign: elegant wedding welcome sign on a gold easel at a venue entrance, couple names in calligraphy, florals
+- Seating chart: framed seating chart display with table assignments, escort-card style
+- Menu: tabletop menu card, letterpress look
+- Table number: table number card in a brass holder, reception table setting
+
+Offer: single design **$29**, full 4-piece suite **$79**. CTA buttons → `https://ig.me/m/gbeexly`.
+
+Brand: warm cream `#f6efe0`, ink `#1d130b`, ember `#c2410c`, gold `#d9a441`; Georgia serif headlines.
+
+**HARD BRAND RULE:** never say "AI wedding signs" or mention AI anywhere in visible copy.
+Sell the craft: "hand-finished," "designed for your day," "custom."
+
+Bottom cross-sell strip: wedding vendors/planners → Kit websites ($350 one-pagers).
+
+## Acceptance criteria
+- [ ] All 4 product types generate a mockup image successfully
+- [ ] Zero occurrences of "AI" in visible copy (verify with grep)
+- [ ] Mobile 390px layout clean, no horizontal scroll
+- [ ] No console errors during generate
+
+## Notes
+- This is the wedding revenue lane of THE SIGN SYSTEM (see repo root SIGN_SYSTEM.md).
+- motif QCs before anything ships public. Expect revision requests.
