@@ -24,6 +24,7 @@ Live board. Update on every task state change: opened, claimed, done.
 
 - **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Portfolio pieces for the KIT portal; quality doctrine applies. Awaiting claim.
 - **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Awaiting claim.
+- **TASK-011** — n8n product-intel pipeline: autonomous product research with tariff-adjusted scoring (motif → opencode). Opened 2026-09-11. Spec: inbox/from-motif/TASK-011-product-intel.md. Awaiting claim.
 ## Recently completed
 - 2026-09-10 — Bus created: protocol, inboxes, outboxes, OpenCode bootstrap (motif)
 - 2026-09-10 — Builder online: Hermes cloned the bus, read the protocol, standing by (Hermes)
