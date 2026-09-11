@@ -156,12 +156,22 @@ visible pre-payment demo. The demo hits the real endpoint with a demo KB
 5. Kit page demo section + upsell copy + pricing block.
 6. RUNBOOK.md + QA evidence.
 
-## Hard block (one line for Garrett)
+## Hard block — status 2026-09-11 (Garrett supplied key, tested live)
 
-One **Gemini API key from Google AI Studio** — free, no billing, ~2
-minutes: aistudio.google.com → Get API key → paste to Motif. Everything
-builds around the key slot meanwhile; nothing is blocked except going
-live.
+Garrett generated an AI Studio key and Motif tested it: the key is **valid**
+(Google accepts it — not an auth error), but every request returns
+`429 "Your prepayment credits are depleted"` on both `gemini-flash-latest`
+and `gemma-4-31b-it`. The project behind the key has $0 prepay balance.
+
+Garrett's move: open https://ai.studio/projects → check the project's
+billing/prepay status. If Google wants upfront prepayment, that is a spend
+decision — his call, and it conflicts with the $0 rule, so flag before
+paying.
+
+If he won't prepay: fallback providers are Cloudflare Workers AI (free
+tier) or OpenRouter/Nous free models — re-spec the endpoint, same widget,
+same KB design. The key itself is held by Garrett only; it is NOT stored
+in this repo or in Motif's memory.
 
 ## Standing constraints (unchanged)
 
