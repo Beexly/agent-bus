@@ -34,7 +34,7 @@ External name: **AI Receptionist**. Never "chatbot" in client-facing copy
 ```
 Kit site → <script> widget (vanilla JS, shadow DOM)
   → Vercel serverless /api/receptionist (same project as kit/)
-  → Gemma 4 via Gemini API (AI Studio free tier — see "Model choice")
+  → NVIDIA NIM (build.nvidia.com — OpenAI-compatible, free tier; see "Model choice")
   → Supabase: receptionist_leads + usage counters
   → Resend: instant lead email to the business owner
 ```
@@ -51,18 +51,28 @@ Kit site → <script> widget (vanilla JS, shadow DOM)
 
 ## Model choice (load-bearing detail)
 
-Do NOT build on flagship Gemini 3.x — its free tier is ~5 requests/day
-(observed July 2026), effectively unusable. Build on **Gemma 4**
-(`gemma-4-31b-it`) through the same hosted Gemini API: ~1,500
-requests/day free, 256K context, function calling, same `generateContent`
-endpoint and request shape. It is the free-tier workhorse.
+Provider is **NVIDIA NIM** (`https://integrate.api.nvidia.com/v1`) —
+OpenAI-compatible `/chat/completions`, key prefix `nvapi-`. Free signup,
+no credit card (phone verification required). Verified terms: ~1,000
+inference credits on signup, ~40 requests/min per model. Lightweight
+models cost fewer credits per call; when credits run out, flagship models
+return 402 but smaller models stay usable under a baseline quota.
 
-- Quota math: a local-business site does 5–50 chats/day. One shared key
-  comfortably covers the first 20–30 clients. Scale plan is more keys /
-  projects (still $0), not paid tier — paid tier only after the lane pays
-  for it twice.
-- Pace outbound calls (~15 RPM observed on free flash-class models);
-  server-side queue, no client retries hammering the key.
+- Primary model: `meta/llama-3.1-8b-instruct` (small, cheap per call,
+  plenty for KB-grounded receptionist replies). Fallback: another small
+  instruct model from build.nvidia.com/models — verify availability at
+  build time, the catalog rotates.
+- Quota math: a local-business site does 5–50 chats/day; short replies on
+  an 8B model sip credits. One key covers the validation stage
+  comfortably. If credits ever run dry, the 402 fallback (below) keeps
+  lead capture alive, and the account dashboard is the source of truth
+  for balances.
+- Server-side pacing under ~40 RPM; queue outbound calls, never let
+  client retries hammer the key.
+- Rejected alternatives: Google AI Studio (Garrett's key tested live —
+  429 "prepayment credits depleted" on every call; funding it breaks the
+  $0 rule) and OpenRouter `:free` (only 50 req/day without a $10 deposit —
+  too thin as the primary). OpenRouter stays a fallback leg.
 
 ## Knowledge-base schema (per client)
 
@@ -106,15 +116,17 @@ policy. Our guardrail is the product.)
 
 ## Failure handling (typed, visible, no silent drops)
 
-- **429 / quota exhausted:** widget degrades to a "Leave a message" lead
-  form. The core value (lead capture) survives the outage — this fallback
-  must be demonstrated in QA, not just coded.
+- **429 (rate limit) / 402 (credits exhausted):** widget degrades to a
+  "Leave a message" lead form. The core value (lead capture) survives the
+  outage — this fallback must be demonstrated in QA, not just coded. On
+  402, the server may retry once against a smaller baseline-quota model
+  before falling back to the form.
 - **API error / timeout:** same fallback; log to burn dashboard.
 - **Abuse:** per-IP/session rate limit + per-site daily cap; counters in
   Supabase.
-- **Free-tier burn dashboard:** daily requests vs the 1,500 RPD quota,
-  per-site breakdown, 70% alert. Same pattern as TASK-011's burn
-  dashboard — reuse the thinking, not necessarily the code.
+- **Free-tier burn dashboard:** credits remaining + requests/min vs the
+  ~40 RPM cap, per-site breakdown, 70% alert. Same pattern as TASK-011's
+  burn dashboard — reuse the thinking, not necessarily the code.
 
 ## Demo (pre-payment, on the Kit sales page)
 
@@ -156,22 +168,20 @@ visible pre-payment demo. The demo hits the real endpoint with a demo KB
 5. Kit page demo section + upsell copy + pricing block.
 6. RUNBOOK.md + QA evidence.
 
-## Hard block — status 2026-09-11 (Garrett supplied key, tested live)
+## Hard block — one line for Garrett (updated: NVIDIA)
 
-Garrett generated an AI Studio key and Motif tested it: the key is **valid**
-(Google accepts it — not an auth error), but every request returns
-`429 "Your prepayment credits are depleted"` on both `gemini-flash-latest`
-and `gemma-4-31b-it`. The project behind the key has $0 prepay balance.
+The Google AI Studio key Garrett supplied is valid but its project has $0
+prepay credits (429 on every call, both models tested) — dead end unless
+he wants to fund it, which breaks the $0 rule.
 
-Garrett's move: open https://ai.studio/projects → check the project's
-billing/prepay status. If Google wants upfront prepayment, that is a spend
-decision — his call, and it conflicts with the $0 rule, so flag before
-paying.
+New path — **NVIDIA NIM**, free, no card:
+1. Sign up at build.nvidia.com (phone verification required).
+2. Generate an API key at build.nvidia.com/settings/api-keys (`nvapi-…`).
+3. Paste it to Motif.
 
-If he won't prepay: fallback providers are Cloudflare Workers AI (free
-tier) or OpenRouter/Nous free models — re-spec the endpoint, same widget,
-same KB design. The key itself is held by Garrett only; it is NOT stored
-in this repo or in Motif's memory.
+~1,000 inference credits on signup, ~40 req/min. Everything builds around
+the key slot meanwhile; the key itself lives with Garrett only — never in
+this repo or Motif's memory.
 
 ## Standing constraints (unchanged)
 
