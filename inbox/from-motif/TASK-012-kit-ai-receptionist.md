@@ -58,10 +58,15 @@ inference credits on signup, ~40 requests/min per model. Lightweight
 models cost fewer credits per call; when credits run out, flagship models
 return 402 but smaller models stay usable under a baseline quota.
 
-- Primary model: `meta/llama-3.1-8b-instruct` (small, cheap per call,
-  plenty for KB-grounded receptionist replies). Fallback: another small
-  instruct model from build.nvidia.com/models — verify availability at
-  build time, the catalog rotates.
+- Primary model: `nvidia/nemotron-3-nano-omni-30b-a3b-reasoning` —
+  **verified live 2026-09-11** with Garrett's key (full chat completion
+  round-trip). Fallbacks to try at build time if capacity shifts:
+  `google/gemma-4-31b-it`, `google/gemma-3-12b-it`. Catalog rotates and
+  free-tier workers saturate intermittently — the server must treat model
+  choice as a runtime fallback chain, not a hardcoded constant.
+  (Observed 2026-09-11: `meta/llama-3.1-8b-instruct` is end-of-life;
+  `gemma-3-4b-it` and `mistral-7b-instruct-v0.3` returned 404 for the
+  account; `gemma-4-31b-it` hung past 90s.)
 - Quota math: a local-business site does 5–50 chats/day; short replies on
   an 8B model sip credits. One key covers the validation stage
   comfortably. If credits ever run dry, the 402 fallback (below) keeps
@@ -121,6 +126,9 @@ policy. Our guardrail is the product.)
   outage — this fallback must be demonstrated in QA, not just coded. On
   402, the server may retry once against a smaller baseline-quota model
   before falling back to the form.
+- **503 (free-tier worker saturated — observed on NIM):** server-side
+  retry with exponential backoff (1s → 2s → 4s), then step to the next
+  model in the fallback chain before degrading to the lead form.
 - **API error / timeout:** same fallback; log to burn dashboard.
 - **Abuse:** per-IP/session rate limit + per-site daily cap; counters in
   Supabase.
