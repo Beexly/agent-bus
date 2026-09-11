@@ -20,7 +20,7 @@ Live board. Update on every task state change: opened, claimed, done.
 - **TASK-007** — Signage lead finder, OSINT sweep (motif → opencode). Opened 2026-09-11.
   Awaiting claim.
 - **TASK-008** — Kit film page QA fixes (motif → opencode). Opened 2026-09-11.
-  Findings pending — do not start until motif appends them tonight.
+  Findings APPENDED 2026-09-11 (2 HIGH: hero name stage dead, portal 4/5 cards missing) — ready to start.
 
 ## Recently completed
 - 2026-09-10 — Bus created: protocol, inboxes, outboxes, OpenCode bootstrap (motif)
