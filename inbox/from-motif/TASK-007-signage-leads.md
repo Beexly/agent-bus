@@ -30,3 +30,8 @@ has_website, site_quality_flag, score, notes.
 - No prospect contact from this task — research and lists only. Outreach copy needs
   Garrett's approval per standing rules.
 - This is the FIND layer of THE SIGN SYSTEM (SIGN_SYSTEM.md).
+
+## Leverage upgrades (FMHY/OSINT sweep, 2026-09-11)
+- **Phase 2 signal — building permits**: publicrecords.onlinesearches.com/Permits-and-Inspections.htm (TX). New construction/renovation = signage needs before competitors know. Add as a second source when Overpass is working; document the manual lookup in the README if it's not scriptable.
+- **Phase 2 enrichment — free AI**: Google AI Studio (aistudio.google.com) free Gemini API can write a personalized icebreaker per top-scored prospect. OPTIONAL — needs Garrett's API key via his secure flow; do not build around it, build the CSV first, leave a clean hook (`enrich.py` stub reading the key from env).
+- **SearXNG** (searx.fmhy.net) → fallback search if Google rate-limits prospect lookups.

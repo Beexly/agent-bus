@@ -28,3 +28,8 @@ no human hands. In **Beexly/autonomous-revenue-engine**, new dir `tools/record-t
 - These videos are the SHOW layer of THE SIGN SYSTEM (SIGN_SYSTEM.md): every lane gets
   a polished demo video. The free-preview mechanic + a walkthrough video is the
   highest-converting outreach in the system.
+
+## Leverage upgrades (FMHY sweep, 2026-09-11)
+- **Whisper** (github.com/openai/whisper, open-source) → auto-generate captions for every tour's .webm. Captions = retention + professionalism. Script it or document the one-command step in the README.
+- **Cinematic b-roll** → the Recordly polish stage should cut in real stock footage (Pexels, Mixkit, Dareful 4K, MotionPlaces — all free). Convention: `tools/record-tour/broll/` folder with a SOURCES.md noting where each clip came from. No faked atmosphere when the real thing is free.
+- **Squoosh** (squoosh.app) → compress any poster/thumbnail images; speed is part of quality.
