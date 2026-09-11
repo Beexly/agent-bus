@@ -38,3 +38,9 @@ In **Beexly/autonomous-revenue-engine**:
 ## Notes
 - $0 infra rule: nothing here may require paid services. Document the free stack.
 - motif QCs against the doctrine before public ship.
+
+## Resource gold (FMHY inventory, 2026-09-11)
+- **n8n** (n8n.io) — open-source, self-hostable workflow automation. This is the $0 engine behind the workflow products; document the self-host path honestly.
+- **DocuSeal** (docuseal.com) — free open-source document signing for the quote-approval step.
+- **Whisper** (github.com/openai/whisper) — open speech-to-text if any product needs transcription.
+- Free-tier overflow: free.hrsn.dev, freestuff.dev (genuinely-free-forever indexes) for the $0 running-cost breakdowns.

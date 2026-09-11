@@ -43,3 +43,9 @@ Per-site creative bar:
 - Sequence after TASK-008 (portal animation fix) or coordinate — the portal must
   show these. If both are in flight, keep the iframe `src` paths identical.
 - This is the highest-leverage quality task on the board: it's the portfolio.
+
+## Resource gold (FMHY inventory, 2026-09-11) — use these, they're free and excellent
+- Fonts (commercial-use OK): Fontshare (fontshare.com), Google Fonts, Font Squirrel — pick distinctive display type per site.
+- Icons (no emoji, ever): Lucide (lucide.dev), Phosphor (phosphoricons.com), Heroicons — inline SVG.
+- Stock photos: Unsplash, Pexels, Pixabay — real photography beats CSS-only where it counts. Hotlink responsibly or note the source; prefer downloading at build time if the pipeline allows.
+- Editor for asset prep: Photopea (photopea.com) in-browser.
