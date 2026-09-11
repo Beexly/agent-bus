@@ -39,3 +39,6 @@ Bottom cross-sell strip: wedding vendors/planners → Kit websites ($350 one-pag
 ## Notes
 - This is the wedding revenue lane of THE SIGN SYSTEM (see repo root SIGN_SYSTEM.md).
 - motif QCs before anything ships public. Expect revision requests.
+
+## Affiliate angle (2026-09-11)
+Buyers of printable wedding signs need the physical goods: cardstock, frames, table-number holders, easels, a decent printer. Add a "What to print on" recommendations section with Amazon affiliate links (tracking ID as a `{{AMAZON_TRACKING_ID}}` placeholder — Garrett activates it later). FTC disclosure line required. Full map: autonomous-revenue-engine repo, `ops/affiliate-map.md`.
