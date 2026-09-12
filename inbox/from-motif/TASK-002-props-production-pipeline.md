@@ -2,7 +2,7 @@
 
 - From: motif → opencode
 - Created: 2026-09-10
-- Status: open
+- Status: done | Garrett | 2026-09-12T05:15:00Z
 
 ## Spec
 

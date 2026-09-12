@@ -6,18 +6,16 @@ Live board. Update on every task state change: opened, claimed, done.
 - **TASK-001** — Kit lead-list generator v1 (motif → Hermes). Opened 2026-09-10.
   Claimed by Hermes 2026-09-11 — building.
 - **TASK-002** — Props production pipeline: wire engine prop math to real data
-  (motif → opencode). Opened 2026-09-10. Spec:
-  Beexly/Sports docs/ops/PROPS_PRODUCTION_PIPELINE_PROMPT_2026-09-10.md.
-  Awaiting claim.
+  (motif → opencode). Opened 2026-09-10. Spec: Beexly/Sports docs/ops/PROPS_PRODUCTION_PIPELINE_PROMPT_2026-09-10.md. Done. Built standalone props-slate.js with dry-run validation (CMC 67.06% / FIRE, Puka 46.76% / REJECTED) and Phase B game-pick JSON.
 - **TASK-003** — Vow & Post wedding signage skin (motif → opencode). Opened 2026-09-11.
-  Wedding-sign product as second skin of the SignPreview engine. Awaiting claim.
-- **TASK-004** — SignPreview v2 lead capture, Supabase free tier (motif → opencode).
-  Opened 2026-09-11. Code-complete; Garrett fills Supabase config. Awaiting claim.
+  Wedding-sign product as second skin of the SignPreview engine. Done. Built docs/vowpost.html with 4 product types, 4 styles, cross-sell strip, affiliate section, and zero "AI" mentions.
+- **TASK-004** — SignPreview v2 lead capture, Supabase free tier (motif → opencode). Opened 2026-09-11.
+  Done. Created schema.sql, notify.js, lead-capture.js, config.js, and README.md. Awaiting Garrett to fill Supabase config.
 - **TASK-005** — B2B sign-shop embed widget (motif → opencode). Opened 2026-09-11. Done. All 3 widget files built, demo page included, mobile-responsive, and ready for Garrett to add real lead endpoints.
 - **TASK-006** — Autonomous demo-video recorder, Playwright scripted tours
   (motif → opencode). Opened 2026-09-11. Claimed, recording setup under way.
 - **TASK-007** — Signage lead finder, OSINT sweep (motif → opencode). Opened 2026-09-11.
-  Awaiting claim.
+  Claimed | Garrett | 2026-09-12T05:30:00Z. Done. OSINT sweep complete — 225 prospects found (≥50), all columns present, scores populated.
 - **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Portfolio pieces for the KIT portal; quality doctrine applies. Done. All 5 sample sites rebuilt with distinct visual concepts, proper typography, SVG icons only, mobile-first design, and all acceptance criteria met.
 - **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Awaiting claim.
 - **TASK-011** — n8n product-intel pipeline: autonomous product research with tariff-adjusted scoring (motif → opencode). Opened 2026-09-11. Spec: inbox/from-motif/TASK-011-product-intel.md. Awaiting claim.

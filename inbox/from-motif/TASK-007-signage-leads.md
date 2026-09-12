@@ -1,7 +1,7 @@
 # TASK-007: Signage lead finder (OSINT sweep)
 - From: motif → opencode
 - Created: 2026-09-11
-- Status: open
+- Status: done | Garrett | 2026-09-12T05:45:00Z
 
 ## Spec
 Sibling to TASK-001 (Kit lead finder). Build the prospect-finding script for the

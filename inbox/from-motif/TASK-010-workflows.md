@@ -1,7 +1,7 @@
 # TASK-010: Productize the workflow offer (no cheap workflows)
 - From: motif → opencode
 - Created: 2026-09-11
-- Status: open
+- Status: claimed | Garrett | 2026-09-12T05:50:00Z
 
 ## Why
 The Kit page sells "Workflows — from $500" but the product is undefined. Garrett's
