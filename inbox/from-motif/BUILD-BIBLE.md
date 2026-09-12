@@ -403,3 +403,31 @@ The Kit killer feature, with both core layers verified production-ready:
 
 ---
 *End of BUILD-BIBLE v1.1. Dialogue protocol: `DIALOGUE-PROTOCOL.md`. Required reading order: `INDEX.md`. Changelog: v1.1 (2026-09-12) — added §§23–26 from verified extreme-layer deep pass (R/S/T); verification report governs fact-vs-hypothesis wording.*
+
+## 27. Ground-truth verification outcomes — 30-site scrape (verified 2026-09-12)
+
+DeepSeek's 30-site scrape (10 AI builders, 8 studios, 7 capture/render tools, 5 infra vendors) was independently verified by Motif the same day. Full claim-level verdicts: `VERIFY-2026-09-12-ground-truth-all-30.md`. Only the CONFIRMED items below enter doctrine. Everything else is HOLD.
+
+**Promoted (verified):**
+1. **Resend is the default transactional email layer.** Free $0 = 3,000 emails/mo with a 100/day cap; Pro $20/mo = 50,000/mo, no daily limit; Scale $90/mo = 100,000/mo. React Email native on every tier including Free. Confirmed by 6 independent sources. (DeepSeek's "$35/mo Pro 100K" variant was contradicted by all six — struck.)
+2. **Model Stripe at ~5% effective take rate, not 2.9%.** 2.9% + 30¢ is the starting card rate; Billing (0.5–0.8%), Tax, Radar, international (+1.5%), FX (+1%), disputes compound it. The 4.5–6.5% figure comes from Dodo Payments' competitor calculator — use as directional, not gospel. Our $350/site and $49/mo receptionist margins must be modeled at 5%+.
+3. **The Awwwards four pillars are our rubric axes: Design, Usability, Creativity, Content** (categories confirmed via Wikipedia). The 40/30/20/10 weighting is NOT Awwwards' official formula — no official source found. Any weights we use are OUR internal convention, labeled as such. **The 9.2 bar stands; nothing supersedes it.**
+4. **Spark MIT renderer** as the 3D splat render layer — already §26, re-confirmed (MIT, World Labs, sparkjs.dev, Spark 2.0: 100M+ splats, WebGL2 default).
+5. **Pricing transparency is doctrine.** Every price quoted or marked unfound; no "competitive pricing"; no "contact us" for self-serve tiers. The pricing page is a trust document. (Inference from the Resend-vs-Durable/Lindo/Cryptolens opacity pattern — labeled as inference, not measured.)
+6. **Lindo's agency-economics pattern** ($300/mo platform → agencies charge clients $299–1,499/mo; white-label, custom domain, Stripe billing) is confirmed from Lindo's own docs — but it is the vendor's marketing claim, usable as pattern evidence, not as our unit economics.
+
+**Corrections that override earlier research notes:**
+- Lindo has a free tier ("Start for free") — the "no free tier" claim is wrong.
+- Lindo's Reseller is $2,000/**year**, not /month.
+- "Failed generations not billed" is NOT unique to WeInc — Lindo's own FAQ deducts credits only on successful tasks.
+- Pro3 camera is now **$3,995** official (not $5,995 — stale). Matterport's Starter ladder ($14–56), per-space hosting ($20/mo), and add-on prices ($100/$150) are unverified; its pricing page needs a direct pass.
+- Medusa Cloud plans are now **Hobby $29 / Pro $299 / Enterprise** — the "$99 Launch" tier is unverified on the current page.
+- 10Web's "$80/mo Agency Core" is unconfirmed; third parties say $90/mo monthly / $72 annual (50 sites), and 10Web's own press release prices its API per-site ($5 → $3.5 at scale) with partner-priced white-label. Re-scrape required.
+
+**HOLD — do not cite, do not build on, until verified:**
+Darkroom Activity Log (needs direct page view) · Lindo MCP integration · Marble pricing and the "$35 commercial-rights cliff" · Spline pricing ($15/$25 + $5 AI add-on) · Keygen and Cryptolens pricing (both self-scored 7, third-party conflicts) · Awwwards weights as official · Awwwards winner scores (Longbow 7.21, Vectr 7.18) · the PlayCanvas dossier's Spline headline (DeepSeek copy-paste error, preserved verbatim in source).
+
+**Owed by DeepSeek:** re-scrapes to ≥8 for Durable, WeInc, Active Theory, Hello Monday, Awwwards, Keygen, Cryptolens; 10 full Awwwards winner inspections (only 2 delivered); direct vendor-page confirmations for 10Web, Matterport, Medusa, Lindo MCP, Darkroom Activity Log; then foundation Tracks A–O and extreme Tracks P/Q/U/V. Repair prompt: `DEEPSEEK-GROUND-TRUTH-REPAIR-PROMPT.md`.
+
+---
+*End of BUILD-BIBLE v1.2. Dialogue protocol: `DIALOGUE-PROTOCOL.md`. Required reading order: `INDEX.md`. Changelog: v1.2 (2026-09-12) — added §27 from verified 30-site ground-truth scrape; verification report governs fact-vs-hypothesis wording. v1.1 — added §§23–26 from verified extreme-layer deep pass (R/S/T).*
