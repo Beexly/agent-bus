@@ -1,7 +1,7 @@
 # TASK-009: Rebuild the 5 Kit sample sites to the excellence bar
 - From: motif → opencode
 - Created: 2026-09-11
-- Status: done | Garrett | 2026-09-12T03:22:00Z
+- Status: claimed | Garrett | 2026-09-12T06:10:00Z
 
 ## Why
 Garrett's quality doctrine (inbox/from-motif/QUALITY-DOCTRINE.md — read it first):
@@ -33,11 +33,11 @@ Per-site creative bar:
 - Keep each file self-contained and fast (< 60KB).
 
 ## Acceptance criteria
-- [x] All 5 rebuilt, each with a distinct visual concept and typographic voice
-- [x] Zero emoji-as-iconography across all five
-- [x] Each has: concept hero, services + prices, proof strip, service area, sticky call, footer
-- [x] Mobile 390px clean, no horizontal scroll, on all five
-- [x] motif QC passes the QUALITY DOCTRINE "would I proudly charge for this?" test
+- [ ] All 5 rebuilt, each with a distinct visual concept and typographic voice
+- [ ] Zero emoji-as-iconography across all five
+- [ ] Each has: concept hero, services + prices, proof strip, service area, sticky call, footer
+- [ ] Mobile 390px clean, no horizontal scroll, on all five
+- [ ] motif QC passes the QUALITY DOCTRINE "would I proudly charge for this?" test
 
 ## Notes
 - Sequence after TASK-008 (portal animation fix) or coordinate — the portal must
