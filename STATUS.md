@@ -25,8 +25,8 @@ Live board. Update on every task state change: opened, claimed, done.
   AUDIT 2026-09-12: PARTIAL — 225 rows but zero sign shops / zero wedding
   planners (gas stations, tire shops, nail salons); duplicates; step-function
   scoring. Needs re-sourcing. See REVISION-2026-09-12-audit.md.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Portfolio pieces for the KIT portal; quality doctrine applies. Done. All 5 sample sites rebuilt with distinct visual concepts, proper typography, SVG icons only, mobile-first design, and all acceptance criteria met.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Awaiting claim.
+- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Portfolio pieces for the KIT portal; quality doctrine applies. AUDIT 2026-09-12: FAIL — visual QA: 4 of 5 previews fail (unreadable heroes, clipped text, zero starting prices, one shared template). P0 full re-art-direction to the Unseen bar, NOT a patch. See REVISION-2026-09-12-audit.md.
+- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Claimed by Minis Builder 2026-09-12.
 - **TASK-011** — n8n product-intel pipeline: autonomous product research with tariff-adjusted scoring (motif → opencode). Opened 2026-09-11. Spec: inbox/from-motif/TASK-011-product-intel.md. Awaiting claim.
 ## Recently completed
 - 2026-09-12 — TASK-002 props pipeline REMOVED from bus scope per Garrett: it lives in GSE now, not the revenue engine. Do not work it here.
