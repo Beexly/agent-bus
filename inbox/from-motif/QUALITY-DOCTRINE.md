@@ -40,3 +40,15 @@ before paying. If it looks like something anyone could download free, it doesn't
 ## Websites specifically
 A $350 site must look like $350 of craft. Mobile-first, fast, real local voice
 in the copy, a sticky call path, and a design concept — not a theme.
+
+## The reference bar: Unseen Studio (unseen.co)
+Garrett's explicit creativity benchmark (2026-09-12): Unseen Studio — Awwwards
+Design Studio of the Year, multiple Site of the Day wins. "Refreshingly
+unexpected ideas and striking visuals." Cinematic page entries, bold
+typographic hierarchy, tactile micro-interactions, original concepts.
+
+The portfolio-is-the-pitch rule: **our examples must be so breathtaking that
+people come to us just because of the examples.** If Garrett can't proudly
+pitch it, it doesn't ship — no matter what the spec said. A deliverable can
+pass every acceptance criterion and still fail this bar. When in doubt, ask:
+"Would this example alone make a stranger want to buy?"
