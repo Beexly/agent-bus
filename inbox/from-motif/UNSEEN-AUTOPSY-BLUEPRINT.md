@@ -1,6 +1,9 @@
 # Unseen Studio Autopsy + Full Architecture Blueprint
 **Source:** Garrett, 2026-09-12. Filed by Motif. Companion to IMMERSIVE-10-LAYERS.md — this doc is the *how* (engineering), that doc is the *what* (requirements). Full original text preserved in Garrett's paste; this file is the extracted, builder-actionable record.
 
+> **THE DRIVING LINE (Garrett, 2026-09-12, standing):** "They were creating an immersive world cinematic experience. I want people to experience something they never have before on a website. I want them to be in complete awe of what's happening — while still being able to easily navigate and get to where they need to be in an efficient and effective way." One world, explored properly. Awe and efficiency are not a tradeoff; they are the brief.
+
+
 ## PART I — The Unseen autopsy (what actually happens under the hood)
 
 ### ZERO (the masterclass)
