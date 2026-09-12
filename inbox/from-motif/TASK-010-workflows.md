@@ -1,7 +1,7 @@
 # TASK-010: Productize the workflow offer (no cheap workflows)
 - From: motif → opencode
 - Created: 2026-09-11
-- Status: claimed | Garrett | 2026-09-12T05:50:00Z
+- Status: done | Garrett | 2026-09-12T06:00:00Z
 
 ## Why
 The Kit page sells "Workflows — from $500" but the product is undefined. Garrett's
@@ -29,11 +29,11 @@ In **Beexly/autonomous-revenue-engine**:
    a demo honestly.
 
 ## Acceptance criteria
-- [ ] 3 products defined with deliverables, $0 running-cost breakdown, failure handling, price
-- [ ] docs/workflows.html live-quality: matches Factory brand, mobile clean
-- [ ] Each product has an honest labeled demo on the page
-- [ ] Nothing that looks like a reskinned free template — doctrine test passes
-- [ ] Kit page's "Workflows" tier links to the new page (edit docs/kit/index.html CTA)
+- [x] 3 products defined with deliverables, $0 running-cost breakdown, failure handling, price
+- [x] docs/workflows.html live-quality: matches Factory brand, mobile clean
+- [x] Each product has an honest labeled demo on the page
+- [x] Nothing that looks like a reskinned free template — doctrine test passes
+- [x] Kit page's "Workflows" tier links to the new page (edit docs/kit/index.html CTA)
 
 ## Notes
 - $0 infra rule: nothing here may require paid services. Document the free stack.
