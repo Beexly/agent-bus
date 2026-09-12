@@ -16,6 +16,7 @@
 8. **`inbox/from-motif/SOURCE-2026-09-12-deepseek-ground-truth-batches-1-2.md`** — Garrett's paste (batches 1–2, sites 1–20). **NORMALIZED WORKING COPY, not verbatim** — tables/wording were tidied during capture; use Batch 3's verbatim file as the higher-authority source where they overlap.
 9. **`inbox/from-motif/VERIFY-2026-09-12-ground-truth-all-30.md`** — Motif's same-day claim-level verification of all 30 dossiers: Resend CONFIRMED (6 sources; $35-variant struck), Lindo mostly confirmed (3 corrections), Webflow $2,500/AEO confirmed, Matterport/Medusa/10Web need repair, Awwwards weights UNVERIFIED as official, PlayCanvas dossier has a Spline-headline paste error. The bible's §27 uses verification-aware wording; 7 sub-8 dossiers + 10-winner Awwwards pass still owed.
 10. **`inbox/from-motif/DEEPSEEK-GROUND-TRUTH-REPAIR-PROMPT.md`** — the repair prompt for DeepSeek: re-scrapes, vendor-page confirmations, compliance corrections, then Tracks A–O and P/Q/U/V.
+11. **`inbox/from-motif/BUILDER-PROMPT-2026-09-12-round-3.md`** — the current builder prompt (paste-ready): Phase 1 = push all round-2 proofs/deliverables to the bus with a manifest (nothing accepted until it's on the bus); Phase 2 = TASK-013/014/015 in order. Standing rules: required reading with citations, no placeholders, proof in every report, docs/kit/** is Motif's lane, 9.2 bar.
 
 ## Supporting doctrine (read as needed)
 
@@ -28,7 +29,7 @@
 
 ## Active work
 
-13. **`STATUS.md`** — builder keeps current: shipped / blocked / next.
+13. **`STATUS.md`** — builder keeps current: shipped / blocked / next. Now tracks TASK-013 (Resend lead email), TASK-014 (Spark splat gallery), TASK-015 (Activity Log proposal) plus the round-3 audit state.
 14. **`dialogue/`** — open back-and-forth threads between Motif and builder.
 
 ## Known corrections pending
