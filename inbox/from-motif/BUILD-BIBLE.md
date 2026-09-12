@@ -1,8 +1,10 @@
-# THE IMMERSIVE BUILD BIBLE — v1.0
-**Status:** standing doctrine for all immersive/3D/commerce builds. Filed 2026-09-12 by Motif.
+# THE IMMERSIVE BUILD BIBLE — v1.1
+**Status:** standing doctrine for all immersive/3D/commerce builds. Filed 2026-09-12 by Motif. v1.1 adds §§23–26 from the verified extreme-layer deep pass (Tracks R/S/T).
 **Derives from (canonical, verbatim, unedited):**
 - `SOURCE-2026-09-12-deepseek-10-missing-layers.md` (Garrett's paste #1, ~15:18 CDT)
 - `SOURCE-2026-09-12-deepseek-unseen-autopsy-full.md` (Garrett's paste #2, ~15:20 CDT)
+- `SOURCE-2026-09-12-deepseek-extreme-RST.md` (Garrett's paste #3, ~15:37 CDT — Tracks R/S/T deep pass)
+- Verification: `VERIFY-2026-09-12-extreme-RST.md` (Motif's same-day primary-source checks; governs which claims below are stated as fact vs hypothesis)
 - If this bible and a SOURCE file disagree, the SOURCE file wins. Flag the conflict in the dialogue channel.
 
 > **THE DRIVING LINE (Garrett, standing):** "They were creating an immersive world cinematic experience. I want people to experience something they never have before on a website. I want them to be in complete awe of what's happening — while still being able to easily navigate and get to where they need to be in an efficient and effective way."
@@ -355,4 +357,49 @@ Unseen's real advantage is not shaders — it is the pipeline that lets a team i
 **Nothing below 9.2 ships. Nothing untested ships. Nothing inaccessible ships.**
 
 ---
-*End of BUILD-BIBLE v1.0. Dialogue protocol: `DIALOGUE-PROTOCOL.md`. Required reading order: `INDEX.md`.*
+
+## 23. The autonomous site factory — taste before scale (Track R, verified 2026-09-12)
+
+The generation problem is solved (Wix Harmony, Jan 2026, verified: natural-language → full site). The judgment problem is not. Our factory's bottleneck is **quality discrimination, not generation**. Doctrine:
+
+1. **The rubric comes before the data.** No accept/reject logging without a written, scored rubric first. If the founder can't score 5 sites consistently against it, the rubric is wrong — fix the rubric, not the data.
+2. **Log every accept/reject with structured features from day one** (scene complexity, camera pacing, copy register, gate density, color coherence, load time, industry). This log is the most valuable asset the studio owns — it compounds into the quality model.
+3. **Selective reflection, not uniform self-critique.** Apply generate→evaluate→refine loops to failing output only (rescue mechanism), never to output already scoring well (polish mechanism). The exact threshold (dossier proposed bottom 20–30%) is a **hypothesis, not a researched constant** — the headline study behind it did not verify. Tune it empirically.
+4. **Restart signal.** When the evaluator scores below a floor (start: 6.0/10), abandon the trajectory and regenerate with different constraints. Polishing a 6.0 never reaches 9.2.
+5. **Learned evaluator over LLM-as-judge.** Train a small classifier on our own accept/reject data; use it as the reflection-loop gate. Cheaper, faster, more consistent than LLM judging. Target ≥80% agreement with the human on a held-out set before trusting it.
+6. **Sameness is the scaling risk, not compute.** 1,000 sites from one doctrine = 1,000 variations of one aesthetic. Counter with a curated aesthetic vector space (≥50 orthogonal dimensions) sampled per site. Diversity is a research deliverable, not a prompt tweak.
+7. **The founder's factory role:** rubric architect, model retrainer, handler of the 5% the factory fails. Relationships are the moat *around* the factory.
+
+## 24. Never-existed experiences — the 2028 staircase (Track S, verified 2026-09-12)
+
+Ranked by expected value; each ships as a staircase, opt-in and privacy-transparent:
+
+1. **Generative audio mapped to camera position** (highest ROI). Web Audio API; theme prompt → realtime composition modulated by narrative position (0–1). **Opt-in only, default silent, always-visible mute.** The specific "Satie" tool cited in research did not verify as shippable — treat the direction as buildable, prototype in 30 days to validate. No two visits should sound identical.
+2. **Persistent visits.** localStorage: visit count + progress. Visit 2+ gets a meaningfully different camera path. Deeper persistence is opt-in; the visitor can see and clear what's stored. Never PII.
+3. **Presence as ambient social proof.** "N people exploring now" — anonymous, aggregate, no chat, no names by default. Counter first (30 days); optional avatars later.
+4. **Cross-device continuity.** Session token + world-state serialization; QR handoff phone→desktop. Offer at natural break points ("continue on a bigger screen?"), never forced.
+5. **Weather/time-reactive scenes.** Deferred until conversion hypothesis is A/B-tested. **Biometrics and haptics: do not ship** — consent UX and API maturity aren't there (2028 features, not 2026).
+
+The red-team rule for all of the above: novelty that annoys, creeps, or distracts from conversion is founder catnip, not product. Every never-existed experience must survive the question "does this sell more roofing jobs?"
+
+## 25. Extreme business — the network, the moat, the window (Track T, verified 2026-09-12)
+
+1. **Every site is a node.** Embed lightweight, privacy-compliant, opt-in analytics reporting anonymized interaction patterns (gate completion, time-on-scene, camera deviations). Aggregate into industry benchmarks clients actually get ("your gate completion is 82% vs 67% industry — here's the fix"). The benchmark is a consulting product, not a dashboard. "Built by" badge on every site for virality.
+2. **The data moat is the accept/reject log** (§23.2). Flywheel: more sites → more structured data → better quality model → better sites → more sites. Aggregate, anonymized, opt-in.
+3. **The 10× thesis: the business is the quality model.** Websites are the acquisition channel and the training data. If the model reliably scores 9.2+, it's licensable to agencies and platforms. Staircase: log (now) → train (6 mo) → gate internally (12 mo) → license (24 mo).
+4. **USPTO design-patent window — VERIFIED, time-sensitive.** March 13, 2026 guidance: computer-generated interfaces/icons (incl. projections, holograms, VR/AR renderings) are patent-eligible without depicting a physical display. The choreography-injection pipeline (capture → cleanup → automated camera path → gate placement → deploy) is the filing candidate. **No filing without a patent attorney's claim assessment and Garrett's explicit spend approval.**
+5. **Competitive posture (verified):** nobody is building cinematic, scene-choreographed 3D sites for local businesses. Lovable/Bolt are app builders; Wix/Durable/10Web are conventional site builders. The moat is the experience layer + the proprietary quality data — not generation, which is commoditized.
+6. **Lane discipline:** Sites are the acquisition channel; Workflows (90% margin) and Templates (99% margin) survive unit-economics contact; don't chase all lanes at once. Revisit the boutique-vs-factory steelman annually — it's a values question disguised as strategy.
+
+## 26. Photogrammetry pipeline — phone → world → site (Tracks Q/R, verified 2026-09-12)
+
+The Kit killer feature, with both core layers verified production-ready:
+
+- **Capture (commodity):** Polycam Business, $400/user/year — LiDAR + photogrammetry + Gaussian splats, web viewer included. Client captures with guided phone app (2–3 min).
+- **Render (solved, open):** Spark 2.0 — World Labs, **MIT license**, Three.js-native Gaussian Splatting, 98%+ WebGL2 device coverage including mobile. Our proprietary layer is everything around it.
+- **Our proprietary layer (the actual product):** guided capture QA (coverage overlays, lighting checks, reject bad captures *before* upload) → automated cleanup (floaters, holes, lighting normalization) → **choreography injection** (automated camera path, gate placement at narrative beats, copy overlay) → deploy.
+- **Quality ceiling honesty:** captured space is photorealistic but "as captured" — not cinematic. The cinematic layer is where the studio adds value; never promise otherwise to a client.
+- **First validation:** Spark 2.0 capture→viewer prototype on 3 test spaces, target <10 min capture-to-view. Then the 90-day conversion test: conventional site vs 3D-twin site, measured on leads. The answer to that test is potentially the entire business model.
+
+---
+*End of BUILD-BIBLE v1.1. Dialogue protocol: `DIALOGUE-PROTOCOL.md`. Required reading order: `INDEX.md`. Changelog: v1.1 (2026-09-12) — added §§23–26 from verified extreme-layer deep pass (R/S/T); verification report governs fact-vs-hypothesis wording.*
