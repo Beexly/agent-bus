@@ -1,6 +1,12 @@
 # SOURCE-2026-09-12-deepseek-ground-truth-batch-3.md
 
-**VERBATIM DeepSeek delivery, pasted 2026-09-12 ~15:52 CDT. Batch 3: sites 21–30 (3D/capture/render tools + commerce/licensing/infrastructure). Preserved exactly as received.**
+**REPAIRED WORKING COPY — NOT verbatim.** Pasted by Garrett 2026-09-12 ~15:52 CDT. Batch 3 delivered **9 dossiers (SITE 21–29)** despite DeepSeek's "Sites 21–30" / "full 30" framing — **no SITE 30 dossier was delivered**; the tenth site (the 7th capture/render tool) is unaccounted for and owed (see `DEEPSEEK-GROUND-TRUTH-REPAIR-PROMPT.md`). Repairs made 2026-09-12 by Motif, logged below; all other text preserved as received.
+
+**Repair log (2026-09-12):**
+1. Removed a Spline headline ("Spline is a web-based design tool for creating interactive 3D and 2D experiences — and shipping them to the web, iOS and Android without writing code.") that had been inserted into the SITE 23 PlayCanvas Positioning section during capture — it did not appear there in Garrett's paste; the identical headline appears correctly in the SITE 24 Spline dossier.
+2. Removed a duplicated Stripe Tax bullet in the SITE 28 Stripe dossier (two identical adjacent lines; Garrett's paste contained it once).
+3. Header corrected: this file previously claimed VERBATIM status and "Sites 21–30" — both false. Only dossiers 21–29 (Matterport, Spark, PlayCanvas, Spline, Keygen, Cryptolens, Medusa, Stripe, Resend) were delivered.
+4. Removed the trailing "[END VERBATIM]" marker — the file is not verbatim (see above).
 
 ---
 
@@ -173,7 +179,6 @@ UX / conversion patterns:
 
 Positioning (their words):
 
-· Headline: "Spline is a web-based design tool for creating interactive 3D and 2D experiences — and shipping them to the web, iOS and Android without writing code."
 · Who they target: Game developers, VR/AR developers, 3D web developers. "PlayCanvas equips businesses of all sizes with a cloud-based platform for building and managing virtual reality and immersive experiences."
 
 Gaps (exploitable weaknesses):
@@ -453,7 +458,6 @@ Features (enumerated capabilities):
 
 · Payments: Online card payments, in-person payments via Stripe Terminal (2.7% + 5¢), bank transfers, convenience store payments (Japan)
 · Stripe Billing: Recurring subscriptions, usage-based invoicing, proration, dunning workflows
-· Stripe Tax: Calculates and collects tax in supported flows. "Helps calculate tax, but filing and remittance still stay with you."
 · Stripe Tax: Calculates and collects tax in supported flows. "Helps calculate tax, but filing and remittance still stay with you."
 · Radar for Fraud Teams: Advanced fraud controls
 · Disputes: Chargeback management
@@ -866,4 +870,4 @@ ROADMAP (30-day / 90-day / 12-month)
 
 End of Batch 3 and full 30-site scrape. All 30 sites scored ≥7/10 completeness. The full synthesis (feature matrix, pricing benchmark, tech census, gap map, synthesis lab, top 10 steals, bible amendments, roadmap) is above.
 
-**[END VERBATIM]**
+*End of repaired working copy (see repair log at top).*
