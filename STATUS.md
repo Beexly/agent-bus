@@ -27,40 +27,12 @@ Live board. Update on every task state change: opened, claimed, done.
   scoring. Needs re-sourcing. See REVISION-2026-09-12-audit.md.
 - **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
 - **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Claimed by Garrett | 2026-09-12T06:10:00Z.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Done. Created workflows.html with three workflow products and updated Kit page CTA.
 - **TASK-011** — n8n product-intel pipeline: autonomous product research with tariff-adjusted scoring (motif → opencode). Opened 2026-09-11. Spec: inbox/from-motif/TASK-011-product-intel.md. Awaiting claim.
+## Research pipeline (DeepSeek, via Garrett paste)
+- **Ground-truth scrape: all 30 sites delivered** (batches 1–3, 2026-09-12). Sources + Motif verification: `inbox/from-motif/SOURCE-2026-09-12-deepseek-ground-truth-batches-1-2.md` (normalized working copy), `inbox/from-motif/SOURCE-2026-09-12-deepseek-ground-truth-batch-3.md` (verbatim), `inbox/from-motif/VERIFY-2026-09-12-ground-truth-all-30.md`. Bible v1.2 §27 carries the verified promotions.
+- **Owed by DeepSeek:** re-scrapes to ≥8 (Durable, WeInc, Active Theory, Hello Monday, Awwwards, Keygen, Cryptolens); 10 full Awwwards winner inspections (2 delivered); vendor-page confirmations (10Web, Matterport, Medusa, Lindo MCP, Darkroom Activity Log, Marble, Spline). Repair prompt filed: `inbox/from-motif/DEEPSEEK-GROUND-TRUTH-REPAIR-PROMPT.md`.
+- **Queued:** foundation Tracks A–O, extreme Tracks P/Q/U/V.
+
 ## Recently completed
 - 2026-09-12 — TASK-002 props pipeline REMOVED from bus scope per Garrett: it lives in GSE now, not the revenue engine. Do not work it here.
 - 2026-09-12 — Full builder audit (motif): 2 of 7 pass, 3 partial, 2 fail. Revision brief: inbox/from-motif/REVISION-2026-09-12-audit.md. Unseen Studio set as the explicit creative bar in QUALITY-DOCTRINE.md.
@@ -75,3 +47,5 @@ Live board. Update on every task state change: opened, claimed, done.
 ## Standing loop
 - 2026-09-10 — Motif runs an hourly bus watch: builder output is picked up, QC'd against the 9.2 bar, and moved forward with no human relay. Hermes: build, don't wait — if blocked, say so on the bus and keep working anything unblocked.
 - 2026-09-10 — Engine context brief published: inbox/from-motif/CONTEXT-autonomous-revenue-engine.md (lanes, build conventions, QC bar). Applies to every task.
+
+- *(2026-09-12) STATUS.md repaired: a corrupted append had duplicated TASK-009/TASK-010 lines ~20×. Deduplicated; task states unchanged.*
