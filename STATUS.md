@@ -6,8 +6,6 @@ Live board. Update on every task state change: opened, claimed, done.
 - **TASK-001** — Kit lead-list generator v1 (motif → Hermes). Opened 2026-09-10.
   Claimed by Hermes 2026-09-11 — AUDIT 2026-09-12: zero artifacts delivered.
   Deliver or unclaim.
-- **TASK-002** — Props production pipeline: wire engine prop math to real data
-  (motif → opencode). Opened 2026-09-10. Spec: Beexly/Sports docs/ops/PROPS_PRODUCTION_PIPELINE_PROMPT_2026-09-10.md. Done. Built standalone props-slate.js with dry-run validation (CMC 67.06% / FIRE, Puka 46.76% / REJECTED) and Phase B game-pick JSON.
 - **TASK-003** — Vow & Post wedding signage skin (motif → opencode). Opened 2026-09-11.
   Wedding-sign product as second skin of the SignPreview engine.
   AUDIT 2026-09-12: PARTIAL — page is tasteful but mockup is a flat canvas
@@ -31,6 +29,7 @@ Live board. Update on every task state change: opened, claimed, done.
 - **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Awaiting claim.
 - **TASK-011** — n8n product-intel pipeline: autonomous product research with tariff-adjusted scoring (motif → opencode). Opened 2026-09-11. Spec: inbox/from-motif/TASK-011-product-intel.md. Awaiting claim.
 ## Recently completed
+- 2026-09-12 — TASK-002 props pipeline REMOVED from bus scope per Garrett: it lives in GSE now, not the revenue engine. Do not work it here.
 - 2026-09-12 — Full builder audit (motif): 2 of 7 pass, 3 partial, 2 fail. Revision brief: inbox/from-motif/REVISION-2026-09-12-audit.md. Unseen Studio set as the explicit creative bar in QUALITY-DOCTRINE.md.
 - 2026-09-10 — Bus created: protocol, inboxes, outboxes, OpenCode bootstrap (motif)
 - 2026-09-10 — Builder online: Hermes cloned the bus, read the protocol, standing by (Hermes)
