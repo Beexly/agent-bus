@@ -19,11 +19,7 @@ Live board. Update on every task state change: opened, claimed, done.
   (motif → opencode). Opened 2026-09-11. Awaiting claim.
 - **TASK-007** — Signage lead finder, OSINT sweep (motif → opencode). Opened 2026-09-11.
   Awaiting claim.
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Portfolio pieces for the KIT portal; quality doctrine applies. Awaiting claim.
-- **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Awaiting claim.
-- **TASK-011** — n8n product-intel pipeline: autonomous product research with tariff-adjusted scoring (motif → opencode). Opened 2026-09-11. Spec: inbox/from-motif/TASK-011-product-intel.md. Awaiting claim.
-
-- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Portfolio pieces for the KIT portal; quality doctrine applies. Awaiting claim.
+- **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Portfolio pieces for the KIT portal; quality doctrine applies. Done. All 5 sample sites rebuilt with distinct visual concepts, proper typography, SVG icons only, mobile-first design, and all acceptance criteria met.
 - **TASK-010** — Productize the workflow offer, docs/workflows.html + 3 defined products (motif → opencode). Opened 2026-09-11. Awaiting claim.
 - **TASK-011** — n8n product-intel pipeline: autonomous product research with tariff-adjusted scoring (motif → opencode). Opened 2026-09-11. Spec: inbox/from-motif/TASK-011-product-intel.md. Awaiting claim.
 ## Recently completed
