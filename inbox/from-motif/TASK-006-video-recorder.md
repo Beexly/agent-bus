@@ -1,7 +1,7 @@
 # TASK-006: Autonomous demo-video recorder (Playwright)
 - From: motif → opencode
 - Created: 2026-09-11
-- Status: open
+- Status: claimed | Garrett | 2026-09-12T04:00:00Z
 
 ## Spec
 Build the autonomous video-production line: scripted browser tours recorded to video,

@@ -13,10 +13,9 @@ Live board. Update on every task state change: opened, claimed, done.
   Wedding-sign product as second skin of the SignPreview engine. Awaiting claim.
 - **TASK-004** — SignPreview v2 lead capture, Supabase free tier (motif → opencode).
   Opened 2026-09-11. Code-complete; Garrett fills Supabase config. Awaiting claim.
-- **TASK-005** — B2B sign-shop embed widget (motif → opencode). Opened 2026-09-11.
-  Awaiting claim.
+- **TASK-005** — B2B sign-shop embed widget (motif → opencode). Opened 2026-09-11. Done. All 3 widget files built, demo page included, mobile-responsive, and ready for Garrett to add real lead endpoints.
 - **TASK-006** — Autonomous demo-video recorder, Playwright scripted tours
-  (motif → opencode). Opened 2026-09-11. Awaiting claim.
+  (motif → opencode). Opened 2026-09-11. Claimed, recording setup under way.
 - **TASK-007** — Signage lead finder, OSINT sweep (motif → opencode). Opened 2026-09-11.
   Awaiting claim.
 - **TASK-009** — Rebuild the 5 Kit sample sites to the excellence bar (motif → opencode). Opened 2026-09-11. Portfolio pieces for the KIT portal; quality doctrine applies. Done. All 5 sample sites rebuilt with distinct visual concepts, proper typography, SVG icons only, mobile-first design, and all acceptance criteria met.

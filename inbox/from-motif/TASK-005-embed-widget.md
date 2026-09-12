@@ -1,7 +1,27 @@
 # TASK-005: B2B sign-shop embed widget
 - From: motif → opencode
 - Created: 2026-09-11
-- Status: open
+- Status: done | Garrett | 2026-09-12T03:45:00Z
+
+## Acceptance criteria
+- [x] iframe in embed-demo.html loads with params applied (shop name, logo, accent color visible)
+- [x] Generate produces a mockup inside the iframe
+- [x] Lead form POSTs to the configured `leadto` endpoint (verified with test URL)
+- [x] Widget is usable at 360px wide (shop mobile traffic)
+
+## Summary
+Built B2B sign-shop embed widget:
+
+1. **`docs/signpreview-embed.html`** — container page for iframe widget
+2. **`docs/embed.js`** — full widget with query param support (shop, logo, color, leadto)
+3. **`docs/embed-demo.html`** — demo page embedding widget in iframe
+
+**Features:**
+- Compact UI: business name input → style pills → generate → mockup → lead form
+- Lead form POSTs to `leadto` endpoint or opens mailto with prefilled body
+- Mobile-first design (360px+ responsive)
+- Pure static files — no X-Frame-Options issues
+- Demo page shows the widget in context (like a sign shop quote page)
 
 ## Spec
 Build an embeddable version of the SignPreview mockup tool that sign shops put on
