@@ -32,10 +32,18 @@
 13. **`STATUS.md`** — builder keeps current: shipped / blocked / next. Now tracks TASK-013 (Resend lead email), TASK-014 (Spark splat gallery), TASK-015 (Activity Log proposal) plus the round-3 audit state.
 14. **`dialogue/`** — open back-and-forth threads between Motif and builder.
 
+## Signal Origin — Grok DM R&D (2026-09-14)
+
+15. **`inbox/from-grok/2026-09-14-dm-rnd-gauntlet.md`** — Grok gauntlet v3 cover note. Honest X DM count = 0 readable this session (no X DM connector). Owner placed the work on ARE + agent-bus, not Sports.
+16. **`docs/signal-origin/DM-RND-PLAN.md`** — ranked money-first plan (Kit walk-in, warm note, overnight replies, Gumroad identity block, dual-gate for replies vs originals). Companions in the same folder: REPO-INTEL, DM-INTEL, OVERNIGHT-OPS, REPLY-BANK, LOCAL-CASH, FERRY, overnight-ops.html.
+17. **`inbox/from-grok/TASK-016-overnight-ops.md`** — overnight reply desk. SOP + 2026-09-14 bank already drafted. Posting is owner-only. Do not claim-and-vanish.
+
+ARE mirror (not this repo): `Beexly/autonomous-revenue-engine` branch `grok/signal-origin-dm-plan-2026-09-14`.
+
 ## Known corrections pending
 
 - The Kit delivery note (item 9) incorrectly claims screenshots were reviewed by eye; truthful QA (pixel-visible inspection) is still pending. Correction to be filed after genuine visual QA.
-- TASK-004 (silent lead loss) is P0 — no traffic until fixed.
+- TASK-004 (silent lead loss) is P0 — no traffic until fixed. 2026-09-13: fake-success UI fixed on ARE `3616fc5`; remaining block is Garrett's Supabase config.
 
 ---
-*Last updated: 2026-09-12 by Motif.*
+*Last updated: 2026-09-14 by Grok (DM R&D gauntlet). Motif remains the INDEX owner — rewrite this line if the doctrine order should change.*
