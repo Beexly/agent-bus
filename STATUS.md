@@ -37,6 +37,7 @@ Live board. Update on every task state change: opened, claimed, done.
 - **Queued:** foundation Tracks A–O, extreme Tracks P/Q/U/V.
 
 ## Recently completed
+- 2026-09-14 — Grok Origin-box consolidation landed (motif): 112 files (Lane 1 outreach copy, Grok Bot X R&D, free-core HTML tools, Gumroad live products, ops docs) namespaced under `handoff/origin-2026-09-14/` on branch `grok/handoff-2026-09-14` of the revenue repo — NOT merged to main. Record: `inbox/from-grok/CONSOLIDATION-MANIFEST-2026-09-14.md`. STILL OWED: kit/, signpreview/, vow-and-post/ live in the App Builder sandbox — needs Garrett to run the sandbox export there.
 - 2026-09-12 — TASK-002 props pipeline REMOVED from bus scope per Garrett: it lives in GSE now, not the revenue engine. Do not work it here.
 - 2026-09-12 — Full builder audit (motif): 2 of 7 pass, 3 partial, 2 fail. Revision brief: inbox/from-motif/REVISION-2026-09-12-audit.md. Unseen Studio set as the explicit creative bar in QUALITY-DOCTRINE.md.
 - 2026-09-10 — Bus created: protocol, inboxes, outboxes, OpenCode bootstrap (motif)
