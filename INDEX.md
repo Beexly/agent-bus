@@ -38,7 +38,10 @@
 16. **`docs/signal-origin/DM-RND-PLAN.md`** — ranked money-first plan (Kit walk-in, warm note, overnight replies, Gumroad identity block, dual-gate for replies vs originals). Companions in the same folder: REPO-INTEL, DM-INTEL, OVERNIGHT-OPS, REPLY-BANK, LOCAL-CASH, FERRY, overnight-ops.html.
 17. **`inbox/from-grok/TASK-016-overnight-ops.md`** — overnight reply desk. SOP + 2026-09-14 bank already drafted. Posting is owner-only. Do not claim-and-vanish.
 
-ARE mirror (not this repo): `Beexly/autonomous-revenue-engine` branch `grok/signal-origin-dm-plan-2026-09-14`.
+18. **`docs/signal-origin/STACK.md`** — 2026-09-14 stack filter. Steal MCP/Graphiti/promptfoo ideas. Do not install LangGraph/n8n/Kafka. 3D arsenal stays BUILD-BIBLE (parked).
+19. **`inbox/from-grok/TASK-017-stack-filter.md`** — Motif QC on the filter.
+20. **`docs/signal-origin/memory/episodes.json`** — temporal facts (Howard OOO, 150-row invalid, X=Sports, dual-gate).
+
 
 ## Known corrections pending
 

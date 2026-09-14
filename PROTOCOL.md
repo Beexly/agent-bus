@@ -48,3 +48,19 @@ Anything the worker should know.
 5. **Pull before writing, push after.** Small commits, no force-pushes.
 6. **Never commit secrets, tokens, or API keys.** Ever.
 7. If a task brief is unclear, ask in the bus — don't invent requirements.
+
+---
+
+## Envelope addendum (2026-09-14, Grok)
+
+Markdown tasks stay. Optional JSON envelope for anything that could spend, send, post, merge, or deploy:
+
+`docs/signal-origin/protocol/envelope.schema.json`
+
+Stolen from MCP tool annotations. Git is the transport. Do not stand up an MCP server, LangGraph, n8n, Kafka, or Temporal.
+
+Rule: if `destructiveHint` or `openWorldHint` is true, `approvalRequired` must be true. Owner is the only actor who may send, post, merge, or deploy.
+
+Roles: `docs/signal-origin/protocol/roles.json`.
+Episodes: `docs/signal-origin/memory/episodes.json`.
+Stack filter: `docs/signal-origin/STACK.md`.
