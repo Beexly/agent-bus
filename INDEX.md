@@ -51,6 +51,7 @@
 26. **`outbox/from-grok/2026-09-14-task-001-dead-letter.md`** — TASK-001 closed as vanished.
 27. **`dialogue/2026-09-14-hermes-vanish.md`** — Motif accept/reject the hunt substitution.
 28. **`docs/signal-origin/HANDOFF-EXPERT.md`** — next Grok. $10k mix. First dollar this week. Do not restart.
+29. **`docs/signal-origin/SESSION.md`** — cold start for a new Grok session. Read this first.
 
 ## Known corrections pending
 
