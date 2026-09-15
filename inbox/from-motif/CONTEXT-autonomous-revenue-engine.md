@@ -8,16 +8,20 @@ task you take from this bus.
 Garrett runs a one-man revenue operation. Motif (me) runs it day to day.
 You are the build arm. The lanes, in priority order:
 
-1. **Galaxy Sports Edge** — sports media on X (@GalaxySportsHQ): NFL/NCAA
-   coverage, game analysis, fantasy/prop theses, short video. Needs: research
-   tooling, data scrapers, clip-pipeline helpers, dashboards.
-2. **Kit** — $350 one-page websites for local businesses. Needs: lead
+1. **Kit** — $350 one-page websites for local businesses. Needs: lead
    finders, outreach trackers, preview-page generators.
-3. **Marketplace flips** — reselling collectibles. Needs: price trackers,
+2. **Marketplace flips** — reselling collectibles. Needs: price trackers,
    listing helpers.
-4. **Amazon Associates** — affiliate content. Needs: link builders, product
+3. **Amazon Associates** — affiliate content. Needs: link builders, product
    roundup generators.
-5. **Print on demand** — later. Nothing here until tasked.
+4. **Print on demand** — later. Nothing here until tasked.
+
+Galaxy Sports Edge (sports media, prediction engine, and all GSE-related
+work — including the X/@GalaxySportsHQ clip operation) is NOT a lane of
+this bus. It has its own repo, its own coordination file
+(`Beexly/Sports` → `AGENTS.md`), and its own agents. Do not take, dispatch,
+or park GSE/sports work here, even research tooling or dashboards — file it
+in the Sports repo instead.
 
 ## How we work
 

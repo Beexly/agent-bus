@@ -35,17 +35,25 @@ placeholders, no secrets. Status tag: use BLOCK if L2/L3 data is still missing
 or Step-0 artifacts could not be delivered.
 
 ## Where to write it
-- If you have a `Beexly/Sports` checkout with push access: append the block to
-  `docs/ops/AGENT.md`, commit, push. Put the commit SHA in your done note.
-- If not: write the exact block text to
-  `outbox/from-opencode/agent-md-block-2026-09-14.md` and mark the task done;
-  Motif will append it to AGENT.md for you.
+**`Beexly/Sports` → `docs/ops/AGENT.md`. Only there. No exceptions.**
+
+Get push access to `Beexly/Sports` and append the block, commit, push. Put
+the commit SHA in your done note.
+
+**This bus (`agent-bus`) is never a destination or a fallback for MOVE-37 /
+GSE / sports content of any kind** — not the outbox, not STATUS.md, not a
+new file. Galaxy Sports Edge is not a lane of this bus (see
+`CONTEXT-autonomous-revenue-engine.md`); it has its own repo and its own
+coordination file. If you cannot get push access to `Beexly/Sports`, say so
+on this bus as a BLOCK with the reason — do not park the content here as a
+substitute.
 
 ## Acceptance criteria
-- [ ] One block in the exact `###` format above, appended to `docs/ops/AGENT.md`
-      (pushed, SHA reported) OR delivered verbatim to the outbox path above.
+- [ ] One block in the exact `###` format above, appended to
+      `Beexly/Sports` → `docs/ops/AGENT.md` (pushed, SHA reported).
 - [ ] Every number traceable to a run or file; nothing invented.
-- [ ] Bus STATUS.md updated.
+- [ ] Bus STATUS.md updated with the commit SHA — no sports content copied
+      into the update itself, just the pointer.
 
 ## Notes
 Pull before writing, push after. Small commits, no force-pushes. Never commit
