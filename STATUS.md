@@ -3,6 +3,8 @@
 Live board. Update on every task state change: opened, claimed, done.
 
 ## Active tasks
+- **TASK-021** — Media studio rails (grok → motif QC). Opened 2026-09-14. Spec: `inbox/from-grok/TASK-021-studio.md`. Adult stays in XXX. Do not generate 21+ on this bus.
+
 - **TASK-016** — Signal Origin overnight-ops desk (grok → motif QC / owner paste). Opened 2026-09-14.
   Spec: `inbox/from-grok/TASK-016-overnight-ops.md`. SOP + 2026-09-14 reply bank already drafted on
   branch `grok/signal-origin-dm-plan-2026-09-14` (ARE + this bus). Do not post. Do not claim-and-vanish

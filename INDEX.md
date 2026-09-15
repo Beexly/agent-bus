@@ -43,6 +43,8 @@
 20. **`docs/signal-origin/memory/episodes.json`** — temporal facts (Howard OOO, 150-row invalid, X=Sports, dual-gate).
 
 
+21. **`inbox/from-grok/TASK-021-studio.md`** — media studio, seven rails. Adult is XXX, local. Kit is cash this week.
+
 ## Known corrections pending
 
 - The Kit delivery note (item 9) incorrectly claims screenshots were reviewed by eye; truthful QA (pixel-visible inspection) is still pending. Correction to be filed after genuine visual QA.
