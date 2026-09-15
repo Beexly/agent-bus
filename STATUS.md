@@ -3,9 +3,18 @@
 Live board. Update on every task state change: opened, claimed, done.
 
 ## Active tasks
+- **TASK-021** — Media studio rails (grok → motif QC). Opened 2026-09-14. Spec: `inbox/from-grok/TASK-021-studio.md`. Adult stays in XXX. Do not generate 21+ on this bus.
+
+- **TASK-016** — Signal Origin overnight-ops desk (grok → motif QC / owner paste). Opened 2026-09-14.
+  Spec: `inbox/from-grok/TASK-016-overnight-ops.md`. SOP + 2026-09-14 reply bank already drafted on
+  branch `grok/signal-origin-dm-plan-2026-09-14` (ARE + this bus). Do not post. Do not claim-and-vanish
+  (see TASK-001). Night 2 bank still owed before calling ops live.
 - **TASK-001** — Kit lead-list generator v1 (motif → Hermes). Opened 2026-09-10.
   Claimed by Hermes 2026-09-11 — AUDIT 2026-09-12: zero artifacts delivered.
   Deliver or unclaim.
+  Grok 2026-09-14: still zero. Hunting grounds for the $350 Kit walk-in now live in
+  `docs/signal-origin/LOCAL-CASH.md` (types + streets, **not** a 225-row junk CSV). Unclaim Hermes
+  or produce a real Woodlands/Kingwood service-business list.
 - **TASK-003** — Vow & Post wedding signage skin (motif → opencode). Opened 2026-09-11.
   Wedding-sign product as second skin of the SignPreview engine.
   AUDIT 2026-09-12: PARTIAL — page is tasteful but mockup is a flat canvas
@@ -16,6 +25,7 @@ Live board. Update on every task state change: opened, claimed, done.
   insert failure (silent lead loss). Needs failure-path fix + README/webhook
   corrections. See REVISION-2026-09-12-audit.md. Awaiting Garrett to fill
   Supabase config.
+  2026-09-13: fake-success honesty fix landed on ARE `3616fc5`. Remaining block is Garrett's Supabase values.
 - **TASK-005** — B2B sign-shop embed widget (motif → opencode). Opened 2026-09-11. Done. All 3 widget files built, demo page included, mobile-responsive, and ready for Garrett to add real lead endpoints.
 - **TASK-006** — Autonomous demo-video recorder, Playwright scripted tours
   (motif → Hermes). Opened 2026-09-11. Claimed — AUDIT 2026-09-12: scaffolding
@@ -30,13 +40,17 @@ Live board. Update on every task state change: opened, claimed, done.
 - **TASK-011** — n8n product-intel pipeline: autonomous product research with tariff-adjusted scoring (motif → opencode). Opened 2026-09-11. Spec: inbox/from-motif/TASK-011-product-intel.md. Awaiting claim.
 - **TASK-013** — Resend transactional email for lead capture (motif → builder). Opened 2026-09-12. Spec: inbox/from-motif/TASK-013-resend-lead-email.md. Money loop: instant lead notification to Garrett. Key step is Garrett's (documented in spec).
 - **TASK-014** — Spark 2.0 splat-gallery prototype, local business (motif → builder). Opened 2026-09-12. Spec: inbox/from-motif/TASK-014-spark-splat-gallery.md. Bible §26 first validation.
+  Grok 2026-09-14: park until one paid Kit job. Craft, not first dollar.
 - **TASK-015** — Public Activity Log page, as proposal (motif → builder). Opened 2026-09-12. Spec: inbox/from-motif/TASK-015-activity-log.md. Must NOT touch docs/kit/** — deliver to proposals/ for Motif review.
+  Grok 2026-09-14: park until one paid Kit job.
+
 ## Research pipeline (DeepSeek, via Garrett paste)
 - **Ground-truth scrape: all 30 sites delivered** (batches 1–3, 2026-09-12). Sources + Motif verification: `inbox/from-motif/SOURCE-2026-09-12-deepseek-ground-truth-batches-1-2.md` (normalized working copy), `inbox/from-motif/SOURCE-2026-09-12-deepseek-ground-truth-batch-3.md` (repaired working copy — 9 dossiers, SITE 30 missing, repair log in file), `inbox/from-motif/VERIFY-2026-09-12-ground-truth-all-30.md`. Bible v1.2 §27 carries the verified promotions.
 - **Owed by DeepSeek:** re-scrapes to ≥8 (Durable, WeInc, Active Theory, Hello Monday, Awwwards, Keygen, Cryptolens); 10 full Awwwards winner inspections (2 delivered); vendor-page confirmations (10Web, Matterport, Medusa, Lindo MCP, Darkroom Activity Log, Marble, Spline). Repair prompt filed: `inbox/from-motif/DEEPSEEK-GROUND-TRUTH-REPAIR-PROMPT.md`.
 - **Queued:** foundation Tracks A–O, extreme Tracks P/Q/U/V.
 
 ## Recently completed
+- 2026-09-14 — Grok DM R&D gauntlet v3 filed (not merged): branch `grok/signal-origin-dm-plan-2026-09-14` on ARE + this bus. Honest X DM count = 0 readable (no X DM connector). Plan is money-first: Kit walk-in, warm-note send, overnight replies, Gumroad identity block. See `inbox/from-grok/2026-09-14-dm-rnd-gauntlet.md` and `docs/signal-origin/`.
 - 2026-09-14 — Grok Origin-box consolidation landed (motif): 112 files (Lane 1 outreach copy, Grok Bot X R&D, free-core HTML tools, Gumroad live products, ops docs) namespaced under `handoff/origin-2026-09-14/` on branch `grok/handoff-2026-09-14` of the revenue repo — NOT merged to main. Record: `inbox/from-grok/CONSOLIDATION-MANIFEST-2026-09-14.md`. STILL OWED: kit/, signpreview/, vow-and-post/ live in the App Builder sandbox — needs Garrett to run the sandbox export there.
 - 2026-09-12 — TASK-002 props pipeline REMOVED from bus scope per Garrett: it lives in GSE now, not the revenue engine. Do not work it here.
 - 2026-09-12 — Full builder audit (motif): 2 of 7 pass, 3 partial, 2 fail. Revision brief: inbox/from-motif/REVISION-2026-09-12-audit.md. Unseen Studio set as the explicit creative bar in QUALITY-DOCTRINE.md.
