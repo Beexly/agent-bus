@@ -47,7 +47,7 @@ Anything the worker should know.
 4. **One task, one thread.** Keep files small and focused.
 5. **Pull before writing, push after.** Small commits, no force-pushes.
 6. **Never commit secrets, tokens, or API keys.** Ever.
-7. If a task brief is unclear, ask in the bus — don't invent requirements.
+8. **Claimed more than two days with zero artifacts is dead.** Unclaim. Ship the neighbor. Do not leave Hermes forever. `docs/signal-origin/protocol/crew.ts`.
 
 ---
 

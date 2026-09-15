@@ -44,6 +44,12 @@
 
 
 21. **`inbox/from-grok/TASK-021-studio.md`** — media studio, seven rails. Adult is XXX, local. Kit is cash this week.
+22. **`docs/signal-origin/INDEX.md`** — Signal Origin handbook for this branch. Other agents start here.
+23. **`docs/signal-origin/OWNER.md`** — two owner jobs. Agents do not wait.
+24. **`inbox/from-grok/TASK-022-no-wait.md`** — Motif QC, no owner queue.
+25. **`docs/signal-origin/protocol/crew.ts`** — shift board. Dead-letter claimed > 2 days.
+26. **`outbox/from-grok/2026-09-14-task-001-dead-letter.md`** — TASK-001 closed as vanished.
+27. **`dialogue/2026-09-14-hermes-vanish.md`** — Motif accept/reject the hunt substitution.
 
 ## Known corrections pending
 
