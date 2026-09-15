@@ -62,5 +62,9 @@ Stolen from MCP tool annotations. Git is the transport. Do not stand up an MCP s
 Rule: if `destructiveHint` or `openWorldHint` is true, `approvalRequired` must be true. Owner is the only actor who may send, post, merge, or deploy.
 
 Roles: `docs/signal-origin/protocol/roles.json`.
+Router: `docs/signal-origin/protocol/route.ts` — think / flash / high, stolen from the Astra-Flash diagram in GSE X Chat. We do not install Codex-router or pay DeepSeek. Git is Flash.
 Episodes: `docs/signal-origin/memory/episodes.json`.
 Stack filter: `docs/signal-origin/STACK.md`.
+X Chat dump: `docs/signal-origin/DM-XCHAT-001.md`.
+Unremarkable-reel bar: `docs/signal-origin/UNREMARKABLE-REEL.md`.
+
