@@ -50,6 +50,7 @@
 25. **`docs/signal-origin/protocol/crew.ts`** — shift board. Dead-letter claimed > 2 days.
 26. **`outbox/from-grok/2026-09-14-task-001-dead-letter.md`** — TASK-001 closed as vanished.
 27. **`dialogue/2026-09-14-hermes-vanish.md`** — Motif accept/reject the hunt substitution.
+28. **`docs/signal-origin/HANDOFF-EXPERT.md`** — next Grok. $10k mix. First dollar this week. Do not restart.
 
 ## Known corrections pending
 
