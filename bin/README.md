@@ -35,23 +35,37 @@ answer is authoritative: it means the other agent's push already landed.
 
 ## Registering as an MCP server
 
-Claude Code, in `.mcp.json`:
+Clone the bus as a **sibling** of the repo you work in:
+
+```
+Sports/
+agent-bus/
+```
+
+Then `.mcp.json` in the project root takes one portable entry. A relative path
+resolves against the project root on both Windows and Linux, so the same block
+works on every machine:
 
 ```json
 {
   "mcpServers": {
     "agent-bus": {
       "command": "node",
-      "args": ["/absolute/path/to/agent-bus/bin/bus.mjs", "--mcp"],
+      "args": ["../agent-bus/bin/bus.mjs", "--mcp"],
       "env": { "GSE_AGENT_ID": "opus" }
     }
   }
 }
 ```
 
-On Windows use a full path with escaped separators, e.g.
-`"C:\\Users\\Garrett\\agent-bus\\bin\\bus.mjs"`. Set `GSE_AGENT_ID` to that
-agent's own id. Any client that speaks MCP stdio works the same way.
+Set `GSE_AGENT_ID` to that agent's own id: `opus`, `grok` or `flash`. Never
+share an id between two agents; that defeats the lock. Any client speaking MCP
+stdio registers the same way.
+
+**Hermes has no MCP config surface.** It is launched with `--cli --yolo --in
+<repo>` plus a one-line prompt, so its integration is `docs/ops/hermes/RESUME.md`
+in the Sports repo, which it re-reads on every relaunch. That is strictly better
+than a config file here: zero setup, and it survives every restart.
 
 ## Tools
 
