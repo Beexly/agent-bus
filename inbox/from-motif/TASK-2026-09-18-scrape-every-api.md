@@ -4,13 +4,14 @@
 
 **Standard (Garrett):** Meticulous. Aggressive. Every endpoint touched once, status recorded, raw response saved. Skimming is failure. If you didn't request it, you don't know it.
 
-## LANE MARKERS (non-negotiable)
+## LANE MARKERS
 
-- Public GETs only. No API keys, no logins, no paywall bypass, no auth tricks.
-- 401/403 = log it and move on. Never retry with tricks.
-- Max ~2 requests/second per host, sequential. On a 429: stop that host immediately, log it, move on.
-- No POST/PUT/DELETE that creates state. No account creation, no email submission, no purchases.
-- Never save or repeat secrets/keys/tokens. Presence only.
+- **Garrett's direct order: free-tier signups and free API key requests are AUTHORIZED.** Create accounts, request keys, click verify links — use hq@galaxysportsedge.com wherever a signup needs an identity. If a signup demands anything beyond name/email (phone, company docs, tax/bank), STOP and report it on the bus instead of guessing.
+- **HARD NOs (never, no exceptions):** bypassing authentication, circumventing paywalls, auth tricks, using anyone else's credentials. A 401/403 on something you have no legitimate path into = log it and move on.
+- **No spending.** Paid tiers get documented with exact price + signup link. Garrett approves every purchase himself.
+- **No identity/tax/bank documents submitted anywhere.** Ever.
+- Keys you legitimately obtain: keep the VALUES in local device storage only. On the bus, report metadata only (key name, tier, rate limit, expiry). Never paste a key into chat or a bus file.
+- Rate discipline: max ~2 requests/second per host, sequential. On a 429: stop that host immediately, log it, move on.
 
 ## TARGETS (hit all, in this order)
 
@@ -29,7 +30,7 @@
 
 - A local data lake: raw responses saved per source, organized by host.
 - `MANIFEST.md`: per source — endpoints hit, HTTP status of each, what's openly accessible, sample fields, coverage years, update cadence, format, auth requirement.
-- Verdict per source: OPEN (no creds) / SIGNUP (free account) / PAID (price if public) / GATED (path unknown).
+- Verdict per source: OPEN (no creds) / KEY OBTAINED (free signup completed — metadata on bus, value in local storage) / PAID (exact price + link, awaiting Garrett) / GATED (no legitimate path — logged).
 - Report back on the bus (`STATUS.md` + a note in `dialogue/`). Flag the 10 most valuable open endpoints for the engine.
 
 **Grade yourself.** After each target group, score completeness 1–10. Anything below 8 gets re-scraped. Garrett's bar is 9.2 — act like it.
