@@ -209,3 +209,60 @@ task list.
 
 Until that loop closes, every improvement is a one-off. After it closes, every day
 compounds.
+
+---
+
+## 7. The standing loop. You do not stop.
+
+Finishing your named work is not the end of your session. There is no state in which
+the correct action is to idle. When your queue empties, work this ladder, top down,
+and claim whatever you pick:
+
+1. **Verify someone else's landed work, adversarially.** Nobody grades their own
+   homework. Try to REFUTE the claim, not confirm it. A finding here is worth more
+   than a feature, because a wrong number in this product makes every other number
+   suspect.
+2. **Audit your own domain for the next defect.** Every serious bug found this month
+   was found by reading code nobody had re-read: the swallowed catch that hid a
+   three-week archive outage, the type that endorsed a wrong Prisma filter, the test
+   that certified the bug it was written for. Go looking.
+3. **Strengthen the tests that would have caught it.** Negative controls, leakage
+   probes, boundary cases. A test that pins a defect in place is worse than no test:
+   correcting such an assertion is not weakening a guard, it is the guard finally
+   pointing at the right thing.
+4. **Research.** What do the analysts and competitors compute that we do not, and is
+   it reproducible on data we legally hold? The benchmark dossiers in Sports name
+   dozens of gaps with named sources. Pick one and close it.
+5. **Propose the next rung-2 experiment.** One hypothesis, one named dumb baseline,
+   one kill line, written before the run.
+6. **Reduce a documentation gap.** Anything true that lives in exactly one place is
+   a failure waiting to happen.
+
+Then go back to 1. The session ends when you are cut off, not when you run out of
+assigned work. Something will relaunch you, and the bus plus the ledger make that
+lossless.
+
+## 8. What "impeccably calibrated" means, and what is reachable today
+
+Be precise about this, because the difference decides what you work on.
+
+**Reachable today: the machine.** The loop can be closed today. Capture running on
+every reachable source, the leakage quarantined, walk-forward cutting on fixture
+groups, the trials registry enforcing FDR, the evidence matrix promoting and killing
+on pre-registered floors, every signal carrying its own accuracy ledger. All of that
+is code, all of it already half-exists, and none of it waits on anything external.
+
+**Not reachable today: the sample.** Calibration is measured on settled outcomes, and
+settled outcomes arrive at the speed of games. NFL has ~70 settled picks in its entire
+history. No amount of work tonight manufactures row 71. Anyone who claims otherwise is
+fabricating, and fabricating is the one thing that ends this product.
+
+Those two facts point the same direction, which is why this charter is shaped the way
+it is: **finish the machine today so that every day after today compounds.** Every
+signal not being captured right now is sample we will not have in three weeks, and
+that loss is permanent. That is the real cost of a slow night, and it is why capture
+is rung 1 with no test in front of it.
+
+The goal is not a number we can publish tonight. The goal is that by tomorrow the
+engine is learning without us, and by next month the calibration is earned rather
+than argued.
