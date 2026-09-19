@@ -50,3 +50,11 @@ tsc clean on all new files (pre-existing `@sports/db` type errors in
 **Rule going forward: every idea, concept, data point, link, discussion, tweet,
 and finding gets filed in the repo under `docs/research/<date>/`. The workspace
 is scratch, the repo is the record. Lock it in.**
+
+## Update 2026-09-18 ~23:45 CDT — follow-up commit 4a50a0469
+https://github.com/Beexly/Sports/commit/4a50a0469
+- Both rebuilt 50-link lists are IN: `firecrawl/nfl-odds-apis-metrics-50-links.md`
+  and `firecrawl/nfl-stats-apis-50-links.md` (50 curl-verified live URLs each).
+- Also filed: StatRankings CSVs (`docs/research/2026-09-17/statrankings/`,
+  partial scrape — scrape.log shows errors) and the three missing
+  Bills-Lions edge-sheet PNGs.
