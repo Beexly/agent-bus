@@ -262,10 +262,33 @@ What I could not verify, and did not invent:
 
 Paper, in order. No live ticket until a human arms the account in writing.
 
-1. Builder logs, each weekday 09:40 CT, to a local file that is not committed if it contains account numbers: IRX, SPY, QQQ, VIX, VIX3M, RV20, and the 21–45 DTE 10-wide put vertical with the best credit. Columns: credit, BS value at RV20, edge per day, max loss, gate open or shut.
-2. Today that row is already known. Gate **shut**. Edge about −$0.87 per spread per day. Action **no trade**. Underlying vote **HOLD**.
-3. The first time the gate is open, paper-sell the vertical inside the $6,000 prepaid budget and track mark-to-market against the $300 floor. If twenty paper cycles do not show a positive average day after the bid-ask, the sleeve stays off and the only compounder is more bill face.
-4. Human path to the live floor: fund a brokerage that holds T-bills (WellsTrade can, once the balance is real) to about **$2.63M cash** for a $300 accretion, or to the row in the menu that matches the ambition. Buy the 13-week ladder. Do not margin it. Do not point NOFX, QuantDinger live, or Jev at it.
-5. Recompute K, H0, H1 only if a naked short is later approved in the growth account. Center the band on σ_m from K. Ignore the old charm of −0.198.
+1. **Closed 2026-09-24.** `outbox/from-grok/desk_card.py` writes the card. Windows task `StockDeskFloorCard` runs it Monday through Friday at 09:40 local, and this machine is Central time. Next run 2026-09-25 09:40. The task does not order.
+2. **Closed for today, re-measured after the plan.** Card `outbox/from-grok/cards/2026-09-24.md`. Gate **SHUT**. Fresh print: SPY 767.51, QQQ 740.46, VIX 15.57, VIX3M 18.33, IRX 4.07, RV20 10.84%. Best vertical is 23 Oct 759/749, credit $2.14 versus fair $2.52, edge **−$0.38 a share, −$1.35 a day**. Action **NO_TRADE**. Underlying **HOLD**. Orders sent: 0.
+3. **Open, blocked.** Twenty paper cycles cannot start while the gate is shut. Count is 0 of 20. Opening a paper short today would be a negative-edge trade. The sleeve stays off until a card prints gate OPEN.
+4. **Open, human only.** Fund a brokerage that holds T-bills to about **$2.63M cash** (IRX 4.07 discount math: cash for $300/day is $2,626,263) or to the row in the menu. An agent cannot move that cash. WellsTrade ...7767 is still $0.01. Do not margin the bills. Do not point a live bot at them.
+5. **Closed as a standing rule.** K, H0, H1 are in section 4. They are recomputed only if a naked short is later approved. The old charm of −0.198 stays unused.
 
 The $0.01 account stays untouched. The floor is still $300. The way above it, on this tape, is more face, and a growth sleeve that is allowed to be flat.
+
+## 12. Repo pass, 2026-09-24 afternoon
+
+None of these change the capital, the chain, or the shut gate. None were installed.
+
+| Repo | What it is | Desk decision |
+|---|---|---|
+| achannarasappa/ticker | Terminal Yahoo/Coinbase quote watcher | Redundant. The card already reads Yahoo. No options open interest, no bills. |
+| Mathieu2301/TradingView-API | Unofficial TradingView websocket | Not used. It presents itself as the TradingView site. The public CBOE file is the chain. |
+| sam72x1/Super_Stocks | Nasdaq "pivot stock" Telegram screener | Different market, different bet. Not a $300 floor. |
+| anthropics/financial-services | Claude plugin of finance workflows | A prompt pack, not a broker and not capital. |
+| strands-agents/harness-sdk | Agent harness | Orchestration shell. It does not price a spread. |
+| superdesigndev/treg | Tool registry and credential proxy | Secret-adjacent. Not installed. Not a market. |
+| TauricResearch/TradingAgents | LLM analyst committee | A vote, same class as Jev. It does not override a shut gate and it is not sized. |
+| freqtrade/freqtrade | Crypto bot | Out. No crypto. |
+| ccxt/ccxt | Crypto exchange clients | Out. No crypto. |
+| HKUDS/Vibe-Trading | Agent trading OS with live brokers | Not installed. An agent that can send orders does not belong on the floor account. Their "no number without a source" rule is already how this desk writes. |
+
+## 13. What is still open, on purpose
+
+- The $2.63M bill purchase. Only a human can fund it. Until that cash is in, the contracted floor does not exist, and no script will pretend it does.
+- Paper cycles 0 of 20. The clock for that starts on the first gate-OPEN card, not on a forced trade.
+- A live Treasury offer. The cash figures are the discount formula on Yahoo IRX, refreshed by the card, not a dealer bid.
