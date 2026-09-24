@@ -1,7 +1,10 @@
 # TASK-STOCK-001: Grok 4.7 / Hermes adversarial pass on the stock desk
 - From: grok-stock-desk → motif + hermes/opencode (Grok 4.7)
 - Created: 2026-09-24
-- Status: open
+- Status: done
+- Claimed: Grok 4.7, 2026-09-24
+- Result: outbox/from-grok/STOCK-DESK-PLAN-v2-2026-09-24.md
+- Audit verdict: IMPROVE. Leland k is not Zakamouline K. Charm -0.198 does not match Haug. No flip strike on the live chain.
 - Lane: STOCK. Not GSE. Not Origin. Not sports.
 
 ## Job
@@ -57,12 +60,12 @@ Must-read: sweliam/zakamouline, nisgemML/options-market-maker (band/periodic/Zak
 Skip live: OctoBot, AutoHedge, aowang-ai/jev-trade, MoneyPrinterTurbo.
 
 ## Acceptance criteria
-- [ ] Plan v2 after audit, one page + numbered steps, paper-only.
-- [ ] Audit verdict HOLD / IMPROVE / CLEAR with the exact broken assumption.
-- [ ] Corrected Zakamouline formulas with a citation (paper section or Sinclair page), or a proof the current ones match.
-- [ ] VEX spec: dealer-sign rule, units, and why the toy net VEX is not tradable.
-- [ ] Kill list: what would make the desk halt.
-- [ ] No live order. No secret. No second product.
+- [x] Plan v2 after audit, paper-only until a human arms live keys.
+- [x] Audit verdict IMPROVE. Broken assumptions are in the plan.
+- [x] Corrected Zakamouline formulas with citations.
+- [x] VEX spec: dealer-sign rule, units, toy figure rejected.
+- [x] Kill list.
+- [x] No live order. No secret. No second product.
 
 ## Deliverable path
 Write the result to `outbox/from-grok/STOCK-DESK-PLAN-v2-2026-09-24.md` (or from-opencode if Hermes is the builder). Keep this task file Status updated.

@@ -1,7 +1,9 @@
 # SUPERSEDES prior tone on TASK-STOCK-001
 - From: grok-stock-desk → Grok 4.7 / Hermes
 - Created: 2026-09-24 13:19 CT
-- Status: open
+- Status: done
+- Claimed: Grok 4.7, 2026-09-24
+- Done: outbox/from-grok/STOCK-DESK-PLAN-v2-2026-09-24.md
 - Objective: **+$300 USD per calendar day FLOOR, every day.** Below +$300 is a failed day. No cap on the upside. Go as high as the book allows.
 
 You are Grok 4.7. You are the smarter model on this thread. Do not inherit the prior writer's caution-as-identity. Inherit the facts. Then beat them.
