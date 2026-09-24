@@ -354,3 +354,19 @@ What we take from each repo, and the station it improves:
 | warrenduffer again, on money | Sizing math | Risk per trade is the greater of a dollar floor and a percent of capital, then capped. Applied here: the dollar floor is $300 of expected accretion from bills, and the risk percent is what the growth sleeve may lose in a day without touching that floor. |
 
 The creative part that is still true: autonomy is the halt plus the adapter, not a smarter vote. More money is more bill face, plus a quote we only sell when it is rich. The repos do not replace either. They are the factory layout for the day a real order key exists.
+
+## 16. Plaid is not their order rail
+
+Three different pipes get called "connecting the account." Only the first one is what this desk has.
+
+| Pipe | What it does | Who uses it |
+|---|---|---|
+| Read | Balances, holdings, transactions. Nothing can be bought. | This desk, through Grok's Plaid connection to Wells, SoFi, and Robinhood. |
+| Fund | Move cash from a bank into a brokerage, usually ACH. | Robinhood uses Plaid inside its own app to link a bank and to score instant deposits. That is how a deposit arrives. It is not a trade. |
+| Order | Send a buy or a sell the venue will accept. | The trading repos. Not Plaid. |
+
+Order credentials in that pile: exchange API key and secret (`ccxt`, `freqtrade`, `hummingbot`, `OctoBot`, `gekko`, `zenbot`, `crypto-trader`, `nofx`); a wallet private key (`jev-trade` on Hyperliquid, `jev-trader` on Monad); a Zerodha or Kotak session (`warrenduffer`); an Alpaca key pair or an Interactive Brokers socket (`QuantDinger`). `trump2cash` called Robinhood's private website, which is not Plaid and is not a supported API. Robinhood's own policy is that third-party trading APIs are not allowed without Robinhood's written authorization. SnapTrade, the other aggregator that reaches Robinhood, documents the integration as read-only.
+
+`yfinance`, `OpenBB`, `ticker`, `OpenStock`, `TradingView-API`, `daily_stock_analysis`, `smart-money-concepts`, `Stock-Prediction-Models`, `TradingAgents`, and `anthropics/financial-services` do not move money at all.
+
+So a funded Robinhood app and a $0 Plaid balance can both be true. Plaid's last Robinhood sync was 2026-09-24 19:07 UTC. The order repos would not see that deposit either. They never ask Plaid. They ask the venue that holds the key.
