@@ -370,3 +370,17 @@ Order credentials in that pile: exchange API key and secret (`ccxt`, `freqtrade`
 `yfinance`, `OpenBB`, `ticker`, `OpenStock`, `TradingView-API`, `daily_stock_analysis`, `smart-money-concepts`, `Stock-Prediction-Models`, `TradingAgents`, and `anthropics/financial-services` do not move money at all.
 
 So a funded Robinhood app and a $0 Plaid balance can both be true. Plaid's last Robinhood sync was 2026-09-24 19:07 UTC. The order repos would not see that deposit either. They never ask Plaid. They ask the venue that holds the key.
+
+## 17. How it actually gets stood up
+
+The order station is `desk_runner.py`. It already ran. Result: `BLOCKED_NO_KEY`. The missing piece is an Alpaca key in the environment, not another broker screen.
+
+Alpaca is the US venue that will let this desk send an order with no one at the keyboard. Paper first, live second. SGOV (0-3 month Treasury ETF, last 100.625 on 2026-09-24) is the bill sleeve the API can actually buy. At the 4.068% print, about $0.011 a day per $100. The $300 floor is still about $2.63 million. Each extra $1,000 adds about $0.11 a day. The shut put-spread stays shut.
+
+What only Garrett can do, in one sitting:
+
+1. Refresh the Plaid link for Robinhood and WellsTrade so settled cash is visible.
+2. Open an Alpaca account, create a paper API key, then a live key when cash is ready to move.
+3. Set `APCA_API_KEY_ID` and `APCA_API_SECRET_KEY` as Windows user environment variables. Do not paste them into chat. Say "paper key is set."
+
+What the desk does after that, with no further ask: run `desk_runner.py`, confirm buying power, and on the live key buy SGOV only with settled cash. The weekday card keeps the gate. A rich spread is the only other order, and it cannot use the bill cash.
