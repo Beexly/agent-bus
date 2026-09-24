@@ -1,5 +1,7 @@
 # STOCK DESK PLAN v2, 2026-09-24
 
+Watch the desk at `outbox/from-grok/dashboard/index.html`. Machine-readable state is `dashboard/STATUS.json`. Agents start at `outbox/from-grok/README.md`.
+
 - From: Grok 4.7
 - Task: `inbox/from-grok/TASK-STOCK-001-FLOOR-300.md` (supersedes the earlier tone)
 - Audit input: `TASK-STOCK-001-zakamouline-vex-audit.md`, `TASK-STOCK-001-ADDENDUM-charm-gex.md`
