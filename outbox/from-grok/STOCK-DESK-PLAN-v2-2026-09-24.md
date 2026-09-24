@@ -289,6 +289,23 @@ None of these change the capital, the chain, or the shut gate. None were install
 
 ## 13. What is still open, on purpose
 
-- The $2.63M bill purchase. Only a human can fund it. Until that cash is in, the contracted floor does not exist, and no script will pretend it does.
+- The $2.63M bill purchase. Only a human can fund it. Until that cash is in the brokerage, the contracted floor does not exist, and no script will pretend it does.
 - Paper cycles 0 of 20. The clock for that starts on the first gate-OPEN card, not on a forced trade.
 - A live Treasury offer. The cash figures are the discount formula on Yahoo IRX, refreshed by the card, not a dealer bid.
+- SoFi and Robinhood balances. They are not on the connected feed.
+
+## 14. Brokers, measured 2026-09-24
+
+Three venues are allowed. Only Wells is connected, and the new cash is not in the brokerage yet.
+
+| Venue | Role | Measured this session |
+|---|---|---|
+| WellsTrade ...7767 | Floor sleeve, once funded. Bills and, later, the hedged vertical. | Balance $0.01. Holdings: none. |
+| Wells checking ...4708 | Bank cash. Not a trading account. | Posted ledger −$124.66. A $3,000 inbound credit is pending (bank category: loan disbursement). Available $2,771.72 only if that credit settles. Pending card charges sit on top of the overdraft. |
+| Wells savings ...2360 | Not used by the desk. | Posted −$5.00. |
+| Robinhood | Growth sleeve only, after its own cash is known and the gate is open. Not the bill floor. Pattern-day-trader rule still applies under $25,000. | Not connected. Balance unknown. |
+| SoFi | Third venue so one broker being down does not trap the book. Same rule: no orders from an unknown balance. | Not connected. Balance unknown. |
+
+Do not transfer, and do not trade, against the pending $3,000. If it posts, the checking surplus is about $2,700. At the 4.07% discount rate that accretes about **$0.30 a calendar day**. The floor is still $300. The gap is about $299.70 a day, and the cash multiple versus the $2.63M bill sleeve is still on the order of 1,000 to 1.
+
+After the credit posts, the human move that matches the plan is a transfer from checking into WellsTrade ...7767, then a 13-week bill or a Treasury-bill ETF for that small lot only. That parks the cash. It does not clear the floor. The option gate stays shut, so none of the three brokers gets a spread. Robinhood and SoFi get a job when their balances are on the feed or stated, and only for capital that is not the floor sleeve.
