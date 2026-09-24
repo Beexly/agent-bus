@@ -315,3 +315,40 @@ Screen read, broker not named on the page: Total Value $100.01, today's change $
 Start attempt, 2026-09-24, after the user funded $100 Wells brokerage, $50 SoFi, and $50 Robinhood. All three institutions are now connected. Visible settled cash: WellsTrade $0.01, SoFi self-directed $6.02, Robinhood individual $0. No shares anywhere. The $200 is not in the feed, so no order was sent. This link is read-only. It cannot buy. When the deposits post, $200 at a 4.07% rate accretes about $0.02 a calendar day. One share of SPY is still about $767. The option gate stays shut. The floor is still the $2.63M bill ladder.
 
 Second repo pass, same day. None installed. The ones that actually send orders do it with a key this desk does not have: a Hyperliquid wallet (`jev-trade`, `jev-trader`), a Zerodha or Kotak session (`warrenduffer`), or a crypto exchange key (`freqtrade`, `ccxt`, `hummingbot`, `OctoBot`, `gekko`, `zenbot`, `crypto-trader`). `yfinance` is a price library we already use. `daily_stock_analysis`, `OpenStock`, `LLM-Trading-Lab`, `smart-money-concepts`, `Stock-Prediction-Models`, and `trump2cash` do not reach WellsTrade, SoFi, or Robinhood. Jev in those bots is the vote. The order is the broker key. We still have no broker key.
+
+## 15. What the repos are for, once the filter is not "can it buy SPY today"
+
+Every serious bot in the pile is the same six stations. The venue changes. The stations do not.
+
+1. Data router. More than one source, next source if the first 429s.
+2. Vote. A model, a rule, or both. Allowed to say hold.
+3. Sizer. Code, not the model. Turns a vote into a quantity and a stop.
+4. Halt. Kill file, daily loss cap, flatten time. This is what makes autonomy safe.
+5. Broker adapter. The only station that can send an order. Missing key means the same binary writes a paper line.
+6. Ledger. Append-only. Replay reads it and is not allowed to write the live book.
+
+What we take from each repo, and the station it improves:
+
+| Repo | Station | What we keep |
+|---|---|---|
+| jev-ultrafast | Vote, and a reader | A browser that chooses a next click. Use it on public pages when CBOE or Yahoo 429s. Do not hand it a brokerage password. Hold is a legal answer. |
+| jev-trader, jev-trade | Vote plus adapter | One tick: read book, vote, quote or do nothing. Dry run when the key is empty. Their venues are Monad and Hyperliquid. The split is the lesson. Their wallets are not. |
+| warrenduffer | Sizer plus halt | Best operator design in the set. Jev ranks. Code sizes. Exchange stop. Daily loss cap flattens. Kill file. Replay cannot touch the live database. First week is one share. No paper mode on their side, so we do not run their binary. We copy the governor. |
+| freqtrade, OctoBot, QuantDinger | Adapter ladder | Same strategy file runs backtest, then dry run, then live. QuantDinger fails open if the model is down. Ours fails closed. |
+| hummingbot, jev-trader | How the money is made | Quote a rich price. Do not predict a direction. That is already our option gate: sell the vertical only when the credit beats realized-vol fair value. Otherwise flat. |
+| ccxt, StockSharp | Adapter shape | One interface, many venues. We write that interface now. The first real key, when it exists, drops in. ccxt's crypto exchanges stay unused. |
+| nofx, gekko, zenbot, crypto-trader | Loop shape only | Read, decide, journal, repeat. gekko and zenbot are abandoned. The loop is already our 09:40 card. |
+| yfinance, OpenBB, ticker | Data | Yahoo is source two. CBOE is source one for the chain. OpenBB is the fallback client if both fail. ticker is the idea of a position diff: alert when cash actually posts, so a chat message is not the sensor. |
+| daily_stock_analysis | Data plus ledger | Several free sources in a row, a dry-run flag, and a scheduled note that arrives without anyone asking. Our card is that note. |
+| TradingAgents | Vote, veto only | A committee. The risk seat can only say no. It cannot open a shut gate. |
+| anthropics/financial-services | Work product | Memos, reconciliations, and a rule that a draft is not an order. We use the reconciliation idea: every morning the feed balance is tied to the ledger. Their agents are not allowed to bind risk. Same rule here. |
+| LLM-Trading-Lab | Ledger | A forward-only public log. Decisions are not rewritten after the close. Stop is code. Benchmark sits next to the result. Their experiment started at $100 and measured the model. That is a research record, not a claim that $100 prints $300. |
+| OpenStock | Sensor | Watchlist, alert, cron email. Finnhub and TradingView widgets. A dashboard, not a broker. Useful later as the screen. Not needed to decide. |
+| backtesting.py | Halt before live | A rule has to beat the floor after costs on past data, or it does not get a key. The rotator already failed that test. |
+| smart-money-concepts, Stock-Prediction-Models, Super_Stocks | Features, not orders | Order blocks, neural nets, and the "rip then collapse" screen are hypotheses. They enter the book only after a backtest clears the floor. Until then they are notes. |
+| TradingView-API | Not taken | Unofficial socket that pretends to be the TradingView site. Indicators we need can be computed from prices we already have. |
+| treg, strands harness | Key handling | Keys live outside the repo. A harness runs the loop. Neither one is a market. |
+| trump2cash | The path we will not copy | It removed the human by calling Robinhood's private site API. That breaks on the next app change and is not a broker contract. |
+| warrenduffer again, on money | Sizing math | Risk per trade is the greater of a dollar floor and a percent of capital, then capped. Applied here: the dollar floor is $300 of expected accretion from bills, and the risk percent is what the growth sleeve may lose in a day without touching that floor. |
+
+The creative part that is still true: autonomy is the halt plus the adapter, not a smarter vote. More money is more bill face, plus a quote we only sell when it is rich. The repos do not replace either. They are the factory layout for the day a real order key exists.
