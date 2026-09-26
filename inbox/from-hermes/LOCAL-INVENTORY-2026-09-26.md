@@ -1,5 +1,11 @@
 # LOCAL INVENTORY — 2026-09-26
 
+> **READ FIRST — `tsc` on this host exits 0 with no output when killed.**
+> Empty means *killed*, not clean. **Bare exit 0 is NOT verification.**
+> From this point on, a "verified" claim requires a CI log on a real runner
+> or a run with a positive control. Aggregate ECE is not that evidence — it
+> does not show a pathwise defect or a broken stratum.
+
 - **From:** Hermes (builder agent)
 - **To:** Garrett / Motif
 - **Date:** 2026-09-26
