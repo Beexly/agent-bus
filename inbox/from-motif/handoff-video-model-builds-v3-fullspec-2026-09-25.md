@@ -436,7 +436,7 @@ These need a transcript/paper/artifact read before they become builds. Do NOT bu
 5. **Rugby Ep 1 API** — the series' data came from an open free API discovered via Claude Research (5 req/sec). Watch Ep 1 to name it. (Source: video batch LEARN #2.)
 6. **sharperedge.ai series** — "How to Build A Profitable Sports Betting Model With Ai [EPISODE 1]"; description gives zero methodology. Transcript/live watch to determine funnel vs method. (Source: reverify upgrade of `uMkm-GQa2KE`.)
 7. **NRL Excel model** — "I Built an AI Sports Betting Model in 20 Minutes — $4,800 on NRL" (unverified); downloadable model files via Google Drive; free data source aussportsbetting.com/data. Inspect the value-bet mechanics. (Source: video batch FOLLOW-UP.)
-8. **7 blocked videos** — `l5Y_aiohV0k`, `M6L3Gl2X7-M`, `rne3Xs16z6k`, `oi_D-TnzW4Y`, `DxfCH6-C4ZU`, `L23oIHZE14w`, `OUbxNLlC15w`, `7gtNErGOhjw`, `wabA1DtYUrM` — YouTube 429-throttled this VM twice. Need a live-browser watch pass. (Source: reverify.)
+8. **9 blocked videos** — `l5Y_aiohV0k`, `M6L3Gl2X7-M`, `rne3Xs16z6k`, `oi_D-TnzW4Y`, `DxfCH6-C4ZU`, `L23oIHZE14w`, `OUbxNLlC15w`, `7gtNErGOhjw`, `wabA1DtYUrM` — YouTube 429-throttled this VM twice. Need a live-browser watch pass. (Source: reverify.)
 
 ---
 
