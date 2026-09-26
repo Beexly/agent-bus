@@ -17,6 +17,12 @@
 - `~/workspace/research/2026-09-26-video-tracking-spec.md` — E3 full spec
 - `~/workspace/research/2026-09-26-thewell-engine-alignment.md` — The Well transfer + limits
 
+## Decisions (locked 2026-09-26 — Garrett delegated, Motif decided)
+
+1. **Training data (NGS unknown):** Do NOT block on NGS. E1 trains on (a) trajectories produced by E3's video-to-tracking pipeline run over license-clean broadcast footage, plus (b) synthetic physics fixtures — both commercially safe. The BDB 2026 dataset is used **lab-only** for method validation (CC BY-NC 4.0, never commercial training). The E1 data loader is specced to the NGS column schema, so real NGS seasons plug in later with zero model changes. Priority: get E3's shippable path producing trajectories → they become E1's first real training set. This closes the loop: video in → trajectories out → movement model trained.
+2. **Ball-landing spot (unknown at inference):** Landing is an OPTIONAL input with a fallback chain, in order: (i) provided landing (when available) → (ii) E1's own **ball-landing prediction head** (projectile regression on ball track: fit gravity+drag to observed ball positions, predict landing x/y + frames-to-landing) → (iii) geometric baseline without landing conditioning. Train the landing-conditioned player heads with **landing dropout** (randomly replace true landing with the predicted one / zeros during training) so the model never becomes brittle to missing landing. The old "open question" fallback is superseded by this.
+3. **GPU (ZeroGPU on HuggingFace Spaces):** E1 is designed for it — <2M params, mixed precision, checkpoint every epoch with resume, batch sizes that fit shared-GPU memory (start 64, halve on OOM with gradient accumulation to preserve effective batch). Training runs as resumable chunks (ZeroGPU is serverless/shared — never assume a 12-hour uninterrupted run; design for interruption). Inference ships as a **ZeroGPU Spaces endpoint** wrapping `POST /predict/movement` — trajectories are small tensors, ideal for serverless GPU. If a training chunk exceeds ZeroGPU quotas, fall back to CPU overnight runs on the VM for Phase 0/1 (the model is small enough).
+
 ## Step 0 (before any code)
 
 1. Read `docs/research/2026-09-21/wiring/IMPLEMENTED.md` in Beexly/Sports — do not duplicate existing work.
@@ -59,9 +65,9 @@ E2 ports P1→P4 → E1 Phase 0 (physics baseline) → E1 Phase 1 (relational mo
 Per-play frame table, 23 entities/frame (22 players + ball), 10 Hz, history window T=10 frames, strictly causal (frames ≤ t only). Columns:
 `game_id, play_id, frame_id, time, entity_id, x, y, s, a, dis, o, dir, event, team, position, is_targeted_receiver, ball_landing_x, ball_landing_y, frames_to_landing`
 plus play context: `quarter, down, yards_to_go, yardline_100, clock, score_diff, play_direction`.
-Canonicalize plays to rightward direction at load. Train on **GSE's own NGS data only** — never the BDB dataset.
+Canonicalize plays to rightward direction at load. Training data per Decisions §1–2 above: E3-derived trajectories + synthetic physics fixtures for the commercial path; BDB data lab-only for method validation; loader stays NGS-schema-compatible so real NGS seasons plug in later. **Ball landing is optional** — see Decisions §2 fallback chain; the model trains with landing dropout so it is robust to missing landing at inference.
 
-**Open question for Garrett (non-blocking, fallback specced):** if `ball_landing_x/y` is unavailable at production inference time, E1 needs an upstream landing-spot predictor. Build the module to accept landing as input; if missing at inference, fall back to Phase-0 geometric baseline (below) without the landing-conditioned head.
+**Ball-landing prediction head (new, part of E1):** regression head on the ball's observed track fitting projectile motion (gravity + linear drag) → outputs `pred_landing_x, pred_landing_y, pred_frames_to_landing` with its own logvar. Loss: MSE on landing position + NLL on frames-to-landing. This head's output feeds the player-prediction heads when true landing is absent (fallback chain ii).
 
 ## E1 outputs (exact schema)
 
@@ -207,15 +213,9 @@ Cross-shot stitching and jersey OCR are explicitly v2 — do not build.
 
 # Non-goals / do-not-touch
 
+**Done = all three builds' tests green, license boundary CI-clean, calibration gates reported as file-verifiable numbers, no regressions in existing suites.**
+
 - The five forbidden reimplementations (Step 0). `gse-grok-build-sandbox`. The main coding agent's branch/working tree.
 - BDB 2026 dataset for any commercial training (CC BY-NC 4.0).
 - Anything that ships LocateAnything or Ultralytics YOLO in the commercial path.
 - Kaggle notebooks/writeups/leaderboard need a logged-in pass — the public 3rd-place writeup and high-vote notebooks are still unharvested; that's a follow-up research task, not this build.
-
-# Open questions for Garrett (non-blocking — fallbacks specced, Minis proceeds)
-
-1. Which NGS seasons are available for E1's expanding window?
-2. Is ball-landing spot available at production inference time? (Fallback specced: geometric baseline without landing head.)
-3. GPU budget for E1's 5-seed ensemble cadence?
-
-**Done = all three builds' tests green, license boundary CI-clean, calibration gates reported as file-verifiable numbers, no regressions in existing suites.**
