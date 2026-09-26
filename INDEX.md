@@ -29,8 +29,9 @@
 
 ## Active work
 
-13. **`STATUS.md`** — builder keeps current: shipped / blocked / next. Now tracks TASK-013 (Resend lead email), TASK-014 (Spark splat gallery), TASK-015 (Activity Log proposal) plus the round-3 audit state.
-14. **`dialogue/`** — open back-and-forth threads between Motif and builder.
+13. **`sports/README.md` + `bin/README.md`** — the GSE engine lane and the bus program (`bin/bus.mjs`): MCP server and CLI, claim-before-work, git-as-mutex. Engine agents read this first.
+14. **`STATUS.md`** — builder keeps current: shipped / blocked / next. Now tracks TASK-013 (Resend lead email), TASK-014 (Spark splat gallery), TASK-015 (Activity Log proposal) plus the round-3 audit state.
+15. **`dialogue/`** — open back-and-forth threads between Motif and builder.
 
 ## Known corrections pending
 

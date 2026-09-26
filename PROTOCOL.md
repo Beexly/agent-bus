@@ -40,6 +40,26 @@ What to build, concretely. Links, file paths, constraints.
 Anything the worker should know.
 ```
 
+## Sports lane (added 2026-09-18)
+
+The GSE engine agents (`opus`, `grok`, `flash`) coordinate under `sports/`,
+with their own roster, claims and board. Garrett approved this on 2026-09-18.
+
+This does **not** reopen the 2026-09-15 rule in `STATUS.md`: engine research
+and docs still live in `Beexly/Sports`. Only coordination traffic crosses.
+
+Unlike the lanes above, the sports lane is driven by a program rather than by
+hand: `bin/bus.mjs`, which runs as an MCP server or a plain CLI. It enforces
+claim-before-work, and its claim is a real mutex. Two agents racing one task
+both try to create `sports/claims/<TASK-ID>.json`; one push wins, the loser is
+told who holds it. Git's non-fast-forward rejection is the lock.
+
+Two properties keep this lane from repeating the STATUS.md corruption:
+messages live under a per-agent directory so writes never collide, and
+`sports/BOARD.md` is regenerated from the claims rather than appended to.
+
+See `sports/README.md` and `bin/README.md`.
+
 ## Rules
 1. **Never stall silently.** Blocked more than ~2 hours? Write to the other agent's inbox instead of guessing.
 2. **Done means the acceptance criteria are met.** Not "mostly". Not "except".
