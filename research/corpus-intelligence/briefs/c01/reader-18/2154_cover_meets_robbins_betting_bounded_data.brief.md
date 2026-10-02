@@ -1,0 +1,17 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/2154-cover-meets-robbins-betting-bounded-data.md
+## What it is (1-2 sentences)
+A ledger (read 2026-09-22) on Agrawal & Ramdas 2026 "Cover Meets Robbins While Betting on Bounded Data" (arXiv:2604.20172): a game-theoretic probability paper hedging Cover's universal-portfolio mixture (O(ln n) worst-case regret, unimprovable adversarially) with a Robbins-type mixture (o(ln n) on stochastic paths but linear worst-case) — a 50-50 convex combination achieving O(ln n) worst-case AND O(ln ln n) a.s. regret plus asymptotically optimal growth rate. Ledger verdict: ADAPT as the lane's online stake-adaptation rule.
+## Key metrics/methods (formulas where given, else "not specified")
+W_n(λ) = ∏_{i=1}^n (1−λ(X_i−m_0)), λ∈[−1/m_0, 1/(1−m_0)]; mixture W_n = ∫W_n(λ)π(λ)dλ; W*_n = sup_λ W_n(λ); regret R_n = ln W*_n − ln W_n. Key identity: ln W*_n = n·KL_inf(Q̂_n, m_0). Ville event E_α = {sup_{n≥1} ln W_n ≤ ln(1/α)}. Prop. 5.1: 50-50 uniform + modified Robbins prior → O(ln n) worst-case + O(ln ln n) a.s. + optimal growth. Game-theoretic LIL: the wealth process witnesses a sharp upper law of the iterated logarithm (Shafer & Vovk 2005).
+## Data sources named
+None — theorems only: arbitrary deterministic sequences in [0,1] plus stochastic analysis under conditional mean = m_0 with intrinsic variance → ∞. No simulations, no real data, no code (strategy is a closed-form mixture integral, numerically approximable by quadrature).
+## Findings (numbers and facts, not vibes)
+- Cover/uniform: Θ(ln n) worst-case (tight), cannot beat O(ln n) even on nice paths.
+- Robbins: O(ln ln n) on typical paths, linear worst-case.
+- 50-50 mixture: strictly dominating each component on the combined criteria (O(ln n) worst-case + O(ln ln n) a.s. + optimal growth) — first explicit construction of this hedge, in bounded and sub-Gaussian settings.
+- No numerical results; constant factors in bounds are explicit but untested in practice.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- TRUST-SIGNAL: the wealth process doubles as an anytime-valid sequential edge detector — under the no-edge null (conditional mean = breakeven), wealth stays bounded (Ville); crossing 1/α certifies edge at level α with no peeking corrections: a principled publishable "the engine is real" trigger for scaling stakes (W_n ≥ 20 ≈ α=0.05) and a shutdown trigger if wealth decays (W_n ≤ 0.5 after ≥50 picks → halve stakes, model review). No other paper in the lane provides sequential anytime-valid inference. Caveat: m_0 = 0.5 breakeven assumes market efficiency; bounded [0,1] needs affine mapping of real P&L (clipping choice affects behavior); comparator class is constant fractions, not edge-adaptive.
+- OTHER: online stake-adaptation — per-pick λ_n = posterior mean under the mixture sets a global stake multiplier on top of per-pick Kelly fractions (2144); ~200-point quadrature per update, trivial compute.
+## Engine-actionable? (yes/no + one-line what)
+yes — run the 50-50 Cover–Robbins mixture over stake fraction on chronological engine picks 2022–2025 (X_i = profit clipped to ±5u mapped to [0,1], m_0=0.5), baselines oracle-constant-fraction / half-Kelly / Cover-only / Robbins-only; accept if R_n ≤ 2× theoretical bound AND log-wealth ≥ 0.9× oracle AND ≥95% of shuffled sequences keep W_n < 20; ~1 week (integrator + λ servo + Ville monitor + dashboard); not yet built.
