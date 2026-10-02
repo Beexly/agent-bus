@@ -1,0 +1,4822 @@
+Disambiguation for Video Frame Interpolation
+Zhihang Zhong
+Yiming Zhang
+Thanks:
+$ˆ†$ denotes co-corresponding authors.
+Thanks:
+Z.˜Zhong, W.˜Wang, X.˜Sun and Y.˜Qiao. are with Shanghai Artificial Intelligence Laboratory. Y.˜Zhang is with Cornell University. G.˜Krishnan is with OtoNexus
+Medical Technologies. S.˜Ma and J.˜Wang. are with Snap Inc.
+Thanks:
+Part of the work was done while
+Z. Zhong and G.˜Krishnan were at Snap.
+Wei Wang
+Xiao Sun
+Yu Qiao
+Gurunandan Krishnan
+Sizhuo Ma
+Jian Wang
+Abstract
+Existing video frame interpolation (VFI) methods blindly predict where each object is at a specific timestep
+t
+t
+(“time indexing”), which struggles to predict precise object movements. Given two images of a baseball, there are infinitely many possible trajectories: accelerating or decelerating, straight or curved. This often results in blurry frames as the method averages out these possibilities. Instead of forcing the network to learn this complicated time-to-location mapping implicitly together with predicting the frames, we provide the network with an explicit hint on how far the object has traveled between start and end frames, a novel approach termed “distance indexing”. This method offers a clearer learning goal for models, reducing the uncertainty tied to object speeds. We further observed that, even with this extra guidance, objects can still be blurry especially when they are equally far from both input frames (
+i.e
+.
+, halfway in-between), due to the directional ambiguity in long-range motion.
+To solve this, we propose an iterative reference-based estimation strategy that breaks down a long-range prediction into several short-range steps. When integrating our plug-and-play strategies into state-of-the-art learning-based models, they exhibit markedly sharper outputs and superior perceptual quality in arbitrary time interpolations, using a uniform distance indexing map in the same format as time indexing without requiring extra computation.
+Furthermore, we demonstrate that if additional latency is acceptable, a continuous map estimator can be employed to compute a pixel-wise dense distance indexing using multiple nearby frames. Combined with efficient multi-frame refinement, this extension can further disambiguate complex motion, thus enhancing performance both qualitatively and quantitatively. Additionally, the ability to manually specify distance indexing allows for independent temporal manipulation of each object, providing a novel tool for video editing tasks such as re-timing.
+The code is available at
+https://zzh-tech.github.io/InterpAny-Clearer/
+.
+Index Terms:
+Video frame interpolation, Temporal super-resolution, Disambiguation, Video editing
+I
+Introduction
+Video frame interpolation (VFI) plays a crucial role in creating slow-motion videos
+[
+1
+]
+, video generation
+[
+2
+]
+, prediction
+[
+3
+]
+, and compression
+[
+4
+]
+. Directly warping the starting and ending frames using the optical flow between them can only model linear motion, which often diverges from actual motion paths, leading to artifacts such as holes. To solve this, learning-based methods have emerged as leading solutions to VFI, which aim to develop a model, represented as
+ℱ
+\mathcal{F}
+, that uses a starting frame
+I
+0
+I_{0}
+and an ending frame
+I
+1
+I_{1}
+to generate a frame for a given timestep, described by:
+I
+t
+=
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+t
+)
+.
+I_{t}=\mathcal{F}\left(I_{0},I_{1},t\right).
+(1)
+Two paradigms have been proposed: In fixed-time interpolation
+[
+5
+,
+1
+]
+, the model only takes the two frames as input and always tries to predict the frame at
+t
+=
+0.5
+t=0.5
+. In arbitrary-time interpolation
+[
+6
+,
+7
+]
+, the model is further given a user-specified timestep
+t
+∈
+[
+0
+,
+1
+]
+t\in[0,1]
+, which is more flexible at predicting multiple frames in-between.
+Yet, in both cases, the unsampled blank between the two frames, such as the motion between a ball’s starting and ending points, presents infinite possibilities. The velocities of individual objects within these frames remain undefined, introducing a
+velocity ambiguity
+, a myriad of plausible time-to-location mappings during training.
+Incorporating additional neighboring frames as input
+[
+8
+]
+can partially restrict the solution space by imposing constraints on motion trajectories, but it cannot fully resolve the ambiguity.
+We observed that velocity ambiguity is a primary obstacle hindering the advancement of learning-based VFI: Models trained using aforementioned
+time indexing
+receive identical inputs with differing supervision signals during training. As a result, they tend to produce blurred and imprecise interpolations, as they average out the potential outcomes.
+Could an alternative indexing method minimize such conflicts?
+One straightforward option is to provide the optical flow at the target timestep as an explicit hint on object motion.
+However, this information is unknown at inference time, which has to be approximated by the optical flow between
+I
+0
+I_{0}
+and
+I
+1
+I_{1}
+, scaled by the timestep. This requires running optical flow estimation on top of VFI, which may increase the computational complexity and enforce the VFI algorithm to rely on the explicitly computed but approximate flow.
+Instead, we propose a more flexible
+distance indexing
+approach. In lieu of an optical flow map, we employ a
+distance ratio
+map
+D
+t
+D_{t}
+, where each pixel denotes
+how far the object has traveled between start and end frames
+, within a normalized range of
+[
+0
+,
+1
+]
+[0,1]
+,
+I
+t
+=
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+motion hint
+)
+⇒
+I
+t
+=
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+D
+t
+)
+.
+\boxed{I_{t}=\mathcal{F}\left(I_{0},I_{1},\text{motion hint}\right)\;\Rightarrow\;I_{t}=\mathcal{F}\left(I_{0},I_{1},D_{t}\right).}
+(2)
+During training,
+D
+t
+D_{t}
+is derived from optical flow ratios computed from ground-truth frames.
+During inference, it is sufficient to provide a uniform map as input
+, in the exactly same way as time indexing methods,
+i.e
+.
+,
+D
+t
+​
+(
+x
+,
+y
+)
+=
+t
+,
+∀
+x
+,
+y
+D_{t}(x,y)=t,\,\forall x,y
+.
+However, the semantics of this indexing map have shifted from an uncertain timestep map to a more deterministic motion hint.
+Through distance indexing, we effectively solve the one-to-many time-to-position mapping dilemma, fostering enhanced convergence and interpolation quality.
+Although distance indexing addresses the scalar
+speed ambiguity
+, the
+directional ambiguity
+of motion remains a challenge. We observed that this directional uncertainty is most pronounced when situated equally far from the two input frames,
+i.e
+.
+, halfway between them. Drawing inspiration from countless computer vision algorithms that iteratively solve a difficult problem (
+e.g
+.
+, optical flow
+[
+9
+]
+and image generation
+[
+10
+]
+), we introduce an iterative reference-based estimation strategy. This strategy seeks to mitigate directional ambiguity by incrementally estimating distances, beginning with nearby points and advancing to farther ones, such that the uncertainty within each step is minimized and the image quality is further improved.
+Our approach addresses challenges that are not bound to specific network architectures. Indeed, it can be applied as a plug-and-play strategy that requires only modifying the input channels for each model, as demonstrated in
+Fig.
+1
+. We conducted extensive experiments on four existing VFI methods to validate the effectiveness of our approach, which produces frames of markedly improved perceptual quality. Moreover, instead of using a uniform map, it is also possible to use a spatially-varying 2D map as input to manipulate the motion of objects. Paired with state-of-the-art segmentation models such as Segment Anything Model (SAM)
+[
+11
+]
+, this empowers users to freely control the interpolation of any object,
+e.g
+.
+, making certain objects backtrack in time.
+When using more than two input frames
+[
+8
+]
+, nearby frames offer additional constraints that facilitate the computation of a pixel-wise dense distance map. The methods discussed so far employ a uniform distance map because a deterministic distance map cannot be derived from only two frames. Inspired by continuous parametric optical flow estimation
+[
+12
+]
+, we utilize cubic B-splines and neural ordinary differential equations to estimate a dense distance map from four input frames, which improves our model’s performance across both perceptual and pixel-centric metrics.
+Furthermore, we make a trainable copy of the original interpolator architecture to refine the initial two-frame interpolation results using information from two additional frames
+I
+−
+1
+I_{-1}
+and
+I
+2
+I_{2}
+. This multi-frame refiner module is intended to fully harness the potential of additional frames, thereby enhancing multi-frame interpolation quality.
+Fig. 1:
+Comparison of time indexing and distance indexing training paradigms. (a) Time indexing uses the starting frame
+I
+0
+I_{0}
+, ending frame
+I
+1
+I_{1}
+, and a scalar variable
+t
+t
+as inputs. (b) Distance indexing replaces the scalar with a distance map
+D
+t
+D_{t}
+and optionally incorporates iterative reference-based estimation
+(
+I
+r
+​
+e
+​
+f
+,
+D
+r
+​
+e
+​
+f
+)
+\left(I_{ref},D_{ref}\right)
+to address velocity ambiguity, resulting in a notably sharper prediction.
+In summary, our key contributions are:
+1) Proposing distance indexing and iterative reference-based estimation to address the velocity ambiguity and enhance the capabilities of arbitrary time interpolation models;
+2) Presenting an unprecedented manipulation method that allows for customized interpolation of any object.
+3) Adopting a continuous distance map estimator and proposing a multi-frame fusion architecture to enhance interpolation quality across both perceptual and pixel-centric metrics.
+A preliminary version of this work was presented in
+[
+13
+]
+, where we focus on using a uniform distance map during inference because an accurate, pixel-wise distance map cannot be reliably calculated from two frames. Although using a uniform distance map produced plausible results with better perceptual quality, the predictions did not align with the ground truth, resulting in lower performance on metrics such as PSNR and SSIM. In this paper, we address this limitation by using multiple frames (more than two) as input and introduce a continuous distance map estimator that approximates the map from nearby frames. We also present a simple yet effective multi-frame refiner architecture for video frame interpolation. Extensive experiments demonstrate that this approach significantly enhances performance.
+II
+Related Work
+II-A
+Video frame interpolation
+II-A
+1
+General overview.
+Numerous VFI solutions rely on optical flows to predict latent frames. Typically, these methods warp input frames forward or backward using flow calculated by off-the-shelf networks like
+[
+14
+,
+15
+,
+16
+,
+9
+]
+or self-contained flow estimators like
+[
+7
+,
+17
+,
+18
+]
+. Networks then refine the warped frame to improve visual quality. SuperSlomo
+[
+6
+]
+uses a linear combination of bi-directional flows for intermediate flow estimation and backward warping. DAIN
+[
+1
+]
+introduces a depth-aware flow projection layer for advanced intermediate flow estimation. AdaCoF
+[
+19
+]
+estimates kernel weights and offset vectors for each target pixel, while BMBC
+[
+20
+]
+and ABME
+[
+21
+]
+refine optical flow estimation. Large motion interpolation is addressed by XVFI
+[
+22
+]
+through a recursive multi-scale structure. VFIFormer
+[
+23
+]
+employs Transformers to model long-range pixel correlations. IFRNet
+[
+24
+]
+, RIFE
+[
+7
+]
+, and UPR-Net
+[
+25
+]
+employ efficient pyramid network designs for high-quality, real-time interpolation, with IFRNet and RIFE using leakage distillation losses for flow estimation. Recently, more advanced network modules and operations are proposed to push the upper limit of VFI performance, such as the transformer-based bilateral motion estimator of BiFormer
+[
+26
+]
+, a unifying operation of EMA-VFI
+[
+17
+]
+to explicitly disentangle motion and appearance information, and bi-directional correlation volumes for all pairs of pixels of AMT
+[
+18
+]
+. On the other hand, SoftSplat
+[
+27
+]
+and M2M
+[
+28
+]
+actively explore the forward warping operation for VFI.
+More recently, diffusion-based video frame interpolators, such as LDMVFI
+[
+29
+]
+and SVDKFI
+[
+30
+]
+, have leveraged generative priors to enhance visual quality but still face challenges such as high computational costs and slow runtimes.
+Other contributions to VFI come from various perspectives. For instance, Xu
+et al
+.
+[
+8
+,
+31
+]
+leverage acceleration information from nearby frames, VideoINR
+[
+32
+]
+is the first to employ an implicit neural representation, and Lee
+et al
+.
+[
+33
+]
+explore and address discontinuity in video frame interpolation using figure-text mixing data augmentation and a discontinuity map. Flow-free approaches have also attracted interest. SepConv
+[
+34
+]
+integrates motion estimation and pixel synthesis, CAIN
+[
+35
+]
+employs the PixelShuffle operation with channel attention, and FLAVR
+[
+36
+]
+utilizes 3D space-time convolutions. Additionally, specialized interpolation methods for anime, which often exhibit minimal textures and exaggerated motion, are proposed by AnimeInterp
+[
+37
+]
+and Chen
+et al
+.
+[
+38
+]
+.
+On the other hand, motion induced blur
+[
+39
+,
+40
+,
+41
+]
+, shutter mode
+[
+42
+,
+43
+,
+44
+]
+, and event camera
+[
+45
+,
+46
+]
+are also exploited to achieve VFI.
+Fig. 2:
+Velocity ambiguity. (a) Speed ambiguity. (b) Directional ambiguity.
+Fig. 3:
+Disambiguation strategies for velocity ambiguity. (a) Distance indexing. (b) Iterative reference-based estimation.
+II-A
+2
+Learning paradigms.
+One major thread of VFI methods train networks on triplet of frames, always predicting the central frame. Iterative estimation is used for interpolation ratios higher than
+×
+\times
+2. This
+fixed-time
+method often accumulates errors and struggles with interpolating at arbitrary continuous timesteps. Hence, models like SuperSloMo
+[
+6
+]
+, DAIN
+[
+1
+]
+, BMBC
+[
+20
+]
+, EDSC
+[
+47
+]
+, RIFE
+[
+7
+]
+, IFRNet
+[
+24
+]
+, EMA-VFI
+[
+17
+]
+, and AMT
+[
+18
+]
+have adopted an
+arbitrary time
+interpolation paradigm. While theoretically superior, the arbitrary approach faces challenges of more complicated time-to-position mappings due to the velocity ambiguity, resulting in blurred results. This study addresses velocity ambiguity in arbitrary time interpolation and offers solutions.
+Prior work by Zhou
+et al
+.
+[
+48
+]
+identified motion ambiguity and proposed a texture consistency loss to implicitly ensure interpolated content resemblance to given frames. In contrast, we explicitly address velocity ambiguity and propose solutions. These innovations not only enhance the performance of arbitrary time VFI models but also offer advanced manipulation capabilities.
+Additionally, we demonstrate that leveraging information from nearby frames through a multi-frame refiner module, combined with continuous indexing map estimation, can further improve interpolation quality.
+II-A
+3
+Segment anything
+The emergence of Segment Anything Model (SAM)
+[
+11
+]
+has marked a significant advancement in the realm of zero-shot segmentation, enabling numerous downstream applications including video tracking and segmentation
+[
+49
+]
+, breakthrough mask-free inpainting techniques
+[
+50
+]
+, and interactive image description generation
+[
+51
+]
+.
+By specifying the distance indexing individually for each segment, this work introduces a pioneering application to this growing collection: Manipulated Interpolation of Anything.
+Fig. 4:
+Calculation of distance map for distance indexing.
+V
+0
+→
+t
+V_{0\to t}
+is the estimated optical flow from
+I
+0
+I_{0}
+to
+I
+t
+I_{t}
+by RAFT
+[
+9
+]
+, and
+V
+0
+→
+1
+V_{0\to 1}
+is the optical flow from
+I
+0
+I_{0}
+to
+I
+1
+I_{1}
+.
+III
+Velocity Ambiguity
+In this section, we begin by revisiting the time indexing paradigm. We then outline the associated velocity ambiguity, which encompasses both speed and directional ambiguities.
+Fig.
+2
+(a) shows the example of a horizontally moving baseball. Given a starting frame and an ending frame, along with a time indexing variable
+t
+=
+0.5
+t=0.5
+, the goal of a VFI model is to predict a latent frame at this particular timestep, in accordance with
+Eq.
+1
+.
+Although the starting and ending positions of the baseball are given, its location at
+t
+=
+0.5
+t=0.5
+remains ambiguous due to an unknown speed distribution: The ball can be accelerating or decelerating, resulting in different locations. This ambiguity introduces a challenge in model training as it leads to multiple valid supervision targets for the identical input. Contrary to the deterministic scenario illustrated in
+Eq.
+1
+, the VFI function
+ℱ
+\mathcal{F}
+is actually tasked with generating a
+distribution
+of plausible frames from the same input frames and time indexing. This can be expressed as:
+{
+I
+t
+1
+,
+I
+t
+2
+,
+…
+,
+I
+t
+n
+}
+=
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+t
+)
+,
+\left\{I_{t}^{1},I_{t}^{2},\ldots,I_{t}^{n}\right\}=\mathcal{F}(I_{0},I_{1},t),
+(3)
+where
+n
+n
+is the number of plausible frames. Empirically, the model, when trained with this ambiguity, tends to produce a weighted average of possible frames during inference. While this minimizes the loss during training, it results in blurry frames that are perceptually unsatisfying to humans, as shown in
+Fig.
+1
+(a). This blurry prediction
+I
+^
+t
+\hat{I}_{t}
+can be considered as an average over all the possibilities if an
+L
+2
+L_{2}
+loss is used:
+I
+^
+t
+=
+𝔼
+I
+t
+∼
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+t
+)
+​
+[
+I
+t
+]
+.
+(See details in Appendix)
+\hat{I}_{t}=\mathbb{E}_{I_{t}\sim\mathcal{F}(I_{0},I_{1},t)}[I_{t}].\qquad\text{(See details in Appendix)}
+(4)
+For other losses,
+Eq.
+4
+no longer holds, but we empirically observe that the model still learns an aggregated mixture of training frames which results in blur (RIFE
+[
+7
+]
+and EMA-VFI
+[
+17
+]
+: Laplacian loss,
+i.e
+.
+, L1 loss between the Laplacian pyramids of image pairs; IFRNet
+[
+24
+]
+and AMT
+[
+18
+]
+: Charbonnier loss).
+Indeed, not only the speed but also the direction of motion remains indeterminate, leading to what we term as “directional ambiguity.” This phenomenon is graphically depicted in
+Fig.
+2
+(b). This adds an additional layer of complexity in model training and inference. We collectively refer to speed ambiguity and directional ambiguity as velocity ambiguity.
+So far, we have been discussing the ambiguity for the fixed time interpolation paradigm, in which
+t
+t
+is set by default to
+0.5
+0.5
+. For arbitrary time interpolation, the ambiguity becomes more pronounced: Instead of predicting a single timestep, the network is expected to predict a continuum of timesteps between 0 and 1, each having a multitude of possibilities. This further complicates learning. Moreover, this ambiguity is sometimes referred to as
+mode averaging
+, which has been studied in other domains
+[
+52
+]
+. See Appendix for details.
+IV
+Disambiguation Strategies
+In this section, we introduce two innovative strategies, namely distance indexing and iterative reference-based estimation, aimed at addressing the challenges posed by the velocity ambiguity. Designed to be plug-and-play, these strategies can be seamlessly integrated into any existing VFI models without necessitating architectural modifications, as shown in
+Fig.
+1
+(b).
+In traditional time indexing, models intrinsically deduce an uncertain time-to-location mapping, represented as
+𝒟
+\mathcal{D}
+:
+I
+t
+=
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+𝒟
+⁡
+(
+t
+)
+)
+.
+I_{t}=\mathcal{F}(I_{0},I_{1},\mathcal{D}(t)).
+(5)
+This brings forth the question: Can we guide the network to interpolate more precisely without relying on the ambiguous mapping
+𝒟
+⁡
+(
+t
+)
+\mathcal{D}(t)
+to decipher it independently?
+To address this, we introduce a strategy to diminish speed uncertainty by directly specifying a distance ratio map (
+D
+t
+D_{t}
+) instead of the uniform timestep map. This is termed as distance indexing. Consequently, the model sidesteps the intricate process of deducing the time-to-location mapping:
+I
+t
+=
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+D
+t
+)
+.
+I_{t}=\mathcal{F}(I_{0},I_{1},D_{t}).
+(6)
+IV-A
+Distance indexing
+We utilize an off-the-shelf optical flow estimator, RAFT
+[
+9
+]
+, to determine the pixel-wise distance map, as shown in
+Fig.
+4
+. Given an image triplet
+{
+I
+0
+,
+I
+1
+,
+I
+t
+}
+\left\{I_{0},I_{1},I_{t}\right\}
+, we first calculate the optical flow from
+I
+0
+I_{0}
+to
+I
+t
+I_{t}
+, denoted as
+𝐕
+0
+→
+t
+\mathbf{V}_{0\to t}
+, and from
+I
+0
+I_{0}
+to
+I
+1
+I_{1}
+as
+𝐕
+0
+→
+1
+\mathbf{V}_{0\to 1}
+.
+At each pixel
+(
+x
+,
+y
+)
+(x,y)
+, we project the motion vector
+𝐕
+0
+→
+t
+​
+(
+x
+,
+y
+)
+\mathbf{V}_{0\to t}(x,y)
+onto
+𝐕
+0
+→
+1
+​
+(
+x
+,
+y
+)
+\mathbf{V}_{0\to 1}(x,y)
+. The distance map is then defined as the ratio between the projected
+𝐕
+0
+→
+t
+​
+(
+x
+,
+y
+)
+\mathbf{V}_{0\to t}(x,y)
+and
+𝐕
+0
+→
+1
+​
+(
+x
+,
+y
+)
+\mathbf{V}_{0\to 1}(x,y)
+:
+D
+t
+​
+(
+x
+,
+y
+)
+=
+‖
+𝐕
+0
+→
+t
+​
+(
+x
+,
+y
+)
+‖
+​
+cos
+⁡
+θ
+‖
+𝐕
+0
+→
+1
+​
+(
+x
+,
+y
+)
+‖
+,
+D_{t}(x,y)=\frac{\left\|\mathbf{V}_{0\to t}(x,y)\right\|\cos{\theta}}{\left\|\mathbf{V}_{0\to 1}(x,y)\right\|},
+(7)
+where
+θ
+\theta
+denotes the angle between the two.
+By directly integrating
+D
+t
+D_{t}
+, the network achieves a clear comprehension of distance during its training phase, subsequently equipping it to yield sharper frames during inference, as showcased in
+Fig.
+3
+(a).
+During inference, the algorithm does not have access to the exact distance map since
+I
+t
+I_{t}
+is unknown. In practice, we notice it is usually sufficient to provide a uniform map
+D
+t
+=
+t
+D_{t}=t
+, similar to time indexing. Physically this encourages the model to move each object at constant speeds along their trajectories. We observe that constant speed between frames is a valid approximation for many real-world situations. In
+Section
+VI
+, we show that even though this results in pixel-level misalignment with the ground-truth frames, it achieves significantly higher perceptual scores and is strongly preferred in the user study. Precise distance maps can be computed from multiple frames, which can potentially further boost the performance. See a detailed discussion in Appendix.
+IV-B
+Iterative reference-based estimation
+While distance indexing addresses speed ambiguity, it omits directional information, leaving directional ambiguity unresolved. Our observations indicate that, even with distance indexing, frames predicted at greater distances from the starting and ending frames remain not clear enough due to this ambiguity. To address this, we propose an iterative reference-based estimation strategy, which divides the complex interpolation for long distances into shorter, easier steps. This strategy enhances the traditional VFI function,
+ℱ
+\mathcal{F}
+, by incorporating a reference image,
+I
+ref
+I_{\text{ref}}
+, and its corresponding distance map,
+D
+ref
+D_{\text{ref}}
+. Specifically, the network now takes the following channels as input:
+I
+t
+=
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+D
+t
+,
+I
+ref
+,
+D
+ref
+)
+.
+I_{t}=\mathcal{F}(I_{0},I_{1},D_{t},I_{\text{ref}},D_{\text{ref}}).
+(8)
+In the general case of
+N
+N
+steps, the process of iteration is as follows:
+I
+(
+i
++
+1
+)
+​
+t
+/
+N
+=
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+D
+(
+i
++
+1
+)
+​
+t
+/
+N
+,
+I
+t
+/
+N
+,
+D
+t
+/
+N
+)
+,
+I_{(i+1)t/N}=\mathcal{F}(I_{0},I_{1},D_{(i+1)t/N},I_{t/N},D_{t/N}),
+(9)
+where
+i
+∈
+{
+0
+,
+1
+,
+…
+,
+N
+−
+1
+}
+i\in\{0,1,\dots,N-1\}
+. For example, if we break the estimation of of a remote step
+t
+t
+into two steps:
+I
+t
+/
+2
+=
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+D
+t
+/
+2
+,
+I
+0
+,
+D
+0
+)
+,
+\displaystyle I_{t/2}=\mathcal{F}(I_{0},I_{1},D_{t/2},I_{0},D_{0}),
+(10)
+I
+t
+=
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+D
+t
+,
+I
+t
+/
+2
+,
+D
+t
+/
+2
+)
+.
+\displaystyle I_{t}=\mathcal{F}(I_{0},I_{1},D_{t},I_{t/2},D_{t/2}).
+(11)
+Importantly, in every iteration, we consistently use the starting and ending frames as reliable appearance references, preventing divergence of uncertainty in each step. By dividing a long step into shorter steps, the uncertainty in each step is reduced, as shown in
+Fig.
+3
+(b). While fixed time models also employ an iterative method in a bisectioning way during inference, our strategy progresses from near to far, ensuring more deterministic trajectory interpolation. This reduces errors and uncertainties tied to a single, long-range prediction.
+See more on the rationale for solving ambiguities in Appendix.
+Fig. 5:
+Multi-frame fusion architecture with continuous map estimator.
+V
+Leveraging Information from Nearby Frames
+In this section, we first introduce a continuous indexing map estimator to achieve pixel-wise distance map estimation. Next, we demonstrate how to reuse the original interpolation architecture to fuse nearby frames for enhancing interpolation quality. The complete framework is illustrated in
+Fig.
+5
+.
+V-A
+Pixel-wise distance map estimation
+To achieve a continuous indexing map estimator, we adopt the pretrained model introduced in CPFlow
+[
+12
+]
+.
+CPFlow takes a sequence of images as input (four in our case) and predicts the optical flow from the initial frame to any arbitrary timestamp within the sequence. Specifically, it models each pixel’s motion trajectory using cubic B-splines, enabling dense and temporally continuous flow estimation. Given normalized time
+t
+∈
+[
+0
+,
+1
+]
+t\in[0,1]
+, the displacement of a pixel is defined as:
+𝐕
+0
+→
+t
+=
+∑
+i
+=
+0
+N
+−
+1
+B
+i
+,
+k
+​
+(
+t
+)
+​
+𝐏
+i
+,
+{\mathbf{V}_{0\to t}=\sum_{i=0}^{N-1}B_{i,k}(t)\mathbf{P}_{i},}
+(12)
+where
+𝐏
+i
+\mathbf{P}_{i}
+are learnable control points and
+B
+i
+,
+k
+​
+(
+t
+)
+B_{i,k}(t)
+are spline basis functions defined recursively
+[
+12
+]
+. To enhance temporal consistency, the model employs a Neural Ordinary Differential Equation (NODE) module in combination with ConvGRU, where the hidden feature state
+h
+⁡
+(
+t
+)
+h(t)
+evolves according to:
+d
+​
+h
+​
+(
+t
+)
+d
+​
+t
+=
+f
+⁡
+(
+h
+⁡
+(
+t
+)
+,
+t
+)
+,
+h
+⁡
+(
+t
+)
+=
+h
+⁡
+(
+t
+0
+)
++
+∫
+t
+0
+t
+f
+⁡
+(
+h
+⁡
+(
+τ
+)
+,
+τ
+)
+​
+𝑑
+τ
+.
+{\frac{dh(t)}{dt}=f(h(t),t),\quad h(t)=h(t_{0})+\int_{t_{0}}^{t}f(h(\tau),\tau)\,d\tau.}
+(13)
+The hidden state
+h
+⁡
+(
+t
+)
+h(t)
+is refined with frame-specific features
+ε
+t
+\varepsilon_{t}
+via ConvGRU:
+h
+~
+​
+(
+t
+)
+=
+ConvGRU
+​
+(
+h
+⁡
+(
+t
+)
+,
+ε
+t
+)
+\tilde{h}(t)=\text{ConvGRU}(h(t),\varepsilon_{t})
+. The model then computes multi-scale correlation volumes between the reference feature
+h
+~
+​
+(
+0
+)
+\tilde{h}(0)
+and
+h
+~
+​
+(
+t
+)
+\tilde{h}(t)
+, denoted by
+C
+⁡
+(
+t
+)
+=
+Corr
+​
+(
+h
+~
+​
+(
+0
+)
+,
+h
+~
+​
+(
+t
+)
+)
+C(t)=\text{Corr}(\tilde{h}(0),\tilde{h}(t))
+. These correlations are used in an iterative decoder to update the control points of the spline as:
+𝐏
+i
+(
+s
++
+1
+)
+=
+𝐏
+i
+(
+s
+)
++
+Δ
+​
+𝐏
+i
+(
+s
+)
+​
+(
+C
+⁡
+(
+t
+)
+)
+,
+{\mathbf{P}_{i}^{(s+1)}=\mathbf{P}_{i}^{(s)}+\Delta\mathbf{P}_{i}^{(s)}(C(t)),}
+(14)
+where
+s
+s
+is the iteration index. The final continuous optical flow
+𝐕
+0
+→
+t
+\mathbf{V}_{0\rightarrow t}
+is reconstructed from the refined control points using the spline formulation above. This continuous formulation allows the model to produce high-fidelity indexing maps using
+Eq.
+7
+for arbitrary interpolation times
+D
+t
+=
+‖
+𝐕
+0
+→
+t
+‖
+​
+cos
+⁡
+θ
+/
+‖
+𝐕
+0
+→
+1
+‖
+D_{t}=\left\|\mathbf{V}_{0\to t}\right\|\cos{\theta}/\left\|\mathbf{V}_{0\to 1}\right\|
+.
+V-B
+Multi-frame refiner
+We further design a multi-frame fusion module to leverage the relevant pixel appearance information beyond the two adjacent frames. As a brief review, flow-based VFI models
+[
+7
+]
+typically adhere to the following formulation:
+I
+t
++
+,
+I
+t
+−
+,
+M
+=
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+D
+t
+)
+,
+{I_{t}^{+},I_{t}^{-},M=\mathcal{F}(I_{0},I_{1},D_{t}),}
+(15)
+where
+M
+M
+is a one-channel blending mask, and
+I
+t
++
+I_{t}^{+}
+and
+I
+t
+−
+I_{t}^{-}
+denote the warped images derived from
+I
+0
+I_{0}
+and
+I
+1
+I_{1}
+using the predicted optical flows. The final interpolated frame
+I
+t
+I_{t}
+is obtained by:
+I
+t
+=
+M
+⊙
+I
+t
++
++
+(
+1
+−
+M
+)
+⊙
+I
+t
+−
+.
+{I_{t}=M\odot I_{t}^{+}+(1-M)\odot I_{t}^{-}}.
+(16)
+An additional residual term is often included which is omitted here. To adapt the model to accept four consecutive frames as input while maintaining plug-and-play compatibility with various VFI models, we introduce a simple yet effective framework: we create a trainable copy of the two-frame VFI model
+ℱ
+′
+\mathcal{F^{\prime}}
+, which accepts the additional frames
+I
+−
+1
+I_{-1}
+and
+I
+2
+I_{2}
+along with a new distance map
+D
+t
+′
+D_{t}^{\prime}
+computed relative to
+I
+−
+1
+I_{-1}
+and
+I
+2
+I_{2}
+. Additionally, the initially interpolated frame
+I
+t
+I_{t}
+is provided, enabling the network to refine the result by utilizing this supplementary information:
+I
+t
+′
++
+,
+I
+t
+′
+−
+,
+M
+′
+=
+ℱ
+′
+(
+I
+−
+1
+,
+I
+2
+,
+D
+t
+′
+,
+I
+t
+)
+,
+{I_{t}^{{}^{\prime}+},I_{t}^{{}^{\prime}-},M^{\prime}=\mathcal{F^{\prime}}(I_{-1},I_{2},D^{\prime}_{t},I_{t}),}
+(17)
+where
+I
+t
+′
++
+,
+I
+t
+′
+−
+I_{t}^{{}^{\prime}+},I_{t}^{{}^{\prime}-}
+are warped version of
+I
+−
+1
+,
+I
+2
+I_{-1},I_{2}
+respectively.
+M
+′
+=
+[
+M
+1
+,
+M
+2
+,
+M
+3
+]
+M^{\prime}=[M_{1},M_{2},M_{3}]
+is a three-channel blending mask such that
+M
+1
++
+M
+2
++
+M
+3
+=
+1
+M_{1}+M_{2}+M_{3}=1
+at each pixel, corresponding to
+I
+t
+′
++
+I_{t}^{{}^{\prime}+}
+,
+I
+t
+I_{t}
+, and
+I
+t
+′
+−
+I_{t}^{{}^{\prime}-}
+. The final refined frame
+I
+t
+′
+I^{\prime}_{t}
+is then computed as:
+I
+′
+t
+=
+M
+1
+⊙
+I
+t
+′
++
++
+M
+2
+⊙
+I
+t
++
+M
+3
+⊙
+I
+t
+′
+−
+.
+{I^{\prime}_{t}=M_{1}\odot I_{t}^{{}^{\prime}+}+M_{2}\odot I_{t}+M_{3}\odot I_{t}^{{}^{\prime}-}}.
+(18)
+Notice that we directly use the interpolated frame
+I
+t
+I_{t}
+instead of latent features as network input to ensure compatibility with different VFI models.
+Fig. 6:
+Comparison of qualitative results.
+[
+T
+]
+[T]
+: original arbitrary time VFI models using time indexing.
+[
+D
+]
+u
+[D]_{u}
+: models trained using our distance indexing, then inference using uniform maps.
+[
+T
+,
+R
+]
+[T,R]
+: models using time indexing with iterative reference-based estimation.
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+: models trained using both distance indexing and iterative reference-based estimation, then inference using uniform maps.
+V-C
+Model tuning
+During training, we first freeze the parameters of the two-frame VFI model
+ℱ
+\mathcal{F}
+and the continuous map estimator. Only the refiner
+ℱ
+′
+\mathcal{F^{\prime}}
+is updated during this stage, using the same training configuration as the original model. This setup enables the refiner to learn how to enhance interpolation by leveraging information from more distant adjacent frames. Next, we freeze the parameters of the pretrained map estimator and jointly optimize both the VFI model
+ℱ
+\mathcal{F}
+and the proposed refiner
+ℱ
+′
+\mathcal{F^{\prime}}
+. This approach enables the entire system to adapt to indexing maps derived from optical flow predicted by CPFlow. We experimented with various training strategies and loss functions to evaluate their effectiveness (see
+Section
+VI-H
+).
+VI
+Experiment
+VI-A
+Implementation
+We leveraged the plug-and-play nature of our distance indexing and iterative reference-based estimation strategies to seamlessly integrate them into influential arbitrary time VFI models such as RIFE
+[
+7
+]
+and IFRNet
+[
+24
+]
+, and state-of-the-art models including AMT
+[
+18
+]
+and EMA-VFI
+[
+17
+]
+.
+We adhere to the original hyperparameters for each model for a fair comparison and implement them with PyTorch
+[
+53
+]
+.
+For training, we use the septuplet dataset from Vimeo90K
+[
+54
+]
+. The septuplet dataset comprises 91,701 seven-frame sequences at
+448
+×
+256
+448\times 256
+, extracted from 39,000 video clips. For evaluation, we use both pixel-centric metrics like PSNR and SSIM
+[
+55
+]
+, and perceptual metrics such as reference-based LPIPS
+[
+56
+]
+and non-reference NIQE
+[
+57
+]
+.
+Concerning the iterative reference-based estimation strategy,
+D
+r
+​
+e
+​
+f
+D_{ref}
+during training is calculated from the optical flow derived from ground-truth data at a time point corresponding to a randomly selected reference frame, like
+t
+/
+2
+t/2
+. In the inference phase, we similarly employ a uniform map for reference, for example, setting
+D
+r
+​
+e
+​
+f
+=
+t
+/
+2
+D_{ref}=t/2
+.
+VI-B
+Qualitative comparison
+We conducted a qualitative analysis on different variants of each arbitrary time VFI model. We evaluate the base model, labeled as
+[
+T
+]
+[T]
+, against its enhanced versions, which incorporate distance indexing (
+[
+D
+]
+[D]
+), iterative reference-based estimation (
+[
+T
+,
+R
+]
+[T,R]
+), or a combination of both (
+[
+D
+,
+R
+]
+[D,R]
+), as shown in
+Fig.
+6
+.
+We observe that the
+[
+T
+]
+[T]
+model yields blurry results with details difficult to distinguish. Models with the distance indexing (
+[
+D
+]
+[D]
+) mark a noticeable enhancement in perceptual quality, presenting clearer interpolations than
+[
+T
+]
+[T]
+.
+In most cases, iterative reference (
+[
+T
+,
+R
+]
+[T,R]
+) also enhances model performance, with the exception of AMT-S. As expected, the combined approach
+[
+D
+,
+R
+]
+[D,R]
+offers the best quality for all base models including AMT-S. This highlights the synergistic potential of distance indexing when paired with iterative reference-based estimation. Overall, our findings underscore the effectiveness of both techniques as plug-and-play strategies, capable of significantly elevating the qualitative performance of cutting-edge arbitrary time VFI models.
+Fig. 7:
+Convergence curves.
+[
+T
+]
+[T]
+denotes traditional time indexing.
+[
+D
+]
+[D]
+denotes the proposed distance indexing.
+[
+R
+]
+[R]
+denotes iterative reference-based estimation.
+VI-C
+Quantitative comparison
+VI-C
+1
+Convergence curves
+To further substantiate the efficacy of our proposed strategies, we also conducted a quantitative analysis.
+Fig.
+7
+shows the convergence curves for different model variants,
+i.e
+.
+,
+[
+T
+]
+[T]
+,
+[
+D
+]
+[D]
+, and
+[
+D
+,
+R
+]
+[D,R]
+. The observed trends are consistent with our theoretical analysis from
+Section
+IV
+, supporting the premise that by addressing velocity ambiguity, both distance indexing and iterative reference-based estimation can enhance convergence limits.
+VI-C
+2
+Comparison on Vimeo90K septuplet dataset
+In
+Table
+I
+, we provide a performance breakdown for each model variant. The models
+[
+D
+]
+[D]
+and
+[
+D
+,
+R
+]
+[D,R]
+in the upper half utilize ground-truth distance guidance, which is not available at inference in practice. The goal here is just to show the achievable upper-bound performance. On both pixel-centric metrics such as PSNR and SSIM, and perceptual measures like LPIPS and NIQE, the improved versions
+[
+D
+]
+[D]
+and
+[
+D
+,
+R
+]
+[D,R]
+outperform the base model
+[
+T
+]
+[T]
+. Notably, the combined model
+[
+D
+,
+R
+]
+[D,R]
+using both distance indexing and iterative reference-based estimation strategies performs superior in perceptual metrics, particularly NIQE. The superior pixel-centric scores of model
+[
+D
+]
+[D]
+compared to model
+[
+D
+,
+R
+]
+[D,R]
+can be attributed to the indirect estimation (2 iterations) in the latter, causing slight misalignment with the ground-truth, albeit with enhanced details.
+TABLE I:
+Comparison on Vimeo90K septuplet dataset.
+[
+T
+]
+[T]
+denotes the method trained with traditional arbitrary time indexing paradigm.
+[
+D
+]
+[D]
+and
+[
+R
+]
+[R]
+denote the distance indexing paradigm and iterative reference-based estimation strategy, respectively.
+[
+R
+]
+[R]
+uses 2 iterations by default.
+[
+⋅
+]
+u
+[\cdot]_{u}
+denotes inference with uniform map as time indexes. We utilize the first and last frames as inputs to predict the rest five frames. The
+bold font
+denotes the best performance in cases where comparison is possible. While the
+gray font
+indicates that the scores for pixel-centric metrics, PSNR and SSIM, are not calculated using strictly aligned ground-truth and predicted frames.
+RIFE
+[
+7
+]
+IFRNet
+[
+24
+]
+AMT-S
+[
+18
+]
+EMA-VFI
+[
+17
+]
+[
+T
+]
+[T]
+[
+D
+]
+[D]
+[
+D
+,
+R
+]
+[D,R]
+[
+T
+]
+[T]
+[
+D
+]
+[D]
+[
+D
+,
+R
+]
+[D,R]
+[
+T
+]
+[T]
+[
+D
+]
+[D]
+[
+D
+,
+R
+]
+[D,R]
+[
+T
+]
+[T]
+[
+D
+]
+[D]
+[
+D
+,
+R
+]
+[D,R]
+PSNR
+↑
+\uparrow
+28.22
+29.20
+28.84
+28.26
+29.25
+28.55
+28.52
+29.61
+28.91
+29.41
+30.29
+25.10
+SSIM
+↑
+\uparrow
+0.912
+0.929
+0.926
+0.915
+0.931
+0.925
+0.920
+0.937
+0.931
+0.928
+0.942
+0.858
+LPIPS
+↓
+\downarrow
+0.105
+0.092
+0.081
+0.088
+0.080
+0.072
+0.101
+0.086
+0.077
+0.086
+0.078
+0.079
+NIQE
+↓
+\downarrow
+6.663
+6.475
+6.286
+6.422
+6.342
+6.241
+6.866
+6.656
+6.464
+6.736
+6.545
+6.241
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+PSNR
+↑
+\uparrow
+28.22
+27.55
+27.41
+28.26
+27.40
+27.13
+28.52
+27.33
+27.17
+29.41
+28.24
+24.73
+SSIM
+↑
+\uparrow
+0.912
+0.902
+0.901
+0.915
+0.902
+0.899
+0.920
+0.902
+0.902
+0.928
+0.912
+0.851
+LPIPS
+↓
+\downarrow
+0.105
+0.092
+0.086
+0.088
+0.083
+0.078
+0.101
+0.090
+0.081
+0.086
+0.079
+0.081
+NIQE
+↓
+\downarrow
+6.663
+6.344
+6.220
+6.422
+6.196
+6.167
+6.866
+6.452
+6.326
+6.736
+6.457
+6.227
+TABLE II:
+Ablation study of the number of iterations on Vimeo90K septuplet dataset.
+[
+⋅
+]
+#
+[\cdot]^{\#}
+denotes the number of iterations used for inference.
+RIFE
+[
+7
+]
+IFRNet
+[
+24
+]
+AMT-S
+[
+18
+]
+EMA-VFI
+[
+17
+]
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+[
+⋅
+]
+1
+[\cdot]^{1}
+[
+⋅
+]
+2
+[\cdot]^{2}
+[
+⋅
+]
+3
+[\cdot]^{3}
+[
+⋅
+]
+1
+[\cdot]^{1}
+[
+⋅
+]
+2
+[\cdot]^{2}
+[
+⋅
+]
+3
+[\cdot]^{3}
+[
+⋅
+]
+1
+[\cdot]^{1}
+[
+⋅
+]
+2
+[\cdot]^{2}
+[
+⋅
+]
+3
+[\cdot]^{3}
+[
+⋅
+]
+1
+[\cdot]^{1}
+[
+⋅
+]
+2
+[\cdot]^{2}
+[
+⋅
+]
+3
+[\cdot]^{3}
+LPIPS
+↓
+\downarrow
+0.093
+0.086
+0.085
+0.085
+0.078
+0.078
+0.086
+0.081
+0.081
+0.084
+0.081
+0.080
+NIQE
+↓
+\downarrow
+6.331
+6.220
+6.186
+6.205
+6.167
+6.167
+6.402
+6.326
+6.327
+6.303
+6.227
+6.211
+[
+T
+,
+R
+]
+[T,R]
+[
+⋅
+]
+1
+[\cdot]^{1}
+[
+⋅
+]
+2
+[\cdot]^{2}
+[
+⋅
+]
+3
+[\cdot]^{3}
+[
+⋅
+]
+1
+[\cdot]^{1}
+[
+⋅
+]
+2
+[\cdot]^{2}
+[
+⋅
+]
+3
+[\cdot]^{3}
+[
+⋅
+]
+1
+[\cdot]^{1}
+[
+⋅
+]
+2
+[\cdot]^{2}
+[
+⋅
+]
+3
+[\cdot]^{3}
+[
+⋅
+]
+1
+[\cdot]^{1}
+[
+⋅
+]
+2
+[\cdot]^{2}
+[
+⋅
+]
+3
+[\cdot]^{3}
+LPIPS
+↓
+\downarrow
+0.103
+0.087
+0.087
+0.091
+0.084
+0.084
+0.106
+0.135
+0.157
+0.088
+0.083
+0.085
+NIQE
+↓
+\downarrow
+6.551
+6.300
+6.206
+6.424
+6.347
+6.314
+6.929
+7.246
+7.502
+6.404
+6.280
+6.246
+In realistic scenarios where the precise distance map is inaccessible at inference, one could resort to a uniform map akin to time indexing. The bottom segment of
+Table
+I
+shows the performance of the enhanced models
+[
+D
+]
+[D]
+and
+[
+D
+,
+R
+]
+[D,R]
+, utilizing identical inputs as model
+[
+T
+]
+[T]
+. Given the misalignment between predicted frames using a uniform distance map and the ground-truth, the enhanced models do not outperform the base model on pixel-centric metrics. However, we argue that in most applications, the goal of VFI is not to predict pixel-wise aligned frames, but to generate plausible frames with high perceptual quality. Furthermore, pixel-centric metrics are less sensitive to blur
+[
+56
+]
+, the major artifact introduced by velocity ambiguity. The pixel-centric metrics are thus less informative and denoted in gray. On perceptual metrics (especially NIQE), the enhanced models significantly outperforms the base model. This consistency with our qualitative observations further validates the effectiveness of distance indexing and iterative reference-based estimation.
+VI-C
+3
+Ablation study of the number of iterations
+Table
+II
+offers an ablation study on the number of iterations and the efficacy of a pure iterative reference-based estimation strategy. The upper section suggests that setting iterations at two strikes a good trade-off between computational efficiency and performance. The lower segment illustrates that while iterative reference-based estimation generally works for time indexing, there are exceptions, as observed with AMT-S. However, when combined with distance indexing, iterative reference-based estimation exhibits more stable improvement, as evidenced by the results for
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+. This is consistent with qualitative comparison.
+TABLE III:
+Comparison on Adobe240
+[
+58
+]
+for
+×
+\times
+8 interpolation with RIFE
+[
+7
+]
+.
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+PSNR
+↑
+\uparrow
+30.24
+30.47
+30.30
+SSIM
+↑
+\uparrow
+0.939
+0.938
+0.937
+LPIPS
+↓
+\downarrow
+0.073
+0.057
+0.054
+NIQE
+↓
+\downarrow
+5.206
+4.974
+4.907
+TABLE IV:
+Comparison on X4K1000FPS
+[
+22
+]
+for
+×
+\times
+8 interpolation with RIFE
+[
+7
+]
+.
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+PSNR
+↑
+\uparrow
+36.36
+36.80
+36.26
+SSIM
+↑
+\uparrow
+0.967
+0.964
+0.964
+LPIPS
+↓
+\downarrow
+0.040
+0.032
+0.032
+NIQE
+↓
+\downarrow
+7.130
+6.936
+6.924
+TABLE V:
+Comparison on X4K1000FPS
+[
+22
+]
+for
+×
+\times
+16 interpolation with RIFE
+[
+7
+]
+.
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+PSNR
+↑
+\uparrow
+31.04
+31.60
+31.52
+SSIM
+↑
+\uparrow
+0.910
+0.914
+0.922
+LPIPS
+↓
+\downarrow
+0.104
+0.094
+0.079
+NIQE
+↓
+\downarrow
+7.215
+6.953
+6.927
+TABLE VI:
+Comparison on Vimeo90K
+[
+54
+]
+using GMFlow
+[
+59
+]
+for distance map calculation with RIFE
+[
+7
+]
+.
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+PSNR
+↑
+\uparrow
+28.22
+27.29
+26.96
+SSIM
+↑
+\uparrow
+0.912
+0.898
+0.895
+LPIPS
+↓
+\downarrow
+0.105
+0.101
+0.092
+NIQE
+↓
+\downarrow
+6.663
+6.449
+6.280
+VI-C
+4
+Comparison on other benchmarks
+The septuplet set of Vimeo90K
+[
+54
+]
+is large enough to train a practical video frame interpolation model, and it represents the situations where the temporal distance between input frames is large. Thus, Vimeo90K (septuplet) can well demonstrate the velocity ambiguity problem that our work aims to highlight. Nonetheless, we report more results on other benchmarks.
+Table
+VI
+and
+Table
+VI
+show the results of RIFE
+[
+7
+]
+on Adobe240
+[
+58
+]
+and X4K1000FPS
+[
+22
+]
+for
+×
+\times
+8 interpolation respectively, using uniform maps. Distance indexing
+[
+D
+]
+u
+[D]_{u}
+and iterative reference-based estimation
+[
+R
+]
+u
+[R]_{u}
+strategies can consistently help improve the perceptual quality. In addition, it is noteworthy that
+[
+D
+]
+u
+[D]_{u}
+is better than
+[
+T
+]
+[T]
+in terms of the pixel-centric metrics like PSNR, showing that the constant speed assumption (uniform distance maps) holds well on these two easier benchmarks. We further show
+×
+\times
+16 interpolation on X4K1000FPS with larger temporal distance in
+Table
+VI
+. The results highlight that the benefits of our strategies are more pronounced with increased temporal distances.
+VI-C
+5
+Other optical flow estimator
+We also employ GMFlow
+[
+59
+]
+for the precomputation of distance maps, enabling an analysis of model performance when integrated with alternative optical flow estimations. The results are as shown in
+Table
+VI
+. Our strategies still lead to consistent improvement on perceptual metrics. However, this more recent and performant optical flow estimator does not introduce improvement compared to RAFT
+[
+9
+]
+. A likely explanation is that since we quantify the optical flow to
+[
+0
+,
+1
+]
+[0,1]
+scalar values for better generalization, our training strategies are less sensitive to the precision of the optical flow estimator.
+Fig. 8:
+User study. The horizontal axis represents user rankings, where #1 is the best and #4 is the worst. The vertical axis indicates the percentage of times each model variant received a specific ranking. Each model variant was ranked an equal number of times. The model
+[
+D
+,
+R
+]
+[D,R]
+emerged as the top performer. All models use uniform maps.
+VI-D
+User study
+To validate the effectiveness of our proposed strategies, we further conducted a user study with 30 anonymous participants. Participants were tasked with ranking the interpolation quality of frames produced by four model variants: [T], [D], [T,R], and [D,R]. See details of user study UI in Appendix. The results, presented in
+Fig.
+8
+, align with our qualitative and quantitative findings. The [D,R] model variant emerged as the top-rated, underscoring the effectiveness of our strategies.
+VI-E
+2D manipulation of frame interpolation
+Beyond simply enhancing the performance of VFI models, distance indexing equips them with a novel capability: tailoring the interpolation patterns for each individual object, termed as “manipulated interpolation of anything”.
+Fig.
+9
+demonstrates the workflow. The first stage employs SAM
+[
+11
+]
+to produce object masks for the starting frame. Users can then customize the distance curve for each object delineated by the mask, effectively controlling its interpolation pattern,
+e.g
+.
+, having one person moving backward in time. The backend of the application subsequently generates a sequence of distance maps based
+on these specified curves for interpolation. One of the primary applications is re-timing specific objects
+(See the supplementary video)
+.
+Fig. 9:
+Manipulated interpolation of anything. Leveraging Segment-Anything
+[
+11
+]
+, users can tailor distance curves for selected masks. Distinct masks combined with varying distance curves generate unique distance map sequences, leading to diverse interpolation outcomes.
+VI-F
+Multi-frame qualitative comparison
+As shown in
+Fig.
+10
+, we present a qualitative comparison of different variants of each VFI model under multi-frame setup.
+[
+D
+,
+M
+]
+e
+[D,M]_{e}
+denotes the model that incorporate both the indexing map with multi-frame refiner and continuous indexing map estimator. As anticipated, the
+[
+D
+,
+M
+]
+e
+[D,M]_{e}
+configuration consistently yields the highest visual quality across all base models, demonstrating the effectiveness of both the multi-frame refiner and the continuous indexing map estimator.
+Fig. 10:
+Qualitative comparison under multi-frame setting.
+[
+T
+]
+[T]
+: original arbitrary time VFI models using time indexing.
+[
+D
+]
+u
+[D]_{u}
+: models trained using distance indexing, then inference using uniform maps.
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+: models trained using both distance indexing and iterative reference-based estimation, then inference using uniform maps.
+[
+D
+,
+M
+]
+e
+[D,M]_{e}
+: models trained using distance indexing with multi-frame fusion, then inference using estimated maps.
+VI-G
+Multi-frame quantitative comparison
+In
+Table
+VII
+, we present a quantitative performance comparison across various model variants. The configurations
+[
+T
+]
+[T]
+,
+[
+D
+]
+u
+[D]_{u}
+, and
+[
+D
+]
+[D]
+retain the same definitions as previously described.
+[
+D
+]
+e
+[D]_{e}
+denotes the model augmented with a continuous indexing map estimator,
+[
+D
+,
+M
+]
+[D,M]
+includes the proposed multi-frame fusion with the refiner model, and
+[
+D
+,
+M
+]
+e
+[D,M]_{e}
+incorporates both the refiner and the map estimator. On pixel-level metrics such as PSNR and SSIM, the enhanced variant
+[
+D
+,
+M
+]
+e
+[D,M]_{e}
+consistently outperforms the base model
+[
+T
+]
+[T]
+as well as
+[
+D
+]
+u
+[D]_{u}
+, which lacks a map estimator and relies on uniform indexing maps. The improvement from
+[
+D
+]
+u
+[D]_{u}
+to
+[
+D
+,
+M
+]
+e
+[D,M]_{e}
+highlights the effectiveness of integrating the continuous indexing map estimator. Meanwhile, performance gains from
+[
+D
+]
+[D]
+to
+[
+D
+,
+M
+]
+[D,M]
+, and from
+[
+D
+]
+e
+[D]_{e}
+to
+[
+D
+,
+M
+]
+e
+[D,M]_{e}
+, demonstrate the additional benefit provided by the multi-frame refiner.
+TABLE VII:
+Multi-frame comparison on Vimeo90K septuplet dataset.
+[
+M
+]
+[M]
+denotes the multi-frame fusion.
+[
+⋅
+]
+e
+[\cdot]_{e}
+denotes inference with estimated indexing map. Other notations have the same meaning as in the previous experiments.
+RIFE
+[
+7
+]
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+]
+e
+[D]_{e}
+[
+D
+,
+M
+]
+e
+[D,M]_{e}
+[
+D
+]
+[D]
+[
+D
+,
+M
+]
+[D,M]
+PSNR
+↑
+\uparrow
+28.22
+27.55
+28.25
+28.34
+29.20
+31.63
+SSIM
+↑
+\uparrow
+0.912
+0.902
+0.923
+0.928
+0.929
+0.952
+LPIPS
+↓
+\downarrow
+0.105
+0.092
+0.099
+0.089
+0.092
+0.062
+NIQE
+↓
+\downarrow
+6.663
+6.344
+6.554
+6.173
+6.475
+5.990
+IFRNet
+[
+24
+]
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+]
+e
+[D]_{e}
+[
+D
+,
+M
+]
+e
+[D,M]_{e}
+[
+D
+]
+[D]
+[
+D
+,
+M
+]
+[D,M]
+PSNR
+↑
+\uparrow
+28.26
+27.40
+27.63
+28.28
+29.25
+32.11
+SSIM
+↑
+\uparrow
+0.915
+0.902
+0.907
+0.919
+0.931
+0.958
+LPIPS
+↓
+\downarrow
+0.088
+0.083
+0.087
+0.083
+0.080
+0.074
+NIQE
+↓
+\downarrow
+6.422
+6.196
+6.414
+6.249
+6.342
+5.957
+AMT-S
+[
+18
+]
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+]
+e
+[D]_{e}
+[
+D
+,
+M
+]
+e
+[D,M]_{e}
+[
+D
+]
+[D]
+[
+D
+,
+M
+]
+[D,M]
+PSNR
+↑
+\uparrow
+28.52
+27.33
+27.60
+28.80
+29.61
+31.80
+SSIM
+↑
+\uparrow
+0.920
+0.902
+0.908
+0.922
+0.937
+0.955
+LPIPS
+↓
+\downarrow
+0.101
+0.090
+0.098
+0.084
+0.086
+0.072
+NIQE
+↓
+\downarrow
+6.866
+6.382
+6.452
+6.223
+6.656
+6.056
+EMA-VFI
+[
+17
+]
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+]
+e
+[D]_{e}
+[
+D
+,
+M
+]
+e
+[D,M]_{e}
+[
+D
+]
+[D]
+[
+D
+,
+M
+]
+[D,M]
+PSNR
+↑
+\uparrow
+29.41
+28.24
+28.67
+29.45
+30.29
+31.31
+SSIM
+↑
+\uparrow
+0.928
+0.912
+0.919
+0.932
+0.942
+0.951
+LPIPS
+↓
+\downarrow
+0.086
+0.079
+0.082
+0.084
+0.078
+0.069
+NIQE
+↓
+\downarrow
+6.736
+6.457
+6.609
+6.313
+6.545
+6.146
+VI-H
+Multi-frame tuning strategy
+In this section, we evaluate different training strategies for multi-frame fusion using RIFE
+[
+7
+]
+as the baseline for ablation studies. All experiments follow the same setting of previous experiments on Vimeo90k. We find that jointly tuning both refiner and map estimator leads to instability and failure to converge. Thus, we split the tuning process in two stages. In the first stage, we first finetune the multi-frame refiner
+ℱ
+′
+\mathcal{F^{\prime}}
+alone using original VFI loss.
+In the second stage, there are two possible choices. Since jointly tuning with the map estimator remains unstable, we either finetune the flow estimator only to adapt it to VFI (referred to as
+FE
+), or finetune the VFI modules
+ℱ
+\mathcal{F}
+and
+ℱ
+′
+\mathcal{F^{\prime}}
+to adapt them to the pretrained flow estimator (referred to as
+FE
+), as shown in
+Table
+VIII
+.
+The loss term
+ℒ
+D
+\mathcal{L}_{D}
+is calculated by
+ℒ
+D
+=
+‖
+D
+t
+−
+D
+t
+RAFT
+‖
+2
+2
+\mathcal{L}_{D}=\|D_{t}-D_{t}^{\text{RAFT}}\|_{2}^{2}
+, denoting the L2 loss between the indexing maps from CPFlow and RAFT. The setting
+ℒ
+V
+f
+\mathcal{L}_{V_{f}}
+corresponds to training only the VFI refiner with its original loss, while
+ℒ
+V
+b
++
+f
+\mathcal{L}_{V_{b+f}}
+involves jointly training both the base VFI model and the refiner with their original loss. Among the tested strategies, jointly tuning both the VFI model and the refiner under
+ℒ
+V
+b
++
+f
+\mathcal{L}_{V_{b+f}}
+achieves the best performance. This improvement is attributed to the model’s ability to adapt both components to the updated indexing map derived from the newly predicted optical flow.
+TABLE VIII:
+Multi-frame ablation study
+FE
+VFI
+ℒ
+D
+\mathcal{L}_{D}
+ℒ
+V
+b
++
+f
+\mathcal{L}_{V_{b+f}}
+ℒ
+D
++
+V
+b
++
+f
+\mathcal{L}_{D+V_{b+f}}
+ℒ
+V
+f
+\mathcal{L}_{V_{f}}
+ℒ
+V
+b
++
+f
+\mathcal{L}_{V_{b+f}}
+PSNR
+↑
+\uparrow
+26.10
+27.22
+27.34
+30.89
+31.63
+SSIM
+↑
+\uparrow
+0.891
+0.898
+0.901
+0.938
+0.952
+LPIPS
+↓
+\downarrow
+0.111
+0.104
+0.097
+0.069
+0.062
+NIQE
+↓
+\downarrow
+6.627
+6.575
+6.509
+6.087
+5.990
+TABLE IX:
+Costs comparison including runtime and number of parameters. We evaluate the computational overhead on an NVIDIA A100 GPU using images with a resolution of 448×256.
+[
+D
+]
+[D]
+[
+D
+,
+M
+]
+[D,M]
+[
+D
+,
+M
+]
+e
+[D,M]_{e}
+Sec.
+MB
+Sec.
+MB
+Sec.
+MB
+RIFE
+[
+7
+]
+0.03
+10.21
+0.06
+20.46
+0.10
+30.68
+IFRNet
+[
+24
+]
+0.14
+4.73
+0.17
+14.91
+0.21
+25.13
+AMT-S
+[
+18
+]
+0.20
+2.86
+0.22
+15.01
+0.26
+25.23
+EMA-VFI
+[
+17
+]
+2.35
+62.62
+2.38
+74.84
+2.42
+85.04
+VI-I
+Computational costs of the proposed framework
+Distance indexing
+Transitioning from time indexing (
+[
+T
+]
+[T]
+) to distance indexing (
+[
+D
+]
+[D]
+) does not introduce extra computational costs during the inference phase, yet significantly enhancing image quality. In the training phase, the primary requirement is a one-time offline computation of distance maps for image triplets.
+Iterative reference-based estimation
+Given that the computational overhead of merely expanding the input channel, while keeping the rest of the structure unchanged, is negligible, the computational burden during the training phase remains equivalent to that of the
+[
+D
+]
+[D]
+model. Regarding inference, the total consumption is equal to the number of iterations
+×
+\times
+the consumption of the
+[
+D
+]
+[D]
+model. We would like to highlight that this iterative strategy is optional: Users can adopt this strategy at will when optimal interpolation results are demanded and the computational budget allows.
+Continuous indexing map estimation
+The runtime and the number of parameters are reported in
+Table
+IX
+. The estimation process introduces an additional latency of approximately 0.04 seconds per inference, which is relatively low. The number of parameters for the map estimator is 10.2M. Overall, the computational overheads introduced by indexing map estimation are acceptable in practical scenarios.
+Multi-frame refiner
+We also evaluate the computational overhead introduced by the multi-frame refiner as reported in
+Table
+IX
+. The refiner adds approximately 0.03 seconds per inference and requires an additional 10.3 million parameters, which is practical for deployment.
+VII
+Conclusion and Future Work
+We challenge the traditional time indexing paradigm and address its inherent uncertainties related to velocity distribution. Through the introduction of distance indexing and iterative reference-based estimation strategies, we offer a transformative paradigm to VFI. Our innovative plug-and-play strategies not only improves the performance in video interpolation but also empowers users with granular control over interpolation patterns across varied objects.
+We also propose a continuous distance map estimator to accurately predict distance maps when using multi-frame inputs. Additionally, a multi-frame refiner is integrated into the interpolation pipeline for further enhancement. While the proposed framework significantly improves both pixelwise and perceptual metrics, it still faces challenges in learning and representing diverse interpolation trajectories. Extreme large motions may require generative priors from models like diffusion models.
+The insights gleaned from our strategies have potential applications across a range of tasks that employ time indexing, such as space-time super-resolution, future predictions, blur interpolation and more.
+Acknowledgments
+This work was partially supported by the National Key R&D Program of China (No. 2022ZD0160104). We thank Dorian Chan, Zhirong Wu, and Stephen Lin for their insightful feedback and advice. Our thanks also go to Vu An Tran for developing the web application.
+Appendix A
+Proof of
+Eq.
+4
+Eq.
+4
+in the paper can be rigorously proven if an L2 loss is used,
+min
+I
+^
+t
+⁡
+L
+=
+𝔼
+I
+t
+∼
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+t
+)
+​
+[
+(
+I
+^
+t
+−
+I
+t
+)
+2
+]
+.
+\min_{\hat{I}_{t}}L=\mathbb{E}_{I_{t}\sim\mathcal{F}(I_{0},I_{1},t)}[(\hat{I}_{t}-I_{t})^{2}].
+(19)
+By setting the gradient to zero (this assumes during training, the neural network can reach the exact solution at this point),
+∂
+L
+∂
+I
+^
+t
+\displaystyle\frac{\partial L}{\partial\hat{I}_{t}}
+=
+0
+\displaystyle=0
+(20)
+𝔼
+I
+t
+∼
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+t
+)
+​
+[
+∂
+∂
+I
+^
+t
+​
+(
+I
+^
+t
+−
+I
+t
+)
+2
+]
+\displaystyle\mathbb{E}_{I_{t}\sim\mathcal{F}(I_{0},I_{1},t)}[\frac{\partial}{\partial\hat{I}_{t}}(\hat{I}_{t}-I_{t})^{2}]
+=
+0
+\displaystyle=0
+𝔼
+I
+t
+∼
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+t
+)
+​
+[
+2
+​
+(
+I
+^
+t
+−
+I
+t
+)
+]
+\displaystyle\mathbb{E}_{I_{t}\sim\mathcal{F}(I_{0},I_{1},t)}[2(\hat{I}_{t}-I_{t})]
+=
+0
+\displaystyle=0
+𝔼
+I
+t
+∼
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+t
+)
+​
+[
+I
+^
+t
+]
+−
+𝔼
+I
+t
+∼
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+t
+)
+​
+[
+I
+t
+]
+\displaystyle\mathbb{E}_{I_{t}\sim\mathcal{F}(I_{0},I_{1},t)}[\hat{I}_{t}]-\mathbb{E}_{I_{t}\sim\mathcal{F}(I_{0},I_{1},t)}[I_{t}]
+=
+0
+\displaystyle=0
+I
+^
+t
+\displaystyle\hat{I}_{t}
+=
+𝔼
+I
+t
+∼
+ℱ
+⁡
+(
+I
+0
+,
+I
+1
+,
+t
+)
+​
+[
+I
+t
+]
+\displaystyle=\mathbb{E}_{I_{t}\sim\mathcal{F}(I_{0},I_{1},t)}[I_{t}]
+Even when a different loss is used, we still observe a similar phenomenon in practice.
+Appendix B
+The Rationale for Solving Ambiguity
+First and foremost, it is essential to clarify that
+velocity ambiguity can solely exist and be resolved in the training phase, not in the inference phase
+. The key idea behind our approach can be summarized as follows: While conventional VFI methods with time indexing rely on a one-to-many mapping, our distance indexing learns an approximate one-to-one mapping, which resolves the ambiguity during training. When the input-output relationship is one-to-many during training, the training process fluctuates among conflicting objectives, ultimately preventing convergence towards any specific optimization goal. In VFI, the evidence is the generation of blurry images in the inference phase. Once the ambiguity has been resolved using the new indexing method in the training phase, the model can produce significantly clearer results regardless of the inference strategy used.
+Indeed, this one-to-many ambiguity in training is not unique to VFI, but for a wide range of machine learning problems.
+It is sometimes referred to as ‘‘mode averaging’’ in the community.
+1
+1
+1
+https://www.cs.toronto.edu/~hinton/coursera/lecture13/lec13.pdf
+In some areas, researchers have come up with similar methods
+[
+52
+,
+60
+]
+.
+A specific instantiation of this problem
+Let us look at an example in text-to-speech (TTS). The same text can be paired with a variety of speeches, and direct training without addressing ambiguities can result in a
+“blurred” voice
+(a statistical average voice). To mitigate this, a common approach is to incorporate a speaker embedding vector or a style embedding vector (representing different gender, accents, speaking styles, etc.) during training, which helps reduce ambiguity.
+During the inference phase, utilizing an average user embedding vector can yield high-quality speech output.
+Furthermore, by manipulating the speaker embedding vector, effects such as altering the accent and pitch can also be achieved.
+Here is a snippet from a high-impact paper Wang
+et al
+.
+[
+52
+]
+which came up with the style embedding in TTS:
+Many TTS models, including recent end-to-end systems, only learn an averaged prosodic distribution over their input data, generating less expressive speech – especially for long-form phrases. Furthermore, they often lack the ability to control the expression with which speech is synthesized.
+Understanding this example can significantly help understand our paper, as there are many similarities between the two,
+e.g
+.
+, motivation, solution, and manipulation.
+A minimal symbolic example to help understand better
+Assuming we want to train a mapping function
+ℱ
+\mathcal{F}
+from numbers to characters.
+Training input-output pairs with ambiguity
+(
+ℱ
+\mathcal{F}
+is optimized):
+1
+⟶
+ℱ
+a
+,
+1
+⟶
+ℱ
+b
+,
+2
+⟶
+ℱ
+a
+,
+2
+⟶
+ℱ
+b
+1\stackrel{{\scriptstyle\mathcal{F}}}{{\longrightarrow}}a,1\stackrel{{\scriptstyle\mathcal{F}}}{{\longrightarrow}}b,2\stackrel{{\scriptstyle\mathcal{F}}}{{\longrightarrow}}a,2\stackrel{{\scriptstyle\mathcal{F}}}{{\longrightarrow}}b
+ℱ
+\mathcal{F}
+is optimized with some losses involving the input-output pairs above:
+min
+ℱ
+L
+⁡
+(
+ℱ
+⁡
+(
+1
+)
+,
+a
+)
++
+L
+⁡
+(
+ℱ
+⁡
+(
+1
+)
+,
+b
+)
++
+L
+⁡
+(
+ℱ
+⁡
+(
+2
+)
+,
+a
+)
++
+L
+⁡
+(
+ℱ
+⁡
+(
+2
+)
+,
+b
+)
+,
+\underset{\mathcal{F}}{\min}\quad L(\mathcal{F}(1),a)+L(\mathcal{F}(1),b)+L(\mathcal{F}(2),a)+L(\mathcal{F}(2),b),
+where
+L
+L
+can be L1, L2 or any other kind of losses. Because the same input is paired with multiple different outputs, the model
+ℱ
+\mathcal{F}
+is optimized to learn an average (or, generally, a mixture) of the conflicting outputs, which results in blur at inference.
+Inference phase (
+ℱ
+\mathcal{F}
+is fixed):
+1
+⟶
+ℱ
+{
+a
+,
+b
+}
+​
+?
+,
+2
+⟶
+ℱ
+{
+a
+,
+b
+}
+​
+?
+1\stackrel{{\scriptstyle\mathcal{F}}}{{\longrightarrow}}\{a,b\}?,2\stackrel{{\scriptstyle\mathcal{F}}}{{\longrightarrow}}\{a,b\}?
+Training without ambiguity
+(
+ℱ
+\mathcal{F}
+is optimized):
+1
+⟶
+ℱ
+a
+,
+1
+⟶
+ℱ
+a
+,
+2
+⟶
+ℱ
+b
+,
+2
+⟶
+ℱ
+b
+1\stackrel{{\scriptstyle\mathcal{F}}}{{\longrightarrow}}a,1\stackrel{{\scriptstyle\mathcal{F}}}{{\longrightarrow}}a,2\stackrel{{\scriptstyle\mathcal{F}}}{{\longrightarrow}}b,2\stackrel{{\scriptstyle\mathcal{F}}}{{\longrightarrow}}b
+In the input-output pairs above, each input value is paired with exactly one output value. Therefore,
+ℱ
+\mathcal{F}
+is trained to learn a unique and deterministic mapping.
+Inference phase (
+ℱ
+\mathcal{F}
+is fixed):
+1
+⟶
+ℱ
+a
+,
+2
+⟶
+ℱ
+b
+1\stackrel{{\scriptstyle\mathcal{F}}}{{\longrightarrow}}a,2\stackrel{{\scriptstyle\mathcal{F}}}{{\longrightarrow}}b
+Coming back to VFI
+When time indexing is used, the same
+t
+t
+value is paired to images where the objects are located at various locations due to the speed and directional ambiguities. When distance mapping is used, a single
+d
+d
+value is paired to images where the objects are always at the same distance ratio, which allows the model to learn a more deterministic mapping for resolving the speed ambiguity.
+It is important to note that fixing the ambiguity does not solve all the problems: At inference time, the “correct” (close to ground-truth) distance map is not available. In this work, we show that it is possible to provide uniform distance maps as inputs to generate a clear output video, which is not perfectly pixel-wise aligned with the ground truth. This is the reason why the proposed method does not achieve state-of-the-art in terms of PSNR and SSIM in Tab. 1 of the paper. However, it achieves sharper frames with higher perceptual quality, which is shown by the better LPIPS and NIQE.
+We claim the “correct” distance map is hard to estimate accurately from merely two frames since there are a wide range of possible velocities. If considering more neighboring frames like Xu
+et al
+.
+[
+8
+]
+(more observation information), it is possible to estimate an accurate distance map for pixel-wise aligned interpolation, which we leave for future work.
+Furthermore, manipulating distance maps corresponds to sampling other possible unseen velocities,
+i.e
+.
+, 2D manipulation of frame interpolation, similar to that mentioned TTS paper Wang
+et al
+.
+[
+52
+]
+.
+Fig. 11:
+Additional comparison of qualitative results. [T] RIFE (Tri) denotes RIFE
+[
+7
+]
+trained in a fixed time indexing paradigm (Vimeo90K triplet dataset
+[
+54
+]
+). [D] RIFE (Tri) denotes the model trained using distance indexing. All models use uniform maps.
+TABLE X:
+Comparison on Vimeo90K triplet dataset.
+[
+T
+]
+[T]
+denotes the method trained with traditional fixed time indexing paradigm.
+[
+D
+]
+[D]
+denotes the distance indexing paradigm.
+[
+⋅
+]
+u
+[\cdot]_{u}
+denotes inference with uniform map as time indexes.
+RIFE
+[
+7
+]
+IFRNet
+[
+24
+]
+AMT-S
+[
+18
+]
+EMA-VFI
+[
+17
+]
+[
+T
+]
+[T]
+[
+D
+]
+[D]
+[
+D
+]
+u
+[D]_{u}
+[
+T
+]
+[T]
+[
+D
+]
+[D]
+[
+D
+]
+u
+[D]_{u}
+[
+T
+]
+[T]
+[
+D
+]
+[D]
+[
+D
+]
+u
+[D]_{u}
+[
+T
+]
+[T]
+[
+D
+]
+[D]
+[
+D
+]
+u
+[D]_{u}
+PSNR
+↑
+\uparrow
+35.61
+36.04
+35.18
+35.80
+36.26
+35.14
+35.97
+36.56
+35.21
+36.50
+37.13
+36.21
+SSIM
+↑
+\uparrow
+0.978
+0.979
+0.976
+0.979
+0.981
+0.977
+0.980
+0.982
+0.977
+0.982
+0.983
+0.981
+LPIPS
+↓
+\downarrow
+0.022
+0.022
+0.023
+0.020
+0.019
+0.021
+0.021
+0.020
+0.023
+0.020
+0.019
+0.020
+NIQE
+↓
+\downarrow
+5.249
+5.225
+5.224
+5.256
+5.245
+5.225
+5.308
+5.293
+5.288
+5.372
+5.343
+5.335
+Appendix C
+Additional Experiments and Analysis
+Comparison of the fixed-time setting
+While the benefits of our proposed disambiguation strategies are best demonstrated on arbitrary-time VFI models, they actually improve the performance of fixed-time models as well. Using RIFE
+[
+7
+]
+as a representative example, we extend our comparison to the fixed-time training paradigm, depicted in
+Fig.
+11
+. The label
+[
+T
+]
+[T]
+RIFE (Tri) refers to the model trained on the triplet dataset from Vimeo90K
+[
+54
+]
+employing time indexing. Conversely,
+[
+D
+]
+[D]
+RIFE (Tri) indicates training on the same triplet dataset but utilizing our distance indexing approach. Both
+[
+D
+]
+[D]
+RIFE and
+[
+D
+,
+R
+]
+[D,R]
+RIFE models are trained on the septuplet dataset, consistent with our earlier comparison. Despite being trained on varied datasets, it is evident that the arbitrary time model outperforms the fixed time model. However, the efficacy of distance indexing appears restrained within the fixed-time training paradigm. This limitation stems from the fact that deriving distance representation solely from the middle frame yields a sparse distribution, making it challenging for the network to grasp the nuances of distance. We delve deeper into the quantitative analysis of these findings in
+Table
+X
+. Compared to training arbitrary time models on the septuplet dataset, the advantages of distance indexing become notably decreased when training fixed time models on the triplet dataset.
+TABLE XI:
+Comparison on the septuplet of Vimeo90K
+[
+54
+]
+using LPIPS loss
+[
+56
+]
+. We use RIFE
+[
+7
+]
+as a representative example.
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+PSNR
+↑
+\uparrow
+27.19
+26.71
+26.72
+SSIM
+↑
+\uparrow
+0.898
+0.889
+0.890
+LPIPS
+↓
+\downarrow
+0.061
+0.065
+0.064
+NIQE
+↓
+\downarrow
+6.307
+5.901
+5.837
+Comparison of using perceptual loss
+In addition to training with traditional pixel losses based on L1 and L2 losses, we present the results of employing the more recent LPIPS loss
+[
+56
+]
+with a VGG backbone
+[
+61
+]
+, as shown in
+Table
+XI
+. The non-reference perceptual quality metric, NIQE, shows notable improvement across all variants. The results also consistently demonstrate the effectiveness of our strategies in resolving velocity ambiguity. Besides, due to the direct optimization of LPIPS loss, the assumption of constant speed in uniform maps affects the performance for this metric. This is why in the test results,
+[
+T
+]
+[T]
+has a lower LPIPS, while
+[
+D
+]
+u
+[D]_{u}
+and
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+are slightly higher.
+TABLE XII:
+Comparison with
+[
+D
+x
+,
+y
+]
+[D_{x,y}]
+scheme on Vimeo90K septuplet dataset.
+[
+D
+x
+,
+y
+]
+[D_{x,y}]
+denotes training with two channel distance map with
+𝒙
+\bm{x}
+and
+𝒚
+\bm{y}
+directions.
+[
+⋅
+]
+u
+[\cdot]_{u}
+denotes inference with uniform maps.
+[
+T
+]
+[T]
+[
+D
+]
+u
+[D]_{u}
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+[
+D
+x
+,
+y
+]
+u
+[D_{x,y}]_{u}
+[
+D
+x
+,
+y
+,
+R
+]
+u
+[D_{x,y},R]_{u}
+LPIPS
+↓
+\downarrow
+0.105
+0.092
+0.086
+0.091
+0.087
+NIQE
+↓
+\downarrow
+6.663
+6.344
+6.220
+6.296
+6.220
+Fig. 12:
+User interface of user study.
+Two channel scheme
+Comparison results with the two channel scheme,
+i.e
+.
+,
+D
+t
+D_{t}
+with
+𝒙
+\bm{x}
+and
+𝒚
+\bm{y}
+directions, are shown in
+Table
+XII
+. The observations are as follows: (1)
+[
+D
+x
+,
+y
+]
+u
+[D_{x,y}]_{u}
+outperforms
+[
+D
+]
+u
+[D]_{u}
+, which makes sense since it accounts for both speed and direction. (2)
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+performs better than
+[
+D
+x
+,
+y
+]
+u
+[D_{x,y}]_{u}
+. Our speculation is that
+[
+R
+]
+[R]
+benefits not only from addressing the directional ambiguity but also from reducing the prediction difficulty via divide-and-conquer. (3)
+[
+D
+x
+,
+y
+,
+R
+]
+u
+[D_{x,y},R]_{u}
+does not exceed
+[
+D
+,
+R
+]
+u
+[D,R]_{u}
+, showing that the iterative formulation is sufficient to resolve the directional ambiguity.
+[
+D
+x
+,
+y
+]
+u
+[D_{x,y}]_{u}
+has the potential to learn different trajectories but cannot realize that potential since the trajectory distribution within a short time is not sufficiently diverse. However,
+[
+D
+x
+,
+y
+]
+u
+[D_{x,y}]_{u}
+only involves increasing the input channels and does not need to run iteratively. Thus,
+[
+D
+x
+,
+y
+]
+u
+[D_{x,y}]_{u}
+is a better choice for fast/lightweight frame interpolation.
+Why did
+[
+R
+]
+[R]
+fail on AMT-S?
+As compared to the speed ambiguity, the directional ambiguity only has a minor impact to the interpolation quality due to the short time span between frames. Merely employing iterative reference-based estimation without tackling speed ambiguity
+[
+T
+,
+R
+]
+[T,R]
+can result in the accumulation of inaccuracies. This phenomenon is especially evident in AMT-S, which we attribute to its scaled lookup operation of bidirectional 4D correlation volumes. Cumulative errors are exacerbated in inaccurate iterative lookup operations.
+Why NIQE performs better with uniform maps?
+Uniform maps tend to yield better results due to smoothing. Nonuniform maps consist of unavoidable inaccuracies from flow estimation, which may introduce unnatural details, resulting in worse NIQE scores but are not noticeable to human perception.
+Appendix D
+User Study UI
+As shown in
+Fig.
+12
+, we initially presented users with the input starting and ending frames. Subsequently, the results from each model’s four distinct variants were displayed anonymously in a sequence, with the order shuffled for each presentation. Users were tasked with reordering the images by dragging them, placing them from left to right based on their perceived quality,
+i.e
+.
+, the best image on the extreme left and the least preferred on the far right.
+Appendix E
+Demo
+We have included a video demo (available in supplementary materials named “supp.mp4”) to intuitively showcase the enhanced quality achieved through our strategies. The video further illustrates the idea of manipulating object interpolations and provides a guide on using the related web application.
+References
+[1]
+W. Bao, W.-S. Lai, C. Ma, X. Zhang, Z. Gao, and M.-H. Yang, “Depth-aware video
+frame interpolation,” in
+Proceedings of the IEEE/CVF Conference on
+Computer Vision and Pattern Recognition
+, 2019, pp. 3703–3712.
+[2]
+J. Ho, W. Chan, C. Saharia, J. Whang, R. Gao, A. Gritsenko, D. P. Kingma,
+B. Poole, M. Norouzi, D. J. Fleet
+et al.
+, “Imagen video: High
+definition video generation with diffusion models,”
+arXiv preprint
+arXiv:2210.02303
+, 2022.
+[3]
+Y. Wu, Q. Wen, and Q. Chen, “Optimizing video prediction via video frame
+interpolation,” in
+Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition
+, 2022, pp. 17 814–17 823.
+[4]
+C.-Y. Wu, N. Singhal, and P. Krahenbuhl, “Video compression through image
+interpolation,” in
+Proceedings of the European conference on computer
+vision (ECCV)
+, 2018, pp. 416–431.
+[5]
+Z. Liu, R. A. Yeh, X. Tang, Y. Liu, and A. Agarwala, “Video frame synthesis
+using deep voxel flow,” in
+Proceedings of the IEEE international
+conference on computer vision
+, 2017, pp. 4463–4471.
+[6]
+H. Jiang, D. Sun, V. Jampani, M.-H. Yang, E. Learned-Miller, and J. Kautz,
+“Super slomo: High quality estimation of multiple intermediate frames for
+video interpolation,” in
+Proceedings of the IEEE Conference on
+Computer Vision and Pattern Recognition
+, 2018, pp. 9000–9008.
+[7]
+Z. Huang, T. Zhang, W. Heng, B. Shi, and S. Zhou, “Real-time intermediate flow
+estimation for video frame interpolation,” in
+Computer Vision–ECCV
+2022: 17th European Conference, Tel Aviv, Israel, October 23–27, 2022,
+Proceedings, Part XIV
+. Springer,
+2022, pp. 624–642.
+[8]
+X. Xu, L. Siyao, W. Sun, Q. Yin, and M.-H. Yang, “Quadratic video
+interpolation,”
+Advances in Neural Information Processing Systems
+,
+vol. 32, 2019.
+[9]
+Z. Teed and J. Deng, “Raft: Recurrent all-pairs field transforms for optical
+flow,” in
+European conference on computer vision
+. Springer, 2020, pp. 402–419.
+[10]
+R. Rombach, A. Blattmann, D. Lorenz, P. Esser, and B. Ommer, “High-resolution
+image synthesis with latent diffusion models,” in
+Proceedings of the
+IEEE/CVF conference on computer vision and pattern recognition
+, 2022, pp.
+10 684–10 695.
+[11]
+A. Kirillov, E. Mintun, N. Ravi, H. Mao, C. Rolland, L. Gustafson, T. Xiao,
+S. Whitehead, A. C. Berg, W.-Y. Lo
+et al.
+, “Segment anything,”
+arXiv preprint arXiv:2304.02643
+, 2023.
+[12]
+J. Luo, Z. Wan, B. Li, Y. Dai
+et al.
+, “Continuous parametric optical
+flow,”
+Advances in Neural Information Processing Systems
+, vol. 36,
+2024.
+[13]
+Z. Zhong, G. Krishnan, X. Sun, Y. Qiao, S. Ma, and J. Wang, “Clearer frames,
+anytime: Resolving velocity ambiguity in video frame interpolation,” in
+European Conference on Computer Vision
+. Springer, 2025, pp. 346–363.
+[14]
+D. Sun, X. Yang, M.-Y. Liu, and J. Kautz, “Pwc-net: Cnns for optical flow
+using pyramid, warping, and cost volume,” in
+Proceedings of the IEEE
+conference on computer vision and pattern recognition
+, 2018, pp. 8934–8943.
+[15]
+A. Dosovitskiy, P. Fischer, E. Ilg, P. Hausser, C. Hazirbas, V. Golkov, P. Van
+Der Smagt, D. Cremers, and T. Brox, “Flownet: Learning optical flow with
+convolutional networks,” in
+Proceedings of the IEEE international
+conference on computer vision
+, 2015, pp. 2758–2766.
+[16]
+E. Ilg, N. Mayer, T. Saikia, M. Keuper, A. Dosovitskiy, and T. Brox, “Flownet
+2.0: Evolution of optical flow estimation with deep networks,” in
+Proceedings of the IEEE conference on computer vision and pattern
+recognition
+, 2017, pp. 2462–2470.
+[17]
+G. Zhang, Y. Zhu, H. Wang, Y. Chen, G. Wu, and L. Wang, “Extracting motion and
+appearance via inter-frame attention for efficient video frame
+interpolation,” in
+Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition
+, 2023, pp. 5682–5692.
+[18]
+Z. Li, Z.-L. Zhu, L.-H. Han, Q. Hou, C.-L. Guo, and M.-M. Cheng, “Amt:
+All-pairs multi-field transforms for efficient frame interpolation,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition
+, 2023, pp. 9801–9810.
+[19]
+H. Lee, T. Kim, T.-y. Chung, D. Pak, Y. Ban, and S. Lee, “Adacof: Adaptive
+collaboration of flows for video frame interpolation,” in
+Proceedings
+of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2020,
+pp. 5316–5325.
+[20]
+J. Park, K. Ko, C. Lee, and C.-S. Kim, “Bmbc: Bilateral motion estimation with
+bilateral cost volume for video interpolation,” in
+Computer
+Vision–ECCV 2020: 16th European Conference, Glasgow, UK, August 23–28,
+2020, Proceedings, Part XIV 16
+. Springer, 2020, pp. 109–125.
+[21]
+J. Park, C. Lee, and C.-S. Kim, “Asymmetric bilateral motion estimation for
+video frame interpolation,” in
+Proceedings of the IEEE/CVF
+International Conference on Computer Vision
+, 2021, pp. 14 539–14 548.
+[22]
+H. Sim, J. Oh, and M. Kim, “Xvfi: Extreme video frame interpolation,” in
+Proceedings of the IEEE/CVF International Conference on Computer
+Vision
+, 2021, pp. 14 489–14 498.
+[23]
+L. Lu, R. Wu, H. Lin, J. Lu, and J. Jia, “Video frame interpolation with
+transformer,” in
+Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition
+, 2022, pp. 3532–3542.
+[24]
+L. Kong, B. Jiang, D. Luo, W. Chu, X. Huang, Y. Tai, C. Wang, and J. Yang,
+“Ifrnet: Intermediate feature refine network for efficient frame
+interpolation,” in
+Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition
+, 2022, pp. 1969–1978.
+[25]
+X. Jin, L. Wu, J. Chen, Y. Chen, J. Koo, and C.-h. Hahm, “A unified pyramid
+recurrent network for video frame interpolation,” in
+Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2023,
+pp. 1578–1587.
+[26]
+J. Park, J. Kim, and C.-S. Kim, “Biformer: Learning bilateral motion
+estimation via bilateral transformer for 4k video frame interpolation,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition
+, 2023, pp. 1568–1577.
+[27]
+S. Niklaus and F. Liu, “Softmax splatting for video frame interpolation,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern
+Recognition
+, 2020, pp. 5437–5446.
+[28]
+P. Hu, S. Niklaus, S. Sclaroff, and K. Saenko, “Many-to-many splatting for
+efficient video frame interpolation,” in
+Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition
+, 2022, pp. 3553–3562.
+[29]
+D. Danier, F. Zhang, and D. Bull, “Ldmvfi: Video frame interpolation with
+latent diffusion models,” in
+Proceedings of the AAAI Conference on
+Artificial Intelligence
+, vol. 38, no. 2, 2024, pp. 1472–1480.
+[30]
+X. Wang, B. Zhou, B. Curless, I. Kemelmacher-Shlizerman, A. Holynski, and S. M.
+Seitz, “Generative inbetweening: Adapting image-to-video models for keyframe
+interpolation,”
+arXiv preprint arXiv:2408.15239
+, 2024.
+[31]
+M. Hu, K. Jiang, Z. Zhong, Z. Wang, and Y. Zheng, “Iq-vfi: Implicit quadratic
+motion estimation for video frame interpolation,” in
+Proceedings of
+the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2024,
+pp. 6410–6419.
+[32]
+Z. Chen, Y. Chen, J. Liu, X. Xu, V. Goel, Z. Wang, H. Shi, and X. Wang,
+“Videoinr: Learning video implicit neural representation for continuous
+space-time super-resolution,” in
+Proceedings of the IEEE/CVF
+Conference on Computer Vision and Pattern Recognition
+, 2022, pp. 2047–2057.
+[33]
+S. Lee, H. Lee, C. Shin, H. Son, and S. Lee, “Exploring discontinuity for
+video frame interpolation,” in
+Proceedings of the IEEE/CVF Conference
+on Computer Vision and Pattern Recognition
+, 2023, pp. 9791–9800.
+[34]
+S. Niklaus, L. Mai, and F. Liu, “Video frame interpolation via adaptive
+convolution,” in
+Proceedings of the IEEE Conference on Computer Vision
+and Pattern Recognition
+, 2017, pp. 670–679.
+[35]
+M. Choi, H. Kim, B. Han, N. Xu, and K. M. Lee, “Channel attention is all you
+need for video frame interpolation,” in
+Proceedings of the AAAI
+Conference on Artificial Intelligence
+, vol. 34, 2020, pp. 10 663–10 671.
+[36]
+T. Kalluri, D. Pathak, M. Chandraker, and D. Tran, “Flavr: Flow-agnostic video
+representations for fast frame interpolation,” in
+Proceedings of the
+IEEE/CVF Winter Conference on Applications of Computer Vision
+, 2023, pp.
+2071–2082.
+[37]
+L. Siyao, S. Zhao, W. Yu, W. Sun, D. Metaxas, C. C. Loy, and Z. Liu, “Deep
+animation video interpolation in the wild,” in
+Proceedings of the
+IEEE/CVF conference on computer vision and pattern recognition
+, 2021, pp.
+6587–6595.
+[38]
+S. Chen and M. Zwicker, “Improving the perceptual quality of 2d animation
+interpolation,” in
+European Conference on Computer Vision
+. Springer, 2022, pp. 271–287.
+[39]
+W. Shen, W. Bao, G. Zhai, L. Chen, X. Min, and Z. Gao, “Blurry video frame
+interpolation,” in
+Proceedings of the IEEE/CVF conference on computer
+vision and pattern recognition
+, 2020, pp. 5114–5123.
+[40]
+Z. Zhong, X. Sun, Z. Wu, Y. Zheng, S. Lin, and I. Sato, “Animation from blur:
+Multi-modal blur decomposition with motion guidance,” in
+European
+Conference on Computer Vision
+. Springer, 2022, pp. 599–615.
+[41]
+Z. Zhong, M. Cao, X. Ji, Y. Zheng, and I. Sato, “Blur interpolation
+transformer for real-world motion from blur,” in
+Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2023, pp.
+5713–5723.
+[42]
+B. Fan and Y. Dai, “Inverting a rolling shutter camera: bring rolling shutter
+images to high framerate global shutter video,” in
+Proceedings of the
+IEEE/CVF International Conference on Computer Vision
+, 2021, pp. 4228–4237.
+[43]
+Z. Zhong, M. Cao, X. Sun, Z. Wu, Z. Zhou, Y. Zheng, S. Lin, and I. Sato,
+“Bringing rolling shutter images alive with dual reversed distortion,” in
+European Conference on Computer Vision
+. Springer, 2022, pp. 233–249.
+[44]
+X. Ji, Z. Wang, Z. Zhong, and Y. Zheng, “Rethinking video frame interpolation
+from shutter mode induced degradation,” in
+Proceedings of the IEEE/CVF
+International Conference on Computer Vision
+, 2023, pp. 12 259–12 268.
+[45]
+S. Tulyakov, D. Gehrig, S. Georgoulis, J. Erbach, M. Gehrig, Y. Li, and
+D. Scaramuzza, “Time lens: Event-based video frame interpolation,” in
+Proceedings of the IEEE/CVF conference on computer vision and pattern
+recognition
+, 2021, pp. 16 155–16 164.
+[46]
+G. Lin, J. Han, M. Cao, Z. Zhong, and Y. Zheng, “Event-guided frame
+interpolation and dynamic range expansion of single rolling shutter image,”
+in
+Proceedings of the 31st ACM International Conference on Multimedia
+,
+2023, pp. 3078–3088.
+[47]
+X. Cheng and Z. Chen, “Multiple video frame interpolation via enhanced
+deformable separable convolution,”
+IEEE Transactions on Pattern
+Analysis and Machine Intelligence
+, vol. 44, no. 10, pp. 7029–7045, 2021.
+[48]
+K. Zhou, W. Li, X. Han, and J. Lu, “Exploring motion ambiguity and alignment
+for high-quality video frame interpolation,” in
+Proceedings of the
+IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2023, pp.
+22 169–22 179.
+[49]
+J. Yang, M. Gao, Z. Li, S. Gao, F. Wang, and F. Zheng, “Track anything:
+Segment anything meets videos,”
+arXiv preprint arXiv:2304.11968
+,
+2023.
+[50]
+T. Yu, R. Feng, R. Feng, J. Liu, X. Jin, W. Zeng, and Z. Chen, “Inpaint
+anything: Segment anything meets image inpainting,”
+arXiv preprint
+arXiv:2304.06790
+, 2023.
+[51]
+T. Wang, J. Zhang, J. Fei, Y. Ge, H. Zheng, Y. Tang, Z. Li, M. Gao, S. Zhao,
+Y. Shan
+et al.
+, “Caption anything: Interactive image description with
+diverse multimodal controls,”
+arXiv preprint arXiv:2305.02677
+, 2023.
+[52]
+Y. Wang, D. Stanton, Y. Zhang, R.-S. Ryan, E. Battenberg, J. Shor, Y. Xiao,
+Y. Jia, F. Ren, and R. A. Saurous, “Style tokens: Unsupervised style
+modeling, control and transfer in end-to-end speech synthesis,” in
+International conference on machine learning
+. PMLR, 2018, pp. 5180–5189.
+[53]
+A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury, G. Chanan, T. Killeen,
+Z. Lin, N. Gimelshein, L. Antiga
+et al.
+, “Pytorch: An imperative
+style, high-performance deep learning library,”
+Advances in neural
+information processing systems
+, vol. 32, 2019.
+[54]
+T. Xue, B. Chen, J. Wu, D. Wei, and W. T. Freeman, “Video enhancement with
+task-oriented flow,”
+International Journal of Computer Vision
+, vol.
+127, pp. 1106–1125, 2019.
+[55]
+Z. Wang, A. C. Bovik, H. R. Sheikh, and E. P. Simoncelli, “Image quality
+assessment: from error visibility to structural similarity,”
+IEEE
+transactions on image processing
+, vol. 13, no. 4, pp. 600–612, 2004.
+[56]
+R. Zhang, P. Isola, A. A. Efros, E. Shechtman, and O. Wang, “The unreasonable
+effectiveness of deep features as a perceptual metric,” in
+Proceedings
+of the IEEE conference on computer vision and pattern recognition
+, 2018, pp.
+586–595.
+[57]
+A. Mittal, R. Soundararajan, and A. C. Bovik, “Making a “completely blind”
+image quality analyzer,”
+IEEE Signal processing letters
+, vol. 20,
+no. 3, pp. 209–212, 2012.
+[58]
+S. Su, M. Delbracio, J. Wang, G. Sapiro, W. Heidrich, and O. Wang, “Deep video
+deblurring for hand-held cameras,” in
+Proceedings of the IEEE
+conference on computer vision and pattern recognition
+, 2017, pp. 1279–1288.
+[59]
+H. Xu, J. Zhang, J. Cai, H. Rezatofighi, and D. Tao, “Gmflow: Learning optical
+flow via global matching,” in
+Proceedings of the IEEE/CVF conference
+on computer vision and pattern recognition
+, 2022, pp. 8121–8130.
+[60]
+Y. Xu, H. Tan, F. Luan, S. Bi, P. Wang, J. Li, Z. Shi, K. Sunkavalli,
+G. Wetzstein, Z. Xu
+et al.
+, “Dmv3d: Denoising multi-view diffusion
+using 3d large reconstruction model,”
+arXiv preprint
+arXiv:2311.09217
+, 2023.
+[61]
+K. Simonyan and A. Zisserman, “Very deep convolutional networks for
+large-scale image recognition,”
+arXiv preprint arXiv:1409.1556
+, 2014.
+Zhihang Zhong
+is a researcher at Shanghai AI Laboratory. In 2018, he received the B.E. degree in mechatronics engineering with Chu Kochen Honors from Zhejiang University. He received the M.E. degree in precision engineering and the Ph.D. degree in computer science from the University of Tokyo in 2020 and 2023, respectively. He has published papers in top-tier conferences and journals, such as CVPR, ECCV, ICCV, IJCV,
+etc
+. His current research interests include neural rendering, AI for sports, and computational photography.
+Yiming Zhang
+is currently a master student at Cornell University and works as an intern at Shanghai AI Laboratory. He received his B.E. degree in Electrical and Computer Engineering from Shanghai Jiao Tong University in 2023. His research interests include diffusion generative models, multi-agent intelligence, and trajectory analysis.
+Wei Wang
+is currently a Research Engineer at Shanghai Artificial Intelligence Laboratory. His research interests include object detection, human pose estimation and 3D reconstruction. He received the B.S. from University of Chinese Academy of Sciences in 2020, and the M.S. degree from the Institute of Information Engineering, Chinese Academy of Sciences, Beijing, China, in 2023.
+Xiao Sun
+is a scientist at Shanghai AI Laboratory, where he leads diverse R&D groups on AI for sports, healthcare, and robotics. Before that, he served as a Senior Researcher at the Visual Computing Group, Microsoft Research Asia (MSRA), from Feb. 2016 to Jul. 2022. Xiao received the B.S. and M.S. degrees in Information Engineering from South China University of Technology, China, in 2011 and 2014, respectively. His research interests include computer vision, machine learning, and computer graphics.
+Yu Qiao
+is the lead scientist with Shanghai Artificial Intelligence Laboratory, a researcher, and the honored director of the Multimedia Laboratory with Shenzhen Institutes of Advanced Technology, Chinese Academy of Sciences (SIAT). He served as an assistant professor with the Graduate School of Information Science and Technology, University of Tokyo from 2009 to 2010. He has been working on deep learning since 2006, and he is one of the earliest people to introduce deep learning to video understanding. He and his team invented center loss and temporal segment networks. He has published more than 400 articles in top-tier conferences and journals in computer science with more than 80,000 citations. He received the CVPR 2023 Best Paper Award and AAAI 2021 Outstanding Paper Award. His research interests revolve around foundation models, computer vision, deep learning, robotics, and AI applications.
+Gurunandan Krishnan
+is an SVP of OtoNexus Medical Technologies. He obtained his master’s degree from Columbia University and bachelor’s degree from Visvesvaraya Technological University. His research interests are in Computer Vision, Computer Graphics, and Computational Imaging. He has published papers in top-tier conferences and journals, such as Siggraph, CVPR,
+etc
+.
+Sizhuo Ma
+is a Research Scientist at Snap Inc. He obtained a Ph.D. degree from University of Wisconsin-Madison in 2022. He received his bachelor’s degree from Shanghai Jiao Tong University. His research interests include computational imaging, computational photography and low-level vision. He has published papers at prestigious journals and conferences including CVPR, ECCV, Siggraph, MobiCom, ISMAR,
+etc
+.
+Jian Wang
+is currently a Staff Research Scientist at Snap Inc. His research interests include computational photography and computational imaging. He has published papers in top-tier places such as CVPR, MobiCom, Siggraph,
+etc
+. He has received best paper award from the 4th IEEE International Workshop on Computational Cameras and Displays and best poster award from IEEE Conference on Computational Photography 2022. He has served as Area Chair for CVPR, NeurIPS, ICLR,
+etc
+. Before joining Snap, Jian earned his Ph.D. degree from Carnegie Mellon University.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►
