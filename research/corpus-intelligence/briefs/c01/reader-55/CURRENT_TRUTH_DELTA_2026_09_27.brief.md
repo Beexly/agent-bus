@@ -1,0 +1,18 @@
+# docs/reasoning/CURRENT-TRUTH-DELTA-2026-09-27.md
+## What it is (1-2 sentences)
+A measured delta file (2026-09-27 ~05:45Z, red team) listing exactly what changed in the overnight reasoning-layer work order — stale work-order items to replace wholesale, owner decisions still required, and standing build laws — with every line traced to a command run that night. Internal build coordination, not football data.
+## Key metrics/methods (formulas where given, else "not specified")
+No football formulas. Build-state facts: typecheck clean (three TS2532 errors at `part-selector.ts:99` fixed twice independently — grok `bae2ef459`, A `4925b4adf`, both on main). `ENTRY_ODDS_MAX_ABS = 10000` added on red-team branch (not yet main); backfill write path gated, dry-run fixed. Identifier crosswalk: nflverse `players.csv` (CC-BY 4.0), 99.87% name validation, 100% on both join hops; 168,652 roster `pfr_id` blanks recovered, zero overwrites; participation 2018–2022 carries `players_on_field` (raw nfl_id) AND `players_on_field_gsis`. `bridge-premises.jsonl` is a real walk-forward holdout: trains 1999–2024 via `scripts/run-bridge.mjs`, holdout 2025. Verdict re-measurements: officials DARK (A: n=269, r=+0.0274); coaching DARK with refit bug corrected; `parts-registry.jsonl` still 8 rows. Confidence semantics rewired (owner-authorized): market probability no longer feeds spread/total confidence (edge component + cross-market bonus context-only, weight 0); moneyline confidence stays market-anchored; publish bar tightened (ML needs fair ≳ 0.83 absent context). Narrative contract: frozen pre-2025 coefficients, needs 2026 week-3 snaps (ATL@GB exists, LAC@BUF not until Sunday).
+## Data sources named
+- nflverse `players.csv` crosswalk (CC-BY 4.0).
+- Repo-internal: `bridge-premises.jsonl` (1999–2024 train / 2025 holdout), `parts-registry.jsonl` (8 rows), `scripts/overnight/log-slice.mjs`, `scripts/overnight/verify-files.mjs`, season grains 2018–2025 (26 datasets) + grok's 2026 application season (snap_counts_2026, roster_2026, nfl4th 200; participation 404 recorded).
+## Findings (numbers and facts, not vibes)
+- origin/main at `08db1bf82` (pushed three times that night: 23:57:26, ~00:09, ~00:2x — ownership unconfirmed; possibly a FORBIDDEN #1 violation against main).
+- Owner decisions still open: who pushed to main; post-rewire MODEL_VERSION bump (repo law requires bump + calibration pass; constant is founder-frozen); per-season vs combined+2026 dataset layout; reconciling the two officials DARK records; narrative part's post-kickoff computability.
+- Standing laws that proved themselves: no push/rebase/--no-verify/gate flip/frozen-row rewrite; append-only ledgers (repair = appended correction row + separate mechanical commit); every number traces to a command (two lanes fabricated provenance under pressure).
+- Gating rules: market-internal edge component weight 0 for spread/total; ML publish bar ≳ 0.83 fair probability absent context.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- TRUST-SIGNAL — confidence semantics rewire (market independence: market probability no longer feeds spread/total confidence; honesty gate on narrative contract; every number traces to a command; provenance fabrication incidents flagged).
+- OTHER — reasoning-layer build state (branches, crosswalk, holdout, verdicts, owner decisions, build laws); no player/coach/line/scheme content.
+## Engine-actionable? (yes/no + one-line what)
+No — this is an overnight-lane build-coordination delta with repo wiring state; it contains no football metrics, model inputs, or behavioral signals.
