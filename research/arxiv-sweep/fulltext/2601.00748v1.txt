@@ -1,0 +1,1602 @@
+                                          A Machine Learning Framework for Off Ball Defensive Role and
+                                                      Performance Evaluation in Football
+                                                  Sean Groom1,2 , Francisco Belo2 , Axl Rice2 , Liam Anderson3 , and Shuo Wang1*
+                                                  1
+                                                  School of Computer Science, The University of Birmingham, Birmingham, UK
+                                                                2
+                                                                  Nottingham Forest Football Club, Nottingham, UK
+                                             3
+                                               School of Sport, Exercise and Rehabilitation Sciences, The University of Birmingham,
+arXiv:2601.00748v1 [cs.LG] 2 Jan 2026
+
+
+
+
+                                                                                 Birmingham, UK
+                                                                   *
+                                                                     Corresponding author: s.wang.2@bham.ac.uk
+
+
+
+                                                                                             Abstract
+                                              Evaluating off-ball defensive performance in football is challenging, as traditional metrics do not cap-
+                                              ture the nuanced coordinated movements that limit opponent action selection and success probabilities.
+                                              Although widely used possession value models excel at appraising on-ball actions, their application to
+                                              defense remains limited. Existing counterfactual methods, such as ghosting models, help extend these
+                                              analyses but often rely on simulating ”average” behavior that lacks tactical context. To address this, we
+                                              introduce a covariate-dependent Hidden Markov Model (CDHMM) tailored to corner kicks, a highly
+                                              structured aspect of football games. Our label-free model infers time-resolved man-marking and zonal
+                                              assignments directly from player tracking data. We leverage these assignments to propose a novel frame-
+                                              work for defensive credit attribution and a role-conditioned ghosting method for counterfactual analysis
+                                              of off-ball defensive performance. We show how these contributions provide a interpretable evaluation
+                                              of defensive contributions against context-aware baselines.
+
+
+                                        Introduction
+                                        Elite sporting organizations are increasingly leveraging machine learning to inform tactical planning and
+                                        player evaluation. This advancement is fueled by rich datasets, including event data (e.g., passes and shots)
+                                        and player tracking data from multi-camera systems [1, 2]. For instance, pitch control models [3, 4, 5]
+                                        estimate a team’s probability of controlling different areas of the field. While these models are valuable
+                                        for visualizing territorial dominance, they often fail to appraise the contextual value of those areas within
+                                        a specific game state. Similarly, possession value models [6, 7, 8, 9, 10], which appraise on-ball actions,
+                                        face significant challenges when applied to defensive performance analysis [11]. This is because defensive
+                                        play presents unique appraisal problems, player’s individual actions are not the only important considera-
+                                        tion, but also their coordinated movements with teammates, which makes it difficult to isolate individual
+                                        contributions. Furthermore, successful defensive play is often defined by actions that don’t occur, i.e. pre-
+                                        venting a pass or a shot [12, 13, 14]. Traditional metrics like tackles and interceptions are insufficient as they
+                                        don’t capture the subtle ways defenders constrain attacking options. Consequently, the analysis of defensive
+                                        performance significantly lags behind that of offensive play.
+                                            To address the limitations of traditional metrics, recent research has explored counterfactual analysis as
+                                        a means of evaluating defensive performance. A notable example is the use of ”ghosting” models, which
+                                        generate simulated player trajectories to analyze defensive behavior by measuring how a player’s actual
+
+
+                                                                                                 1
+movement alters offensive outcomes—such as pass completion or shot quality—when compared to a hy-
+pothetical ”ghost” player [15, 16, 17]. This approach provides a powerful way to quantify a defender’s
+impact beyond simple event counts. However, the application of these techniques in football remains lim-
+ited [18], and they often rely on simulating ”average” behavior, which may not align with a team’s specific
+tactical system. More recent research has attempted to move beyond this by introducing latent role variables
+into generative or predictive models of player motion [19, 20]. While these roles help the model represent
+coordinated team structures, they are designed to capture statistical regularities in movement rather than
+interpretable tactical categories familiar to coaches (e.g., man-marking or zonal defending). To date, such
+models have been primarily evaluated for predictive accuracy, not for counterfactual assessment of tactical
+performance. Therefore, conditioning counterfactual generation on interpretable tactical roles may offer
+more relevant insights for coaching and performance analysis.
+     Attempts to value off-ball defence in football have historically been limited, due in part to the difficulty
+of linking defensive positioning to observable outcomes. Recently, graph-based deep learning approaches
+have begun to address this gap in open play. Everett et al. [21] introduce GAPP, an attention-based frame-
+work that estimates Defender Influence by predicting pass reception probabilities using Graph Attention
+Networks. By leveraging attention weights and node-masking interventions, their method provides local,
+instance-level explanations of which defenders most strongly affect specific attacking options.
+     However, as established in prior work on model interpretability, attention mechanisms—while often
+predictive and locally faithful—do not in themselves constitute explanations of causal or semantic structure
+[22, 23]. In particular, attention weights are not guaranteed to correspond to uniquely meaningful roles
+or responsibilities unless such concepts are explicitly represented in the model. In the context of off-ball
+defending, this means that high attention or influence scores indicate that a defender affected an outcome, but
+not why this occured. Moreover, attention-masking-based influence measures implicitly compare observed
+behaviour to the absence of a defender’s contribution, rather than to a realistic alternative execution of the
+same defensive role, limiting their ability to support structurally grounded tactical reasoning.
+     In parallel, Kim et al. propose DEFCON [24], a probabilistic framework that assigns defensive credit
+by marginalising over learned action selection, success, and defender responsibility probabilities to estimate
+marginal reductions in Expected Possession Value (EPV). This formulation yields a principled and stable
+attribution of defensive value and avoids reliance on explicit attention masking, making it well-suited to
+aggregating player contributions across matches and contexts. Importantly, DEFCON evaluates defenders
+relative to the observed defensive organisation, attributing credit within a fixed tactical configuration.
+     Set pieces, particularly corner kicks, offer a structured and valuable context for studying defensive be-
+havior. Occurring roughly ten times per match and accounting for a significant percentage of goals (11% of
+all goals in the 2024/2025 English Premier League season, calculated from Statsbomb event data), corners
+are highly scripted, meaning that improvements in performance can lead to substantial gains without need-
+ing to acquire new personnel. Their impact is significant enough that many clubs now employ dedicated
+set-piece coaches. Defensive instructions during corners typically involve either tracking a specific oppo-
+nent (man-marking) or zonal marking, where players guard predefined locations. Most teams adopt hybrid
+strategies that reflect their tactical identity. Prior work has largely focused on scheme identification and
+pattern discovery. For example, Shaw & Gopaladesikan mapped recurring corner routines and inferred de-
+fender roles [25]. Bauer et al. [26] developed an approach using a convolutional–recurrent neural networks
+(CNN–LSTM) to assign defenders various roles, including zonal defending and man-marking roles, yielding
+who was marking whom but at the cost of a hand-labelled dataset that is neither publicly nor commercially
+available. DeepMind and Liverpool FC’s TacticAI utilises D2 -equivariant graph neural networks to predict
+reception and shot outcomes, as well as generating suggestions on how to improve these outcomes [27].
+Although TacticAI’s suggestions were preferred by expert raters, they are not explicitly parameterized by
+interpretable tactical roles. Accordingly, we seek a framework that infers time-resolved tactical roles from
+tracking data without time-intensive labeling. This framework will be coupled with outcome prediction
+
+                                                       2
+models to facilitate counterfactual evaluation and individual defensive performance evaluation.
+    Addressing this gap, we introduce a covariate-dependent Hidden Markov Model (CDHMM) [28, 29]
+specifically tailored for the analysis of corner kicks. In our model, the latent states are designed to represent
+interpretable tactical roles, such as which defender is assigned to man-mark a specific opponent and which
+defenders occupy zonal positions. The model’s covariate-dependent transitions capture the dynamic nature
+of set-play behavior, allowing it to infer time-resolved tactical assignments and derive team- and delivery-
+specific zonal structures directly from tracking data without the need for manual labeling of roles.
+    We leverage these role assignments in two key ways. First, they provide coach-facing profiles of de-
+fender and attacker behaviour at set plays and extend existing outcome models (e.g., reception probability,
+expected threat, shot likelihood) to the off-ball domain by attributing defensive credit to specific players in
+specific roles. Second, we define role-conditioned ghosts, counterfactual baselines that replace a defender
+with an average counterpart from the same tactical role and team context, enabling situation-specific, role-
+aware off-ball performance analysis. We illustrate practical utility via a reception-prediction case study and
+discuss generalization to other outcome models such as expected threat. This research was conducted in col-
+laboration with, and validated by, professional football analysts and coaches from an elite level professional
+club, including the club’s set-piece coach.
+    Our work is complementary in spirit but distinct in emphasis to Everett et al. and Kim et al. Rather than
+treating defensive organisation as implicit context, we model it explicitly through latent defensive roles, such
+as man-marking and zonal coverage, and their temporal evolution during set pieces. This representation en-
+ables both player-level evaluation and structurally grounded counterfactual analysis, allowing alternative
+defensive organisations or role assignments to be compared directly. As a result, while recent approaches
+quantify how much defensive value is realised within an existing structure, our framework makes it addition-
+ally possible to ask how defensive value would change under different, tactically plausible organisational
+choices, supporting decision-making and tactical analysis.
+    Contributions
+
+    • We introduce a label-free CDHMM for corner kicks that jointly infers time-resolved man-marking
+      and zonal assignments, as well as team- and delivery-specific zonal structures, directly from tracking
+      data. Building on our earlier IT4PSS workshop model [30], we extend the transition dynamics with a
+      covariate-dependent formulation and provide substantially expanded validation and analysis.
+
+    • We propose coach-facing behavioural metrics, inspired by the basketball HMM of Franks et al. [31],
+      derived from the inferred man-marking and zonal roles to provide interpretable insights for tactical
+      analysis.
+
+    • We present a novel method for off-ball defensive credit attribution. Unlike general open-play models
+      that distribute credit via implicit responsibility scores [24], our method attributes value based on
+      explicitly inferred, time-resolved tactical assignments.
+
+    To our knowledge, we present the first ghosting framework in football that conditions defender baselines
+on interpretable tactical roles learned directly from data. This enables a more structured and context-aware
+counterfactual evaluation of defensive performance and offers a distinct advantage over attention-masking
+techniques [21] by enabling counterfactual comparisons against average role-specific behavior rather than
+the absence of a defender.
+
+
+
+
+                                                       3
+Results
+Data and Preprocessing
+This study utilizes tracking data covering four complete English Premier League seasons, from 2020/21
+through to 2023/24. Corner kick sequences were extracted by aligning tracking data with synchronized
+event logs, resulting in an initial dataset of 14,678 corners. Corners involving red cards or substitution errors
+were excluded from analysis to ensure data quality. Individual CDHMMs were trained separately for each
+defending team, and further distinguished by corner kick delivery type, specifically categorizing sequences
+as either inswinging or outswinging. For downstream tasks, such as recipient and shot prediction described
+later in this work, short corners—defined as short passes to a nearby teammate rather than deliveries into the
+penalty area—were excluded based on event data annotations, resulting in a dataset of 13,752 corners. To
+standardize the data, all corner sequences were canonicalised: each sequence was translated and reflected
+so that all deliveries appear to originate from the top-right corner of the pitch, with the coordinate system’s
+origin at the defending team’s penalty spot. Sequences were captured starting one second before the corner
+kick and were truncated either two seconds after delivery or upon the second subsequent on-ball event,
+whichever occurred first. This approach aligns with a prior methodology [25]. Finally, to simplify our
+analysis of defensive marking, goalkeepers were excluded from man-marking state considerations.
+
+Inferred Defensive Behaviors from the CDHMM
+Our framework utilizes a covariate-dependent Hidden Markov Model (CDHMM) to analyze defensive be-
+havior during corner kicks. The model represents each defender’s actions as a sequence of latent states
+over time, which correspond to interpretable tactical roles, including man-marking a specific attacker or
+defending a fixed zonal region of the pitch. At each timestep, the model determines a defender’s most likely
+state based on their observed position, and transitions between states are governed by probabilities that dy-
+namically adapt to sequence specific covariates. This approach allows us to unsupervisedly infer tactical
+dynamics and role changes directly from tracking data, without the need for manual labels.
+    The CDHMM framework provides a granular, time-resolved analysis of defensive behavior. Figure
+1 visualizes the inferred defensive assignments at a single time step during a corner routine. The model
+distinguishes between man-marking roles (blue circles linked by dashed lines to an assigned attacker) and
+zonal defending roles (blue triangles positioned in a compact structure across the goalmouth). This mixture
+of roles accurately reflects the hybrid defensive strategies common in professional football. These roles
+and assignments are not pre-defined; instead, they emerge directly from the model’s unsupervised learning
+of spatio-temporal patterns, highlighting its ability to capture complex tactical structures without manual
+labeling.
+    The CDHMM’s emission distribution defines the likelihood of a defender’s position given their inferred
+tactical role. For man-marking states, this distribution depends on the assigned attacker’s location, modeling
+how closely a defender tracks their opponent. For zonal states, emissions are modeled as bivariate Gaussians
+centered on fixed regions of the pitch. A key feature of our approach is that these zonal emission distributions
+are learned separately for each team and corner delivery type (inswinging or outswinging), enabling the
+model to capture the nuanced spatial structures of different defensive schemes.
+    Figure 2 visualizes the estimated zonal distributions for a single team during the 2023/24 season. Each
+zone is represented by a bivariate Gaussian, with the red dot indicating the estimated mean position and
+the ellipse showing the 66% confidence interval. The color of the ellipse encodes the average duration a
+defender spends in that zone before transitioning to a man-marking assignment.
+    The results reveal that zonal structures differ markedly between delivery types. For inswinging corners,
+zones tend to concentrate near the goalmouth, while for outswinging corners, the structure is more dispersed,
+
+
+                                                       4
+Figure 1: A visualization of a team defending an inswinging corner. Blue circles represent defenders assigned to
+man-marking roles, with dashed black lines connecting them to their assigned attacker (red circles). Blue triangles
+indicate defenders in zonal marking roles, positioned in a compact structure near the goalmouth.
+
+
+
+
+                                                        5
+(a) Estimated zonal states for a team defending            (b) Estimated zonal states for a team defending
+inswinging corners.                                        outswinging corners.
+
+Figure 2: This figure illustrates the estimated zonal states for a team from the 2023/24 Premier League season when
+defending against inswinging and outswinging corner deliveries. Each sub-figure presents 10 zonal emission distri-
+butions, marked by a red circle indicating the mean position and encircled by a 66% confidence interval. The colour
+of each ellipse denotes the average fraction of the corner sequence duration that a defender spends in that zonal state
+before transitioning to a man-marking state. Pitch markings are shown in black; goalposts are represented by black
+squares and the penalty spot by a black circle.
+
+
+with coverage extending toward the edge of the penalty area. This highlights the model’s sensitivity to
+tactical context.
+    In addition to learning zonal structures, the CDHMM also estimates how defenders position themselves
+relative to their assigned attacker when engaged in man-marking. A key parameter governing this behaviour
+is γo , that governs how tightly defenders position themselves relative to their assigned attacker. This pa-
+rameter captures the extent to which a defender ”shades” toward the attacker along the line connecting the
+attacker to the goalmouth, which can be interpreted as marking tightness.
+    To account for spatial variation, we estimate separate γo values for each 3 m × 3 m bin on the pitch, al-
+lowing the model to flexibly capture how man-marking behaviour changes across different areas. In general,
+we find that defenders mark more tightly as attackers approach the goal, reflecting the natural compression
+of player spacing and increased defensive urgency in central areas.
+    Figure 3 shows 2023/24 league-average γo values across the pitch for inswinging and outswinging de-
+liveries. These maps are produced by averaging the learned parameters from each team’s CDHMM across
+an entire season. The results reveal subtle but consistent differences in defensive behaviour across delivery
+types: outswinging corners are associated with slightly tighter marking over a broader region, particularly
+beyond the near-post zone.
+
+Covariate-Dependent Transition Model
+A core feature of the CDHMM is its covariate-dependent transition model, which allows transition probabil-
+ities between states to vary dynamically with the game state. The model learns linear weight vectors (β) that
+govern different types of transitions. For example, βm determines the probability of a defender continuing
+to mark the same attacker, while βz controls the probability of a defender remaining in a zonal role. We
+also define a switching parameter, βs , which governs the probability of a defender changing man-marking
+assignments or transitioning from a zonal role to a man-marking one. Transitions from man-marking to
+zonal states are not permitted in our model based on discussions with coaches and analysts. This dynamic
+
+
+                                                          6
+Figure 3: A comparison of league-average man-marking factors, γo , across the pitch for inswinging (left) and
+outswinging (right) corner deliveries. The heatmaps reveal differences in defensive behaviour, outswinging corners
+are associated with slightly tighter man-marking across a broader area, particularly beyond the near-post zone. In both
+cases, the average offset between defenders and their assigned attackers decreases as the attacker nears the goal.
+
+
+transition structure enables the model to capture the fluid nature of defensive roles during a set piece. A full
+list of covariates and details of how these probabilities are computed are provided in the Methods section.
+     The CDHMM’s dynamic transition model provides insights into how defensive behaviors evolve during
+a corner. Figure 4 shows the distribution of learned transition weight parameters (β) across all teams and
+delivery types.
+     We find that some aspects of transition behaviour are consistent across teams. For example, the relatively
+narrow and approximately zero-centered, distribution of βm values for inswinging corners (top left) suggests
+that teams adopt broadly similar policies for maintaining man-marking assignments. The bottom left panel
+further confirms this, showing only minor within-team changes in man-marking behaviour between delivery
+types.
+     By contrast, more variation is observed in zonal self-transitions. The distribution of βz parameters (top
+middle) is wider, and the corresponding bottom middle plot reveals large within-team differences between
+inswinging and outswinging corners. This reflects the influence of delivery-specific zonal configurations on
+defensive behaviour — particularly the fact that different zones are occupied in each delivery type and that
+defenders tend to remain in zonal roles for different durations depending on the delivery.
+     The CDHMM’s dynamic transition model provides further insights into how defensive behaviors evolve
+based on player movement. Figure 5 visualizes the one-second man-marking transition probability, p25      m de-
+rived from a single team’s βm parameters. In these heatmaps, the attacker is fixed at the origin and moves
+to the right, while the defender’s velocity increases across the panels from left to right. The heatmaps show
+the spatial distribution of the continuation probability, revealing how the model dynamically adapts to the
+relative motion between the players. As the defender’s speed increases, the model assigns lower proba-
+bilities to trailing positions and higher values to regions more aligned with the attacker’s trajectory. This
+demonstrates the model’s ability to capture the influence of velocity alignment on the predicted persistence
+of a man-marking assignment. Additional examples of learned transition surfaces under different configura-
+tions are provided in the Appendix (Figure 12), further illustrating the flexibility of the model in capturing
+context-dependent marking behaviours.
+
+
+
+
+                                                          7
+Figure 4: Distribution of learned transition model parameters for different defensive behaviours during all 2023/24
+season corner kicks. Each column corresponds to a transition type: βm for continuing to man-mark the same attacker,
+βz for continuing to zonally defend a designated zone, and βs for switching from zonal or one man-marking state
+to another man-marking assignment. The top two rows show the distribution of parameter weights across all teams
+for inswinging and outswinging deliveries, respectively. The bottom row illustrates within-team differences between
+inswinging and outswinging deliveries, highlighting delivery-specific tactical adaptations. These parameters are esti-
+mated from team and delivery specific Hidden Markov Models.
+
+
+
+
+                                                          8
+Figure 5: Each subplot shows how the probability of continuing to man-mark a specific attacker (pm ) varies spatially
+under different defender velocities for an individual team in the 2023/24 season during inswinging corners. The
+attacker is fixed at the origin (0, 0) and moves rightward with velocity (2.0, 0.0), with height 1.85 m and weight 82 kg.
+In all panels, the defender moves in the same direction (rightward), with speed increasing from left to right. Red
+arrows indicate the attacker’s velocity vector; green arrows in the top-right corner of each plot indicate the defender’s
+velocity. We plot three iso-probability contours at pm = 0.25, 0.5, and 0.75 to highlight decision boundaries. As
+defender speed increases, the model assigns lower pm values to trailing positions and higher values to regions more
+aligned with the attacker’s trajectory, reflecting the influence of velocity alignment on predicted marking persistence.
+Note that since data is sampled at 25 frames per second, the one-second transition probability of maintaining a man-
+marking assignment is given by p25   m.
+
+
+
+Latent state–derived characterisation of player behaviour
+The learned parameters and outputs of the CDHMM provide detailed, time-resolved insights into team
+defensive behavior during corner sequences, including team-specific zonal configurations and per-frame
+marking assignments. These outputs are leveraged to derive a set of player-level metrics that characterize
+individual roles and behaviors within corner routines.
+
+Context-Aware Man-Marking Attention
+In their work in basketball analysis Franks et al.[31] introduce man-marking attention and defensive entropy,
+                                     (p)
+defining man-marking attention, Ak , as a metric associated with each attacking player k that is calculated
+as the total number of frames the attacker k is marked divided by the sequence length Tp , while defensive
+entropy captures how frequently teams assign multiple defenders to a single attacker. In a similar approach,
+we adapt the man-marking attention metric to account for the possibility of zonal defending during the
+corner sequences.
+     To account for the possibility that defenders may be zonally marking, we define the context-aware
+man-marking attention score, CAk , which measures how much more (or less) attention attacker k receives
+compared to what the defending team typically awards to each attacker. This normalizes attention relative
+to the team’s own mixture of zonal and man-marking, helping distinguish attackers who consistently draw
+disproportionate attention across varying defensive schemes.
+          (p)
+     Let Ak denote the attention received by attacker k in corner sequence p, defined as the average number
+of defenders assigned to mark them per frame over the course of the sequence. Let Pk be the set of all corner
+sequences in which attacker k appears, and let w(p) denote the defending team in sequence p. For each team
+w, we compute their baseline attention, Āw , as the average attention they assign to marked attackers across
+all sequences they defend:                                              
+                                             1     X
+                                                         1
+                                                                X    (p)
+                                    Āw =                          Aℓ  ,
+                                           |Pw |          |Ap |
+                                                    p∈Pw           ℓ∈Ap
+
+
+
+
+                                                           9
+where Pw is the set of sequences defended by team w, and Ap is the set of attackers in sequence p.
+   The deviation from this baseline for attacker k in sequence p is then defined as
+                                                (p)       (p)
+                                            CAk = Ak − Āw(p) ,
+
+and the final context-aware attention score is the average of this difference across all sequences involving
+attacker k.
+
+Attacker Evasiveness
+To assess the evasiveness of attackers making runs into the box during corners, we define an attacker evasion
+score, ES(k), which quantifies how much space attacker k gains on their closest marker between the moment
+he is first man-marked and the moment of first contact with the ball. The score is weighted by how close to
+goal this separation occurs, attempting to reward the value of creating separation in dangerous areas. The
+per-sequence scores, ESp (k), is defined as:
+
+                                          ESp (k) = ϕgoal (tc ) · ∆dp,k .
+
+Here ∆dp,k = dmin (tc ) − dmin (t0 ) is the change in the minimum Euclidean distance between the attacker
+and their marker from the first marking frame (t0 ) to the first contact with the ball (tc ). The spatial weighting
+term, ϕgoal (tc ) is a function of the attacker’s distance to goal, ensuring that space gain closer to the goal is
+valued more highly.
+
+                                                       min(18 yd, dgoal k (tc ))
+                                   ϕgoal (tc ) = 1 −                             .
+                                                               18 yd
+
+Interpreting Attacker Profiles
+We visualize the relationship between context-aware man-marking attention and attacker Separation Score
+in Figure 6 for players who appeared in at least 20 corner sequences. Each point represents an individual
+player, positioned by their average scores for each metric. The color of each point denotes the player’s
+proximity to the ball at the moment of first contact, with warmer tones indicating those who operate closer
+to the delivery location. This analysis enables practitioners to quickly identify different types of attacking
+threats:
+
+   • Top-right quadrant: Players with high separation score and high context-aware man-marking
+     attention. These are high-priority threats who are both tightly marked and effective at creating
+     space.
+
+   • Bottom-left quadrant: Players who are neither tightly marked nor successful at creating space.
+     This suggests they are either not perceived as a primary threat or are not centrally involved in the
+     attacking scheme for this type of set piece.
+
+   • Top-left quadrant: Players who consistently draw less attention and evade those who do mark
+     them.
+
+   • Bottom-right quadrant: Players who are often tightly marked and struggle to create space from
+     their marker.
+
+
+
+
+                                                         10
+Figure 6: Relationship between attacker evasiveness and context-aware attention during corner kicks in the 2023/24
+English Premier League season. Each point represents an individual attacking player who has appeared in at least
+20 corner sequences, positioned by their average context-aware attention score (x-axis) and evasion score (y-axis).
+Colour indicates the player’s first contact proximity, capturing how frequently they operated close to ball delivery
+location, with warmer tones indicating higher proximity. Players in the top-right quadrant receive above-average
+defensive attention and create above-average separation from their markers, while those in the bottom-left are less
+tightly marked and generate limited separation. The remaining quadrants distinguish players who either evade well
+despite receiving little attention (top-left), or who are marked closely but struggle to create space (bottom-right).
+
+
+
+
+                                                         11
+Effective Number of Initial Man-Marking Assignments
+To assess the diversity of initial man-marking assignments for each defender, we define the effective number
+of attackers per game, which quantifies how many distinct attackers a defender typically begins marking in
+a given match. This is calculated by first computing the entropy [32] of a defender’s initial assignments per
+game, converting it into an effective count of attackers, and then averaging across matches.
+                            (g)
+    For each game g, let Cj,k denote the number of corner sequences in which defender j begins by marking
+                      (g)     P (g)
+attacker k, and let Tj = k Cj,k be the total number of initial man-marking assignments observed for
+defender j in that game. The empirical assignment distribution is
+                                                        (g)
+                                                 (g)  Cj,k
+                                                pj,k = (g) ,
+                                                      Tj
+
+and the corresponding assignment entropy is given by
+                                        (g)
+                                                 X (g)         (g)
+                                      Hj = −         pj,k log pj,k .
+                                                     k
+
+This entropy is converted to an effective number of attackers,
+                                                                
+                                            eff,(g)          (g)
+                                           Nj       = exp Hj       ,
+
+which reflects the number of attackers a defender would need to mark uniformly to obtain the same entropy
+value. The effective number of attackers not only counts how many different opponents a defender ever
+marks, but also weights them by how evenly that defender’s assignments are distributed. For example, a
+defender who splits his attention equally between two attackers will have a higher value (≈ 2) than one who
+marks one almost exclusively and the other only once (≈ 1.1), even though both have a unique-count of 2.
+The final metric is obtained by averaging across all games in which the defender has at least one observed
+initial man-marking assignment. Lower values of Njeff indicate defenders with consistent initial roles across
+games, while higher values reflect more varied or flexible marking responsibilities.
+
+Switch Rate
+To measure how often defenders change their man-marking responsibilities, we define the Switch Rate. For
+each defender in a corner sequence, we count the number of times their man-marking assignment changes
+from one frame to the next. We then divide this count by the total number of frames in the sequence (minus
+one) to get a per-sequence rate. The final Switch Rate is the average of these per-sequence rates across all
+corners in which a defender appears, yielding an overall measure that reflects how frequently they transfer
+between marking different attackers.
+
+Interpreting Defender Profiles
+Figure 7 visualises defender behaviour during corner kicks by plotting the average switch rate against the
+effective number of inital attackers marked. The effective number of initial attackers captures the variety
+of initial man-marking assignments a defender receives across games, while the switch rate reflects how
+often that defender changes assignments within individual sequences. Each point represents a defender
+who appeared in at least 20 corner routines, and colour denotes their average proximity to the point of first
+contact, with warmer tones indicating players more frequently located near the delivery zone.
+
+
+
+                                                      12
+   • Top-right quadrant: Defenders who frequently switch assignments and mark a wide variety of
+     attackers. These players may be tasked with flexible or reactive defensive roles.
+
+   • Bottom-left quadrant: Defenders with a lower effective number of initial assignments and a low
+     switch rate, suggesting a more specialized or rigid role.
+
+   • Top-left quadrant: Defenders who mark a narrow range of attackers but exhibit high within-
+     sequence switching, which may reflect reactive coverage or difficulty in maintaining individual
+     matchups.
+
+   • Bottom-right quadrant: Defenders who are assigned to a wide variety of attackers but maintain
+     low within-sequence switching, suggesting their role is to take an initial assignment and maintain
+     it.
+
+
+
+
+Figure 7: Relationship between defender switch rate and effective number of initial attackers marked, based on data
+from the 2023/24 English Premier League season. Each point represents a defender who appeared in at least 20 corner
+sequences, positioned by their average number of distinct attackers marked at the start of corners (x-axis) and their
+average rate of switching man-marking assignments within sequences (y-axis). Colour denotes the defender’s average
+proximity to the point of first contact, with warmer tones indicating closer positioning. Defenders in the top-right
+quadrant both frequently switch marking assignments and are assigned to a diverse set of attackers initially, while
+those in the bottom-left exhibit more stable, specialised marking roles.
+
+
+
+Human Analyst Baseline
+To contextualise model performance on corner recipient prediction, we first measured how accurately expert
+practitioners could anticipate the first-contact recipient from the information available at delivery. Eight
+football analysts from Nottingham Forest FC (first team and academy staff) were shown a sample of 30
+
+                                                         13
+corner routines from our validation set. Each routine was presented as a single image depicting player
+positions and velocity vectors at the moment of delivery, with teams distinguished by colour and the corner
+taker highlighted. Participants were instructed to nominate the three players they believed most likely to win
+first contact.
+     Across all participants, mean top-3 accuracy was 23.75% ± 4.52% (mean ± standard deviation). This
+illustrates the inherent difficulty of the task when judged from the delivery snapshot alone, providing a
+practical reference point for interpreting model performance.
+
+Corner Recipient Prediction
+We compare two graph neural network (GNN) models for predicting which player will next interact with the
+ball (the first-contact recipient), given a graph representation of the game at the moment of corner delivery.
+The first model takes canonicalised graphs as inputs, with MLP [33, 34] pre- and post-processing layers and
+four intermediate GATv2 [35, 36] layers. The second model is a reimplementation of TacticAI’s receiver
+prediction component, which employs four D2 -equivariant GATv2 layers. We evaluate model performance
+under varying training set sizes corresponding to 50%, 75%, and 100% of available tracking data (roughly
+2, 3, and 4 seasons). In each regime, we retain a fixed 20% test set and split the remainder into training and
+validation subsets (80/20), subsampling the training set to the target fraction. We report top-3 accuracy in
+all experiments, following the evaluation protocol used in [27]. All models are implemented in PyTorch and
+trained using the Adam optimizer with early stopping based on validation top-3 accuracy.
+     At the full dataset size (100%), the canonicalised model achieved significantly higher average top-3
+accuracy (48.07%) than TacticAI (47.43%; paired t-test p = 0.0088). Expressed relative to expert human
+performance on the same task, these correspond to 202% (canonicalised) and 200% (TacticAI) of the hu-
+man baseline top-3 accuracy. At reduced dataset sizes, differences between models were smaller and not
+statistically significant (75%: canonicalised 47.00%, TacticAI 46.71%, p = 0.0740; 50%: canonicalised
+44.81%, TacticAI 45.22%, p = 0.2472). Relative to the human baseline, these correspond to 198% vs 197%
+(75%) and 189% vs 190% (50%), respectively. Thus, while canonicalisation shows a marginal but statisti-
+cally significant advantage at full data, performance converges as training data decreases. Notably, despite
+our models achieving lower headline accuracy than reported in the original TacticAI paper, both models
+substantially outperform expert human raters on this delivery-time snapshot task.
+
+Evaluation Of Off-ball Defensive Contributions
+Defensive Value Added
+To evaluate the efficacy of defensive positioning at the moment of delivery t, we compare the reception
+risk implied by a defender’s observed location to the risk achievable under counterfactual man-marking
+assignments generated by the CDHMM. Let atk denote attacker k at time t and dtj denote defender j at
+time t. We use a reception model to estimate the probability that attacker k receives first contact at delivery
+given defender j’s position, written Pr (atk | dtj ).
+    The CDHMM provides a distribution over counterfactual defender positions x induced by assigning
+defender j to a particular man-marking role k ′ (i.e., “mark attacker k ′ ”), which we denote p(x | k ′ ). Under
+such a role, the expected total reception probability conceded to the feasible attacker set Kjt is
+                                                                   
+                                                   X
+                                          Ex|k′        Pr (atk | x) ,
+                                                 k∈Kjt
+
+where Kjt is the set of feasible man-marking roles for defender j at time t (equivalently, the attackers
+considered relevant/threatening for that defender in that frame). We define the Group Coverage Advantage
+
+                                                      14
+(GCA) as the gap between (i) the minimum expected group reception probability achievable across feasible
+counterfactual roles and (ii) the group reception probability implied by the defender’s observed position:
+                                                                
+                                                X                    X
+                     GCAtj = min   ′
+                                       E x|k ′     P r (atk | x)−        Pr (atk | dtj ).               (1)
+                                k ∈Kjt
+                                             k∈Kjt                  k∈Kjt
+
+    If GCAtj > 0 this means that event the best counterfactual man-marking option concedes more than
+the defender actually conceded, so the defender’s real positioning was better than any of the feasible man-
+marking alternatives. By benchmarking against a set of optimal counterfactuals rather than raw reception
+probabilities, this framework offers several key advantages:
+
+  • Isolation: It disentangles the defender’s contribution from confounding variables such as passer
+    pressure or the inherent difficulty of the pass, which are held constant across both real and ghost
+    scenarios.
+
+  • Contextual Baselines: The ”optimal” ghost is calculated specifically within the defender’s feasi-
+    ble set K, which is itself conditioned on the collective defensive structure, accounting for decision
+    making relative to teammate’s positions and roles.
+
+    Figure 8 shows the majority of actions align with the y = x identity line, suggesting the CDHMM ef-
+fectively captures standard marking behavior. The ”Value Added” region (green) identifies instances where
+real positioning outperforms the optimal man-marking choice, while the red region serves as a diagnostic
+tool for defensive underperformance relative to a feasible marking role.
+
+Case Studies
+The utility of the Group Coverage Advantage (GCA) metric is illustrated through case studies involving
+varying degrees of attacker complexity (|K|). By comparing simple man-marking (|K| = 1) with complex
+multi-attacker scenarios (|K| ≥ 2), we can visualize how defenders prioritize threats. In Figure 9 A (|K| =
+1), the defender positions themselves relative to a single attacker. The GCA here measures the difference
+in reception probability for that attacker compared to an ”average” marking position, calculated via Monte
+Carlo sampling (see the point cloud); a negative GCA indicates a defensive lapse where the defender is
+positioned negatively compared to the optimal man-marking role. Interestingly we see that the model values
+the defender’s positioning despite him not executing a man-marking style of positioning relative to the
+attacker, showing that given the other defender’s positions the defender we are focusing on makes a good
+decision to position themselves like they do, potentially because they would provide limited value in an
+area already overloaded by defenders, but by positioning themselves like they do they limit shorter or more
+front post contact likelihood. Figure 9 B demonstrates a more complex scenario where the defender could
+choose between |K| = 2 feasible attackers. Here, GCA is benchmarked against the ”Optimal Ghost”
+man-marking assignment that would minimize the total group reception probability. By highlighting the
+specific attacker that the GCA is benchmarked against, we demonstrate the model’s ability to identify which
+threat the defender should have prioritized. In this particular case the model indicates that the defender
+would reduce the oppositions reception probability most by stepping out from his teammates and towards
+the optimal attacker who has been left free near the penalty spot. Such examples show that elite defensive
+value can stem from the ability to ”split” the difference between multiple threats or correctly identify the
+most likely recipient in high-entropy situations.
+
+
+
+
+                                                     15
+Figure 8: Observed vs. Optimal Ghost Reception Probability. The scatter plot compares observed defensive position-
+ing against CDHMM-generated counterfactual ”ghosts”. For each defender, a set of feasible attackers K is identified
+based on the CDHMM’s expected state occupancy. We calculate the total reception probability for the group K given
+the observed game state and compare it against the expected outcome if the defender had assumed the optimal man-
+marking role within that set, determined via Monte Carlo sampling. Points falling below the identity line indicate
+”Value Added,” where the defender’s actual positioning suppresses reception probability more effectively than the
+best average man-marking baseline. Conversely, points above the line signify defensive underperformance relative to
+the counterfactual baseline.
+
+
+
+
+                                                        16
+           (a) Single-threat scenario (|K| = 1).               (b) Multi-threat scenario (|K| = 2) with optimal target identi-
+                                                               fication.
+
+Figure 9: Spatial Case Studies of GCA. (A) Demonstrates a defender outperforming the ghost baseline by occupying
+a strategically advantageous zone rather than tight man-marking. (B) Illustrates threat prioritization in an overload;
+the yellow attacker represents the ’Optimal’ target used to calculate the GCA baseline. Real positions are shown in
+deep blue (defenders) and deep red (attackers), with the counterfactual ghost distribution represented by the grey point
+cloud.
+
+
+Emergent Defensive Behaviors: Overloads and Delivery Types
+To evaluate the impact of delivery trajectory on defensive quality, we analyzed standardized effect sizes
+(Cohen’s d) alongside the Kolmogorov-Smirnov (KS) and Mann-Whitney U (MWU) tests. Across all |K| ≤
+4, Cohen’s d remained below 0.11, demonstrating that the practical difference in average Group Coverage
+Advantage (GCA) between inswinging and outswinging deliveries is negligible. This suggests that ball
+trajectory does not fundamentally bias a defender’s average positioning efficacy. However, the discrepancy
+between the MWU and KS test results reveals a shift in defensive consistency. While the MWU test detects
+a statistically significant but practically minor shift in medians, the KS test yields significantly more extreme
+p-values (pKS = 1.24 × 10−43 vs. pM W U = 8.96 × 10−17 for |K| = 1). This indicates that the primary
+effect of delivery type is not on average performance, but on the shape and volatility of the distribution of
+GCA observed. Specifically, outswinging deliveries appear to create higher-entropy situations, resulting in a
+wider variance of GCA values—characterized by more frequent elite positioning and more severe defensive
+lapses—even while average suppression remains stable. This volatility is further amplified by situational
+complexity. As shown in Figure 10, the standard deviation of GCA expands as the number of feasible
+attackers |K| increases. High-complexity ’overload’ scenarios thus provide greater opportunities for both
+high-value defensive interventions and severe failures when seeking to minimise reception probabilities.
+
+
+
+
+                                                          17
+Figure 10: Impact of Situational Complexity and Delivery Type on Defensive Performance. Group Coverage Advan-
+tage (GCA) is plotted as a function of the number of feasible attackers (|K|) for both inswinging (top) and outswinging
+(bottom) deliveries. As situational complexity increases (|K| = 1 to |K| = 5), there is a expansion in the variance and
+interquartile range of GCA, indicating higher defensive volatility in overload scenarios. While delivery type results
+in statistically distinct distributional shapes (verified via KS tests), the negligible shift in medians (Cohen’s d < 0.11)
+suggests that the density of the attacking group, rather than ball trajectory, is the primary driver of GCA volatility.
+
+
+Discussion
+CDHMM Outputs and Limitations
+The CDHMM framework presented in this paper enables interpretable, unsupervised analysis of defensive
+behaviour during corner kicks, uncovering temporally resolved man-marking and zonal assignments. The
+inferred state sequences, emission distributions, and transition dynamics reflect tactical strategies and also
+facilitate downstream player-level characterisation. Unlike prior approaches that rely on manually labeled
+data to identify tactical roles or marking assignments [25, 26], our unsupervised CDHMM infers these
+directly from the tracking data. This label-free approach makes the framework scalable and applicable
+to new teams or scenarios without the need for time-intensive manual annotation. Combined with outcome
+prediction models such as pass or reception prediction, it facilitates sophisticated analysis of team strategies,
+and through counterfactual analysis extends the capability of these predictive models to be able to evalulate
+off-ball defensive contributions. In this section, we reflect on key findings from the model outputs, discuss
+limitations of the current formulation, and outline directions for future work.
+    Our analysis of inferred zonal structures revealed systematic differences in spatial organisation between
+inswinging and outswinging deliveries. For instance, zones estimated for inswinging corners tended to
+cluster around the near post and six-yard box, while outswinging zones were more dispersed, often extending
+toward the edge of the penalty area. These patterns are consistent with coaching intuition and tactical
+adaptations to ball trajectory and delivery type, and suggest that the model captures context-dependent
+spatial roles without the need for manual annotation.
+    The distribution of learned transition parameters further supports this interpretation. While self-transition
+weights for man-marking states were relatively stable across teams and delivery types, parameters governing
+zonal persistence exhibited greater variability. This highlights zonal marking strategies are more context-
+
+
+                                                            18
+sensitive and reflect team-specific defensive schemes. The CDHMM thus captures not just generic defensive
+tendencies but also nuanced adaptations based on delivery type and team setup.
+     When we examined player-level behavioural metrics derived from the latent state sequences—such as
+switch rate and the effective number of initial assignments—we found systematic variation across defenders.
+Interestingly, defenders appearing in the bottom-right quadrant of Figure 7 were frequently identified as
+zonal players when discussing model outputs with coaches and analysts. This suggests that zonal defenders
+tend to begin sequences assigned to a zonal state, and then encounter a variety of attacking opponents across
+games who enter their zones, but rarely switch assignments within sequences. This likely reflects a stable
+zone responsibility: attackers enter their area, drawing a transition to man-marking, but once that switch
+occurs, the assignment typically persists. In contrast, defenders with high switch rates and varied initial
+assignments appear to take on more reactive or flexible roles. These metrics help distinguish defenders with
+tightly bounded marking roles from those involved in more complex or adaptive duties.
+     Despite the interpretability and domain alignment of our CDHMM framework, several limitations re-
+main. First, the model does not currently include an “uninvolved” state to account for defenders who are
+neither zonal nor actively man-marking. In some sequences where a defender is positioned well away from
+the active play, or do not consistently adopt a similar team level zonal position, this can lead to forced
+assignments that do not match intuitive roles. Second, the duration of time spent in each hidden state is
+implicitly governed by geometric distributions due to the standard HMM formulation. This may underesti-
+mate longer-term stability in assignments. Third, the CDHMM does not utilise observed player velocities
+in its emission distribution formulation, extending the model to do so could potentially improve the mod-
+els ability to detect zonal and man-marking behaviours. Regarding our emission model, the man-marking
+formulation is tailored for set-piece behaviour and may not generalise well to open play, where player move-
+ments are more variable and player’s reference frames for positioning are less stable. Similarly, the zonal
+emission distributions would require revision, as zones in open play are more dynamic and often defined by
+relative positioning to teammates rather than static locations adopted at the start of a sequence. Assuming
+zonal distributions are Gaussian imposes symmetry around the zone mean, which may not hold in practice.
+For example, defenders may consistently bias their positioning toward the goal or corner spot, resulting in
+skewed distributions that the model cannot capture.
+
+Off-ball Contribution Analysis
+To our knowledge, this work represents the first attempt in football to generate counterfactual representa-
+tions of play that are explicitly conditioned on interpretable defensive behaviours. By modelling who is
+marking whom—and how these assignments evolve over time—we enable tactical diagnosis and support
+simulations that ”ghost” alternative defensive structures. These counterfactuals can be passed through out-
+come prediction models, allowing us to investigate the effect of individual defenders on predicted outcomes
+such as receptions or expected threat. This enables new methods for quantifying off-ball contributions,
+either by comparing a defender’s observed behaviour to plausible alternatives or by generating defender-
+specific weights for credit assignment. It is important to note that our evaluation does not compare each
+defender to an optimal positioning policy that globally minimises opponent threat. Instead, we assess their
+contribution relative to a counterfactual in which they strictly mark each attacker within a plausible spatial
+neighbourhood. More complex comparisons could be facilitated in future work using grid searches over de-
+fender positions and velocities, or by employing reinforcement learning agents trained to suppress opponent
+threat—an approach analogous to recent work comparing passing decisions to those made by learned agents
+[37].
+
+
+
+
+                                                     19
+HMM Future Work
+Future work will expand this framework into open play analysis. While set pieces offer structure and re-
+peatability, many of the underlying questions—who is responsible for preventing progress, how defenders
+adapt to off-ball movement—are equally relevant in dynamic play. Overall, the CDHMM provides a novel,
+interpretable approach to understanding team and individual defensive behaviours from tracking data, and
+lays the foundation for further integration of unsupervised behavioural models with predictive analytics in
+football.
+
+Reception Prediction Models
+Our first recipient prediction models achieve top-3 accuracies between 44–48%, this compares favourably
+to a baseline accuracy of 23.75% obtained from expert analysts using static tracking data visualisations,
+highlighting both the difficulty of the task and the value of predictive modelling in supporting decision-
+making under uncertainty.
+     The marginally superior performance of the canonicalised model over the D2 -equivariant TacticAI
+model, particularly at full dataset size, suggests that the assumptions underlying equivariance to D2 symme-
+tries may not hold perfectly in the football corner-kick prediction scenarios. Football set pieces, such as cor-
+ner kicks, inherently exhibit asymmetries due to teams frequently assign predominantly left or right-footed
+players to take corners on particular sides of the pitch. Because there is a higher fraction of players who are
+predominantly right-footed compared to left-footed this may break the assumption of perfect mirror sym-
+metry that D2 -equivariant architectures exploit. Consequently, enforcing equivariance may unintentionally
+restrict the representational capacity or flexibility of the model, potentially limiting its predictive accuracy.
+     The improved performance of the canonicalised model at full dataset size might be attributable to its in-
+creased modeling capacity, provided by additional MLP preprocessing layers. These layers could facilitate
+learning more expressive representations beyond symmetry constraints. However, this benefit diminishes
+with reduced dataset sizes, as indicated by the lack of statistical significance at 75% and 50% data condi-
+tions, suggesting that the additional capacity may not be fully utilized or could even lead to mild overfitting
+when fewer training samples are available. In scenarios with limited data, the TacticAI model’s equivariant
+constraints could potentially offer regularisation benefits, preventing overfitting. However, our results do
+not clearly support this hypothesis, as we observed no significant performance advantage for the equivariant
+model at smaller dataset sizes.
+
+Limitations and Dataset Differences
+While our reimplementation of TacticAI’s receiver prediction model achieves top-3 accuracy of approx-
+imately 47%, the original paper reports values closer to 75%. Our implementation closely follows the
+released code and uses the same architecture and D2 -equivariant GNN layer formulation. Although both
+models operate on Premier League tracking data the datasets are not strictly identical. In particular, the
+process by which corner sequences are extracted and aligned to ball delivery events may differ. Clubs
+often maintain proprietary event alignment pipelines, and discrepancies in how “moment of delivery” is
+defined could result in subtle but important task differences. For example, if our sequences consistently
+begin earlier relative to the actual ball contact, our models may face a more difficult prediction task. To
+investigate this, we visually inspected hundreds of our aligned sequences alongside game video and found
+no evidence of systematic misalignment. Our event alignment appears well-behaved, though differences in
+annotation protocols remain a plausible explanation for the performance gap. Consequently, while our Tacti-
+cAI reimplementation is faithful at the architectural level, our results should be interpreted as a comparative
+benchmark rather than a direct replication of the original.
+
+
+
+                                                       20
+Methods
+CDHMM Definitions
+We utilize an CDHMM, an extension the standard HMM [28], where transition probabilities vary with
+time-varying covariates. For each team and delivery type, we model a defender j ∈ {1, .., J} with N =
+K + 1 latent behavioral states, where J is the number of outfield defenders and K is the number of outfield
+attackers. The hidden states st ∈ S = {q1 , . . . , qK , qN } represent man-marking an attacker k and defending
+an assigned zone, respectively. We set J = K = 10. Each defender is treated independently, except during
+initial zone assignments.
+     The model defines z ∈ {1, ..., 10} for each team and delivery type. If defender j is in the zonal state,
+st = qN , their position, Dt,j at time t is governed by an emission distribution specific to their assigned zone:
+
+                                              Dt,j ∼ N (µz , Σz ),
+
+where µz and Σz are the mean and covariance of zone z. At the start of a sequence (t = 0), defenders are
+uniquely assigned to zones by solving a linear sum assignment problem using the Kuhn-Munkres algorithm
+[38, 39] to minimize the sum of Euclidean distances between each defender’s position and an assigned
+zone’s mean:
+                             K X
+                             X K                                   X                 X
+                    min                ∥D0,j − µz ∥1 Xj,z   s.t.         Xj,z = 1,       Xj,z = 1.
+                X∈{0,1}K×K
+                             j=1 z=1                                 z               j
+
+    To model man-marking behavior, we divide the pitch into fixed 3 m × 3 m spatial bins, indexed by l.
+Although Premier League pitch sizes vary slightly, penalty box dimensions are standardized; we therefore
+define bins with fixed physical dimensions to ensure consistency in the regions surrounding the penalty
+                                                                    (l)   (l)
+area. For each bin l, we define a unique parameter vector Γ(l) = [γo , γg ] and variance σ 2(l) , subject to the
+            (l)     (l)
+constraint γo + γg = 1. This parameterization ensures the defender’s expected position lies on the line
+connecting their assigned attacker and the center of the goal. Given that defender j is in state st = qk , i.e.,
+marking attacker k, and attacker k’s position Ot,k lies within bin l, the defender’s position Dt,j is modeled
+as
+                                      (l)                    (l)
+                         Dt,j ∼ N (µt,k , σ 2(l) ), where µt,k = γo(l) Ot,k + γg(l) G,
+                                                                                              (l)    (l)
+and G denotes the center of the defending team’s goal line. The bin-specific weights, γo and γg , control
+how tightly a defender marks their opponent, reflecting the positional strategy in that area of the pitch.
+    Our transition model defines four types of transitions a defender can make between consecutive frames:
+a man-marking self-transition, a man-marking switch, a zonal self-transition, or a zonal-to-man transition.
+Based on tactical guidance from coaches and analysts, we prohibit transitions from man-marking to zonal
+defending.
+    We parameterize these transitions using logistic and softmax functions over covariate vectors. Sepa-
+rate covariate vectors and weight parameters are defined for man-marking self-transitions (βm ) and zonal
+self-transitions (βz ). Transitions involving a switch between states—either between two attackers or from
+zonal marking to man-marking—share a single covariate vector and a weight vector (βs ). This shared pa-
+rameterization reflects the conceptual similarity between these switching behaviors and is also statistically
+motivated, as such transitions occur relatively infrequently and pooling them improves estimation stability.
+    The probabilities for each transition are defined as follows:
+                                                                                             (m,k)
+    • Continuing to man-mark k: This is modeled with a sigmoid function, where Xt−1,j is the covariate
+      vector.                                                     
+                                                           ⊤ (m,k)
+                         P (st,j = qk | st−1,j = qk ) = σ βm Xt−1,j ≡ pm,j,k ,
+
+                                                       21
+                                                  ps (st = q2 |st−1 = q1 )
+
+                      pm (st = q1 )          q1                              q2          pm (st = q2 )
+
+                                                  ps (st = q1 |st−1 = q2 )
+
+
+                  ps (st = q1 |st−1 = q3 )                                        ps (st = q2 |st−1 = q3 )
+
+                                                            q3
+
+
+                                                            pz
+
+Figure 11: A simplified Markov chain diagram with three states illustrating transition probabilities. This represents
+the Markov chain for an individual defender in the case where there are only two outfield players (K = 2) that the
+defender can mark. States q1 and q2 are man-marking states and q3 is a zonal state.
+
+
+    • Switching from attacker k ′ to attacker k (k ̸= k ′ ): This probability is proportional to the likelihood
+      of not continuing to man-mark k, with probability mass being distributed amongst other attackers via
+      a softmax function.
+                                                                                       
+                                                                                  (s,k)
+                                                                       exp βs⊤ Xt−1,j
+          P (st,j = qk | st−1,j = qk′ , k ̸= k ′ ) = 1 − pm,j,k′ · P                         ≡ ps,j (k ′ , k).
+                                                                
+                                                                              
+                                                                                  ⊤   (s,ℓ)
+                                                                     ℓ̸=k′ exp βs Xt−1,j
+
+
+    • Transitioning from man-marking to zonal defending: This transition is disallowed.
+
+                               P (st,j = qN | st−1,j = qk ) = 0        for all k ∈ {1, ..., K}.
+
+                                                                                                             (z)
+    • Remaining in the zonal state: This is also modeled with a sigmoid function, where Xt−1,j is the
+      covariate vector.                                              
+                                                                  (z)
+                          P (st,j = qN | st−1,j = qN ) = σ βz⊤ Xt−1,j ≡ pz,j .
+
+    • Transitioning from zonal to man-marking attacker k: This probability is conditioned on not re-
+      maining in the zonal state.
+                                                                               
+                                                                          (s,k)
+                                                               exp βs⊤ Xt−1,j
+               P (st,j = qk | st−1,j = qN ) = (1 − pz,j ) · P                       ≡ ps,j (N, k).
+                                                              K
+                                                                  exp   β ⊤ X (s,ℓ)
+                                                              ℓ=1        s    t−1,j
+
+
+Covariate Design and Feature Scaling
+All covariate vectors are standardized (zero mean, unit variance) across the dataset to ensure consistent
+scaling. These vectors are designed to capture a range of dynamic and physical factors that influence a
+defender’s tactical decisions. To quantify whether a defender-attacker pair is approaching or moving apart,
+we use a convergence metric, included in the covariates for man-marking and switching states:
+
+                                                         (vt,k − vt,j )⊤ (pt,k − pt,j )
+                                Convergencet,j,k =                                      ,                          (2)
+                                                              ∥pt,k − pt,j ∥ + ε
+
+                                                            22
+where pt,j and vt,j are the position and velocity of defender j at time t, and ε is a small constant for
+numerical stability.
+    To capture lateral movement, we define the tangential relative velocity as the magnitude of the com-
+ponent of relative velocity that is orthogonal to the defender-attacker line. This metric helps distinguish
+lock-step marking from situations where an attacker is ”slipping past” the defender:
+
+             ⊥                                                                                  pt,k − pt,j
+            vt,j,k = ∥(vt,k − vt,j ) − [(vt,k − vt,j ) · r̂t,j,k ] r̂t,j,k ∥ ,   r̂t,j,k =                      .    (3)
+                                                                                             ∥pt,k − pt,j ∥ + ε
+    We also include the heading alignment, defined as the cosine of the angle between defender and attacker
+velocity vectors:
+                                                                  ⊤v
+                                                                vt,j  t,k
+                                            cos θt,j,k =                       .                                     (4)
+                                                           ∥vt,j ∥ ∥vt,k ∥ + ε
+                               (z)
+    The covariate vector Xt,j only contains the convergence metric because zones are stationary. Addi-
+tionally, we use player heights and weights to capture physical mismatches. For zonal defending, we use
+Mahalanobis distance to account for spatial uncertainty, as the size and shape of team zones vary. All
+covariates are summarized in Table 1.
+                  Table 1: Feature composition of covariate vectors used in the transition models.
+
+  Covariate Vector        Features                                                  Related Transitions
+    (m,k)
+  Xt,j                    1 (bias term), distance from defender to at-              Defender j continues to man-
+                          tacker, inverse distance to attacker, tangential          mark attacker k
+                          relative velocity, heading alignment, conver-
+                          gence metric, attacker height, attacker weight
+    (z)
+  Xt,j                    1 (bias term), Mahalanobis distance to as-                Defender j continues to defend
+                          signed zone, inverse Mahalanobis distance,                zonally
+                          defender velocity toward zone, defender
+                          height, defender weight
+    (s,k)
+  Xt,j                    1 (bias term), distance to attacker, inverse              Defender j switches to man-
+                          distance, tangential relative velocity, head-             mark attacker k not previously
+                          ing alignment, convergence metric, attacker               assigned at t − 1
+                          height, attacker weight
+
+
+
+CDHMM Training
+Model parameters, θ = {Γ, σ 2 , µz , σz2 , βm , βz , βs }, are estimated using an expectation maximisation ap-
+proach as outlined in algorithm 1. All results are based on training a batch of 10 models per team and
+delivery type, each for 15 fixed iterations. For each batch, the model with the highest total observation
+likelihood was selected. We denote the set of P observation sequences as O = [O(1) , ..., O(P) ] where
+            (p)     (p)
+O(p) = [O1 , ..., OTp ]. Here, O(p) represents the sequence of tracking data for an individual corner kick
+sequence p, which consists of Tp frames. In the EM algorithm we alternate between computing the posterior
+expected transition counts ξt (i, j) = P st = i, st+1 = j | O, θ) and expected state occupancy counts
+γt (i) = P (st = i | O, θ) using the Forward-Backward algorithm [28] (E-step), and then maximizing the
+expected complete-data log-likelihood (M-step).
+
+
+                                                             23
+    First, K zone locations are randomly initialized by sampling from a uniform distribution along the six-
+yard line in the y-direction and extending five meters on either side of the six-yard line in the x-direction.
+Each zone is initialised with a covariance σz2 = 2I, where I represents the identity matrix. The param-
+eters Γ(l) are initialized as [0.8, 0.2] for each bin l. All beta weights are randomly initialised by drawing
+random values from a normal distribution with zero mean and a standard deviation of 0.1. All initial state
+probabilities are uniformly set to 1/K, ensuring that each state has an equal probability at the start.
+    Treating each defender independently, expected state occupancy and transition counts are calculated us-
+ing the Forward-Backward algorithm. The observation likelihood of an individual defender in the sequence
+p, Lpj = P (O(p) |λ, j), is calculated using the forward-backward algorithm. The complete observation log
+likelihood is therefore                          X
+                                                     log αj,Tp (n),
+                                                p,j,n
+
+where αj,Tp (n) is the forward probability at time Tp for defender j whilst they occupy state n in corner
+sequence p. For each team K zonal locations are estimated, each zone position µz is estimated via
+                                                  PP      1
+                                                     p=0 Lpj D0j γ0jN
+                                          µˆz =      PP     1
+                                                                      ,
+                                                       p=0 Lpj γ0jN
+
+where D0j is the position of defender j who is assigned to the zone at time t = 0. γ0jN is the expected state
+occupancy of defender j occupying their assigned zonal state at time t = 0 in corner sequence p. The zonal
+distribution has covariance which is estimated using
+                                     PP    1 PTp                                ⊤
+                                      p=0 Lpj t=0 γtjN (Dtj − µˆz )(Dtj − µˆz )
+                            σˆz2 =                                                .
+                                              PP     1 PTp
+                                                p=0 Lpj   t=0 γtjN
+
+
+To estimate Γ(l) and σ 2(l) for each bin l, we define the design matrix Z(l) as follows:
+                                                      M
+                                           Z(l) =            [Otk , G],
+                                                    k∈Attackers
+                                                   dist(k,l)≤NH
+        L
+where       denotes the concatenation operation, Otk represents the position of attacker k that the defender is
+marking at time t, and G is the goal position. The matrix includes entries for attacker k who is positioned
+in bin l or in any neighbouring bin within NH hops of bin l. In this analysis, we set the parameter NH equal
+to one so only immediate neighbours are included. Any player whose position falls outside the defined bins
+is included in the nearest possible bin. With our modified design matrix, in the M-step we update Γ(l) and
+σ 2(l) as outlined by Franks et al.,
+
+                                                           X γtjk                         (l)
+                            (Γ̂(l) , σ̂ 2(l) ) ← arg max                    (Dtj − Γ(l) Ztk )2 ,
+                                              Γ(l) ,σ 2(l) t,j,k   σ 2(l)
+
+     where γtjk is the expected state occupancy for defender j occupying man-marking hidden state k at time
+t. Initial state probabilities for each defender are updated using the expected state occupancy values γ0jn .
+     In a HMM, the complete-data log-likelihood Q (the log of the joint probability of the hidden state
+sequence and the observed data) decomposes into two independent terms, one involving the emission pa-
+rameters and one involving the transition parameters. Consequently, in the M-step of the EM algorithm each
+parameter set can be maximized separately, without affecting the other [28], such that
+
+
+                                                           24
+Algorithm 1 Algorithm for HMM Training
+ 1: Initialisation:
+ 2: Initialise zonal distributions
+ 3: Initialise all bin’s Γ(l)
+ 4: Initialise transition weights βm , βz , βs
+ 5: Initialise initial state distribution
+ 6: while not converged do
+ 7:   Expectation Step (E-step):
+ 8:   for each corner sequence Op in O = [O1 , . . . , OP ] do
+ 9:     Assign defending players to zones using the Hungarian algorithm.
+10:     for each outfield defending player do
+11:        Compute forward and backward probabilities using current HMM parameters
+12:        Compute sequence observation likelihood Lpj
+13:        Compute expected state occupancy and expected state transition counts
+14:        Compute hidden state sequence using the Viterbi algorithm
+15:     end for
+16:   end for
+17:   Maximization Step (M-step):
+18:   Estimate new zone positions and covariances
+19:   Update transition weights βm , βz , βs
+20:   Update initial state distribution
+21:   for each man-marking bin l do
+22:     Estimate Γ(l) and σ 2(l)
+23:   end for
+24:   Check number of iterations or for convergence criteria
+25: end while
+
+
+
+
+                                         β (new) = arg max Q β | β (old) .
+                                                                        
+                                                              β
+
+    Because we assume defenders act independently, the full expected complete-data log-likelihood fac-
+torizes into a sum over defenders and time steps. Including l2 normalisation, an individual defender’s Q
+function corresponding to transitions is
+                                T −1 X
+                                    (K                      K X
+                                                              K
+                                X                           X                                    
+             Q(βm , βz , βs ) =          ξt (i, i) log pm +     ξt (i, l) log (1 − pm ) ps (i, l)
+                                 t=1     i=1                         i=1 l=1
+                                                                         l̸=i
+                                                              K
+                                                                                                           )
+                                                              X                                              (5)
+                                 + ξt (N, N ) log pz +               ξt (N, i) log (1 − pz ) ps (N, i)
+                                                               i=1
+                                                                                
+                                     −   1
+                                         2       λm ∥βm ∥ + λz ∥βz ∥2 + λs ∥βs ∥2 .
+                                                         2
+
+
+    By using the identity K
+                            P
+           PK                 l=1 ξt (i, l) = γti which follows from marginalizing over next states, we imme-
+diately get l̸=i ξt (i, l) = γti − ξt (i, i). It then follows that the gradients of the Q–function are
+
+                                         T −1 X
+                                              K
+                                         X                               (m,i)
+                            ∇ βm Q =                   ξt (i, i) − γti pm Xt     − λm β m ,                    (6)
+                                         t=1 i=1
+
+
+                                                              25
+                                           T −1
+                                           X                            (z)
+                              ∇βz Q =                ξt (N, N ) − γtN pz Xt − λz βz ,                      (7)
+                                           t=1
+                                     T −1 X
+                                         (K K                            K
+                                                                 h                          i
+                                                                   (s,l)              (s,k)
+                                     X      X                            X
+                         ∇ βs Q =                       ξt (i, l) Xt −     ps (i, k) Xt
+                                     t=1    i=1 l=1                      k=1
+                                                l̸=i                     k̸=i                              (8)
+                              K                       K
+                                                                                  )
+                                              h                          i
+                                                (s,l)              (s,k)
+                              X                       X
+                          +          ξt (N, l) Xt −     ps (N, k) Xt                  − λs β s .
+                               l=1                         k=1
+    For each vector of transition weights β, we compute its gradient and then numerically minimize the
+negative of our Q-function with respect to β using the limited-memory BFGS algorithm with bound con-
+straints (L-BFGS-B), capping the procedure at 100 iterations and utilising normalisation penalties of λm =
+100, λz = 100, λs = 1000.
+
+Graph Neural Network Models
+To predict which player will make first contact with the ball, we implemented two supervised graph neural
+network (GNN) architectures. Both models operate on a static graph representation of the match state at
+the moment of delivery. In this graph, all on-pitch players are represented as nodes in a fully connected,
+undirected graph. Each node encodes individual player information, and edges represent the pairwise rela-
+tionship of being on the same or opposing team.
+    As detailed in Table 2, each node’s input features include seven attributes describing the player’s posi-
+tion, velocity, physical characteristics, and role as the corner taker. Edges are encoded with a single binary
+feature to indicate whether the connected players are teammates or opponents. We did not use any global
+graph-level features.
+
+                              Table 2: Graph input features for first-contact prediction.
+
+                 Level     Feature                       Description
+                 Node      x, y                          Player position (m) on standardised pitch
+                           vx , vy                       Instantaneous velocity (m/s)
+                           Height                        Player height (m)
+                           Weight                        Player weight (kg)
+                           Is corner taker bool          Boolean indicator
+                 Edge      teammate bool                 1 if same team, else 0
+
+
+
+Equivariant GNN Architecture: TacticAI-Inspired Model
+The first architecture follows the design introduced by Wang et al. in the TacticAI system for corner kick
+analysis [27]. It combines a GATv2-based message-passing architecture with equivariant group convolutions
+to utilise the reflective symmetries as an inductive bias. The graph is first duplicated across four views
+corresponding to the D2 symmetry group: the original layout, horizontal reflection, vertical reflection, and
+both reflections. Each view is processed with group-equivariant layers and their embeddings are averaged to
+obtain a reflection-invariant representation of shape 22 × 4. A final linear layer maps each node embedding
+to a logit, and the model is trained using a weighted cross-entropy loss to address the class imbalance
+                                                                                                     √
+between the single contact-making player and the 21 non-contact players. We apply a weight of 21 to
+
+                                                             26
+the negative class. We performed a hyperparameter search across a range of values, including learning rate
+{1×10−4 , 3×10−4 , 1×10−3 }, weight decay {1×10−4 , 1×10−3 , 2×10−3 }, and dropout: {0.1, 0.2, 0.4}.
+
+Canonicalised MLP + GATv2 Model
+We also implement a non-equivariant GNN model using canonicalised corner frames, in which all corners
+are rotated and reflected to appear as if taken from the same pitch quadrant. Each node’s raw features
+are first passed through a two-layer multilayer perceptron (MLP) to create a hidden representation. The
+resulting embeddings are then processed by four standard (non-equivariant) GATv2 layers which use the
+same number of attention heads (8) and the same per-head output dimension (4) as in the TacticAI-based
+model. A second two-layer MLP maps the final embeddings to logits for 22-way classification and same
+weighted cross-entropy loss and hyperparameter grid are used.
+
+Evaluating Off-Ball Defensive Contributions through Counterfactual Analysis and Defensive
+Credit Attribution
+Off-Ball Pass Restriction
+As a first demonstration of our framework’s utility, we define the Off-Ball Pass Restriction metric (OBPR),
+which uses the expected state occupancy (γtjk ) from the CDHMM to allocate credit to individual defenders.
+This metric rewards defenders for restricting the pass reception probability of attackers they are marking.
+                                                X
+                                    OBPRj =        γtjk · (1 − Pr (atk )) ,                               (9)
+                                                  t,k
+
+where Pr (·) is pass reception model, returning the player-level probability that a given player will be the
+next to interact with the ball and atk is the observed position of attacker k at time t. This metric measures
+how effectively a defender suppresses passing options across all possible marking assignments, with con-
+tributions weighted according to their expected responsibility for each attacker. Similar metrics could be
+defined by substituting Pr (·) with Pthreat (·), an expected threat model, returning the player-level probability
+that the sequence of play results in a goal for the team conditioned on a player receiving a successful pass.
+A more complete metric would use both such models jointly to appraise how defenders restrict passes to
+highly threatening attackers.
+    Despite awarding credit to individual defenders, this metric is limited in several ways. First, it does not
+address defensive or offensive overloads—situations where multiple defenders contribute to suppressing the
+same attacker, or where a defender’s positioning fails to restrict the most threatening of multiple nearby
+attackers. Secondly, it does not incorporate any situation-specific baseline that accounts for confounding
+effects, such as on-ball pressure affecting the passer (not the recipient) and the inherent difficulty of the pass
+due to factors such as distance and angle. Third, it lacks a mechanism to isolate the individual defender’s
+contribution from the joint effect of their teammates, making it difficult to disentangle shared defensive
+credit. This means that a defender can accumulate credit for low reception probabilities that are actually
+caused by external factors—such as the attacker being in an infeasible passing zone or the passer being
+under pressure—rather than the defender’s own marking.
+    To simplify overload effects, one could restrict OBPR to Viterbi-assigned marking pairs rather than us-
+ing ESO-weighted sums. However, this still does not address confounding influences from teammates and
+the game state. We also note that ESO is computed using the full observation sequence, which introduces
+potential information leakage from future events. For analyses concerned with causal interpretation, us-
+ing forward probabilities (i.e., probabilities conditioned only on past observations) is a more appropriate
+approach.
+
+
+                                                        27
+Counterfactual Metrics Through CDHMM Generated Ghosts
+To better isolate individual defensive contributions, we outline a set of counterfactual metrics that com-
+pare the impact of a defender’s observed positioning, dtj , to a baseline (ghost) position. These metrics
+quantify how a defender influences specific outcomes by measuring the difference in predicted values when
+the defender is placed at their actual location versus a simulated position generated from our CDHMM.
+We consider a Point-Ghost baseline that substitutes the emission mean for the defender’s position un-
+der a strict marking role. However, because our outcome prediction models are nonlinear in position,
+E[f (X)] ̸= f (E[X]), point ghost comparisons introduce bias potentially underestimating the value of tight
+man-marking. If a defender should be shadowing on a particular side of the attacker then the tails of the
+ghost position distribution matter. We therefore adopt an Expected Ghost baseline, integrating predictions
+over the role-conditioned emission through Monte Carlo sampling, and report that by default.
+                                                                
+                                    Ex|k · := Ex∼p(dtj |st =qk ) · ,
+
+    While our empirical analysis focuses on pass reception probabilities, the same framework extends nat-
+urally to other outcome prediction models. In particular, we highlight how expected threat models could
+be used to capture a defender’s influence on downstream scoring potential, although we do not include
+empirical results using such models in this paper.
+
+                                            (r)
+               Reception Suppression:     ∆tjk = Ex|k [Pr (atk | x)] − Pr (atk | dtj ),                   (10)
+                                            (rec)
+                       Recovery Gain:     ∆tjk = Pr (dtj ) − Ex|k [Pr (x)] ,                              (11)
+                                           (th)
+                   Threat Suppression:    ∆tjk = Ex|k [Pthreat (atk | x)] − Pthreat (atk | dtj ),         (12)
+                                           (ca)
+                  Counterattack Value:    ∆tjk = Pthreat (dtj ) − Ex|k [Pthreat (x)] .                    (13)
+
+Group-Level Evaluation
+While the above metrics evaluate individual attacker-defender interactions, they do not penalize defenders
+who fail to cover the most threatening attackers nearby. To address this, we introduce another metric, Group
+Coverage Advantage (GCA), which attempts to quantify if the defender’s current position is advantageous
+compared to if they were strictly marking any of the attackers in a nearby region. In order to define which
+attackers we should consider we construct per-attacker attention weights using a softmax over ESO values:
+                                                  exp(γtjk /τ )
+                                         wtjk = PJ                 ,                                      (14)
+                                                 ℓ=1 exp(γtℓk /τ )
+
+where τ is a temperature parameter. This attacker-level vector shows which defenders could be reasonably
+affecting the attacker at each timestep, taking into account every defender’s possible marking interactions
+with the attacker. We then define the set of attackers Kjt that defender j could plausibly influence at time t,
+
+                                          Kjt = {k : wtjk ≥ θ} ,                                          (15)
+
+for threshold θ, where tuning θ determines a minimum level of interaction between that defender and the
+attacker relative to the defender’s teammates.
+    Let ftk (x) be a general function that predicts an outcome success probability for attacker k given a
+defender’s position x. We define the total group score as
+                                                      X
+                                           Gjt (x) =      ftk (x).                                   (16)
+                                                      k∈Kjt
+
+
+                                                      28
+If for example ftk (dtj ) = Pr (atk | dtj ), the total group score would represent the total reception probability
+of attackers that the defender could feasibly choose to mark given his own and teammates’ positions. In re-
+ality, a defender’s positioning will likely be a mixture of weighting themselves towards multiple opponents
+and passing avenues, in order to evaluate the defender’s observed positioning we calculate |Kjt | counter-
+factual baselines where we simulate the defender’s position from the emission distribution corresponding to
+man-marking each attacker k ′ ∈ Kjt . The optimal baseline score over this group is then,
+                                           opt
+                                         Gjt = min
+                                               ′
+                                                   Ex|k′ [Gjt (x)],                                          (17)
+                                                  k ∈Kjt
+
+the total outcome success probability that the defender would concede if they chose the most advantageous
+of all feasible man-marking roles, noting that the min operator may be replaced by max depending on the
+outcome model used (e.g., maximizing recovery probability instead of minimizing threat).
+    Finally, we define the Group Coverage Advantage at time t as
+                                                           opt
+                                         GCAj (t) = Gjt − Gjt (dtj ),                                        (18)
+
+which measures how much additional value (e.g., threat) is allowed by the real defender’s positioning com-
+pared to the best of the ghost baselines over the group of feasible attackers.
+
+
+Data availability
+The tracking and event datasets analysed in this study are subject to third-party licensing agreements and
+club confidentiality restrictions. As a result, the raw data cannot be shared publicly.
+
+
+Code availability
+The code used for data processing, model training, and analysis was developed in a proprietary club context
+and is not publicly available. The authors are happy to answer specific implementation questions to support
+reproducibility of the methodology on independently obtained data.
+
+
+Acknowledgments
+We thank the performance analysis staff at Nottingham Forest FC (NFFC) for their support and domain
+expertise. In particular, we acknowledge the analysts who produced the human baseline annotations used
+for evaluation of the corner reception prediction task. We also thank colleagues involved in establishing the
+industry–PhD programme that supported this work. This research was supported by NFFC, however the
+views expressed are those of the authors and do not necessarily reflect those of NFFC.
+
+
+Author contributions
+SG led the study design, developed the methodology, implemented the models, curated the data, performed
+the experiments and analysis, and wrote the original manuscript. SW supervised the research, contributed
+to study design and methodological decisions, and critically revised the manuscript. FB provided project
+support and domain guidance, contributed feedback on modelling choices and interpretation, and critically
+revised the manuscript. AR contributed to model design and study design through set-piece domain discus-
+sions, supported interpretation of results, and critically revised the manuscript. LA contributed to supervi-
+sion and provided feedback on interpretation and framing, and critically revised the manuscript.
+
+                                                       29
+Competing interests
+This research was conducted in collaboration with a professional football club that may have a competitive
+interest in the study outcomes. Due to confidentiality and competitive considerations, data and code are not
+publicly shared. The authors declare no other competing interests.
+
+
+References
+ [1] J. Gudmundsson and M. Horton. Spatio-temporal analysis of team sports. Acm Computing Surveys,
+     50(2), 2017. Gudmundsson, Joachim Horton, Michael 1557-7341.
+ [2] D. Memmert and R. Rein. Match analysis, big data and tactics: Current trends in elite soccer. Deutsche
+     Zeitschrift f¸r Sportmedizin, 69(3):65–72, 2018.
+ [3] T. Taki, J. Hasegawa, Society Ieee Computer, and Society Ieee Computer. Visualization of dominant
+     region in team games and its application to teamwork analysis. In 18th Computer Graphics Inter-
+     national Conference of the Computer-Graphics-Society (CGI 2000), pages 227–235, 2000. Taki, T
+     Hasegawa, J.
+ [4] William Spearman, Austin Thomas Basye, Gregory J. Dick, Ryan Hotovy, and Paul Pop Hudl. Physics-
+     based modeling of pass probabilities in soccer.
+ [5] Lewis Higgins, Tobias Galla, Brian Prestidge, and Terry Wyatt. Measuring the pitch control of
+     professional football players using spatiotemporal tracking data. Journal of Physics: Complexity,
+     4(2):025008, 2023.
+ [6] Sarah Rudd. A framework for tactical analysis and individual offensive production assessment in
+     soccer using markov chains. In New England Symposium on Statistics in Sports (NESSIS), Harvard
+     University, Cambridge, MA, September 2011. Conference presentation; slides.
+ [7] Karun Singh.   Introducing expected threat (xt).                     https://karun.in/blog/
+     expected-threat.html, December 2018. Blog post.
+ [8] Daniel Cervone, Alex D’Amour, Luke Bornn, and Kirk Goldsberry. A multiresolution stochastic
+     process model for predicting basketball possession outcomes. Journal of the American Statistical
+     Association, 111(514):585–599, 2016.
+ [9] T. Decroos, L. Bransen, J. Van Haaren, J. Davis, and Machinery Assoc Comp. Actions speak louder
+     than goals: Valuing player actions in soccer. In 25th ACM SIGKDD International Conference on
+     Knowledge Discovery and Data Mining (KDD), pages 1851–1861, 2019. Decroos, Tom Bransen,
+     Lotte Van Haaren, Jan Davis, Jesse Davis, Jesse J/A-3596-2015 Bransen, Lotte/0000-0002-0612-7999;
+     Davis, Jesse/0000-0002-3748-9263.
+[10] J. Fernández, L. Bornn, and D. Cervone. A framework for the fine-grained evaluation of the in-
+     stantaneous expected value of soccer possessions. Mach Learn, 110(6):1389–1427, 2021. 1573-
+     0565 Fernández, Javier Orcid: 0000-0002-6297-042x Bornn, Luke Cervone, Daniel Journal Article
+     United States 2021/11/12 Mach Learn. 2021;110(6):1389-1427. doi: 10.1007/s10994-021-05989-6.
+     Epub 2021 May 24.
+[11] Leander Forcher, Stefan Altmann, Leon Forcher, Darko Jekauc, and Matthias Kempe. The use of
+     player tracking data to analyze defensive play in professional soccer - a scoping review. International
+     journal of sports science and coaching, 17(6):1567–1592, 2022.
+
+                                                    30
+[12] K. Tuyls, Shayegan Omidshafiei, Paul Muller, Zhe Wang, Jerome T. Connor, Daniel Hennes, I. Gra-
+     ham, W. Spearman, Tim Waskett, D. Steele, Pauline Luc, Adrià Recasens, Alexandre Galashov, Gre-
+     gory Thornton, R. Élie, P. Sprechmann, Pol Moreno, Kris Cao, M. Garnelo, Praneet Dutta, Michal
+     Valko, N. Heess, Alex Bridgland, J. Pérolat, B. D. Vylder, A. Eslami, Mark Rowland, Andrew Jae-
+     gle, R. Munos, T. Back, Razia Ahamed, Simon Bouton, Nathalie Beauguerlange, Jackson Broshear,
+     T. Graepel, and D. Hassabis. Game plan: What ai can do for football, and what football can do for ai.
+     ArXiv, abs/2011.09192, 2020.
+
+[13] Charbel Merhej, Ryan Beal, S. Ramchurn, and Tim Matthews. What happened next? using deep
+     learning to value defensive actions in football event-data. Proceedings of the 27th ACM SIGKDD
+     Conference on Knowledge Discovery & Data Mining, 2021.
+
+[14] Leander Forcher, Leon Forcher, Stefan Altmann, D. Jekauc, and M. Kempe. The success factors of
+     rest defense in soccer - a mixed-methods approach of expert interviews, tracking data, and machine
+     learning. Journal of sports science & medicine, 22 4:707–725, 2023.
+
+[15] Hoang Minh Le, Peter Carr, Yisong Yue, and P. Lucey. Data-driven ghosting using deep imitation
+     learning. In unknown, 2017.
+
+[16] Ronald Yurko, Quang Nguyen, and Konstantinos Pelechrinis. Nfl ghosts: A framework for evaluating
+     defender positioning with conditional density estimation. 2024.
+
+[17] Thomas Seidl, A. Cherukumudi, Andrew Hartnett, Peter Carr, and P. Lucey. Bhostgusters : Realtime
+     interactive play sketching with synthesized nba defenses. In unknown, 0.
+
+[18] Sigrid Olthof and Jesse Davis. Perspectives on data analytics for gaining a competitive advantage in
+     football: computational approaches to tactics. Science and Medicine in Football, pages 1–13. doi:
+     10.1080/24733938.2025.2533784.
+
+[19] Luca Scofano, Alessio Sampieri, Giuseppe Re, Matteo Almanza, Alessandro Panconesi, and Fabio
+     Galasso. About latent roles in forecasting players in team sports. Neural Processing Letters, 56(2),
+     February 2024.
+
+[20] Daniel Fassmeyer, Martin Cordes, and Ulrich Brefeld. Interactive sequential generative models for
+     team sports. Machine Learning, 114(1):38, 2025.
+
+[21] Gregory Everett, Ryan J. Beal, Tim Matthews, Timothy J. Norman, and Sarvapali D. Ramchurn. Eval-
+     uating defensive influence in multi-agent systems using graph attention networks. In 2025 IEEE 12th
+     International Conference on Data Science and Advanced Analytics (DSAA), 2025.
+
+[22] Sarthak Jain and Byron C. Wallace. Attention is not explanation. In Proceedings of the 2019 Con-
+     ference of the North American Chapter of the Association for Computational Linguistics: Human
+     Language Technologies (NAACL-HLT), pages 3543–3556. Association for Computational Linguistics,
+     2019.
+
+[23] Sarah Wiegreffe and Yuval Pinter. Attention is not not explanation. In Proceedings of the 2019
+     Conference on Empirical Methods in Natural Language Processing (EMNLP-IJCNLP), pages 11–20.
+     Association for Computational Linguistics, 2019.
+
+[24] Hyunsung Kim, Sangwoo Seo, Hoyoung Choi, Tom Boomstra, Jinsung Yoon, and Chanyoung Park.
+     Better prevent than tackle: Valuing defense in soccer based on graph neural networks, 2025.
+
+
+
+                                                   31
+[25] Laurie Shaw and Sudarshan Gopaladesikan. Routine inspection: A playbook for corner kicks. In
+     Machine Learning and Data Mining for Sports Analytics: 7th International Workshop, MLSA 2020,
+     Co-located with ECML/PKDD 2020, Ghent, Belgium, September 14–18, 2020, Proceedings 7, pages
+     3–16. Springer, 2020.
+[26] Pascal Bauer, Gabriel Anzer, and Joshua Wyatt Smith. Individual role classification for players de-
+     fending corners in football (soccer). Journal of Quantitative Analysis in Sports, 18(2):147–160, 2022.
+[27] Zhe Wang, Petar Velickovic, Daniel Hennes, Nenad Tomašev, Laurel Prince, Michael Kaisers, Yoram
+     Bachrach, Romuald Élie, Wenliang Kevin Li, Federico Piccinini, William Spearman, Ian Graham,
+     Jerome T. Connor, Yi Yang, Adrià Recasens, Mina Khan, Nathalie Beauguerlange, Pablo Sprechmann,
+     Pol Moreno, Nicolas Manfred Otto Heess, Michael Bowling, Demis Hassabis, and Karl Tuyls. Tacticai:
+     an ai assistant for football tactics. ArXiv, abs/2310.10553, 2023.
+[28] Christopher M. Bishop. Pattern recognition and machine learning. New York : Springer, [2006]
+     ©2006, 2006. Textbook for graduates.;Includes bibliographical references (pages 711-728) and index.
+[29] L. R. Rabiner. A tutorial on hidden markov-models and selected applications in speech recognition.
+     Proceedings of the Ieee, 77(2):257–286, 1989. Rabiner, lr 1558-2256.
+[30] Sean Groom, Dan Morris, Liam Anderson, and Shuo Wang. Modeling defensive dynamics in football:
+     A hidden markov model-based approach for man-marking and zonal defending corner analysis. In
+     The 2nd International Workshop on Intelligent Technologies for Precision Sports Science (IT4PSS) in
+     Conjunction with the 33rd International Joint Conference on Artificial Intelligence (IJCAI’24), June
+     2024. Not yet published as of 16/07/2024; The 2nd International Workshop on Intelligent Technologies
+     for Precision Sports Science (IT4PSS) : in Conjunction with the 33rd International Joint Conference
+     on Artificial Intelligence (IJCAI’24), IT4PSS ; Conference date: 04-08-2024.
+[31] A. Franks, A. Miller, L. Bornn, and K. Goldsberry. Characterizing the spatial structure of defensive
+     skill in professional basketball. Annals of Applied Statistics, 9(1):94–121, 2015. Franks, Alexander
+     Miller, Andrew Bornn, Luke Goldsberry, Kirk Franks, Alexander/0000-0002-9329-206X.
+[32] Joy A. Thomas Thomas M. Cover. Entropy, Relative Entropy, and Mutual Information, volume 2nd
+     Edition, pages 13–55. Wiley, 2006.
+[33] David E. Rumelhart, Geoffrey E. Hinton, and Ronald J. Williams. Learning representations by back-
+     propagating errors. Nature, 323(6088):533–536, 1986.
+[34] Ian Goodfellow, Yoshua Bengio, and Aaron Courville. Deep Learning. MIT Press, 2016.
+[35] Shaked Brody, Uri Alon, and Eran Yahav. How attentive are graph attention networks?, 2022.
+[36] Petar Veličković, Guillem Cucurull, Arantxa Casanova, Adriana Romero, Pietro Liò, and Yoshua Ben-
+     gio. Graph attention networks, 2018.
+[37] Pegah Rahimian and Laszlo Toka. A data-driven approach to assist offensive and defensive
+     players in optimal decision making. International Journal of Sports Science and Coaching,
+     0(0):17479541221149481.
+[38] H. W. Kuhn. The hungarian method for the assignment problem. Naval Research Logistics Quarterly,
+     2(1-2):83–97, 1955.
+[39] James Munkres. Algorithms for the assignment and transportation problems. Journal of the Society
+     for Industrial and Applied Mathematics, 5(1):32–38, 1957.
+
+
+                                                    32
+Appendix
+Transition Model Dynamics
+Figure 12 shows further examples of how the probability of continuing to mark a attacker for one second
+varies as distance and relative velocity of the man-marking pair varies.
+
+Sensitivity Analysis of the CDHMM
+Corner kicks are relatively infrequent and may exhibit tactical variation over the course of a season. For
+practical, in-season usage—where a team-specific model may be retrained week-by-week as new corners
+occur—it is therefore important to understand how the CDHMM behaves under varying amounts of training
+data. In this appendix, we report a sensitivity analysis that quantifies how learned parameters (zonal struc-
+ture and transition weights) and overall fit (observation likelihood) change as additional sequences become
+available.
+
+Experimental design
+For each team and delivery type (inswinging and outswinging), corner sequences from the 2023/24 sea-
+son were ordered chronologically and incrementally grouped into training sets by adding batches of ten
+sequences. At each training set size, we trained ten CDHMM instances using different random seeds to
+account for variability due to EM initialization.
+    This procedure reflects realistic deployment, but it blends two sources of variation: (i) finite-sample
+estimation noise and (ii) potential distribution shift due to evolving execution or tactics over time. Rather
+than attempting to isolate these effects, we characterise their combined influence on model reliability under
+in-season retraining.
+    Unless stated otherwise, sensitivity results pool outcomes across all teams that had sufficient data to sup-
+port training at a given sample size. Bar charts beneath each plot indicate the number of teams contributing
+at each training set size.
+
+Stability metrics
+We evaluate sensitivity along three dimensions:
+
+    • Zonal structure disagreement. To assess stability of learned zonal structure, we match zonal Gaus-
+      sians across model instances and measure the resulting mismatch cost. Concretely, for each pair of
+      models trained at the same sample size, we compute the optimal assignment between their learned
+      zonal Gaussians using the Hungarian algorithm, using the 2-Wasserstein distance as the matching
+      cost. This cost captures differences in both Gaussian means and covariances. We report the average
+      total matching cost across all model pairs (lower is more similar).
+
+    • Transition weight disagreement. To quantify consistency in the learned transition model parameters,
+      we compute the average pairwise ℓ2 distance between learned weight vectors for each transition type.
+      We report disagreement separately for βm (man-marking continuation), βz (zonal continuation), and
+      βs (switching).
+
+    • Model fit (normalized observation log-likelihood). To evaluate overall fit, we record the final ob-
+      servation log-likelihood achieved at convergence for each trained model and normalize it by the total
+      number of timesteps across all training sequences (per-frame log-likelihood). We report distributions
+      of these normalized values at each sample size.
+
+
+                                                      33
+Figure 12: Each subplot shows how the probability of continuing to man-mark a specific attacker (pm ) varies spa-
+tially under different defender velocities. The attacker is fixed at the origin (0, 0) and moves rightward with velocity
+(2.0, 0.0), with height 1.85 m and weight 82 kg. In each column, the defender moves in the same direction (indicated
+by the green arrow and subfigure title), with speed increasing from top to bottom. From left to right, each column
+shows the defender moving towards the left, right, down and up. Red arrows indicate the attacker’s velocity vector.
+We plot three iso-probability contours at pm = 0.25, 0.5, and 0.75 to highlight decision boundaries. Note that since
+data is sampled at 25 frames per second, the probability of maintaining a man-marking assignment is given by p25  m.
+
+
+
+
+                                                          34
+Zonal structure sensitivity
+Figure 13 shows the distribution of average pairwise zonal structure disagreement across the 10 CDHMMs
+trained at each sample size, shown separately for inswinging and outswinging deliveries. Across both de-
+livery types, zonal disagreement generally decreases as sample size increases, with both the median and
+interquartile range narrowing. This is consistent with reduced estimation noise as more data becomes avail-
+able.
+    Despite the overall stabilisation trend, occasional large outliers persist even at higher sample sizes.
+These outliers do not consistently correspond to particular teams, suggesting they are not due to persistent
+modelling failures for specific defensive styles. Instead, they likely reflect corner-to-corner variability in
+execution or tactical structure: when a chronologically defined subset contains atypical sequences, the model
+can converge to a noticeably different zonal configuration. Practically, this indicates that while the CDHMM
+becomes more stable with additional data, a minority of retraining windows can yield substantially different
+zone estimates, motivating uncertainty-aware model monitoring when deployed across a season.
+
+Transition weight sensitivity
+Figure 14 reports disagreement in transition weights as a function of training sample size. Two consistent
+patterns emerge. First, estimation behaviour is similar between inswinging and outswinging deliveries,
+yielding near-identical disagreement distributions for each parameter type. Second, the continuation weights
+βm and βz converge relatively quickly: pairwise ℓ2 disagreements drop and stabilise once modest numbers
+of corner samples are available. In contrast, the switching weights βs remain substantially more variable,
+likely because switch events are comparatively rare. This suggests that uncertainty in βs may persist even
+with additional data, motivating future work that shares statistical strength across teams (e.g., hierarchical
+priors or grouped models) when estimating infrequent transitions.
+
+Normalized likelihood sensitivity
+Figure 15 presents distributions of normalized observation log-likelihoods as training sample size increases.
+For both inswingers and outswingers, the average per-frame log-likelihood tends to become more negative
+as additional sequences are incorporated before approximately plateauing. Although the CDHMM is trained
+to maximise likelihood on the available dataset, this pattern is consistent with reduced overfitting as training
+sets expand: models trained on limited data can fit repeated or idiosyncratic behaviours unusually well,
+whereas larger datasets expose more tactical diversity and reduce the attainable average likelihood.
+    The spread of normalized likelihoods typically narrows at larger sample sizes, indicating improved con-
+sistency across random initializations and convergence toward a more stable representation of team be-
+haviour. Inswinging deliveries achieve consistently higher normalized likelihoods than outswinging deliv-
+eries, which may indicate that inswing defending exhibits more structured or predictable patterns that are
+better aligned with the model assumptions.
+
+Illustrative convergence of learned zones for a single team
+To complement the aggregate disagreement metrics, Figure 16 provides a qualitative example of how an
+individual team’s zonal configuration converges as more corners are added. The top row overlays zonal
+Gaussians from all ten random initializations at each sample size, while the bottom row shows the single
+best model selected by maximum observation likelihood. As sample size increases, both within-sample
+variability (across random seeds) and between-sample variability (across training windows) diminish, indi-
+cating increasingly stable zone estimates. Residual variation in the best models suggests that chronological
+
+
+
+                                                      35
+                                                (a) Inswing deliveries.
+
+
+
+
+                                               (b) Outswing deliveries.
+
+Figure 13: Zonal structure disagreement as a function of training sample size for the CDHMM. Each box plot shows
+the distribution of pairwise zonal disagreement between models trained with the same sample size across all teams
+(10 random seeds per team), with outliers plotted. Bar plots indicate the number of teams contributing at each sample
+size.
+
+
+
+                                                         36
+                                                 (a) Inswing deliveries.
+
+
+
+
+                                                (b) Outswing deliveries.
+
+Figure 14: Disagreement in transition weight parameters as a function of training sample size for the CDHMM. Each
+box plot shows the distribution of pairwise ℓ2 distances between transition weights (βs , βm , βz ) learned from models
+trained on the same sample size (10 random seeds per team), pooled across all teams with sufficient data. Outliers are
+plotted. Bar plots indicate the number of teams contributing at each sample size.
+
+
+
+                                                          37
+                                                (a) Inswing deliveries.
+
+
+
+
+                                               (b) Outswing deliveries.
+
+Figure 15: Normalized observation log-likelihood as a function of training sample size for inswinging and outswinging
+deliveries. Each box plot shows the distribution of per-frame log-likelihoods from CDHMMs trained with different
+random seeds at the same sample size, pooled across teams with sufficient data. Log-likelihoods are normalized by the
+total number of timesteps across all training sequences. Bar plots indicate the number of teams contributing at each
+sample size.
+
+
+                                                         38
+subsets can still differ due to changes in execution or tactics over time, consistent with the outliers observed
+in Figure 13.
+
+
+
+
+                                                      39
+Figure 16: Stability of learned defensive zone positions across increasing training sample sizes for an illustrative
+team. The top row shows overlays of all 10 models trained at each sample size (each ellipse represents a bivariate
+Gaussian zone; means are marked as black dots), while the bottom row shows the single best model selected by
+maximum observation likelihood. As sample size increases, estimated zone positions become more stable and less
+variable across random initializations, while remaining differences across chronological subsets suggest minor tactical
+or execution changes over time.
+
+
+
+
+                                                          40
+

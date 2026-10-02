@@ -1,0 +1,511 @@
+                                                3DPCNET: POSE CANONICALIZATION FOR ROBUST VIEWPOINT-INVARIANT
+                                                     3D KINEMATIC ANALYSIS FROM MONOCULAR RGB CAMERAS
+
+                                                        Tharindu Ekanayake⋆ , Constantino Álvarez Casado⋆† , and Miguel Bordallo López⋆
+                                                    ⋆
+                                                        Center for Machine Vision and Signal Analysis (CMVS), University of Oulu, Finland
+                                                                                   †
+                                                                                     Candour Ltd, Oulu, Finland
+arXiv:2509.23455v1 [cs.CV] 27 Sep 2025
+
+
+
+
+                                         Fig. 1: Proposed 3DPCNet pipeline for view-invariant pose analysis. A monocular RGB frame yields a camera-centered 3D
+                                         skeleton via 2D keypoint detection and 3D lifting. The 3DPCNet module then transforms this skeleton into a fixed, body-
+                                         centered canonical frame by predicting a global rotation. This rectification removes camera viewpoint distortions, allowing
+                                         for comparable kinematic measurements (e.g., wrist trajectories, joint angles) across different recordings. Code available at:
+                                         https://github.com/tharindu326/3DPCNet
+
+                                                                 ABSTRACT                                     Index Terms— 3D human pose estimation, pose canoni-
+                                                                                                          calization, motion signal extraction, deep learning, monocular
+                                             Monocular 3D pose estimators produce camera-centered         vision
+                                         skeletons, creating view-dependent kinematic signals that
+                                         complicate comparative analysis in applications such as
+                                         health and sports science. We present 3DPCNet, a com-                                1. INTRODUCTION
+                                         pact, estimator-agnostic module that operates directly on 3D
+                                         joint coordinates to rectify any input pose into a consistent,   Comparable kinematic measurements are essential in applica-
+                                         body-centered canonical frame. Its hybrid encoder fuses lo-      tions such as health monitoring [1], sports science [2, 3], and
+                                         cal skeletal features from a graph convolutional network with    virtual reality training [4]. For example, rehabilitation pro-
+                                         global context from a transformer via a gated cross-attention    tocols track limb symmetry, and athletic coaching involves
+                                         mechanism. From this representation, the model predicts a        detailed analysis of joint trajectories [5]. While monocular
+                                         continuous 6D rotation that is mapped to an SO(3) matrix         video is a practical source for full-body motion data, its output
+                                         to align the pose. We train the model in a self-supervised       is fundamentally tied to the camera coordinate frame. Conse-
+                                         manner on the MM-Fi dataset using synthetically rotated          quently, if the person or the camera moves, the same physical
+                                         poses, guided by a composite loss ensuring both accurate         motion produces different 3D joint trajectories, which distorts
+                                         rotation and pose reconstruction. On the MM-Fi benchmark,        kinematic signals like wrist paths or joint angle curves and
+                                         3DPCNet reduces the mean rotation error from over 20◦ to         complicates longitudinal analysis.
+                                         3.4◦ and the Mean Per Joint Position Error from 64 mm                 Although state-of-the-art 3D monocular pose estimators
+                                         to 47 mm compared to a geometric baseline. Qualitative           have improved localization accuracy [6, 7, 8, 9], they do not
+                                         evaluations on the TotalCapture dataset further demonstrate      solve this core problem, as the predicted skeleton remains
+                                         that our method produces acceleration signals from video         camera-centered. This sensitivity of monocular pipelines
+                                         that show strong visual correspondence to ground-truth IMU       to the viewpoint is well documented [10, 11]. Existing
+                                         sensor data, confirming that our module removes viewpoint        workarounds are insufficient for robust kinematic analysis.
+                                         variability to enable physically plausible motion analysis.      Rule-based normalizations that align the hips or shoulders
+are not robust to arbitrary rotations. Image-driven view adap-     for precise kinematic analysis. Within the 3D pose estimation
+tation methods require pixel access and camera calibration,        field itself, some works adapt the 2D pose to a more favorable
+which are unavailable in pose-only analysis pipelines. Al-         view before the lifting stage [18]. Other research, such as
+though multi-view systems can reduce ambiguity, they also          CanonPose [19], focuses on disentangling the canonical body
+increase the cost and complexity of the setup.                     pose from the camera rotation in a self-supervised manner,
+    This work addresses view-dependent variability by intro-       even this process is often coupled with the image-based fea-
+ducing 3DPCNet, a compact module that maps any estimated           ture extraction stage. The technical feasibility of learning
+3D pose, represented as joint coordinates X ∈ RJ×3 , to a          rotations directly from pose data is supported by work on
+fixed body-centered canonical frame. The system is agnos-          continuous 6D rotation representations [20] and models that
+tic to the upstream 3D pose estimator and is trained using         jointly estimate joint orientations and positions [21].
+only 3D pose data. The architecture uses a hybrid encoder               Despite these developments, most prior work either fo-
+with parallel graph convolutional and transformer branches,        cuses on improving reconstruction or recognition accuracy,
+fused via a gated cross-attention mechanism. This encoder          or tightly couples view adaptation to image features. Less
+predicts a continuous 6D representation of the global rota-        attention has been paid to creating a modular 3D-to-3D rec-
+tion, which is mapped to a valid rotation matrix in SO(3) us-      tification module that operates independently of the upstream
+ing Gram-Schmidt orthonormalization. This matrix rectifies         pose estimator. Our work addresses this gap by learning the
+the input pose. An optional head can also predict a residual       global rotation that maps any camera-centered skeleton to a
+correction to fine-tune joint positions after the primary rota-    fixed frontal canonical frame, using losses that align the ro-
+tion. We evaluate our method on two benchmarks. Exper-             tation on SO(3) and preserve the underlying pose structure.
+iments on the MM-Fi dataset [12] validate the accuracy of          This design provides a flexible post-processing stage to stabi-
+our canonical pose estimation. On the TotalCapture dataset         lize joint-level trajectories for any monocular pipeline.
+[13], we address a key motivation of our work by demonstrat-
+ing that our rectification enables the extraction of accelera-                3. PROPOSED METHODOLOGY
+tion signals from video that more closely resemble the ground
+truth from contact-based IMU sensors. Our primary contribu-        This section details the proposed 3D Pose Canonicalization
+tion is a pose-only rectification module with a hybrid GCN-        Network (3DPCNet). Our objective is to learn a mapping
+Transformer encoder that predicts a global 6D rotation and         function that transforms an input 3D skeleton X ∈ RJ×3 ,
+an optional residual correction to map any 3D skeleton into        where J is the number of joints, from an arbitrary camera-
+a canonical, body-centered frame. This module is trained us-       centered view into a consistent, predefined canonical orienta-
+ing a self-supervised strategy with synthetically rotated poses,   tion. We frame this as a rotation estimation problem, where
+guided by a composite objective function.                          the model predicts the global rotation that aligns the input
+                                                                   pose with the canonical frame.
+                   2. RELATED WORK
+                                                                   3.1. Pose Canonicalization Architecture
+Monocular 3D pose estimation methods provide the raw data
+for kinematic analysis, typically through direct image-to-3D       The core of our method is a network that takes a centered 3D
+regression or, more commonly, a two-stage approach that            pose with J = 17 joints and predicts the canonical repre-
+”lifts” 2D keypoint detections to 3D [6]. State-of-the-art         sentation. As illustrated in Figure 2, the architecture has two
+temporal models, including transformer- and diffusion-based        primary stages: a hybrid encoder for feature extraction and
+architectures such as MotionBERT [9] and DDHPose [14],             two prediction heads for generating the final output.
+have significantly improved accuracy over earlier methods          3.1.1. Hybrid Encoder for Pose Feature Extraction
+[7]. However, a fundamental property of these pipelines is
+                                                                   The encoder, fθ , processes the input pose through two paral-
+that they produce skeletons in a camera-centered coordinate
+                                                                   lel streams designed to capture both local and global spatial
+frame. This means the numerical representation of a mo-
+                                                                   relationships between joints:
+tion changes with the camera’s orientation, which is a major
+limitation for applications requiring consistent measurements      Graph Convolutional Branch: The first stream models
+[15].                                                              the explicit anatomical structure of the human body using
+     Several approaches have been developed to address this        a Graph Convolutional Network (GCN). The GCN operates
+viewpoint sensitivity, particularly in the context of skeleton-    on an adaptive adjacency matrix A, which is a learned in-
+based action recognition. These methods often learn to trans-      terpolation between the fixed anatomical skeleton graph, A0 ,
+form input skeletons into a common, virtual viewpoint to           and a learnable graph topology, Alearned . This is formulated
+achieve higher classification accuracy [16, 17]. While effec-      as A = σ(α)A0 + (1 − σ(α))Alearned , where Alearned is a
+tive for recognition, such transformations are not optimized       learnable symmetric matrix and σ(·) is the sigmoid function
+to preserve the metric fidelity of the pose, which is critical     applied to a learnable parameter α. This adaptive structure
+                                                                                                                 3.1.2. Rotation and Residual Prediction Heads
+       Input Pose
+                                            Linear Projection                     Output
+     X ∈ ℝ^(8×17×3)
+                                               3 → 768 dims                X̂ _c ∈ ℝ^(8×17×3)                    From the fused feature vector z, two separate heads predict
+ 17 joints, 3D coordinates
+                                                                                                                 the components needed to generate the canonical pose:
+ Hybrid Encoder                                                                                                  Rotation Prediction. The primary head predicts a continuous
+                                                                           Canonical Pose
+           GCN Branch                  Transformer Branch
+                                                                           X̂ _c = R̂ ^T·X + Δ
+                                                                                                                 6D representation for the rotation, following the approach in
+     • Adaptive graph learning            • Positional encoding
+ • A = σ(α)·A_0+(1-σ(α))·A_learned         • 2 layers, 8 heads
+                                                                                                                 [20]. This 6D vector is then converted into a valid 3x3 rota-
+      • 3 layers (768 → 192)                • 768 → 256 dims                                                     tion matrix, R̂ ∈ SO(3), using the Gram-Schmidt orthonor-
+        Multi-scale pooling                 • Global attention
+                                                                   Rotation Matrix                 Residual      malization process. This parameterization avoids discontinu-
+                                                                      R ∈ SO(3)                  Δ ∈ ℝ^(17×3)    ities associated with other rotation representations like Euler
+                       Cross-Attention Fusion                         det(R) = 1
+                                 Q: z_gcn                              R·R^T = I                                 angles or quaternions, leading to more stable training.
+                               K,V: z_trans
+              z_attn = Attention(Q_gcn, K_trans, V_trans)                                                        Canonical Pose Computation. The estimated rotation ma-
+                       z_fused = z_gcn + z_attn                     Gram-Schmidt
+                                                                  Orthonormalization
+                                                                                                                 trix R̂ represents the transformation from the canonical frame
+                                                                    r1, r2 → R[:,:2]                             to the input camera view. Therefore, its transpose, R̂⊤ , is
+                     Adaptive Gating                                  r3 = r1 × r2
+       w = softmax(MLP([z_gcn^avg, z_trans^avg]))
+                                                                                                                 applied to the input pose X to reverse the rotation. An op-
+                   w = [w_gcn, w_trans]                                                                          tional second head predicts a residual correction, ∆ ∈ RJ×3 ,
+                    z_final = z_fused +
+                                                                  6D Representation
+             w_gcn·z_gcn + w_trans·z_trans                                                                       to fine-tune joint positions. The final canonical pose, X̂c , is
+                                                                        r ∈ ℝ^6
+                                                                                                                 computed as X̂c = R̂⊤ X +∆. This formulation separates the
+                        Output MLP
+                 Flatten: 17×768 → 13,056
+                                                                                                                 rigid global rotation from small, non-rigid pose adjustments.
+                                                                                                 Residual Head
+                   Linear: 13,056 → 1,536                           Rotation Head
+                                                                                             Linear: 384 → 51
+                    Linear: 1,536 → 768                             Linear: 384 → 6
+                                                                                             (reshape to 17×3)
+                      Linear: 768 → 384                                                                          3.2. Training and Optimization
+                                                                                                                 The model is trained end-to-end using a loss function that in-
+                                                                                                                 tegrates multiple objectives to ensure both accurate rotation
+Fig. 2: The architecture of 3DPCNet. An input pose                                                               estimation and structurally consistent pose reconstruction.
+X ∈ R17×3 is processed by parallel GCN and Transformer
+branches. The resulting features are fused via cross-attention                                                   3.2.1. Proposed Loss Function
+and a learned gate. Two heads then predict a rotation (as a
+6D vector) and an optional residual correction ∆. The final                                                      The total loss, Ltotal , is a weighted sum of several compo-
+canonical pose is computed as X̂c = R̂⊤ X + ∆ and super-                                                         nents. The primary objective is the pose reconstruction loss,
+vised through a composite loss function.                                                                         Lpose , which is the mean squared error between the predicted
+                                                                                                                 canonical pose X̂c and the ground-truth canonical pose Xc .
+                                                                                                                 To directly supervise the rotation, we use the geodesic dis-
+                                                                                                                 tance on the SO(3) manifold, which measures the angle of
+allows the model to learn non-anatomical yet task-relevant                                                       the relative rotation between the predicted matrix R̂ and the
+connections between joints.                                                                                      ground-truth matrix RGT . It is calculated as:
+                                                                                                                                                                !
+Transformer Branch: The second stream uses a Trans-                                                                                                     ⊤
+                                                                                                                                                  tr(R̂RGT )−1
+former encoder to model long-range dependencies that are                                                                        Lrot = arccos                              (1)
+                                                                                                                                                        2
+not captured by the local connectivity of the GCN. The in-
+put joint coordinates are first projected into an embedding                                                      where tr(·) is the trace of the matrix. A cycle consistency loss,
+space and combined with learnable positional encodings.                                                          Lcyc , ensures that applying the predicted forward rotation R̂
+The resulting sequence is processed by several multi-head                                                        to the predicted canonical pose X̂c reconstructs the original
+self-attention layers, allowing the model to capture global                                                      input pose X. This is formulated as Lcyc = ∥R̂X̂c −X∥22 . Ad-
+context and relationships between distant joints, such as a                                                      ditional terms regularize the training. A perceptual loss, Lperc ,
+hand and the contralateral foot.                                                                                 penalizes deviations in bone lengths and joint angles. Regu-
+                                                                                                                 larization losses, Lreg , include an L2 penalty on the residual
+Feature Fusion: The fusion mechanism combines both rep-
+                                                                                                                 term ∆ to discourage large corrections, a term to maintain a
+resentations through cross-attention, where GCN features
+                                                                                                                 meaningful topology in the learned GCN graph, and an atten-
+query Transformer representations to produce attended fea-
+                                                                                                                 tion diversity term for the Transformer heads. The complete
+tures. An adaptive gating network learns task-specific weights
+                                                                                                                 objective function is given by
+[wgcn , wtrans ] to balance the contributions in the final fused fea-
+ture vector z, defined as z = zfused + wgcn · zgcn + wtrans · ztrans .                                           Ltotal = wp Lpose + wr Lrot + wc Lcyc + wperc Lperc + wreg Lreg ,
+This adaptive fusion allows the model to leverage local skele-                                                                                                               (2)
+tal constraints when beneficial while utilizing global context                                                   where the w terms are scalar weights that balance the contri-
+for complex pose configurations.                                                                                 bution of each component.
+3.2.2. Implementation Details                                      evaluation protocols: S1 (cross-sequence), S2 (cross-subject),
+                                                                   and S3 (cross-environment).
+The hybrid encoder has a hidden dimension of 256 and an
+output dimension of 384. It contains 3 GCN layers and 2
+Transformer layers with 8 attention heads. We train the model      4.1.2. TotalCapture for Kinematic Signal Analysis
+for 80 epochs using the AdamW optimizer with a learning rate       We use the TotalCapture (CVSSP3D) dataset [13]1 to assess
+of 5 × 10−4 and a cosine annealing schedule. The batch size        cross–modal agreement between pose-derived and inertial
+is 1024. The primary loss weights are wp = 1.0 and wr =            kinematics. TotalCapture provides fully synchronized, gen-
+1.0, with smaller weights for the auxiliary terms (wc = 0.25,      locked eight-view RGB video together with Vicon motion
+wperc = 0.15).                                                     capture (21 joints) and 13 Xsens IMUs across ∼ 1.9M frames
+                                                                   spanning five subjects and activities including ROM, Walk-
+3.3. Geometric Baseline                                            ing, Freestyle, and Acting. Camera and IMU calibrations
+                                                                   are supplied in the “Surrey” format, which we use to rotate
+For comparison, we implement a deterministic geometric             per-sensor accelerations from the local IMU frame into the
+canonicalization method. This approach does not require            global world frame and then remove gravity. Vicon joint
+learned parameters and is based on anatomical landmarks. It        positions are converted from inches to meters and remapped
+first defines a plane using the shoulder and hip joints and ro-    to our 17-joint layout for consistency. We follow the official
+tates the pose to align this plane’s normal vector with a fixed    split: training on subjects {1, 2, 3} with ROM{1,2,3}, Walk-
+axis (e.g., the Z-axis). A second rotation is then applied to      ing{1,3}, Freestyle{1,2}, Acting{1,2}; testing on subjects
+align the vector between the shoulders parallel to the X-axis.     {1, 2, 3, 4, 5} with Walking 2, Freestyle 3, Acting 3 (unseen
+This two-step process deterministically produces a front-          sequences, mix of seen/unseen subjects). Importantly, 3DPC-
+facing canonical pose and serves as a rule-based baseline in       Net is neither trained nor fine-tuned on TotalCapture. The
+our experiments.                                                   dataset is used solely to evaluate whether canonicalized 3D
+                                                                   motion derived from monocular pipelines matches IMU dy-
+                                                                   namics. Figure 3 shows an example RGB frame (Camera 8,
+          4. EXPERIMENTAL EVALUATION                               Subject 1, Acting 2) used for qualitative context.
+We designed two experiments to evaluate 3DPCNet. The first
+experiment assesses the core performance of pose canonical-
+ization on a dedicated benchmark. The second evaluates the
+practical utility of the canonicalized poses by measuring the
+stability and physical plausibility of derived kinematic signals
+with real-world sensor data.
+
+
+4.1. Benchmark Datasets and Preprocessing
+
+4.1.1. MM-Fi for Canonicalization Training and Evaluation
+
+We use the MM-Fi dataset [12] as the primary source for 3D
+skeleton data. It contains recordings of 40 subjects in 27 ac-     Fig. 3: TotalCapture example frame [13]: Camera 8, Sub-
+tivities across four environments. For our task, we generate       ject 1, Acting 2. Multi-view RGB is time-aligned with Vi-
+input-target pairs from the provided ground-truth 3D poses         con and 13 IMUs, enabling cross-modal evaluation of pose-
+(X ∈ R17×3 ). First, each pose is centered at the pelvis and       derived kinematics.
+mapped to a consistent canonical coordinate system where the
+subject faces the negative X-axis. This remapped, centered
+pose serves as the ground-truth target, Xcanonical . To simu-
+late varied camera viewpoints, we generate a corresponding         4.2. Evaluation Metrics
+input, Xinput , by applying a random rotation R ∈ SO(3) to         We evaluate our method canonicalization performance using
+the canonical pose, given by Xinput = R · Xcanonical . The rota-   three standard metrics. We measure the absolute positional
+tion matrix R is constructed from sampled yaw, pitch, and roll     accuracy using the Mean Per Joint Position Error (MPJPE),
+angles designed to emulate realistic camera placements (e.g.,      which is the average Euclidean distance between predicted
+mostly frontal views with some side and back views), while         and ground-truth joints. To assess the structural fidelity of the
+avoiding extreme or physically implausible orientations. This      pose shape independent of its global orientation, we use the
+process creates physically valid rotated poses that preserve
+bone lengths and joint angles. We follow the official MM-Fi          1 https://cvssp.org/data/cvssp3d/
+Procrustes-Aligned MPJPE (PA-MPJPE). Finally, we directly                that materially reduces viewpoint bias and delivers canonical
+evaluate the primary task of orientation alignment by com-               skeletons suitable for joint-level analysis.
+puting the Rotation Error, defined as the geodesic distance in
+degrees between the predicted and ground-truth rotation ma-                                                         D   , Q S X W                                                         E   * ( 2 0 ( 7 5 , &  & D Q R Q L F D O L ] D W L R Q                                                           F   2 Y H U O D \   * 7   V R O L G   Y V
+                                                                                          $ U E L W U D U \  F D P H U D  D Q J O H   , Q G H [                                                  0 3 - 3 (        P P                                                                             * ( 2 0 ( 7 5 , &   G D V K H G 
+trices, as formulated in Equation (1).
+                                                                                                                                                                                                                                                                                    
+                                                                                                                                                                                                                                                                                    
+4.3. Results on Pose Canonicalization                                =                                                                                                   =                                                                                                  =        
+                                                                                                                                                                                                                                                                                      
+                                                                                                                                                                                                                                                                                       
+We evaluated the estimation of canonical pose in MM-Fi us-
+                                                                                                                                                                                                                                                                                                      
+                                                                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                                                                                                                                            
+ing the S2 (cross subject) and S3 (cross environment) proto-                                    <
+                                                                                                          
+                                                                                                                  
+                                                                                                                                  
+                                                                                                                                              
+                                                                                                                                                      
+                                                                                                                                                             ;                                          <
+                                                                                                                                                                                                                 
+                                                                                                                                                                                                                         
+                                                                                                                                                                                                                                        
+                                                                                                                                                                                                                                                    
+                                                                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                                     ;                                         <
+                                                                                                                                                                                                                                                                                                                        
+                                                                                                                                                                                                                                                                                                                               
+                                                                                                                                                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                                                                                                                   
+                                                                                                                                                                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                                                                                                                                            ;
+cols using MPJPE, PA-MPJPE and rotation error. As sum-                                                         G   * U R X Q G  7 U X W K
+                                                                                                                      , Q G H [    
+                                                                                                                                                                                                  H    ' 3 & 1 H W  6   & D Q R Q L F D O L ] D W L R Q
+                                                                                                                                                                                                               0 3 - 3 (        P P 
+                                                                                                                                                                                                                                                                                                                   I   2 Y H U O D \   * 7   V R O L G   Y V
+                                                                                                                                                                                                                                                                                                                       ' 3 & 1 H W  6    G D V K H G 
+marized in Table 1, 3DPCNet reduces positional error from
+63–65 mm to 46–49 mm (≈ 27% reduction) and crucially re-                                                                                                                                                                                                                            
+duces global orientation error from 20–22◦ to 3–4◦ (5–6× im-         =
+                                                                              
+                                                                                                                                                                         =
+                                                                                                                                                                                     
+                                                                                                                                                                                                                                                                                =
+                                                                                                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                                                             
+                                                                                                                                                                                                                                                                                      
+provement). Performance is stable across domains: moving                                                                                                                                                                                                                               
+
+from S2 to S3 changes MPJPE by only ∼1 mm and rotation                                          
+                                                                                                                                                                 
+                                                                                                                                                                                                       
+                                                                                                                                                                                                                                                                        
+                                                                                                                                                                                                                                                                                                              
+                                                                                                                                                                                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                                                                                               
+error by ≲ 1◦ , indicating that the learned rectifier generalizes                                <
+                                                                                                                 
+                                                                                                                                 
+                                                                                                                                             
+                                                                                                                                                             ;                                          <
+                                                                                                                                                                                                                        
+                                                                                                                                                                                                                                        
+                                                                                                                                                                                                                                                    
+                                                                                                                                                                                                                                                                    ;                                          <
+                                                                                                                                                                                                                                                                                                                               
+                                                                                                                                                                                                                                                                                                                                                
+                                                                                                                                                                                                                                                                                                                                                            
+                                                                                                                                                                                                                                                                                                                                                                             ;
+
+across subjects and environments without access to images or
+calibration.                                                             Fig. 4: Qualitative comparison on an S3 test sample. Top row
+    The behavior of PA-MPJPE clarifies the role of our                   shows input, GEOMETRIC output, and overlay with ground
+residual refinement. The GEOMETRIC baseline performs                     truth. Bottom row shows ground truth, 3DPCNet output, and
+a rigid reorientation and therefore attains PA-MPJPE = 0                 overlay.
+by construction (shape is preserved and Procrustes removes
+the remaining rotation/scale). In contrast, 3DPCNet yields
+37–38 mm PA-MPJPE, reflecting small, learned non-rigid
+adjustments that denoise upstream 3D estimates (e.g., slight
+                                                                         4.4. Results on Kinematic Trajectory Stability
+limb length or joint placement inconsistencies) while still pro-
+ducing a consistent canonical frame. In practice, these cor-
+                                                                         To evaluate the practical impact of our method, we assessed
+rections improve downstream kinematic readouts (Sec. 4.5)
+                                                                         its ability to produce stable and accurate kinematic trajecto-
+by reducing view-induced distortions and stabilizing joint
+                                                                         ries from poses generated by a state-of-the-art estimator (Mo-
+trajectories.
+                                                                         tionBERT). We compare the normalized 3D wrist trajecto-
+Table 1: Canonicalization on MM-Fi.           MPJPE and PA-              ries produced by different canonicalization methods against
+MPJPE in mm, rotation error in degrees.                                  a ground-truth canonical trajectory obtained from a motion
+                                                                         capture system. Figure 5 provides a qualitative comparison
+Dataset  Model     MPJPE PA-MPJPE Rot. Err.                              for a representative Range of Motion (ROM) exercise. The
+         GEOMETRIC 62.85    0.00   20.64                                 results clearly demonstrate the necessity of 3D canonicaliza-
+MM-Fi S2 3DPCNetS2  47.57  37.49    3.58                                 tion. The trajectory derived from raw 2D keypoints (blue,
+                                                                         dashed) is highly erratic and deviates significantly from the
+         3DPCNetS3  46.24  36.94    3.43
+                                                                         ground truth (black), confirming its unsuitability for direct
+         GEOMETRIC 64.58    0.00   21.56                                 analysis. In contrast, all 3D canonicalized trajectories are far
+MM-Fi S3 3DPCNetS2  48.83  38.22    4.29                                 more stable and closely follow the reference path.
+         3DPCNetS3  47.71  37.61    4.24                                      Crucially, the trajectories rectified by our 3DPCNet mod-
+                                                                         els (red and orange) show a superior alignment with the
+    Figure 4 illustrates these effects in a representative sam-          ground truth compared to the geometric baseline (green).
+ple of S3. The GEOMETRIC output roughly aligns the torso,                As seen across all three axes, but most clearly in the Z-axis
+but leaves a noticeable misalignment in the distal joints when           plot, our learned models more faithfully capture the high-
+overlaid with ground truth (Fig. 4c), whereas 3DPCNet S3                 frequency details and overall dynamics of the true motion.
+produces a rotation that nearly coincides with the canonical             The geometric method produces a reasonable approximation
+target across the torso and limbs (Fig. 4f). The per-sample              but tends to smooth out or slightly miss the more complex
+MPJPEs shown in the figure (GEOMETRIC 51.2 mm vs.                        parts of the trajectory. This visual evidence suggests that
+3DPCNet 17.7 mm) are consistent with the average trend                   3DPCNet not only enforces a view-invariant reference frame
+in Table 1. Overall, the results demonstrate that learning a             but also produces higher-fidelity kinematic signals, which is
+pose-only rectification, with an explicit SO(3) rotation and             essential for detailed motion analysis in clinical and perfor-
+a light residual, yields a compact, estimator-agnostic module            mance settings.
+                                                                  Fig. 6: Normalized wrist acceleration signals from a chal-
+                                                                  lenging lateral viewpoint (TotalCapture, Camera 7). The sig-
+                                                                  nals from our 3DPCNet models (S2, red; S3, orange) show a
+Fig. 5: Normalized right wrist trajectories (X, Y, Z axes) dur-
+                                                                  strong visual correspondence with the ground-truth IMU sig-
+ing a ROM exercise. The trajectories from our 3DPCNet
+                                                                  nal (purple, dashed), outperforming the geometric baseline
+models (S2, red; S3, orange) track the ground-truth canonical
+                                                                  (green).
+signal (black) more closely than both the unstable 2D signal
+(blue, dashed) and the geometric baseline (green).
+                                                                                       5. CONCLUSION
+4.5. Results on Cross-Modal Kinematic Fidelity
+                                                                  This work tackled a persistent obstacle for monocular human-
+To evaluate if 3DPCNet produces physically plausible kine-        motion analysis: the lack of a stable, body-centered reference
+matics, we derived wrist acceleration signals from DDH-           frame that makes joint-level signals comparable across cam-
+estimated poses [14] on the TotalCapture dataset [13] and         eras, sessions, and subjects. We introduced 3DPCNet, a pose-
+compared them against a synchronized IMU ground truth. To         only, estimator-agnostic rectification module that predicts a
+allow a valid comparison, the raw IMU data was transformed        global rotation in SO(3) (plus a light residual) to map any
+from local sensor coordinates to the global frame with gravity    camera-centered skeleton into a predefined canonical frame.
+removed. All signals in Figure 6 are normalized. Crucially,       In MM-Fi, 3DPCNet reduced the rotation error from 20–22◦
+our model, trained only on MM-Fi, was tested on a challeng-       to 3–4◦ and MPJPE by ≈ 27%, with negligible degradation
+ing lateral view (Camera 7) from this new dataset without any     from cross-subject evaluation (S2) to cross-environment (S3).
+fine-tuning to evaluate its generalization.                       Beyond numeric gains, qualitative IMU comparisons on To-
+    The results in Figure 6 presents a qualitative comparison     talCapture [13] show that canonicalized motion derived from
+of the normalized acceleration signals. The results demon-        off-the-shelf pose estimators tracks inertial dynamics more
+strate a strong visual correspondence between the signals de-     faithfully than a geometric baseline, especially under chal-
+rived from our canonicalized poses (3DPCNet-S2 and S3, red        lenging lateral viewpoints. Together, these results indicate
+and orange lines) and the ground-truth IMU signal (purple,        that a dedicated pose-only canonicalization stage can sub-
+dashed). Our models successfully capture the primary dy-          stantially diminish viewpoint-induced variability and produce
+namic patterns of the motion, including the timing, shape,        kinematic trajectories better suited for downstream analysis in
+and relative intensity of the acceleration peaks. In contrast,    rehabilitation, sports and VR training.
+the signal from the **Geometric** baseline (green) shows              Insights and significance. (i) Separating rigid orien-
+more noticeable deviations and appears less consistent with       tation from small non-rigid corrections is effective: the
+the IMU data. This close alignment is particularly significant    learned rotation delivers view invariance, while the resid-
+given the challenging camera view, which can introduce er-        ual acts as a denoiser that compensates for upstream pose
+rors into the initial 3D pose. Our learned model appears to be    biases without requiring images or calibration. (ii) The hy-
+better equipped to handle these imperfections than the rigid      brid GCN–Transformer encoder and cross-attentive fusion
+rule-based geometric approach. This visual evidence suggests      exploit both anatomical structure and long-range joint depen-
+that 3DPCNet not only enforces a view-invariant frame but         dencies, which proves crucial for accurate global orientation
+also preserves the underlying physical dynamics of the move-      prediction. (iii) Stability across S2/S3 splits and qualitative
+ment, producing a high-fidelity kinematic signal that more        agreement with IMU signals suggest that canonicalization
+closely approximates data from contact-based sensors.             learned from pose-only supervision can generalize beyond
+the training domain and benefit sensor-fusion scenarios.           [3] Vanessa E Ortiz-Padilla, Mauricio A Ramı́rez-Moreno,
+     Limitations. Our residual head can introduce minor non-           Gerardo Presbı́tero-Espinosa, Ricardo A Ramı́rez-
+rigid deviations (reflected by non-zero PA-MPJPE), which               Mendoza, and Jorge de J Lozoya-Santos, “Survey on
+may be undesirable when strict rigidity is required. The               video-based biomechanics and biometry tools for frac-
+method does not recover absolute scale; applications needing           ture and injury assessment in sports,” Applied Sciences,
+metric distances must obtain scale from upstream estimators,           vol. 12, no. 8, pp. 3981, 2022.
+anthropometric priors, or additional sensors. Performance
+still depends on the quality of the input 3D skeleton, where       [4] Xiaohui Li, Dongfang Fan, Junjie Feng, Yu Lei, Chao
+severe occlusions or extreme viewpoints that corrupt the up-           Cheng, and Xiangnan Li, “Systematic review of mo-
+stream pose will propagate errors. Finally, our training relies        tion capture in virtual reality: Enhancing the precision
+on pose-space augmentation (sampled yaw/pitch/roll) rather             of sports training,” Journal of Ambient Intelligence and
+than real multi-view imagery, which may under-represent                Smart Environments, vol. 17, no. 1, pp. 5–27, 2025.
+rare poses and camera geometries.
+                                                                   [5] Tharindu Ekanayake, Constantino Álvarez Casado, Nhi
+     Outlook. Future work will (i) constrain or explicitly con-
+                                                                       Nguyen, Marta Sobocinski, Sari Pramila-Savukoski,
+trol the residual toward SE(3)-rigid behavior when desired
+                                                                       Xiaoting Wu, Kristina Mikkonen, and Miguel Bor-
+(e.g., with stronger bone-length/joint-angle priors or differ-
+                                                                       dallo López, “Evaluating the accuracy and reliability
+entiable Procrustes constraints), (ii) extend the model tem-
+                                                                       of camera-based physiological and motion signal ex-
+porally to exploit video dynamics and produce uncertainty-
+                                                                       traction techniques in virtual reality training environ-
+aware canonical trajectories, (iii) integrate scale estimation
+                                                                       ments,” in Scandinavian Conference on Image Analysis.
+and gravity alignment for absolute kinematics, and (iv) vali-
+                                                                       Springer, 2025, pp. 442–456.
+date clinical and performance metrics end-to-end (e.g., ROM,
+asymmetry indices) in real deployments. We believe plug-           [6] Julieta Martinez, Rayat Hossain, Javier Romero, and
+and-play canonicalization is a practical path to make monoc-           James J Little, “A simple yet effective baseline for 3d
+ular pipelines deliver view-robust, quantitatively comparable          human pose estimation,” in Proceedings of the IEEE
+kinematics at scale.                                                   international conference on computer vision, 2017, pp.
+                                                                       2640–2649.
+Acknowledgment                                                     [7] Dario Pavllo, Christoph Feichtenhofer, David Grang-
+                                                                       ier, and Michael Auli, “3d human pose estimation in
+The research was supported by the Business Finland WISEC               video with temporal convolutions and semi-supervised
+project (Grant 3630/31/2024), the University of Oulu and the           training,” in Proceedings of the IEEE/CVF conference
+Research Council of Finland (former Academy of Finland)                on computer vision and pattern recognition, 2019, pp.
+6G Flagship Programme (Grant Number: 346208), Profi5                   7753–7762.
+HiDyn programme (326291), and Profi7 Hybrid intelligence
+program (352788). The authors acknowledge the CSC-IT               [8] Chunyu Wang, Yizhou Wang, Zhouchen Lin, and
+Center for Science, Finland, for computational resources.              Alan L. Yuille, “Robust 3d Human Pose Estimation
+The small transformer diagram inside the 3DPCNet block in              from Single Images or Video Sequences,” IEEE Trans-
+Figure 1, created by dvgodoy and distributed via the reposi-           actions on Pattern Analysis and Machine Intelligence,
+tory https://github.com/dvgodoy/dl-visuals                             vol. 41, no. 5, pp. 1227–1241, may 1 2019.
+under the CC BY 4.0 license.
+                                                                   [9] Wentao Zhu, Xiaoxuan Ma, Zhaoyang Liu, Libin Liu,
+                                                                       Wayne Wu, and Yizhou Wang, “Motionbert: A unified
+                     6. REFERENCES                                     perspective on learning human motion representations,”
+                                                                       2023.
+ [1] Ella Jokinen, Ella Pääkkönen, Constantino Álvarez
+     Casado, Aino K Rantala, Terhi Ruuska-Loewald,                [10] Amlaan Bhoi, “Monocular depth estimation: A survey,”
+     Jouni JK Jaakkola, and Miguel Bordallo López, “Under-            2019.
+     standing the feasibility of computer vision in diagnosing
+     respiratory infections in pediatric emergency rooms,”        [11] Sena Kiciroglu, Helge Rhodin, Sudipta N. Sinha, Math-
+     medRxiv, pp. 2025–04, 2025.                                       ieu Salzmann, and Pascal Fua, “Activemocap: Opti-
+                                                                       mized viewpoint selection for active human motion cap-
+ [2] Basilio Pueo and Jose Manuel Jimenez-Olmedo, “Ap-                 ture,” 2020.
+     plication of motion capture technology for sport perfor-
+     mance analysis (el uso de la tecnologı́a de captura de       [12] Jianfei Yang, He Huang, Yunjiao Zhou, Xinyan Chen,
+     movimiento para el análisis del rendimiento deportivo),”         Yuecong Xu, Shenghai Yuan, Han Zou, Chris Xiaoxuan
+     Retos, vol. 32, pp. 241–247, 2017.                                Lu, and Lihua Xie, “Mm-fi: multi-modal non-intrusive
+     4d human dataset for versatile wireless sensing,” in Pro-
+     ceedings of the 37th International Conference on Neural
+     Information Processing Systems, Red Hook, NY, USA,
+     2023, NIPS ’23, Curran Associates Inc.
+[13] Matt Trumble, Andrew Gilbert, Charles Malleson,
+     Adrian Hilton, and John Collomosse, “Total capture:
+     3d human pose estimation fusing video and inertial
+     sensors,” in 2017 British Machine Vision Conference
+     (BMVC), 2017.
+[14] Qingyuan Cai, Xuecai Hu, Saihui Hou, Li Yao, and
+     Yongzhen Huang, “Disentangled diffusion-based 3d hu-
+     man pose estimation with hierarchical spatial and tem-
+     poral denoiser,” 2025.
+[15] Clara Mercadal-Baudart, Chao-Jung Liu, Garreth Far-
+     rell, Molly Boyne, Jorge González Escribano, Aljosa
+     Smolic, and Ciaran Simms, “Exercise quantification
+     from single camera view markerless 3d pose estima-
+     tion,” Heliyon, vol. 10, no. 6, pp. e27596, 3 2024.
+[16] Pengfei Zhang, Cuiling Lan, Junliang Xing, Wenjun
+     Zeng, Jianru Xue, and Nanning Zheng, “View adaptive
+     neural networks for high performance skeleton-based
+     human action recognition,” IEEE transactions on pat-
+     tern analysis and machine intelligence, vol. 41, no. 8,
+     pp. 1963–1978, 2019.
+[17] Mengyuan Liu, Hong Liu, and Chen Chen, “Enhanced
+     skeleton visualization for view invariant human action
+     recognition,” Pattern Recognition, vol. 68, pp. 346–362,
+     2017.
+[18] Guoqiang Liang, Xiangping Zhong, Lingyan Ran, and
+     Yanning Zhang, “An Adaptive Viewpoint Transforma-
+     tion Network for 3d Human Pose Estimation,” IEEE
+     Access, vol. 8, pp. 143076–143084, 2020.
+[19] Bastian Wandt, Marco Rudolph, Petrissa Zell, Helge
+     Rhodin, and Bodo Rosenhahn, “Canonpose: Self-
+     supervised monocular 3d human pose estimation in the
+     wild,” in Proceedings of the IEEE/CVF conference
+     on computer vision and pattern recognition, 2021, pp.
+     13294–13304.
+[20] Yi Zhou, Connelly Barnes, Jingwan Lu, Jimei Yang, and
+     Hao Li, “On the continuity of rotation representations
+     in neural networks,” in Proceedings of the IEEE/CVF
+     conference on computer vision and pattern recognition,
+     2019, pp. 5745–5753.
+[21] Martin Fisch and Ronald Clark, “Orientation keypoints
+     for 6d human pose estimation,” IEEE Transactions on
+     Pattern Analysis and Machine Intelligence, vol. 44, no.
+     12, pp. 10145–10158, 2021.
+

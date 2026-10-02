@@ -1,0 +1,1020 @@
+A Critical Perspective on Finite Sample Conformal Prediction Theory
+in Medical Applications
+Klaus-Rudolf Kladny
+Bernhard Schölkopf
+Lisa Koch
+Christian F. Baumgartner
+Michael Muehlebach
+1
+Max Planck Institute for Intelligent Systems, Germany
+2
+Tübingen AI Center, Germany
+3
+ELLIS Institute Tübingen, Germany
+4
+Department of Digital Medicine, University of Bern, Switzerland
+5
+Department of Diabetes, Endocrinology, Nutritional Medicine and Metabolism UDEM, Inselspital, Bern University Hospital, University of Bern, Switzerland
+6
+Diabetes Center Berne, Bern, Switzerland
+7
+University of Tübingen, Germany
+8
+University of Lucerne, Switzerland
+Abstract
+Machine learning (ML) is transforming healthcare, but safe clinical decisions demand reliable uncertainty estimates that standard ML models fail to provide. Conformal prediction (CP) is a popular tool that allows users to turn heuristic uncertainty estimates into uncertainty estimates with statistical guarantees. CP works by converting predictions of a ML model, together with a calibration sample, into prediction sets that are guaranteed to contain the true label with any desired probability. An often cited advantage is that CP theory holds for calibration samples of arbitrary size, suggesting that uncertainty estimates with practically meaningful statistical guarantees can be achieved even if only small calibration sets are available. We question this promise by showing that, although the statistical guarantees hold for calibration sets of arbitrary size, the practical utility of these guarantees does highly depend on the size of the calibration set. This observation is relevant in medical domains because data is often scarce and obtaining large calibration sets is therefore infeasible. We corroborate our critique in an empirical demonstration on a medical image classification task.
+1
+Introduction
+Clinical decision-making demands trustworthy uncertainty estimates and factually grounded outputs. Although machine learning (ML) has delivered promising results across a range of medical applications—from breast cancer screening
+(
+laang2023artificial
+)
+to cardiovascular disease risk prediction
+(
+lubeck2025adaptable
+)
+—models remain prone to poor calibration, where stated uncertainties fail to reflect the true probability of being correct
+(
+van2019calibration
+)
+, and to hallucination, where outputs are not supported by facts or evidence
+(
+kim2025medical
+)
+. Therefore, deploying these systems in clinical decision processes can be dangerous, as these issues translate directly into serious physical consequences for patients if not addressed
+(
+asgari2025framework
+)
+. A concrete example is offered by
+(
+bromism2025chatgpt
+)
+, which describes a case in which a man developed bromism after consulting a large language model for dietary advice. To mitigate such risks, medical ML systems are considered medical devices and are subject to regulatory oversight to ensure their safety and effectiveness. Software as a medical device (SaMD) are for example regulated by the Food and Drug Administration (FDA) in the United States, or by the Medical Device Regulation (MDR) in Europe.
+In both regions, regulators rely on standards and policy guidance which stress the importance of continuous monitoring, transparency, and the ability to interpret model outputs, particularly when models are adaptive or updated in deployment
+(
+amann2020explainability
+)
+.
+One key aspect of safety and regulatory compliance is the ability to quantify uncertainty in a reliable and interpretable manner, so that clinicians can assess the confidence of model outputs and make informed decisions, thereby ensuring that erroneous or unsafe model outputs can be detected and mitigated. Along these lines, the recently released consensus guideline for trustworthy and deployable artificial intelligence in healthcare (FUTURE-AI) explicitly demands that ML models provide calibrated uncertainty outputs as part of a ML system’s traceability requirements.
+In practice, calibrated uncertainty outputs can be integrated into clinical workflows in various ways. For example, they could support risk-based decision making, where thresholds can for example be applied to the uncertainty outputs for immediate action, ordering further tests, or monitoring only. Calibrated uncertainty outputs are also a useful communication tool to support shared decision-making between treating physicians and patients. Furthermore, information about model uncertainty can be useful for flagging or prioritizing cases for human review.
+Conformal prediction (CP;
+(
+vovk2005algorithmic
+;
+shafer2008tutorial
+)
+) has emerged as a promising statistical framework to address this need. By means of a calibration dataset, CP transforms model predictions into prediction sets (multiple predictions, as shown in
+fig.
+1
+), thereby providing a quantified measure of uncertainty. Under mild assumptions, these prediction sets come with a guarantee
+(
+Angelopoulos2023conformal
+)
+: for any new patient case, the set contains the true label with probability at least a user-specified level, independent of the model or task and, in theory, even for small calibration sets. CP has been applied successfully to a range of tasks, from image classification in histopathology
+(
+wieslander2020deep
+;
+olsson2022estimating
+)
+and dermatology
+(
+lu2022fair
+)
+, to quantile regression for retinal vessel segmentation
+(
+wundram2024conformal
+)
+, and natural language generation of radiology reports
+(
+kladny2025conformal
+)
+.
+Various prior works identify limitations of CP regarding feature-conditional guarantees
+(
+vovk2012conditional
+;
+mehrtens2023pitfalls
+;
+chakraborti2025personalized
+)
+, non-exchangeability and distribution shift
+(
+barber2023conformal
+;
+mehrtens2023pitfalls
+)
+. While these concerns are theoretically sound and practically relevant, we argue that a fundamental mismatch between CP theory and practice remains: The assumption underlying guarantees that are invariant with respect to size of the calibration set. In particular, we show that an often-cited theoretical argument effectively presumes frequent recalibration on fresh calibration sets, which we deem infeasible in clinical practice. In addition, while calibration-set-conditional guarantees exist
+(
+vovk2012conditional
+)
+, these guarantees become practically meaningful only for very large calibration set sizes that may be costly or unattainable in clinical practice. We show on a histological image-classification dataset (
+section
+5.1
+) that coverage (the fraction of times the calibration sets contain the true label) conditional on a fixed, small calibration set can fall well below the desired coverage level with high probability. Consequently, in a realistic clinical workflow where calibration occurs only once (or infrequently), uncritical reliance on classical CP arguments can create an unjustified sense of safety and, at worst, lead to patient harm.
+We proceed with a high-level introduction to the concrete practical method of CP in
+section
+2
+, followed by two theoretical arguments closely associated with the method in
+section
+3
+. We then proceed to describe a practical workflow in
+section
+4
+and how it mismatches the assumptions underlying the often-cited calibration-set-unconditional theory in
+section
+5
+, followed by a real-world example on histological image classification in
+section
+5.1
+. We discuss the clinical danger of over-reliance on CP theory in
+section
+6
+, provide an outlook in
+section
+7
+, and conclude in
+section
+8
+.
+2
+Conformal Prediction Method
+While multiple variants of CP exist, we focus on a variant of CP called
+split conformal prediction
+(
+papadopoulos2002inductive
+;
+lei2015conformal
+)
+. This variant has become the spotlight of attention in recent years, because it only requires training a ML model once. This aspect is relevant in the modern regime of training large neural network models, which are both, highly time and energy consuming (e.g.,
+(
+strubell2020energy
+)
+).
+We furthermore note that there exist various related methods to CP such as learn-then-test
+(
+angelopoulos2025learn
+)
+, PAC confidence sets
+(
+park2019pac
+)
+and risk-controlling prediction sets
+(
+bates2021distribution
+)
+. We stress that for these methods, the arguments made in the present work do not generally hold.
+Figure 1:
+CP for Histological Image Classification.
+CP uses a input (in the example, a histological image) together with a calibration set (not visualized) to generate a prediction set, i.e., multiple labels. In the demonstrated example, the prediction set contains two labels, the correct label “normal colon mucosa” (green) and an incorrect one “cancer-associated stroma” (black).
+The split CP method (visualized in
+fig.
+2
+) splits a labeled data set
+𝒟
+=
+{
+(
+X
+i
+,
+Y
+i
+)
+}
+i
+=
+1
+n
+\mathcal{D}=\{(X_{i},Y_{i})\}_{i=1}^{n}
+with features
+X
+i
+X_{i}
+and labels
+Y
+i
+Y_{i}
+into two different data sets: (1) A training set, denoted by
+𝒟
+train
+\mathcal{D}_{\mathrm{train}}
+; and (2) a calibration set, which we denote by
+𝒟
+cal
+\mathcal{D}_{\mathrm{cal}}
+. The training set
+𝒟
+train
+\mathcal{D}_{\mathrm{train}}
+is used to train a ML model
+ℳ
+\mathcal{M}
+, which creates probability estimates for different values of
+Y
+Y
+, given features
+X
+X
+. After training, the model
+ℳ
+\mathcal{M}
+is calibrated using the calibration set
+𝒟
+cal
+\mathcal{D}_{\mathrm{cal}}
+to a create prediction set
+𝒞
+ℳ
+​
+(
+X
+,
+𝒟
+cal
+)
+\mathcal{C}_{\mathcal{M}}(X;\mathcal{D}_{\mathrm{cal}})
+. For example, as shown in
+fig.
+1
+,
+X
+X
+could correspond to a histological image and
+𝒞
+ℳ
+​
+(
+X
+,
+𝒟
+cal
+)
+\mathcal{C}_{\mathcal{M}}(X;\mathcal{D}_{\mathrm{cal}})
+could contain the classes
+normal colon mucosa
+and
+cancer-associated stroma
+among a larger set of tissue classes. The size of the generated prediction set reflects the model uncertainty: If a prediction set contains many classes, the model is uncertain about the true class. If the prediction set contains few classes, the model is more certain about the true class.
+For details about how conformal prediction sets are generated, we refer to
+(
+angelopoulos2021gentle
+)
+.
+3
+Conformal Prediction Theory
+In this section, we demonstrate two guarantees associated with the conformal prediction method: The calibration-set-unconditional theory (
+section
+3.1
+) is the most well-known one and is often referenced to legitimate the conformal prediction method (
+section
+2
+). In the present work, we question the clinical relevance of this guarantee and instead highlight a lesser-known calibration-set-conditional guarantee that remedies a core issue in the former guarantee (
+section
+3.2
+). We will then discuss a practical workflow in
+section
+4
+and how both guarantees can fail to be practically meaningful.
+3.1
+Calibration-Set-Unconditional Theory
+The CP method (
+section
+2
+) is typically motivated by the guarantee that the true label
+Y
+Y
+for a new, unseen case
+X
+X
+(that is, it is not included in the training or calibration set), is included in the prediction set
+𝒞
+ℳ
+​
+(
+X
+,
+𝒟
+cal
+)
+\mathcal{C}_{\mathcal{M}}(X;\mathcal{D}_{\mathrm{cal}})
+, with high probability. Specifically, for a user-defined parameter
+α
+∈
+(
+0
+,
+1
+)
+\alpha\in(0,1)
+, the guarantee can be written as
+ℙ
+Y
+,
+X
+,
+𝒟
+cal
+​
+(
+Y
+∈
+𝒞
+ℳ
+​
+(
+X
+,
+𝒟
+cal
+)
+)
+≥
+1
+−
+α
+,
+\mathbb{P}_{Y,X,\mathcal{D}_{\mathrm{cal}}}(Y\in\mathcal{C}_{\mathcal{M}}(X;\,\mathcal{D}_{\mathrm{cal}}))\;\geq\;1-\alpha,
+(1)
+where we refer to
+1
+−
+α
+1-\alpha
+as the
+coverage level
+. For instance, if
+α
+=
+0.1
+\alpha=0.1
+, then
+eq.
+1
+tells us that the correct class
+Y
+Y
+will be contained in
+𝒞
+ℳ
+​
+(
+X
+,
+𝒟
+cal
+)
+\mathcal{C}_{\mathcal{M}}(X;\,\mathcal{D}_{\mathrm{cal}})
+with probability at least
+90
+%
+90\%
+, i.e., we are guaranteed to achieve coverage at level
+0.9
+0.9
+. Notably, this guarantee holds irrespective of how well the underlying ML model
+ℳ
+\mathcal{M}
+performs and how large the calibration set
+𝒟
+cal
+\mathcal{D}_{\mathrm{cal}}
+is.
+The key caveat is that is marginal and not conditional over the calibration set. Hence for an “unlucky” draw the prediction set
+𝒞
+ℳ
+​
+(
+X
+,
+𝒟
+cal
+)
+\mathcal{C}_{\mathcal{M}}(X;\,\mathcal{D}_{\mathrm{cal}})
+may lead to poor coverage.
+3.2
+Calibration-Set-Conditional Theory
+An additional guarantee that is conditional on the calibration set size has been derived by
+(
+vovk2012conditional
+)
+. Specifically, defining
+α
+~
+=
+α
++
+ϵ
+\tilde{\alpha}=\alpha+\epsilon
+, for any
+ϵ
+>
+0
+\epsilon>0
+, it can be shown that
+ℙ
+𝒟
+cal
+​
+(
+ℙ
+Y
+,
+X
+​
+(
+Y
+∈
+𝒞
+ℳ
+​
+(
+X
+,
+𝒟
+cal
+)
+|
+𝒟
+cal
+)
+≥
+1
+−
+α
+~
+)
+≥
+1
+−
+δ
+\mathbb{P}_{\mathcal{D}_{\mathrm{cal}}}(\mathbb{P}_{Y,X}(Y\in\mathcal{C}_{\mathcal{M}}(X;\,\mathcal{D}_{\mathrm{cal}})\,|\,\mathcal{D}_{\mathrm{cal}})\;\geq\;1-\tilde{\alpha})\;\geq\;1-\delta
+for
+δ
+≥
+Binomial
+m
+,
+α
+~
+​
+(
+⌊
+α
+⁡
+(
+m
++
+1
+)
+−
+1
+⌋
+)
+,
+\delta\,\geq\,\text{Binomial}_{m,\tilde{\alpha}}\left(\lfloor\alpha(m+1)-1\rfloor\right),
+where
+Binomial
+m
+,
+α
+~
+\text{Binomial}_{m,\tilde{\alpha}}
+is the binomial cumulative distribution function with
+m
+m
+trials and probability of success
+α
+~
+\tilde{\alpha}
+.
+4
+Practical Workflow
+We now proceed to describe a concrete workflow of how conformal prediction is practical in a clinical setting.
+To begin with, we assume that a reliably labeled data set has been created by domain experts and arbitrarily split into training set and calibration set, according to the CP method described in
+section
+2
+. The practical workflow is to perform the following three steps (visualized in the bottom variant of
+fig.
+2
+):
+1.
+Train a ML model on the training data.
+2.
+Calibrate the trained model using a (potentially small) calibration set.
+3.
+Use the calibrated model to perform inference on new patients,
+without (or with infrequent) re-calibration
+.
+We see that steps (1) and (2) follow immediately from the methodological description of CP in
+section
+2
+. However, the CP method only describes how to generate prediction sets and does not make explicit statements about how to perform inference on multiple new patients.
+A natural presumption to make is that according to unconditional CP theory (
+section
+3.1
+), the desired coverage level
+1
+−
+α
+1-\alpha
+will be attained after performing one calibration, i.e., we generate prediction sets for multiple new patients without re-calibrating the model regularly with a new calibration set (step (3)). However, we will demonstrate in the following section that this presumption is incorrect.
+Figure 2:
+Mismatch Between Theory and Practice.
+The conformal prediction workflow can be split into three stages: training, calibration and inference. The standard calibration-set-unconditional guarantee
+section
+3.1
+is
+marginal
+over the calibration set: it presumes the model is recalibrated with a fresh set before each round of inference (top-right panel). The more practically feasible approach is to perform calibration once (see
+section
+4
+), after which the same calibrated model is applied to many inference cases (bottom-right panel). In this single-calibration regime, what matters is the coverage
+conditional
+on the calibration set—yet CP theory provides either no conditional guarantees (
+section
+3.1
+) or conditional guarantees (
+section
+3.2
+) that are expressive only for very large calibration sets.
+5
+Mismatch Between Theory and Practice
+for Calibration-Set-Unconditional Guarantees
+In this section, we elaborate on the theory underlying unconditional conformal prediction (
+section
+3.1
+), what the theory practically means and how it clashes with the setup sketched in
+section
+4
+. Thereafter, we empirically demonstrate this point on a histological image classification task.
+If we re-sample
+Y
+Y
+,
+X
+X
+and
+𝒟
+cal
+\mathcal{D}_{\mathrm{cal}}
+many times to re-evaluate coverage, unconditional CP theory (
+section
+3.1
+) can be translated to the practical statement that the mean coverage will tend to
+1
+−
+α
+1-\alpha
+, irrespective of the size of
+𝒟
+cal
+\mathcal{D}_{\mathrm{cal}}
+. Formally, this means that
+1
+M
+⋅
+K
+∑
+j
+=
+1
+M
+∑
+i
+=
+1
+K
+𝟙
+{
+y
+(
+i
+)
+∈
+𝒞
+ℳ
+(
+X
+(
+i
+)
+;
+𝒟
+cal
+(
+j
+)
+)
+}
+≈
+1
+−
+α
+,
+\frac{1}{M\cdot K}\sum_{j=1}^{M}\sum_{i=1}^{K}\mathbbm{1}\{y^{(i)}\in\mathcal{C}_{\mathcal{M}}(X^{(i)};\mathcal{D}_{\mathrm{cal}}^{(j)})\}\;\approx\;1-\alpha,
+(2)
+where
+y
+(
+i
+)
+,
+X
+(
+i
+)
+y^{(i)},X^{(i)}
+for
+i
+=
+1
+,
+2
+,
+…
+,
+K
+i=1,2,...,K
+are independent realizations of labels and features and
+𝒟
+cal
+(
+j
+)
+\mathcal{D}_{\mathrm{cal}}^{(j)}
+for
+j
+=
+1
+,
+2
+,
+…
+,
+M
+j=1,2,...,M
+are independent calibration sets, respectively. We note that for
+eq.
+2
+to hold, both
+K
+K
+and
+M
+M
+need to be large. However, we see that
+eq.
+2
+is not aligned with the workflow described in
+section
+4
+: In the workflow from
+section
+4
+, calibration of the model is performed
+once
+, instead of re-calibrating the model repeatedly with an entirely fresh calibration set. We argue that what matters for the workflow of
+section
+4
+is that
+conditionally on a single calibration set
+, we obtain approximate
+1
+−
+α
+1-\alpha
+coverage. This means that we instead strive for
+1
+K
+∑
+i
+=
+1
+K
+𝟙
+{
+y
+(
+i
+)
+∈
+𝒞
+ℳ
+(
+X
+(
+i
+)
+;
+𝒟
+cal
+)
+}
+≈
+1
+−
+α
+,
+\frac{1}{K}\sum_{i=1}^{K}\mathbbm{1}\{y^{(i)}\in\mathcal{C}_{\mathcal{M}}(X^{(i)};\mathcal{D}_{\mathrm{cal}})\}\;\approx\;1-\alpha,
+(3)
+for a single realization of the calibration set
+𝒟
+cal
+\mathcal{D}_{\mathrm{cal}}
+. However, the often-cited unconditional CP guarantee (
+section
+3.1
+) has no implications for the calibration-data-conditional statement
+eq.
+3
+. In fact, we empirically demonstrate in the following section that the achieved coverage can be far below the desired coverage level
+1
+−
+α
+1-\alpha
+, with high probability, if the calibration set is small.
+Figure 3:
+Calibration-set–conditional coverage for histological image classification.
+Each histogram shows the empirical distribution of conformal-prediction coverage over independent calibration sets of size
+m
+=
+10
+m=10
+,
+50
+50
+, and
+200
+200
+. The vertical green line marks the mean unconditional coverage, which theory guarantees to exceed the nominal level
+1
+−
+α
+=
+90
+%
+1-\alpha=90\%
+. Practical reliability, however, is determined by the spread: with only
+m
+=
+10
+m=10
+(left panel) almost one-fifth of calibration sets (
+19
+%
+19\%
+) deliver less than
+85
+%
+85\%
+calibration-set-conditional coverage, whereas this shortfall only disappears once
+m
+m
+reaches
+200
+200
+(right panel). This circumstance is only taken into account by the (less well-known) calibration set conditional guarantee (yellow;
+section
+3.2
+), which yields practically useful guarantees only for very large calibration sets.
+5.1
+Empirical Demonstration on Histological Image Classification
+We consider a histological image classification task on the NCT-CRC-HE-100K dataset
+(
+kather2019predicting
+;
+yang2023medmnist
+)
+, where the goal is to classify nine tissue types from non-overlapping patches extracted from Hematoxylin and Eosin–stained histological images of colon tissue. The labels correspond to the tissue type visible in each patch, with two types being associated with colorectal cancer.
+We use
+10,000
+10,000
+examples for training and split the remaining data into two data sets: The first split is used to calibrate the model, but we do not calibrate using the entire split. Instead, we further chunk this data set into sub-splits ranging from sizes
+10
+10
+to
+200
+200
+, which we use for calibration. We then use the second split to assess the calibration-set-conditional coverage for individual calibration sets.
+The result, demonstrated in
+fig.
+3
+, shows histograms of the calibration set conditional coverage obtained by using calibration sets for three different sizes
+m
+∈
+{
+10
+,
+50
+,
+200
+}
+m\in\{10,50,200\}
+. The empirical experiment confirms CP theory
+section
+3
+, which states that averaged over many different calibration sets, the coverage (green dashed line) is larger than the desired coverage level
+90
+%
+90\%
+(black dashed line). However, this guarantee has no implications for the spread of the distribution: For small calibration sets,
+19
+%
+19\%
+of calibrations fall far below the desired coverage (below
+85
+%
+85\%
+), as can be seen be the red area of the histogram. Thus, if we do not regularly (and frequently) re-calibrate the model, the risk of achieving poor coverage is still very high. The calibration-set-conditional spread around the desired coverage level can only be decreased by choosing a larger calibration set, as can be seen in the right-most histogram of
+fig.
+3
+: The probability mass becomes more centered around the desired coverage level. While the calibration-set-conditional guarantee (
+section
+3.2
+) does take calibration-set-conditional properties into account, we also see that guarantee is only expressive for large data sets.
+6
+Clinical Danger of Relying on CP Theory
+The greatest danger of the mismatch described in
+section
+5
+lies in the fact that the calibration-set-unconditional theory (
+section
+3.1
+) may suggest that the size of the calibration set is irrelevant, because the theory holds true irrespective of the calibration set size. If, however, conformal prediction is used according to the setup described in
+section
+4
+, the size of the calibration set is decisive for achieving coverage close to the desired level. Blind reliance on the classical CP argument (
+section
+3.1
+) can therefore foster an unwarranted sense of safety and, at worst, contribute to misdiagnosis. Such miscalibration is not merely a technical concern: in clinical contexts, it can translate into delayed or incorrect treatment decisions, potentially leading to severe consequences for patients. Moreover, it hampers the responsible deployment of machine learning systems in healthcare workflows - an area that would otherwise hold considerable promise for improving diagnostic accuracy and efficiency. Ultimately, repeated failures arising from misplaced trust in theoretical guarantees risk undermining clinicians’ and the public’s confidence in ML-assisted medical technologies.
+7
+Outlook
+Looking ahead, we believe that advancing conformal prediction in medicine requires not only improving sample efficiency, but also fostering a shared understanding of what its statistical guarantees practically entail. Even perfectly valid mathematical guarantees can be misinterpreted when their operational meaning is not clearly communicated to clinicians, regulators, and other non-specialist stakeholders. In particular, while unconditional coverage guarantees may sound reassuring, their dependence on repeated recalibration or large calibration sets may easily be overlooked in practice. Bridging this gap demands both methodological and translational efforts: methodologically, by developing techniques that offer meaningful guarantees under realistic data limitations; and translationally, by creating communication standards and reporting practices that make explicit what can and cannot be expected from a deployed conformal predictor. In safety-critical domains like healthcare, such clarity is a prerequisite for trustworthy adoption.
+8
+Conclusion
+Conformal prediction is often promoted for its finite-sample coverage guarantees. Our empirical findings show that, while this claim is mathematically valid, its practical relevance relies highly on the concrete sample size. In fact, we deem that the often cited calibration-set-size-invariant guarantee (
+section
+3.1
+) may encourage inexperienced clinicians to rely on undersized calibration sets – an oversight that could carry serious clinical consequences. Conformal prediction remains valuable, when sufficiently large calibration sets are available, and under consideration of (practically more relevant) calibration-set-conditional guarantees (
+section
+3.2
+). By demonstrating the clinical importance of this issue, we hope to steer the community toward focusing on calibration-set-size-conditional conformal uncertainty quantification for small sample sizes.
+9
+Competing Interests
+There exist no competing interests.
+References
+(1)
+J. Amann, A. Blasimme, E. Vayena, D. Frey, and V. I. Madai.
+Explainability for artificial intelligence in healthcare: a multidisciplinary perspective.
+BMC Medical Informatics and Decision Making
+, 20(1):310, 2020.
+(2)
+A. N. Angelopoulos and S. Bates.
+A Gentle Introduction to Conformal Prediction and Distribution-Free Uncertainty Quantification.
+arXiv preprint arXiv:2107.07511
+, 2021.
+(3)
+A. N. Angelopoulos and S. Bates.
+Conformal Prediction: A Gentle Introduction.
+Foundation and Trends in Machine Learning
+, 16(4):494–591, 2023.
+(4)
+A. N. Angelopoulos, S. Bates, E. J. Candès, M. I. Jordan, and L. Lei.
+Learn then Test: Calibrating Predictive Algorithms to Achieve Risk Control.
+The Annals of Applied Statistics
+, 19(2):1641–1662, 2025.
+(5)
+E. Asgari, N. Montaña-Brown, M. Dubois, S. Khalil, J. Balloch, J. A. Yeung, and D. Pimenta.
+A framework to assess clinical safety and hallucination rates of llms for medical text summarisation.
+npj Digital Medicine
+, 8(1):274, 2025.
+(6)
+R. F. Barber, E. J. Candes, A. Ramdas, and R. J. Tibshirani.
+Conformal Prediction Beyond Exchangeability.
+The Annals of Statistics
+, 51(2):816–845, 2023.
+(7)
+S. Bates, A. Angelopoulos, L. Lei, J. Malik, and M. Jordan.
+Distribution-free, risk-controlling prediction sets.
+Journal of the ACM
+, 68(6):1–34, 2021.
+(8)
+T. Chakraborti, C. R. Banerji, A. Marandon, V. Hellon, R. Mitra, B. Lehmann, L. Bräuninger, S. McGough, C. Turkay, A. F. Frangi, et al.
+Personalized uncertainty quantification in artificial intelligence.
+Nature Machine Intelligence
+, 7(4):522–530, 2025.
+(9)
+A. Eichenberger, S. Thielke, and A. Van Buskirk.
+A Case of Bromism Influenced by Use of Artificial Intelligence.
+Annals of Internal Medicine: Clinical Cases
+, 4(8):e241260, 2025.
+(10)
+J. N. Kather, J. Krisam, P. Charoentong, T. Luedde, E. Herpel, C.-A. Weis, T. Gaiser, A. Marx, N. A. Valous, D. Ferber, et al.
+Predicting survival from colorectal cancer histology slides using deep learning: A retrospective multicenter study.
+PLoS Medicine
+, 16(1), 2019.
+(11)
+Y. Kim, H. Jeong, S. Chen, S. S. Li, M. Lu, K. Alhamoud, J. Mun, C. Grau, M. Jung, R. Gameiro, et al.
+Medical Hallucination in Foundation Models and Their Impact on Healthcare.
+arXiv preprint arXiv:2503.05777
+, 2025.
+(12)
+K.-R. Kladny, B. Schölkopf, and M. Muehlebach.
+Conformal Generative Modeling with Improved Sample Efficiency through Sequential Greedy Filtering.
+International Conference on Learning Representations
+, 2025.
+(13)
+K. Lång, V. Josefsson, A.-M. Larsson, S. Larsson, C. Högberg, H. Sartor, S. Hofvind, I. Andersson, and A. Rosso.
+Artificial intelligence-supported screen reading versus standard double reading in the Mammography Screening with Artificial Intelligence trial (MASAI): a clinical safety analysis of a randomised, controlled, non-inferiority, single-blinded, screening accuracy study.
+The Lancet Oncology
+, 24(8):936–944, 2023.
+(14)
+J. Lei, A. Rinaldo, and L. Wasserman.
+A Conformal Prediction Approach to Explore Functional Data.
+Annals of Mathematics and Artificial Intelligence
+, 74:29–43, 2015.
+(15)
+C. Lu, A. Lemay, K. Chang, K. Höbel, and J. Kalpathy-Cramer.
+Fair Conformal Predictors for Applications in Medical Imaging.
+In
+Proceedings of the AAAI Conference on Artificial Intelligence
+, volume 36, pages 12008–12016, 2022.
+(16)
+F. Lübeck, J. Wildberger, F. Träuble, M. Mordig, S. Gatidis, A. Krause, and B. Schölkopf.
+Adaptable Cardiovascular Disease Risk Prediction from Heterogeneous Data using Large Language Models.
+arXiv preprint arXiv:2505.24655
+, 2025.
+(17)
+H. Mehrtens, T. Bucher, and T. J. Brinker.
+Pitfalls of Conformal Predictions for Medical Image Classification.
+In
+International workshop on uncertainty for safe utilization of machine learning in medical imaging
+, pages 198–207. Springer, 2023.
+(18)
+H. Olsson, K. Kartasalo, N. Mulliqi, M. Capuccini, P. Ruusuvuori, H. Samaratunga, B. Delahunt, C. Lindskog, E. A. Janssen, A. Blilie, et al.
+Estimating diagnostic uncertainty in artificial intelligence assisted pathology using conformal prediction.
+Nature Communications
+, 13(1):7761, 2022.
+(19)
+H. Papadopoulos, K. Proedrou, V. Vovk, and A. Gammerman.
+Inductive Confidence Machines for Regression.
+In
+European Conference on Machine Learning
+, pages 345–356, 2002.
+(20)
+S. Park, O. Bastani, N. Matni, and I. Lee.
+PAC Confidence Sets for Deep Neural Networks via Calibrated Prediction.
+International Conference on Learning Representations
+, 2020.
+(21)
+G. Shafer and V. Vovk.
+A Tutorial on Conformal Prediction.
+Journal of Machine Learning Research
+, 9:371–421, 2008.
+(22)
+E. Strubell, A. Ganesh, and A. McCallum.
+Energy and policy considerations for modern deep learning research.
+In
+AAAI Conference on Artificial Intelligence
+, volume 34, pages 13693–13696, 2020.
+(23)
+B. Van Calster, D. J. McLernon, M. Van Smeden, L. Wynants, and E. W. Steyerberg.
+Calibration: the Achilles heel of predictive analytics.
+BMC Medicine
+, 17(1):230, 2019.
+(24)
+V. Vovk.
+Conditional Validity of Inductive Conformal Predictors.
+Asian Conference on Machine Learning
+, pages 475–490, 2012.
+(25)
+V. Vovk, A. Gammerman, and G. Shafer.
+Algorithmic Learning in a Random World
+, volume 29.
+Springer, 2005.
+(26)
+H. Wieslander, P. J. Harrison, G. Skogberg, S. Jackson, M. Fridén, J. Karlsson, O. Spjuth, and C. Wählby.
+Deep Learning With Conformal Prediction for Hierarchical Analysis of Large-Scale Whole-Slide Tissue Images.
+IEEE journal of biomedical and health informatics
+, 25(2):371–380, 2020.
+(27)
+A. M. Wundram, P. Fischer, M. Mühlebach, L. M. Koch, and C. F. Baumgartner.
+Conformal Performance Range Prediction for Segmentation Output Quality Control.
+In
+International Workshop on Uncertainty for Safe Utilization of Machine Learning in Medical Imaging
+, pages 81–91. Springer, 2024.
+(28)
+J. Yang, R. Shi, D. Wei, Z. Liu, L. Zhao, B. Ke, H. Pfister, and B. Ni.
+MedMNIST v2 - A large-scale lightweight benchmark for 2D and 3D biomedical image classification.
+Scientific Data
+, 10(1):41, 2023.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►
