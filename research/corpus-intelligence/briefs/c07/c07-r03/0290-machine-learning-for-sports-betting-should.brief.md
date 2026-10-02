@@ -1,0 +1,24 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0290-machine-learning-for-sports-betting-should.md
+## What it is (1-2 sentences)
+Deep-dive of Walsh & Joshi (2024): two identical NBA betting pipelines differing only in model selection metric (accuracy vs classwise-ECE) are compared on season ROI, testing whether calibration — not accuracy — should select sports-betting models. Ledger verdict: ADOPT as direct mandate — select on guarded classwise-ECE and size with fractional Kelly.
+## Key metrics/methods (formulas where given, else "not specified")
+- Kelly: k = (pb − q)/b, p = model probability, q = 1 − p, b = odds − 1 (Eq. 1).
+- Perfect calibration: P(Ŷ = Y | P̂ = p) = p ∀ p ∈ [0,1] (Eq. 2).
+- Classwise-ECE: (1/k)Σ_i Σ_j (|B_{j,i}|/n) |y_i(B_{j,i}) − p̄_i(B_{j,i})| (Eq. 3); k classes, m=20 equal-width bins over [0,1], bin-size-weighted; 80%-nonempty-bins guard (if violated, ECE set to 1) prevents "predict the base rate" degenerate calibration.
+- Kelly simulation (Table 1): K = (P × Bankroll − (1−P))/Bankroll; stake = (1/8)×K×Bankroll (eighth-Kelly) or $100 fixed; $10,000 starting bankroll; games processed chronologically; strategy = bet every value bet (model P > bookmaker implied 1/O).
+- Two-branch pipeline (Fig. 1): LR, RF, SVM, MLP; common filter: drop one of each Spearman-|ρ|>0.7 pair (keep most target-correlated). Branch A: SFS on accuracy + BO-TPE on negative accuracy → pick best test accuracy. Branch B: SFS on classwise-ECE (guarded) + BO-TPE on ECE → pick lowest test ECE.
+- Feature engineering: season-to-date averages of differences in box-score stats vs opponents (relative out-performance, more robust to league drift than absolute averages, citing Dutta et al. 2017); covariate shift handled by two-sample KS tests at 1% on validation vs training — failing features dropped; first 10 games of each team-season excluded from training instances (feature-burn only); chronological splits (CV explicitly rejected as invalid for sports).
+## Data sources named
+- NBA 2014/15–2018/19 from basketball-reference.com (box-score basic + advanced, per game, team-level); closing moneyline odds 2018/19 from Las Vegas sportsbook Westgate via sportsbookreviewsonline.com (scraped public archive). No code release stated; supplementary doc referenced without link.
+## Findings (numbers and facts, not vibes)
+- Test-set 2017/18 selection scores: calibration branch ECE — SVM 3.23%, MLP 3.59%, LR 3.61%, RF 4.39% (SVM selected); accuracy branch accuracy — SVM 66.55%, LR 65.69%, MLP 65.69%, RF 65.34% (SVM selected).
+- Betting simulation 2018/19 ($10,000 start): fixed $100 — calibration SVM $13,244.51 (ROI 32.45%), accuracy SVM $10,556.29 (ROI 5.56%); eighth-Kelly — calibration SVM $13,692.86 (ROI 36.93%), accuracy SVM $2,409.66 (ROI −75.9%).
+- Summary (Table 6): calibration-driven SVM — 87.55% games bet, 38.8% bets won, accuracy 64.27%, classwise-ECE 4.46%, max ROI 36.93%, average ROI 34.69%; accuracy-driven SVM — 89.89% games bet, 38.46% won, accuracy 64.62%, classwise-ECE 5.03%, max ROI 5.56%, average ROI −35.17%. Abstract reports +34.69% vs −35.17% average ROI, best case +36.93% vs +5.56%.
+- Mechanism: accuracy-driven model identified more false-positive value bets; its value-bet predictions formed two clusters at probability extremes (variance 0.036 vs 0.034 for calibrated) — overconfident value bets self-destruct under Kelly.
+- Limitations: single betting season, no ROI significance test; both branches converged on SVM — the paradigm contrast is confounded by differing feature subsets (B and C differ in 6/8 features); 80%-bins guard "somewhat arbitrary" (authors' own words); NBA moneyline only; Westgate closing odds assumed bettable at scale; no slippage/limits.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- Model selection on guarded 20-bin classwise-ECE instead of accuracy for any moneyline/spread probability model — new lever in GSE's calibration lane (post-hoc calibration methods are covered; selection-metric evidence is not) (TRUST-SIGNAL)
+- Eighth-Kelly as a ruin-avoidance sizing rule: accuracy-selected model lost −75.9% under eighth-Kelly while the calibrated model made +36.93% — directly maps to GSE's bet-sizing lane (gap #1: Kelly under estimation error, cited 12× with zero papers read) (OTHER)
+- Hybrid-selection follow-up: two-stage SFS — constrain to feature subsets within 1 pp of minimum ECE, then pick most accurate — tests whether accuracy still adds signal once calibration is satisfied (OTHER, INFERENCE: experiment design is the deep-dive's, not the paper's)
+## Engine-actionable? (yes/no + one-line what)
+yes — run the two-branch bake-off (LR/RF/SVM/MLP + GSE's booster, SFS+BO-TPE on accuracy vs guarded classwise-ECE) on nflverse 2016–2025 with 2025 held out, then make classwise-ECE the primary promotion gate and cap Kelly sizing at 1/8.
