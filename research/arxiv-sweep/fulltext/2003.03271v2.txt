@@ -1,0 +1,674 @@
+A Hybrid Approach for Tracking Individual Players in Broadcast Match Videos
+Journal:
+Pattern Recognition
+Roberto L. Castro
+Address:
+Universidade da Coruña, CITIC, Computer Architecture Group. A Coruña, Spain
+Diego Andrade
+Address:
+Universidade da Coruña, CITIC, Computer Architecture Group. A Coruña, Spain
+Basilio Fraguela
+Address:
+Address:
+Universidade da Coruña, CITIC, Computer Architecture Group. A Coruña, Spain
+Abstract
+Tracking people in a video sequence is a challenging task that has been approached from many perspectives.
+This task becomes even more complicated when the person to track
+is a player in a broadcasted sport event, the reasons being the existence of difficulties such as frequent camera movements or switches, total and partial occlusions between players, and blurry frames due to the codification algorithm of the video.
+This paper introduces a player tracking solution which is both fast and accurate. This allows to track a player precisely in real-time. The approach combines several models that are executed concurrently in a relatively modest hardware, and whose accuracy has been validated against hand-labeled broadcast video sequences. Regarding the accuracy, the tests show that the area under curve (AUC) of our approach is around 0.6, which is similar to generic state of the art solutions. As for performance, our proposal can process high definition videos (1920x1080 px) at 80 fps.
+1
+Introduction
+Object tracking is one of the most important problems in computer vision. The objective is to track a specific object in a video sequence. To do this, it can take advantage of the initial position of the object specified by a human operator, and afterwards, of the position of the object in the previous frame.
+In machine learning (ML), this problem has been usually faced using an approach known as tracking by detection. This method detects the object in the frame without taking into account its previous position. This leads to a high computational cost, since it cannot easily determine a constrained region of interest (ROI) where the tracked object is likely to be located. As a result, it is not feasible to track objects at real-time following this approach. For instance, if the video source is a high definition video of 60 fps, each detection has to process a high-definition frame in just 16 ms. Also, object detection might be successful in only a fraction of the frames of the video sequence, as the tracked
+object might not detectable in every frame.
+This paper presents a solution that attempts to overcome these limitations by combining costly but accurate deep learning (DL) techniques with faster but less accurate math-based algorithms, obtaining a resulting solution which is both accurate and fast at the same time. This solution is applied to the challenging case study of tracking an individual player in a broadcasted sport event. The special difficulties introduced by this case study (
+Manafifard et al. 2017
+) are the existence of frequent camera movements and switches, partial and total occlusions of the tracked object, players of the same team with a very similar appearance to the tracked player, blurry images due to the codification algorithm, and video intervals where the tracked player is out of camera.
+The proposed solution combines two deep neural networks (DNN), Faster-RCNN and SSD, with the Kernelized Correlation Filter (KCF) algorithm. The three models are executed concurrently, although with different frequencies of execution, exchanging information to build a hybrid tracker. This hybrid approach does not need a human operator or supervisor that makes the selection of the initial position of the tracked player. This initial selection is automatically made by the Faster-RCNN network, which is trained to detect a specific player. The same kind of training is applied to SSD. The datasets required to train both networks were generated using a semiautomated tool that uses OpenCV object tracking algorithm.
+These DNNs allows the tracker to recover from situations where the player is out of camera, as well as from temporary detection errors.
+The results show that this approach is able to track a specific player through complicated and challenging video sequences, containing several of the situations that make this case study specially complicated. The experiments show that the proposed algorithm can be executed more than 60 times
+1
+1
+1
+80 times on average
+per second on the frames of a high definition video. The accuracy of the tracker has been validated against hand-labeled video sequences obtaining a value of the area under curve (AUC) of around 0.6.
+The rest of this paper is organized as follows.
+Section
+2
+motivates this paper.
+Section
+3
+formalizes the problem of object tracking and our case study, and introduces some of the solutions available.
+Section
+4
+introduces the solution provided in this paper. Then, Section
+5
+presents the experimental results, while Section
+6
+presents our conclusions and future work.
+2
+Motivation
+As mentioned in the introduction, object tracking is a difficult task for which a big number of solutions have been proposed. None of them has proved to be both fast and accurate enough for the case study of this paper, the unsupervised tracking of an individual player in a broadcasted sport event. This is related to the several complications introduced by this case study, which have already been mentioned in Section
+1
+.
+We tried a number of existing solutions to solve this problem before creating our own one. First, we tried several classifiers based on the “tracking by detection” approach and implemented in the OpenCV library (
+G.B.. A. Karhler 2008
+).
+Multiple Instance Learning (
+Babenko et al. 2009
+) (MIL) and Kernelized Correlation Filters (KCF) (
+Henriques et al. 2014
+) are the two that provided the best results in the case study.
+This kind of methods train a discriminative classifier in an online manner to separate the object from the background, using the current tracker location to extract positive and negative samples from the current frame. When the tracking is not precise, the appearance model uses a sub-optimal positive sample, which can degrade its accuracy over time and cause drift
+2
+2
+2
+In this context, the term is used to indicate the progressive loss of the tracked object due to error accumulation
+. Some of these methods take negative and positive samples from the areas of the frame around the location of the tracker to attenuate this problem. The accuracy of these trackers in our case study is extremely sensitive to the quality of the initial selection, and they can only track the player for a few seconds. After that, these trackers suffer drifting or lose the tracked object in a sudden.
+An alternate solution was to use Convolutional Neural Networks (CNNs) to track the player. These networks are trained offline to track an individual player. For this, the model should be fed with thousands of sample frames indicating the location of the tracked player. Again, these trackers are based on the approach of “tracking by detection”, as they treat every frame as a new problem where the player has to be located without knowing its previous location. This implies that they lose some context information with respect to traditional tracking approaches, which take advantage of the previous locations of the tracked object. This also implies a higher computational cost, as this alternative does not consider a reduced area of interest where the tracked player is likely to be located.
+Among these trackers, FasterRCNN generates the best results. To further evaluate its effectiveness, we made a tracking test with a short video containing several challenging situations such as partial or total occlusions or camera switches, for example. For this test, and all the other tests throughout the paper, we are going to consider the following metrics: The precision of the tracking, for every frame, will be evaluated using the average overlap metric, which calculates the IoU (
+Intersection Over Union
+) between two bounding boxes (BBs), one being the ground-truth region (
+Λ
+G
+\Lambda^{G}
+) and the other being the one detected by the tracker to evaluate (
+Λ
+T
+\Lambda^{T}
+). This metric is defined using the following formula:
+Φ
+⁡
+(
+Λ
+G
+,
+Λ
+T
+)
+=
+{
+Φ
+t
+}
+t
+=
+1
+N
+,
+ϕ
+=
+R
+t
+G
+∩
+R
+t
+T
+R
+t
+G
+∪
+R
+t
+T
+\Phi(\Lambda^{G},\Lambda^{T})=\{\Phi_{t}\}^{N}_{t=1},\phi=\frac{R_{t}^{G}\cap R_{t}^{T}}{R_{t}^{G}\cup R_{t}^{T}}
+where:
+1.
+R
+t
+G
+R_{t}^{G}
+is the ground-truth bounding box
+2.
+R
+t
+T
+R_{t}^{T}
+is the predicted bounding box
+3.
+R
+t
+G
+∩
+R
+t
+T
+R_{t}^{G}\cap R_{t}^{T}
+is the area of overlap between both bounding boxes
+4.
+R
+t
+G
+∪
+R
+t
+T
+R_{t}^{G}\cup R_{t}^{T}
+is the area encompassed by both bounding boxes
+5.
+Φ
+⁡
+(
+Λ
+G
+,
+Λ
+T
+)
+\Phi(\Lambda^{G},\Lambda^{T})
+is the division between the area of overlap by the area of union -
+Intersection over Union
+For this metric, we are considering that an IoU above
+0.5
+0.5
+is successful. The average overlap is a good metric to measure how good is each individual prediction. In order to show the precision on a sequence of frames, we will be using the
+One Pass Evaluation
+(OPE) curve. This curve shows the percentage of correct frames, correct meaning that their IoU is above a given threshold. The curve shows this percentage for different thresholds. A summary metric of this curve is the
+Area Under the Curve (AUC)
+value, which is calculated by computing the integral of the OPE curve. This metric takes a value between 0 and 1 and the higher it is, the better the result is.
+Figure 1
+:
+Time required by Faster RCNN to process each frame
+Figure 2
+:
+Overlap between hand-labeled frames vs FasterRCNN detection
+Figure 3
+:
+OPE curve of the detection made with FasterRCNN vs hand-labeled frames
+The video used for this preliminary test has a full HD resolution (1920x1080 px) and a frame rate of 60 frames per second
+(fps), and it has been obtained from the SoccerNet dataset (
+Giancola et al. 2018
+). The test has been executed on a workstation equipped with an Nvidia GTX 1080 Ti card, an Intel i7 8700k processor and 16 GB of RAM memory. Notice that along this paper, the training and inference processes of deep neural networks will be using all the hardware available in the system, including the GPUs.
+We are interested in measuring the accuracy and the performance of the model. This way, Figure
+1
+represents the time required to execute the model in every frame. The execution time is almost constant around 45 ms, which is insufficient for processing our video in real time. For instance, in order to maintain a frame rate of 30 fps we need to process each frame in just 33 ms, while for a frame rate of 60 fps we need to execute it in just 16 ms.
+Figure
+2
+shows the average overlap between the hand-labeled location of the tracked player and the location detected by Faster-RCNN. As hand-labeling the whole video would have taken too much time, we decided to focus these accuracy results on a subset of 200 frames of the video sequence which were considered specially challenging.
+The outputs of this detector are a bounding box enclosing the most probable location of the tracked object and the confidence of the detection, which is provided with a score between 0 and 1 (the higher the better). This figure assigns an average overlap of 0 to those frames where this score is below 0.6, as this means that in those cases the confidence of the detector is bellow 60%. In the figure, a horizontal red line marks the 0.5 threshold for the average overlap, above which the detection is considered successful. This threshold is only surpassed by around 50% of the video frames, which evidences that the detection provided by FasterRCNN is discrete.
+Finally, Figure
+3
+represents the OPE curve of the detection made with FasterRCNN. This curve shows that this tracker only achieved an overlap (w.r.t. hand-labeled frames) above 50% in 45% of the cases, and that there was a significant
+fraction of the frames where no detection at all was made. The Area Under Curve (AUC) value is just 0.32, which is far from the state of the art methods of object detection.
+These results show that techniques based on maths and statistics cannot successfully address our case study. CNNs seem to provide promising results, but their computational cost is excessive and, although they can track the player in some frames, there are many frames where they cannot detect the player at all.
+3
+Object tracking
+Object tracking is an important problem in the field of computer/artificial vision. Its aim is to track an object through a sequence of frames of a video. The outcome of a tracking algorithm would be a tracking area around the tracked object. In this work, we have adopted the usual simplification of providing a rectangular bounding box (BB) around the tracked object.
+If our purpose were to track an object on a single frame instead of a video sequence, the problem would be referred as object detection. In some works (
+Henriques et al. 2014
+;
+Babenko et al. 2009
+), the idea of using an object detection algorithm to track that object across a video sequence has been tried successfully.
+However, notice that, in the case of object tracking, the history of the previous locations of the object can be used to provide a more accurate and faster tracking. Usually, this information allows establishing a ROI around the immediately previous location of the tracked object, based on the assumption that the movement of the object has a certain locality and that sudden movements from one edge to another of the frame only happen seldom. This ROI can be used to narrow the potential locations of the tracked object.
+Regarding the nature of the target of the tracking, sometimes only an individual unique object needs to be tracked, while in other situations it is required to track all the objects of the same type. Usually, the camera is static and it provides always the same perspective, although sometimes there can be camera switches or movements, which complicates the task.
+In this paper, we have focused on tracking an individual player on a broadcasted soccer match. The output for each frame will be a BB around the most probable location of the tracked player.
+Most of the algorithms that can be found in the bibliography have been tested using data sets, which unlike what happens in our case study, track objects that occupy a high percentage of the frame; a situation that allows to extract characteristics that ease the identification of the objects. The OTB benchmarks (
+Wu et al. 2013
+) and the VOT benchmarks (
+Kristan et al. 2016
+) are examples of this type of data sets.
+Table
+1
+summarizes the AUC value obtained by recent studies when addressing some of the aforementioned benchmarks.
+The best result corresponds to the the SiamVGG network (
+Li and Zhang 2019
+), whose AUC value varies between
+0.610
+0.610
+and
+0.654
+0.654
+for different benchmarks.
+Regarding performance, the SiamVGG network can process a maximum of 35 fps. These numbers will allow us later to put into perspective the level of accuracy and the performance achieved by our strategy.
+tracker
+OTB-2013
+OTB-2015
+OTB-100
+SiamFC-3s (
+Bertinetto et al. 2016
+)
+0.607
+0.516
+0.582
+CFNet (
+Valmadre et al. 2017
+)
+0.611
+0.530
+0.568
+RASNet (
+Wang et al. 2018
+)
+0.670
+-
+0.642
+SA-Siam (
+He et al. 2018
+)
+0.677
+0.610
+0.657
+DSiam (
+Guo et al. 2017
+)
+0.656
+-
+-
+SiamRPN (
+Li et al. 2018
+)
+-
+-
+0.637
+SiamVGG (
+Li and Zhang 2019
+)
+0.665
+0.610
+0.654
+Table 1
+:
+AUC for some recent studies of object tracking for several popular benchmarks.
+Player tracking is a sub-field of object tracking where a number of ad-hoc solutions have been proposed. These solutions have approached the problem from different perspectives, and using very different theoretical foundations. The survey (
+Manafifard et al. 2017
+) contains a comprehensive study of all of them. Some of them have been explicitly tested as part of this research work. For instance, we attempted to integrate the idea of using Kalman Filters (
+Svensson 2010
+) in our hybrid tracker, but it failed to capture camera movements, or situations where players change of direction or speed up suddenly.
+Recent implementations of the Meanshift (
+Comaniciu and Meer 2002
+) and Camshift (
+Allen et al. 2004
+) techniques were also tried but, in the best case, they were only able to track a player for a few seconds in our benchmark video sequences.
+4
+The hybrid player tracker
+The main challenge of our tracker is to use object detection DNNs to perform efficient and precise object tracking. In order to do this we need: (1) to use the history of previous locations detected by the tracker to define a reduced ROI in each frame on which to make the current detection, and (2) to execute concurrently different algorithms at different frequencies to make a precise tracking of a player in a reasonable time.
+Figure
+4
+represents the high-level architecture of our solution. In one of every
+jump
+frames, the object detection Faster-RCNN network is executed to detect the player. The output of this module will be the most likely position of the tracked player at this time.
+The blue arrows represent the flows of information that happen during the processing of these
+jump
+frames.
+The location given by Faster-RCNN will be used to crop subsequent frames establishing a reduced area of interest where to search for the tracked player. This area of interest will be further refined and updated by a SSD network detector which will be executed for each one of the remaining
+j
+​
+u
+​
+m
+​
+p
+−
+1
+jump-1
+frames. Concurrently, the KCF algorithm will be used to do a fine-grain tracking of the object in the ROI on each frame and to provide the output of the algorithm in these frames. The flows of information that happen during the processing of these
+j
+​
+u
+​
+m
+​
+p
+−
+1
+jump-1
+frames is represented with red arrows in Figure
+4
+.
+Figure 4
+:
+Architecture of the hybrid player tracker
+Figure 5
+:
+Sequence diagram of the operation of the hybrid player tracker
+Figure
+5
+gives a different view of the algorithm representing a timeline of the algorithm execution, where we can appreciate that the three algorithms are executed with different frequencies. In this figure, the color code of Figure
+4
+is maintained. Namely, it also uses blue arrows for the first frame of each group of
+j
+​
+u
+​
+m
+​
+p
+jump
+frames and red arrows for the remaining ones.
+The conception of this algorithm resulted from an incremental process driven by a large number of tests. Our initial hypothesis was that executing Faster-RCNN on each frame would be feasible, but as commented in Section
+2
+, we only obtained a fraction of the required performance to be able to perform the tracking in
+real-time. Also, in that same section we showed that when using this approach, a successful detection was made only in around a 20% of the frames, which means that the tracking algorithm lacked continuity in the detection.
+Also, the tests made using KCF alone showed that this algorithm requires periodical supervision, as the initial location of the player has to be indicated by a supervisor, and after some time the algorithm suffers drifting, which should be corrected periodically.
+In our proposal, the role of the supervisor is played by the Faster-RCNN algorithm. However, this supervisor does not intervene only at the beginning of the tracking, but rather each
+j
+​
+u
+​
+m
+​
+p
+jump
+frames. The supervision of the SSD detector at every frame is effective avoiding the KCF drifting problem. This is done by adjusting the KCF BB if there is a serious discrepancy between it and SSD. However, adjusting KCF when a discrepancy with SSD is detected for the first time proved to turn the overall solution unstable. Therefore, instead of doing this, we found that the solution works better if the adjustment is only made when both techniques diverge in more than 3 frames in a row. This value was obtained through experimentation.
+5
+Experimental results
+This section includes: (1) the accuracy and performance results of our approach, and (2), the data of the traning required for the deep neural networks used in our solution. They are discussed in
+5.1
+and
+5.2
+respectively.
+5.1
+Accuracy and performance
+The accuracy and performance of our hybrid tracker was tested by means of experiments whose purpose was to track a total of 4 players from 2 different soccer teams. For each player we chose a specially challenging video sequence containing all the situations that may complicate the tracking, and that were commented in Section
+1
+. There are small variations in the duration of each video sequence selected for each player. The reason is that we tried to balance the videos so that in all of them the tracked player is on camera a similar amount of time.
+The videos used in these experiments have been obtained from the SoccerNet dataset (
+Giancola et al. 2018
+).
+Player 1
+Player 2
+Player 3
+Player 4
+Figure 6
+:
+Average overlap, OPE curve and time per frame of each player using the hybrid tracker player
+Figure
+6
+contains the average overlap, OPE curve and execution time per frame figures for each one of the four players used in the evaluation.
+The accuracy values are calculated against hand-labeled images, and we focused on segments of the video-sequence that we considered specially challenging.
+In the average overlap figures, a horizontal red line shows the threshold of 0.5 overlap, above which a detection is considered successful. As we can see, for all the players, the overlap is above that value most of the time, and when it is below, it does not drop too much below the threshold. Some of the areas of the videos below the threshold correspond to camera switches, or intervals in which the tracked player is not on camera. The OPE curve has a good shape, showing that the tracker achieves at least the minimum 0.5 overlap in between 80% and 90% of the frames. In addition, the summary value AUC is always around
+0.6
+0.6
+, which is always considered in the bibliography as an indicator of high precision (see Section
+3
+).
+These accuracy values are calculated against hand-labeled images, which allows making a more accurate evaluation than using videos labeled using a semiautomated labeling process with the aid of OpenCV.
+In the following, the evaluation of the accuracy in this paper will be done against hand-labeled images. The downside of this approach is that hand-labeling takes significantly more time, thus, we had to focus the accuracy evaluation on segments of the video-sequence.
+Regarding the performance graphs, the red line corresponds to a frame rate of 60 fps, and the blue line corresponds to 50 fps. The results show that the frame time is almost always fast enough to be able to process at least 50 fps. However, the intervals of the video in which we cannot process more than 60 fps are rare. Notice that the tracking was done on a high definition video of a broadcasted video event with a frame rate of 60 fps. This input implied a higher computational cost, but, in exchange, it provided finer-grain details on every frame. The hardware used to execute our solution is the same workstation used for the tests described in Section
+2
+.
+3
+3
+3
+GTX 1080 Ti card, an Intel i7 8700k processor and 16 GB of RAM memory
+Avg. Overlap
+Avg. Fps
+Avg. AUC
+Lost frames
+Player 1
+0.620
+91.75
+0.610
+2
+Player 2
+0.653
+84.98
+0.651
+0
+Player 3
+0.650
+86.65
+0.660
+0
+Player 4
+0.600
+87.36
+0.600
+0
+Table 2
+:
+Average overlap, fps, AUC and Lost frames for the four tested players.
+Table
+2
+shows the average accuracy, fps, AUC and lost frames for the video sequences of the four players.
+The results show that our approach has an accuracy comparable to the state of the art techniques introduced in Section
+3
+. Notice that this is a remarkable achievement given the great difficulty of our case study, which is much higher than that of the benchmarks with which the state of the art approaches are usually evaluated.
+The fps values show that the performance is really good, and the almost non-existent lost frames prove that the tracker can deliver the tracking in real-time.
+Figure 7
+:
+OPE curve and time per frame with different jump sizes
+Figure 8
+:
+OPE curve and time per frame with different crop sizes
+We finish this part of the evaluation discussing two parameters that may modify the behavior of our approach potentially impacting both the accuracy and the performance.
+The first one is the Faster-RCNN jump size between frames.
+A small jump size increases the accuracy but it slows down the tracking, as it increases the frequency of execution of the Faster-RCNN model, which is accurate but slow. Figure
+8
+shows the OPE curve (left side) and the time per frame (right side) for different jump sizes.
+A jump of three frames reaches the highest AUC, concretely
+0.64
+0.64
+, but in exchange the time per frame needed is also considerably large and unstable. As the jump size increases, the area under the OPE curve is reduced as well as the time per frame, which also becomes more constant.
+The second parameter of our approach that can be changed is the size of the crop of the frame made by the SSD model. Theoretically, a small crop size should favor a better accuracy, as the chances that there are two candidates for being the tracked player are smaller. Also, small crops of the frames will be processed faster, reducing the time per frame. The results shown in Figure
+8
+for both the OPE curve and the time per frame indicate that the variation of this parameter does not have in practice a significant influence in none of both aspects.
+5.2
+Training time
+Our method requires that the Faster-RCNN and the SSD networks are trained to detect an individual player. This training is done offline, but it requires a significant amount of computational resources.
+Max. memory
+Execution Time
+steps
+loss
+GPU
+usage (Gb)
+(hours)
+Player 1
+138.945
+15
+164166
+0.0065
+nv_k20
+Player 2
+139.800
+20.4
+200000
+0.0014
+nv_k20
+Player 3
+142.286
+21.19
+200000
+0.0057
+nv_k20
+Player 4
+144.545
+20.6
+200000
+0.0033
+nv_k20
+Table 3
+:
+Summary of training info for Faster-RCNN.
+Max. memory
+Execution Time
+steps
+loss
+GPU
+usage (Gb)
+(hours)
+Player 1
+143.163
+46.9
+200000
+1.3549
+nv_k20
+Player 2
+148.499
+21.71
+93768
+1.3211
+nv_k20
+Player 3
+151.271
+22
+95486
+1.2148
+nv_k20
+Player 4
+145.510
+24
+100152
+1.0371
+nv_k20
+Table 4
+:
+Summary of training info for SSD.
+Tables
+3
+and
+4
+summarize the training information for the two networks and the four players.
+Notice, that he training was done in a cluster node with a NVIDIA Tesla Kepler
+K20m 5 GB GDDR5, 2 x Intel Xeon E5-2660 Sandy Bridge-EP, and 64 GB of RAM memory.
+This training required to have a dataset of 1500 frames labeled with the location of the player, for each one of the four players. Doing this process by hand would have been infeasible. This is why we built a help tool that used KCF to automatically generate these datasets using a short sequence of videos where this technique worked well, and stopping the generation when the technique lost the tracked player. Although it was not a fully automatic process, it significantly reduced the time required to generate the dataset.
+6
+Conclusions
+The hybrid tracker presented in this paper combines two DL detection networks, Faster-RCNN and SSD, as well as a traditional math-based algorithm, like KCF, to produce a fast and accurate tracker for soccer players in broadcasted sport events.
+The situation faced by the tracker is really complicated, as the video of the broadcasted sport event is not edited or preprocessed by us, and thus it contains total or partial occlusions of the tracked players, intervals of the sequence in which the tracked player is not on camera, and camera switches or movements. All these situations and others mentioned in the paper make this tracking really challenging.
+The experiments prove that our tracker can process 60 fps full HD videos at real-time while keeping a high degree of accuracy. This way, for instance, the achieved AUC is above 0.6 and the tracker can obtain an overlap with respect to hand-labeled frames of above 0.5 in more than 80% of the frames.
+The proposed method is unsupervised, which requires that the DNNs are trained in advance to track a specific player. This allows the method not only to work without human supervision, but also to recover from camera switches and situations where the player has not been on camera for a few frames.
+As future work we are planing to group the detection of several players using the same Faster-RCNN network. This would decrease the time required to train the networks, and it would also enable the tracking of several players at the same time. Also, we plan to apply the same approach to other kinds of environments, such as tracking players in other sports or tracking persons of interest in video surveillance.
+Acknowledgements
+This research was supported by the Ministerio de Economía, Industria y Competitividad of Spain and FEDER funds of the EU (TIN2016-75845-P), and by the Xunta de Galicia co-founded by the European Regional Development Fund (ERDF) under the Consolidation Programme of Competitive Reference Groups (ED431C 2017/04) as well as under the Centro Singular de Investigación de Galicia accreditation 2016-2019 (ED431G/01). We also acknowledge the Centro de Supercomputación de Galicia (CESGA) for the use of their computers.
+References
+Allen et al. (2004)
+Allen, J.G., Xu, R.Y.D.,
+Jin, J.S., 2004.
+Object tracking using camshift algorithm and multiple
+quantized feature spaces, in: Proceedings of the
+Pan-Sydney Area Workshop on Visual Information Processing,
+Australian Computer Society, Inc.,
+Darlinghurst, Australia, Australia. pp.
+3–7.
+URL:
+http://dl.acm.org/citation.cfm?id=1082121.1082122
+.
+Babenko et al. (2009)
+Babenko, B., Yang, M.,
+Belongie, S., 2009.
+Visual tracking with online multiple instance
+learning, in: 2009 IEEE Conference on Computer Vision
+and Pattern Recognition, pp. 983–990.
+Bertinetto et al. (2016)
+Bertinetto, L., Valmadre, J.,
+Henriques, J.F., Vedaldi, A.,
+Torr, P.H., 2016.
+Fully-convolutional siamese networks for object
+tracking, in: European conference on computer vision,
+Springer. pp. 850–865.
+Comaniciu and Meer (2002)
+Comaniciu, D., Meer, P.,
+2002.
+Mean shift: A robust approach toward feature space
+analysis.
+IEEE Trans. Pattern Anal. Mach. Intell.
+24, 603–619.
+URL:
+https://doi.org/10.1109/34.1000236
+,
+doi:
+10.1109/34.1000236
+.
+G.B.. A. Karhler (2008)
+G.B.. A. Karhler, 2008.
+Learning opencv, computer vision with the opencv
+library.
+Giancola et al. (2018)
+Giancola, S., Amine, M.,
+Dghaily, T., Ghanem, B.,
+2018.
+Soccernet: A scalable dataset for action spotting in
+soccer videos.
+arXiv preprint arXiv:1804.04527 .
+Guo et al. (2017)
+Guo, Q., Feng, W., Zhou,
+C., Huang, R., Wan, L.,
+Wang, S., 2017.
+Learning dynamic siamese network for visual object
+tracking, in: Proceedings of the IEEE International
+Conference on Computer Vision, pp. 1763–1771.
+He et al. (2018)
+He, A., Luo, C., Tian,
+X., Zeng, W., 2018.
+A twofold siamese network for real-time object
+tracking, in: Proceedings of the IEEE Conference on
+Computer Vision and Pattern Recognition, pp. 4834–4843.
+Henriques et al. (2014)
+Henriques, J., Caseiro, R.,
+Martins, P., Batista, J.,
+2014.
+High-speed tracking with kernelized correlation
+filters.
+IEEE Transactions on Pattern Analysis and Machine
+Intelligence 37.
+doi:
+10.1109/TPAMI.2014.2345390
+.
+Kristan et al. (2016)
+Kristan, M., Matas, J.,
+Leonardis, A., Vojir, T.,
+Pflugfelder, R., Fernandez, G.,
+Nebehay, G., Porikli, F.,
+Čehovin, L., 2016.
+A novel performance evaluation methodology for
+single-target trackers.
+IEEE Transactions on Pattern Analysis and Machine
+Intelligence 38, 2137–2155.
+doi:
+10.1109/TPAMI.2016.2516982
+.
+Li et al. (2018)
+Li, B., Yan, J., Wu, W.,
+Zhu, Z., Hu, X., 2018.
+High performance visual tracking with siamese region
+proposal network, in: Proceedings of the IEEE Conference
+on Computer Vision and Pattern Recognition, pp. 8971–8980.
+Li and Zhang (2019)
+Li, Y., Zhang, X., 2019.
+Siamvgg: Visual tracking using deeper siamese
+networks.
+arXiv preprint arXiv:1902.02804 .
+Manafifard et al. (2017)
+Manafifard, M., Ebadi, H.,
+Moghaddam, H.A., 2017.
+A survey on player tracking in soccer videos.
+Computer Vision and Image Understanding
+159, 19–46.
+Svensson (2010)
+Svensson, D., 2010.
+Target tracking in complex scenarios.
+Chalmers University of Technology.
+Valmadre et al. (2017)
+Valmadre, J., Bertinetto, L.,
+Henriques, J., Vedaldi, A.,
+Torr, P.H., 2017.
+End-to-end representation learning for correlation
+filter based tracking, in: Proceedings of the IEEE
+Conference on Computer Vision and Pattern Recognition, pp.
+2805–2813.
+Wang et al. (2018)
+Wang, Q., Teng, Z., Xing,
+J., Gao, J., Hu, W.,
+Maybank, S., 2018.
+Learning attentions: residual attentional siamese
+network for high performance online visual tracking, in:
+Proceedings of the IEEE Conference on Computer Vision and
+Pattern Recognition, pp. 4854–4863.
+Wu et al. (2013)
+Wu, Y., Lim, J., Yang,
+M.H., 2013.
+Online object tracking: A benchmark, in:
+IEEE Conference on Computer Vision and Pattern
+Recognition (CVPR), pp. 2411–2418.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►
