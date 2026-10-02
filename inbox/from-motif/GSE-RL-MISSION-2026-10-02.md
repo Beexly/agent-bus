@@ -74,6 +74,26 @@ awareness, not a blocker.
 - Document the dataset schema (prompt / reward_model / extra_info / agent_name)
   so the GSE episode builder emits verl-compatible records
 
+**Phase 1 result (2026-10-02, verified):** verl fork cloned to
+`~/workspace/mimo-verl`. Dataset schema confirmed via live read of the `code`
+subset:
+- Keys: `data_source`, `ability`, `agent_name`, `prompt`, `reward_model`, `extra_info`
+- `reward_model`: `{'ground_truth': '', 'style': 'rule'}` — rule-based verifier,
+  ground truth filled per task
+- `extra_info`: `{'dataset_type', 'index', 'instance_id', 'instance_json'}` —
+  `instance_json` carries docker image, cwd, and problem statement
+- Example: `data_source='opensource-code'`, `ability='swe'`, `agent_name='mimo_swe_agent'`
+
+GSE episode mapping (builder implements this):
+- `data_source`: `'gse-nfl'`
+- `ability`: `'pick'`
+- `agent_name`: `'gse_reasoning_agent'`
+- `prompt`: game state — pre-game reasoning context, as-of fenced (no future leakage)
+- `reward_model`: `{'ground_truth': <actual game outcome>, 'style': 'rule'}` —
+  the rule IS the reward function defined above
+- `extra_info`: `{'game_id', 'season', 'week', 'as_of', 'vintage_sha'}` —
+  frozen-vintage SHA from the manifest enforcer
+
 **Phase 2 — GSE environment build (builder lane):**
 - Episode builder: frozen-vintage game → verl-format record, as-of fenced
 - Reward function: implemented, unit-tested on 2022 data (reward for known
