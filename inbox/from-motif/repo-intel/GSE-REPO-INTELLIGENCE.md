@@ -4,6 +4,27 @@ Built 2026-10-02 by 18 parallel workers via GitHub API (read-only). Trigger: Gar
 
 **Coverage:** 17 Beexly repos · 224 Sports branches · 73 external repos · 46 model repos = **360 units**.
 
+## DELTA — 2026-10-02 13:25 CT (HEAD `62d3d7c40`, +6 commits since the build)
+
+Hermes landed six commits in ~20 minutes. Wires closed since the 360-unit build:
+
+- **Wire 9** (tau → DataContext): `intelligence/context/tau_wire.py` + stamp on csv/manifest/loader — "point fit — not pre-kickoff" everywhere.
+- **Wire 5** (held-out checker): `intelligence/gates/heldout_check.py` + tests. Train/eval overlap now gated.
+- **Wire 4** (manifest enforcer): `intelligence/gates/manifest_check.py`. The 2-byte stub problem is closed permanently.
+- **Wire 6** (paired audit): `intelligence/audit/paired.py`.
+- **Wire 12** (two-host ledger): `intelligence/host_ledger.json`.
+- **Wire 16** (injury gate): `intelligence/providers/injury_gate.py` — DataGapError before Friday 18:00 ET.
+- **Vintage freeze**: `intelligence/coaching/data/vintage-2026-10-02.json`.
+- **Doctrines indexed**: `docs/DOCTRINES.md`. **Second wave documented**: `docs/research/2026-10-02/hermes-second-wave.md`.
+- **Registry regenerated** (17:57Z): 46 `no` / 1 `partial` (was 47 null). Provenance honestly notes it is not a fresh line-by-line re-read.
+- **Calibration rows** (`intelligence/gates/calibration_rows.json`) — the first honest rows: epa_facets *"Descriptive. No map fitted."* (Phase H answered: descriptive-only is valid, not a failure); tau_hat_served *"BLOCKED-ON-PRECISION"*; weather_prior *"labeled prior, no season fitted."*
+- **Three real week-4 traces**: ne-at-buf, nyj-at-chi, pit-at-cle (`emit_three.py`); chain gaps no longer swallowed in `pipeline.py`.
+- Tendency producer runnable + `REGEN-NOTE.md`; tilt vote narrowed.
+
+**Scoreboard:** wires done 2 → 8 of 20. Owed: 12 (W1, W2, W3, W7, W10, W11×5 remaining, W13, W14, W15, W18).
+
+**Weak-point impact:** #1 (leakage) partially addressed — held-out checker gates overlap, but the full LeakageGate + as-of fencing still owed; #6 (feed watchdog) has its static half via the manifest enforcer, scheduled loud-failure watchdog still owed. Calibration-on-wire has its first real rows — and "descriptive, no map fitted" counts as a row.
+
 ## The 4 tricks (verified URL patterns)
 
 | # | Reel trick | What it does | Our equivalent | URL pattern |
