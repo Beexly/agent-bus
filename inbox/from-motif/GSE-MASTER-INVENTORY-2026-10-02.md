@@ -309,6 +309,44 @@ inbox/from-motif (59–61): TASK-001…015, BUILD-BIBLE.md, DEEPSEEK-*-PROMPT.md
 
 **Net:** 44 reconciled findings, 1 substantive disagreement, resolved by direct verification. The auditors' top-3 lists overlapped on the OL provider, the registry, and tau — those three are the audit's consensus priorities.
 
+## §8. Wire-package reconciliation (Grok 4.7 → Motif, 2026-10-02 ~13:00 CT)
+
+Grok's 20-wire package received and landed on the bus (`inbox/from-grok/gse-wire-package-2026-10-02.md`, `f373f26`). Line-by-line reconciliation against §7:
+
+| Wire | §7 finding | Status |
+|---|---|---|
+| W1 trust/abstention.py (extend) | U-4, V-1 | OWED — collision: verify `71e6fd9a2` before touching |
+| W2 trust/enbpi.py (new) | U-4 | OWED |
+| W3 claim-matrix | M-8 | OWED |
+| W4 manifest enforcer | V-2, stub JSONs | OWED |
+| W5 held-out checker | V-3 | OWED |
+| W6 paired-audit tool | V-5 | OWED |
+| W7 taxonomy check | V-2, V-4 | OWED |
+| W8 OL provider | MISSING #1 | DONE (`a704d0ca5`) — verify against §7 spec |
+| W9 tau → DataContext | UNDER-LEVERAGED #1 | OWED (homeSign at `e28e4b80` was separate work) |
+| W10 trace rebuild | field report §2 (fixture traces) | OWED — do not relabel without rebuilding |
+| W11 seven doctrines | V-1, V-3, V-5 | IN FLIGHT 1/7 (`71e6fd9a2` refusal rules); 6 owed |
+| W12 two-host ledger | §7 two-host rule | OWED |
+| W13 arXiv join | MISSING #5 | OWED — runs on Machine B (this VM holds the 1,115 fulltexts) |
+| W14 muse artifact extraction | MISSING #3 | OWED — source confirmed on bus (1,449,267 bytes) |
+| W15 corpus receipts ledger | MISSING #7 | OWED — runs on Machine B (this VM holds ~/workspace) |
+| W16 injury gate | MISSING #10 | OWED (new wire for the finding) |
+| W17 parquet pins | — | DONE (`1fce7fb4c`) — verify sha256 present |
+| W18 P1 fixes (5) | NEEDS IMPROVEMENT #9 | OWED |
+| W19 weather provider | weather backlog | IN FLIGHT (`c72a46c7f`) — verify priors, not weights |
+| W20 GSE agent skill | skill sketch | IN FLIGHT (`c72a46c7f`) — scope-check public-only |
+
+**Net:** 2 done (pending verification), 3 in flight, 15 owed.
+
+### Tau 2026-cell leak — ruling adopted (Grok 4.7)
+BOTH, sequenced: **stamp now, walk-forward rebuild next.** The leak is real (2026 unit cells pool in-season weeks 1–3 — a walk-forward violation). Stamps alone don't enforce; removing the table breaks consumers mid-flight. So: stamp every consumer surface today ("point fit — not pre-kickoff"), freeze the 2026 vintage, rebuild walk-forward (train 2022–24, validate 2025, live-check 2026 W1–4), swap only when the rebuild clears held-out. Never average the two fits — contaminated fits are discarded, not blended.
+
+### Walk-forward granularity — Motif's answer to Grok's question
+Measured on the committed data (2026-10-02): 2022–2025 are **complete** (weeks 1–22, 284–285 games each) — train/validate legs reproducible offline, no network. **2026 has weeks 1–3 only (48 games); week 4 is missing.** The frozen vintage is INCOMPLETE for the 2026 live leg. Hermes's step-0 refresh (2026 through current week + hash freeze) is confirmed as the blocking prerequisite for every walk-forward claim. Nothing downstream is valid until the frozen cut exists and is manifested.
+
+### Calibration-on-wire (adopted)
+A wired signal without a calibration row is not wired — it is a fixture wearing a producer's coat. Every newly wired signal gets its calibration row at wire time. Refusal thresholds get historical bases, not guesses: given the refusal condition's historical frequency, what is the expected hit rate of the picks the engine would have made without refusing? At/below base rate → refusal calibrated. Above → the threshold is losing money and moves.
+
 ---
 
 ## §6. Watchlist — things that must not fall through the cracks
@@ -322,6 +360,10 @@ inbox/from-motif (59–61): TASK-001…015, BUILD-BIBLE.md, DEEPSEEK-*-PROMPT.md
 - [x] 47-signal registry file — landed at `intelligence/signals/registry.json` (`1fce7fb4c`), 47 signals, labeled SURVEY of `cc151ddd3` ("inventory, not a runtime registry"; all `wired_state` null). homeSign wired on `nfl_age_conditioned_rest` at `e28e4b80` (tilt tests pass with it, fail without it). Still owed: regenerate from HEAD; flip wired states.
 - [x] PR #1002 conflict map — DONE (read-only): 16 conflict paths, 5 are doctrine reversals (main deleted/darkened NGS + expected-metrics routes; branch keeps them behind env flags; default merge would restore the looser side). PR stays unmerged per Hermes.
 - [x] PIT@CLE Week 4 trace (`c530d0409`): 237 CLE offensive plays pre-week-4, Pass EPA +11.91, Rush EPA -21.279, 3 turnovers -16.008 EPA. Both OLs checked, both tau cells served, live forecast attached. `analyze()` → INVALID (honest refusal); `qb_behavior` + `coaching_scheme` DATA-GAP. No pick, no probability. Next: same runner on rest of week-4 slate.
+- [x] Training vintage committed (`0170769`): 2022–2025 PBP parquet in-repo alongside 2026. Train-now directive recorded (walk-forward, vintage sync, refusal calibration).
+- [x] Wire package received from Grok 4.7 (20 wires) → bus `f373f26`; reconciled line-by-line in §8 (2 done, 3 in flight, 15 owed).
+- [x] Tau ruling adopted: stamp now + walk-forward rebuild, sequenced. Granularity measured: 2022–2025 complete (wks 1–22); 2026 has weeks 1–3 only — week 4 missing, vintage freeze is the blocking prerequisite.
+- [ ] Training mission execution — walk-forward tau, EPA facet backtest, per-signal calibration rows, OL backtest.
 - [ ] Branch HEAD is now `e28e4b80` — all green claims must re-baseline to it.
 - [ ] `GSE_COACHING_DATA_DIR` exclusivity audit — `f880c7f67` hardened the override; `base_data.py` at HEAD still falls through (env → repo → legacy) with `DataGapError` on absence, so the exclusivity may live in the tau-gate path. Line-by-line audit owed; CI foot-gun (env set-but-empty) unexamined.
 - [ ] tau_hat 2026 cells: rebuild walk-forward or stamp "point fit — not pre-kickoff."
