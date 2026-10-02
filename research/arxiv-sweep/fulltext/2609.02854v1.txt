@@ -1,0 +1,889 @@
+                                         MuyBridge: Mobile Human Center-of-Mass Estimation from Monocular Video
+                                                                  via Sparse Fusion
+
+                                         Aidan Bradshaw1 , Marco Giordano1 , David Rode1 , Andreas Habersack2 , Elif Basokur1 , Annika Kruse2 ,
+                                                   Markus Tilp2 , Michele Magno1 , Peter Wolf1 , Luca Benini1,3 , Christoph Leitner1
+                                                                 1                       2                               3
+                                                                     ETH Zurich              University of Graz              University of Bologna
+arXiv:2609.02854v1 [cs.CV] 2 Sep 2026
+
+
+
+
+                                                                 Abstract                                     ronments where they normally train, making it difficult to
+                                                                                                              measure their natural movement during competition.
+                                        The 3D center of mass (CoM) is a primary quantity in the                  Computer vision offers a way to measure similar move-
+                                        biomechanical analysis of sport, rehabilitation, and clini-           ments with substantially less equipment. Two-dimensional
+                                        cal movement, yet existing 3D pose tracking, mesh recov-              pose estimators recover image-space joint locations [22, 44,
+                                        ery, and multi-view triangulation methods either optimize             52], 2D-to-3D lifting methods recover 3D joint configura-
+                                        3D keypoint accuracy without anatomical constraints or                tions [16, 31, 56], mesh-recovery methods estimate body
+                                        carry compute and capture infrastructure too heavy to de-             pose and shape [12, 20, 33], and monocular depth mod-
+                                        ploy where CoM tracking is most useful. As a result, the              els estimate scene geometry [15, 36, 37]. Although use-
+                                        metric CoM remains difficult for coaches and movement an-             ful, these methods are generally optimized for keypoint,
+                                        alysts to measure from a single camera where athletes train           pose, surface, or depth accuracy and do not directly re-
+                                        and compete. In this work, we introduce MuyBridge, an on-             cover anatomical quantities. A smaller body of work in-
+                                        device system that estimates the athlete’s segmental center           corporates biomechanical structure through musculoskele-
+                                        of mass trajectory from a single phone camera video stream.           tal models [46, 51] or mass and contact constraints [45], but
+                                        MuyBridge couples a compact 2D pose network and a dis-                often relies on computationally heavy 3D body representa-
+                                        tilled single-step monocular depth network through an ana-            tions [19, 23, 51] or calibrated multi-view capture and cloud
+                                        lytic metric fusion that uses anatomical and physical pri-            processing [46], limiting their use and practicality during
+                                        ors to anchor the metric CoM, requiring no 3D or task-                routine athletic measurement. This leaves segmental CoM
+                                        specific supervision. Evaluated on the athletic movements             monitoring on deployable platforms largely unexplored.
+                                        of AthletePose3D (running, track and field, and figure skat-
+                                                                                                                 We introduce MuyBridge, a monocular system for es-
+                                        ing), MuyBridge achieves 33–41 mm vertical CoM error
+                                                                                                              timating metric segmental CoM from phone video. Muy-
+                                        and 2.3–6.6% absolute-relative range error (AbsRel) under
+                                                                                                              Bridge combines a compact pose network that identifies
+                                        a one-time calibration, and produces CoM estimates at the
+                                                                                                              image-space anatomical keypoints defining the athlete’s
+                                        63 FPS pose-estimation rate using asynchronous 2.86 Hz
+                                                                                                              body segments with monocular depth sampled at these lo-
+                                        depth updates on iPhone 15. Code is available at: https:
+                                                                                                              cations to capture relative range and track camera-to-athlete
+                                        //github.com/Abradshaw1/Muybridge.
+                                                                                                              motion. The system then uses an analytic fusion of the
+                                                                                                              pose and depth predictions with stature-scaled anthropo-
+                                                                                                              metric constraints to recover metric range, while a one-
+                                        1. Introduction                                                       time scene calibration supplies the ground-plane geometry
+                                        The whole-body center of mass (CoM) is a widely used                  required by complementary physical cues. The resulting
+                                        quantity in segmental biomechanics for analyzing balance,             fused range places the keypoints as metric 3D segment end-
+                                        acceleration, and landing in athletic performance [2, 26,             points. MuyBridge maps these endpoints to segment ge-
+                                        30, 50]. Estimating it, however, commonly requires met-               ometries, mass fractions, and longitudinal CoM locations
+                                        ric body-segment positions together with segment lengths,             using stature-scaled, sex-specific de Leva parameters [9],
+                                        mass fractions, and segment-specific centers of mass, ob-             then computes whole-body CoM as a mass-weighted sum
+                                        tained from marker-based motion capture [11, 14, 30], force           of the resulting segment centers.
+                                        plates [1, 13, 41], or wearable inertial sensing [24, 43]. This          We evaluate MuyBridge on AthletePose3D [54] across
+                                        often confines athletes to laboratories and dedicated capture         running, track and field, and figure skating. Across these
+                                        facilities rather than the fields, arenas, and training envi-         motion regimes, MuyBridge achieves 33–41 mm vertical
+
+
+                                                                                                          1
+CoM error and 2.3–6.6% absolute-relative range error (Ab-           struction, but do not themselves define the metric segmental
+sRel). We evaluate aggregate performance and characterize           quantities required for whole-body CoM estimation.
+how viewpoint, motion phase, and individual range cues af-          Efficient visual inference. Human pose estimation has
+fect monocular CoM recovery. On an iPhone 15, the pose              increasingly targeted lower-cost inference alongside accu-
+network runs at 63 FPS while asynchronous depth updates             racy. RTMPose [17] provides a compact 2D pose archi-
+at 2.86 Hz support CoM estimation at the pose rate.                 tecture, while recent 2D-to-3D methods reduce the cost of
+• MuyBridge, a deployable single-camera method for met-             temporal pose modeling through compact transformer and
+  ric segmental CoM estimation that combines image-space            state-space representations [8, 16, 31]. Monocular depth
+  pose, subject-specific anthropometry, sparse monocular            models have similarly reduced the cost of scene geometry
+  depth, and geometric range constraints without task-              estimation, showing feasibility for efficient human model-
+  specific 3D human-pose or CoM supervision.                        ing under resource constraints.
+• An evaluation across cyclic, rotational, and ballistic ath-
+  letic motions that characterizes where MuyBridge per-             3. Method
+  forms well and where camera-to-athlete range recovery
+                                                                    3.1. Preliminaries
+  becomes the dominant source of error, including the ef-
+  fects of viewpoint, motion phase, and individual range            Segmental Center-of-Mass Model. We compute whole-
+  cues.                                                             body CoM using the segmental anthropometric model of
+• A hardware-aware mobile implementation that com-                  Zatsiorsky and Seluyanov, as re-expressed by de Leva [9,
+  presses and quantizes the pose and depth networks, exe-           55], representing the body as rigid segments whose end-
+  cutes them asynchronously, and profiles latency, through-         points are anatomical joint centers. For segment s with
+  put, memory, and energy on an iPhone 15.                          proximal and distal endpoints pprox
+                                                                                                   s    and pdist
+                                                                                                             s , the segment
+                                                                    center of mass is
+2. Related Work
+                                                                                 cs = pprox + ρs pdist − pprox
+                                                                                                               
+                                                                                       s          s       s      ,             (1)
+Biomechanically grounded vision. Recent work has
+                                                                    where ρs specifies the longitudinal position of the center of
+moved beyond keypoint accuracy toward anatomically and
+                                                                    mass along segment s. Whole-body CoM is then computed
+physically constrained human-motion estimation. BioPose
+                                                                    as the mass-weighted sum of the segment centers,
+[23] incorporates biomechanical structure into monocular
+3D pose estimation, while HSMR [51] reconstructs hu-                                           P
+                                                                                                   ms cs
+mans using a biomechanically accurate skeletal model. IP-                                C = Ps          ,                    (2)
+MAN [45] introduces center-of-mass, center-of-pressure,                                            s ms
+
+and body–floor constraints into monocular human recon-              where ms is the mass fraction of segment s. We use sex-
+struction, and OpenCap [46] evaluates pose estimator                specific segment mass fractions and longitudinal CoM po-
+through the musculoskeletal models. Kaichi et al. [19]              sitions from this formulation. Computing C therefore re-
+estimate CoM directly from multi-view visual-hull recon-            quires the metric locations of the anatomical segment end-
+struction. These works show the value of anatomical and             points together with the corresponding anthropometric pa-
+physical structure, but metric biomechanical reconstruction         rameters.
+commonly relies on richer body models, optimization, or             Center-of-Mass from Monocular Video. A monocular
+multi-view capture, rather than targeting deployable plat-          pose detector provides image-space keypoints correspond-
+forms such as mobile hardware.                                      ing to the anatomical joints of the segmental model, but
+Monocular geometry and scale. Recent lifting methods                not their metric positions relative to the camera. Muy-
+improve root-relative 3D pose through kinematic, tempo-             Bridge maps each keypoint through the camera intrinsics
+ral, and state-space representations [8, 34], while mesh-           to a viewing ray dj , such that a joint at athlete range t lies
+recovery methods such as PromptHMR [49], SAM 3D                     at pj = t dj . The normalized depth field is sampled at
+Body [53], and Neural Localizer Fields [39] recover in-             the detected keypoints to provide relative range informa-
+creasingly detailed body geometry. Estimating articulated           tion. Metric scale is obtained from sex-specific de Leva
+body configuration, however, does not necessarily deter-            segment-length proportions scaled by subject stature, with
+mine absolute camera-to-subject range. RootNet [32] ex-             ground contact and ballistic motion providing additional an-
+plicitly estimates camera distance, metric-depth methods            chors when available. These measurements recover the met-
+recover scene scale [3, 4, 15, 35, 48], and affine-invariant        ric range t, after which the resulting joint positions define
+approaches such as Marigold [21] recover relative scene ge-         the segment endpoints in Equation 1 and the anthropomet-
+ometry without fixing metric scale. These approaches ad-            ric parameters ρs and ms give the whole-body CoM through
+dress complementary components of monocular 3D recon-               Equation 2.
+
+
+                                                                2
+                                                                                                                     Fram
+                                                                                                                         e
+                                                                                                                                   Sparse
+                                                       55-65%      40-50%       10%                                            Keypoint-Depth
+                                                       Pruned      Pruned      Pruned
+                                                                                                                               Measurements
+                                            20%
+                                           Pruned
+
+                                                                               Deep        Gated
+                                                    CSPNeXt     CSPNeXt                               SimCC                      Metric Range
+                                           Stem                               Feature
+                                                      0-1         2-3                     Attention                               Estimation
+                                                                               Block
+
+
+
+
+                                                                     Attention +
+                                           VAE Encoder      Unet        Fixed           Unet
+                                                                                        Unet   VAE Decoder
+                                                                                        Unet
+                                                            Down     Embedding           Up
+                                                                                         Up
+                                                                                         Up                                  Metric Reconstruction
+                                                                      Single-Step
+                                                                                                                              + Segmental CoM
+                                                                        Distilled                 PTQ F16
+                                             PTQ F16
+                                                                      QAT Int8/F16
+
+
+
+
+Figure 1. Overview of MuyBridge. A single RGB phone camera provides input to the compact pose and monocular depth networks, whose
+outputs are combined through metric fusion to recover metric joint positions and compute whole-body CoM on device.
+
+
+3.2. System Overview                                                                                          inference to a single UNet evaluation. The predicted depth
+                                                                                                              is affine-invariant, so individual keypoint samples provide
+The goal of MuyBridge is to estimate metric center-of-
+                                                                                                              local relative depth and their aggregate estimates athlete
+mass trajectories of athletes directly from monocular phone
+                                                                                                              range, while absolute metric scale is resolved during fusion
+video. MuyBridge (Figure 1) consists of three stages: (i)
+                                                                                                              by combining these keypoint-depth measurements with the
+a compact 2D pose network that predicts anatomical key-
+                                                                                                              corresponding anatomical and physical anchors. The net-
+points, (ii) a single-step monocular depth network that pro-
+                                                                                                              work is trained on approximately 1.2M synthetic RGB-D
+vides normalized depth at those locations, and (iii) an ana-
+                                                                                                              pairs from Hypersim [38] and Virtual KITTI 2 [5], with no
+lytic metric-fusion stage that combines relative depth with
+                                                                                                              AthletePose3D or sport-specific supervision. The architec-
+anthropometric and physical range cues to recover metric
+                                                                                                              ture is subsequently restructured, pruned, and quantized for
+joint positions and compute whole-body CoM.
+                                                                                                              mobile execution as described in Section 4.2.
+3.3. 2D Pose Network
+The pose branch estimates the 26 anatomical keypoints of                                                      3.5. Metric Center-of-Mass Estimation
+the Halpe-26 [10] layout from each RGB frame. We use                                                          After pose and depth estimation, MuyBridge converts
+a compact RTMPose-style architecture [17] with an RT-                                                         image-space observations into metric joint positions for the
+MDet person detector [29], a CSPNeXt backbone [7], a                                                          segmental model. Keypoints are back-projected through the
+gated attention unit, and a SimCC regression head [25].                                                       camera intrinsics and paired with depth samples at the same
+The detected athlete is cropped to a 256 × 192 input, and                                                     anatomical locations, then fused with anthropometric and
+SimCC predicts separate horizontal and vertical coordi-                                                       physical range cues to recover athlete depth for segmental
+nate distributions for each joint. The resulting output is                                                    CoM computation.
+K = {(ûj , v̂j , wj )}26
+                       j=1 , where (ûj , v̂j ) is the image-space                                            Sparse Keypoint-Depth Measurements. For frame f ,
+location of joint j and wj its confidence. Coordinates
+                                                                                                              keypoint (uf,j , vf,j ) defines the camera ray
+are mapped back to the original image before metric fu-
+sion. We train and evaluate the pose network on COCO-
+WholeBody [18] and HICO-DET [6], with annotations con-                                                                        df,j ∝ K−1 [uf,j , vf,j , 1]⊤ ,           (3)
+verted to the Halpe-26 layout with no AthletePose3D or
+sport-specific supervision. The architecture is subsequently                                                  and the normalized depth field is sampled at the same
+restructured, pruned, and quantized for mobile deployment,                                                    anatomical location as zf,j = Zf (uf,j , vf,j ). Pose con-
+described in Section 4.1.                                                                                     fidence and local depth consistency are used jointly to re-
+                                                                                                              ject observations inconsistent with the athlete. The retained
+3.4. Monocular Depth Network                                                                                  samples are summarized as z̃f = medianj∈Vf zf,j , pro-
+To provide range information for the detected body key-                                                       viding a robust relative range signal. Since Zf is affine-
+points, the depth branch processes the same RGB frame                                                         invariant, z̃f captures changes in athlete range but carries
+as the pose network and predicts a dense normalized depth                                                     no metric scale.
+field Z(u, v). We use a Marigold-based latent depth                                                           Metric Range Estimation. Metric range is first estimated
+model [21], consisting of a VAE encoder, a denoising UNet,                                                    from anthropometric segment lengths. For segment k, a
+and a VAE decoder. Rather than iterative diffusion sam-                                                       known length Lk from the de Leva body model, scaled by
+pling, we apply latent consistency distillation [28] to reduce                                                subject stature or replaced by a measured length when avail-
+
+
+                                                                                                       3
+able, and endpoint rays df,i and df,j give                             packing. The reduced feature dimensions also lower SRAM
+                                                                       pressure and intermediate feature transfers.
+                                    Lk                                 Structured pruning. We apply GroupFisher structured
+                   tsize
+                    f,k =                     .             (4)
+                               ∥df,i − df,j ∥                          pruning [27], concentrating removal in the early network
+                                                                       rather than shrinking all stages uniformly. CSPNeXt
+Because foreshortening biases individual estimates upward,             Stages 0–1 are reduced by 55–65%, Stages 2–3 by 40–
+range estimates across visible segments are aggregated us-             50%, and Stage 4 by at most 10%, reducing the network
+ing a fixed low quantile. Physical cues provide additional             from 3336 to 2389 channels and approximately halving its
+metric observations when available. Ground contact yields              floating-point computation. The pruned network is then
+range through ray–ground intersection, while airborne mo-              fine-tuned in full precision before quantization.
+tion yields range by relating image-space acceleration to              Mixed-precision quantization. We perform quantization-
+gravity. These observations also anchor the affine-invariant           aware training with symmetric per-channel quantization for
+depth signal to metric scale. For frames A where a physical            weights and asymmetric per-tensor quantization for acti-
+range observation is available, we estimate                            vations. The SimCC softmax remains in floating point
+                      X                           2                   because normalization over coordinate bins is sensitive to
+    (α, β) = arg min       wf αz̃f + β − tanchor
+                                            f        , (5)             eight-bit reduction, while the remaining compatible opera-
+                  α,β
+                        f ∈A
+                                                                       tors are quantized for Neural Engine execution.
+where tanchor
+         f      is the metric range obtained from ground con-
+                                                                               Model            FPS ↑   AUC ↑    PCK@0.1 ↑
+tact or ballistic motion and wf is its measurement weight.
+                                                                               Ours (INT8)       224     0.902     73.32%
+This gives the depth-derived range tdepth
+                                        f     = αz̃f + β. The                  RTMPose (F32)     123     0.870     66.35%
+anthropometric, physical, and depth-derived measurements
+are fused with a constant-velocity range model to obtain the           Table 1. Pose accuracy and server-side throughput of the com-
+final athlete range t̂f .                                              pressed INT8 model and full-size RTMPose reference. AUC is
+Metric Reconstruction and Segmental CoM. The fused                     the area under the PCK curve, and PCK@0.1 reports the percent-
+athlete range t̂f places the predicted keypoint rays in met-           age of keypoints within 10% of the reference scale.
+ric camera coordinates. The hip-center ray defines a ver-
+tical reconstruction plane at this range, and each keypoint            The compressed model reaches 1.82× the RTMPose
+ray is intersected with the plane to obtain metric joint posi-         throughput with a 7.0-point PCK@0.1 gain. The accuracy
+tions p̂f,j . The reconstructed Halpe-26 joint locations are           difference reflects Halpe-26 retraining rather than quantiza-
+then mapped to the corresponding de Leva segment coordi-               tion (Table 1).
+nates for the head, trunk, bilateral thighs, shanks, feet, upper
+arms, and forearms, with the trunk defined from neck to hip            4.2. Depth Network Compression
+center and hand mass folded into the forearms. The sex-                We restructure the depth network of Section 3.4 for efficient
+specific ms and ρs parameters are applied to segment end-              mobile execution, applying conditioning removal, operator-
+points to compute segment centers and whole-body CoM                   compatible restructuring, and mixed-precision quantization.
+through Equations 1 and 2.                                             Conditioning removal. Marigold inherits the CLIP text-
+                                                                       conditioning of its Stable Diffusion 2 backbone. We found
+4. On-Device Deployment                                                that replacing the text encoder with a fixed learned embed-
+                                                                       ding does not measurably degrade depth performance while
+4.1. Pose Network Compression                                          removing approximately 340 M parameters.
+We restructure the pose network of Section 3.3 for efficient           Operator-compatible restructuring. We restructure the
+execution on the Apple Neural Engine, then apply struc-                remaining network for Core ML execution. GELU and
+tured pruning and quantization-aware training.                         SiLU activations are replaced with ReLU and Hardswish
+Architecture restructuring. We replace SiLU with ReLU,                 so that adjacent convolution, normalization, and activation
+express the projections in the gated attention unit as                 operations can be fused across accelerator tiles. Group and
+convolution–normalization–activation blocks, and replace               layer normalization are replaced with a batch-adaptive nor-
+hard-sigmoid gates with standard sigmoid operations to                 malization wrapper that yields a static computation graph
+map the graph to accelerator-supported operators. Pool-                and can be folded into neighboring convolutions at export.
+ing and convolution kernels are capped at 7 × 7, except for            Mixed-precision quantization. We found that post-
+the large-kernel SimCC block required for coordinate res-              training quantization degrades the UNet’s predicted depth
+olution. We further compress the CSPNeXt backbone to                   structure, whereas the frozen VAE maintains stable activa-
+width×0.275 and depth×0.157, with channel dimensions                   tion ranges under post-hoc calibration. We therefore apply
+rounded to multiples of 8 or 16 for Neural Engine tensor               quantization-aware training to the UNet and post-training
+
+
+                                                                   4
+quantization to the VAE. Convolution and projection lay-                 the Xcode energy log, peak memory from Instruments, and
+ers use eight-bit symmetric per-channel weight quantization              model size from the compiled .mlmodelc bundles.
+and asymmetric per-tensor activation quantization, while at-
+tention, query/key/value projections, softmax, and residual              Model               Lat. (ms) ↓   FPS ↑   Size (MB)   Energy (mJ) ↓
+normalization remain in FP16 because full INT8 attention                 Pose network             15.58     63.0        17.4           23.4
+degrades depth accuracy.                                                 Depth network            349.9     2.86       928.9          615.0
+                                                                         Full† , 256 × 192        349.9     2.86       946.3          638.4
+ Dataset            Model            AbsRel ↓ RMSElin ↓     δ1 ↑         Full, 256 × 256          424.6     2.35       946.3          752.4
+                                                                         Full, 320 × 320          384.7     2.60       946.3          690.4
+ KITTI-Depth [47] Marigold (F32)      0.132      3.588     0.852
+                  Ours (INT8)         0.155      3.885     0.776
+                                                                         Table 3. On-device profiling on an iPhone 15. Component rows
+ Hypersim† [38]     Marigold (F32)    0.128      0.738     0.880         report the deployed 256 × 192 configuration, while full-pipeline
+                    Ours (INT8)       0.149      0.800     0.849         rows compare † MuyBridge input resolutions.
+ NYU-Depth [42]     Marigold (F32)    0.053      0.230     0.976
+                    Ours (INT8)       0.061      0.253     0.965         At the deployed resolution, pose inference requires
+                                                                         15.58 ms while a depth update requires 349.9 ms, mak-
+Table 2. Depth accuracy compressed network compared with full-           ing the depth branch the dominant cost in model size, en-
+precision Marigold reference. AbsRel, linear RMSE, δ1 , † held-out       ergy, and memory (Table 3). A full pass costs 349.9 ms
+test split, all follow standard monocular depth evaluation.              and 638 mJ, which is the cold-start configuration rather than
+                                                                         steady-state operation. Across resolutions, latency is non-
+Quantization introduces a modest accuracy loss across                    monotonic, with 320 × 320 executing faster than 256 × 256,
+datasets, with AbsRel increasing by 0.008–0.023 and δ1 de-               due to accelerator-specific tiling and core allocation. Peak
+creasing by 0.011–0.076 (Table 2). The largest degradation               memory reaches 1,185 MB for the complete pipeline, com-
+occurs on KITTI-Depth, while NYU-Depth remains com-                      pared with 126.8 MB for pose alone. Per-submodule profil-
+paratively stable.                                                       ing, tail latencies, and compute are reported in the appendix.
+4.3. Pipeline Deployment and Profiling                                   5. Experiments
+Both networks are converted from PyTorch to Core ML and
+                                                                         5.1. Datasets and Evaluation Protocol
+compiled into fixed-shape .mlmodelc binaries. The depth
+model is split into encoder, denoiser, and decoder graphs                We evaluate MuyBridge on AthletePose3D [54], which
+to avoid poor accelerator mapping of a single monolithic                 contains eight athletes and approximately 1.3M synchro-
+graph. MuyBridge runs as a native Swift application on an                nized multi-view frames. We partition the evaluation into
+iPhone 15, with AVFoundation supplying camera frames,                    running, track and field, and figure skating to characterize
+Core ML executing the perception networks, and CPU-                      motion-dependent performance using test partitions com-
+based metric fusion and CoM computation.                                 prising 1,028 sequence-camera pairs and 235,183 frames.
+Setup. Camera intrinsics are obtained directly from the de-              Neither perception network is trained or fine-tuned on Ath-
+vice, while a one-time scene calibration provides the ground             letePose3D. For each sequence, camera intrinsics and the
+plane and landmark offsets used by the physical range cues               one-time scene calibration provide the geometric inputs
+of Section 3.5. Subject sex and stature are specified once be-           required by Section 3.5. Subject sex selects the corre-
+fore recording, with stature scaling the anthropometric seg-             sponding de Leva [9] anthropometric parameters, while
+ment lengths and sex selecting the corresponding de Leva                 stature scales sex-specific segment-length proportions used
+parameters.                                                              for metric range estimation. Reference trajectories are used
+Runtime. The pose network sustains 63 FPS, whereas the                   only to compute evaluation targets and are not used during
+depth field refreshes at 2.86 Hz. MuyBridge therefore per-               inference. Reference CoM is computed from the provided
+forms fusion at the pose rate using the most recent depth                3D joints using the segmental model of Section 3.1 and the
+field. This asynchronous schedule matches the role of each               same anthropometric formulation as our predictions. We re-
+branch, pose captures frame-to-frame articulation, while                 port 3D CoM MAE and its lateral, vertical, and depth com-
+                                                                         ponents and range AbsRel, AbsRel = T1 t |ẐtZ−Z      t|
+                                                                                                                    P
+depth supplies a more slowly varying range signal and lo-                                                                   t
+                                                                                                                                 . Er-
+cal consistency measurements. Output begins after the first              rors are averaged over frames within each sequence-camera
+depth field is available, with the anatomical range cue pro-             pair and reported as medians over pairs.
+viding metric range from the first usable frame.
+Profiling. We profile the compiled pipeline on an iPhone 15
+                                                                         5.2. Center-of-Mass Accuracy
+over 100 forward passes. Latency and throughput are mea-                 We first characterize overall CoM accuracy across mo-
+sured from the deployed Core ML models, energy from                      tion types, reporting lateral (X), vertical (Y ), and camera-
+
+
+                                                                     5
+depth (Z) errors to determine how metric localization varies                                 Method                         Running Track & field Skating Mobile
+across movement regimes.                                                                     Absolute 3D CoM MAE (mm)
+                                                                                             MeTRAbs-S [40]        224                            120                 231            ✗
+                          Metric localization         Axis MAE (mm)                          HMR2.0 [12]           N/A                            N/A                 N/A            ✗
+                                                                                             CameraHMR [33]        392                            180                 534            ✗
+ Regime          Range (m) 3D (mm) AbsRel (%)         X   Y    Z                             NLF [39]               52                            209                 646            ✗
+ Running           4.4          187             3.6    44 33   166                           MuyBridge             187                            185                 707            ✓
+ Track & field      5.4         185             2.3    94 39   117                           Root-relative 3D CoM MAE (mm)
+ Skating           10.1         707             6.6   167 41   672                           MeTRAbs-S [40]          67                              72                 57           ✗
+                                                                                             HMR2.0 [12]             70                              80                 69           ✗
+Table 4. Metric CoM accuracy across motion regimes. Range is                                 CameraHMR [33]          68                             74                  58           ✗
+mean athlete distance from the camera; 3D and per-axis errors are                            NLF [39]                64                              68                 53           ✗
+                                                                                             MotionAGFormer [31]     45                              79                 90           ✗
+MAE in mm. Values are medians over sequence-camera pairs after
+                                                                                             MuyBridge               45                             118                 76           ✓
+averaging within each pair.
+                                                                           Table 5. Comparison with recent monocular reconstruction and
+The larger 3D errors are concentrated along camera depth,                  3D pose methods on AthletePose3D. Values are median 3D CoM
+which contributes 166 of 187 mm in running, 117 of                         (mm) MAE, with best and second-best results shown in bold
+185 mm in track and field, and 672 of 707 mm in figure                     and underline. Mobile indicates demonstrated mobile deployment
+skating (Table 4). Lateral and vertical errors remain sub-                 in the cited work. HMR2.0 does not provide calibrated metric
+stantially smaller, indicating that monocular range recovery               camera-space placement, and MotionAGFormer is provided per-
+is the dominant source of metric localization error. We next               frame ground-truth scale due to its scale-ambiguous predictions.
+examine how camera geometry and motion affect this range
+error.                                                                                       1.0
+                                                                                                      Lateral (X)          0.15
+                                                                                                                                     Vertical (Y)                            Depth (Z)
+                                                                                                      Ground truth                                              5.5
+                                                                                             0.5      MuyBridge
+                                                                          CoM position (m)
+
+
+                                                                                                                           0.10
+5.3. Comparison with Recent Methods                                                          0.0
+                                                                                                                                                                5.0
+                                                                                                                           0.05                                 4.5
+We compare MuyBridge with recent monocular human re-                                         0.5
+                                                                                                                           0.00                                 4.0
+                                                                                             1.0
+construction and 3D pose methods using their official pre-                                   1.5                           0.05
+                                                                                                                                                                3.5
+                                                                                                0.0    0.5     1.0   1.5       0.0   0.5      1.0         1.5     0.0        0.5     1.0   1.5
+trained models without fine-tuning on AthletePose3D. Pre-                                               Time (s)                       Time (s)                               Time (s)
+dictions are converted to whole-body CoM using the same
+de Leva formulation and evaluated on the same test parti-                  Figure 2. Running CoM trajectories from a representative camera
+tions and sequence–camera aggregation protocol. Absolute                   view, averaged across 37 sequences. Shading denotes one standard
+evaluation uses native camera-space predictions when avail-                deviation across pairs.
+able, while root-relative evaluation removes pelvis transla-
+tion from the prediction and reference.
+    Dedicated reconstruction methods achieve lower abso-                   The lateral and vertical CoM trajectories closely follow the
+lute CoM error in track and field and skating, as well                     reference, while depth retains a systematic offset during for-
+as lower root-relative error in track and field (Table 5).                 ward translation (Figure 2). Across all running sequences
+MuyBridge ranks second in absolute running error and                       and camera views, median per-axis error is 44 mm lateral,
+matches MotionAGFormer at 45 mm root-relative error, al-                   33 mm vertical, and 166 mm in depth, making camera-to-
+though MotionAGFormer receives per-frame ground-truth                      athlete range the dominant source of 3D error.
+scale. Unlike these reconstruction-specific baselines, Muy-                Confined rotational movement. Track and field introduces
+Bridge uses generic pose and depth supervision with an ex-                 larger limb excursions and rapid changes in body configu-
+plicit segmental biomechanical model incorporating anthro-                 ration than running, making whole-body CoM more sen-
+pometric and physical constraints. This compact formula-                   sitive to the recovery of individual segment positions. The
+tion enables end-to-end execution on an iPhone 15, making                  throwing events also involve substantial body rotation while
+MuyBridge the only evaluated method with demonstrated                      remaining largely confined spatially. MuyBridge reaches
+mobile deployment.                                                         185 mm 3D CoM MAE and 2.3% range AbsRel at a mean
+                                                                           range of 5.4 m.
+5.4. Analysis Across Motion Regimes                                        There is a clear distinction between confined throwing mo-
+Cyclic locomotion. Running provides a baseline athletic                    tions and javelin. Across the fixed-circle events, 21 of 32
+motion regime with repeated acceleration and deceleration,                 camera–discipline combinations remain below 200 mm 3D
+periodic vertical and lateral CoM motion, and sustained                    CoM MAE (Figure 3). Javelin instead ranges from 200 to
+translation through the scene. Across the running partition,               429 mm across cameras. Unlike the other events, javelin
+MuyBridge reaches 187 mm 3D CoM MAE and 3.6% range                         combines large segmental motion with a run-up and sus-
+AbsRel at a mean athlete range of 4.4 m.                                   tained translation through camera depth, increasing the dif-
+
+
+                                                                      6
+                                 Track & Field: 3D CoM MAE by Camera × Discipline
+                                                                                                          300
+                    Shot Put 213         191         246    138      200      159     136        367      275                                                                   Apex
+                                                                                                          250
+     Glide Shot Put 176                  155         232    131      196      163     137        137
+
+
+
+
+                                                                                                              3D CoM MAE (mm)
+                                                                                                          225
+                        Javelin 325      224         298    429      221      212     200        252      200
+                                                                                                                                      Landing
+                                                                                                          175
+                        Discus   98      203         237    112      169      218     185        180      150
+
+                  Spin Discus 148 398 160 141 149 255 201 156                                             125
+                                                                                                          100
+                              Cam 1 Cam 2 Cam 3 Cam 4 Cam 5 Cam 6 Cam 7 Cam 8
+
+Figure 3. 3D CoM MAE across camera views and throwing disci-
+plines. Cameras 1–8 denote the eight synchronized AthletePose3D
+camera views used for evaluation.                                                                                                                  Take-off
+
+ficulty of metric range recovery.
+
+                             Track & Field: CoM Error by Body-to-Camera Orientation
+                          Facing (chest to camera)         Profile (perpendicular)        Away (back to camera)
+                  350
+                  300
+                  250
+3D CoM MAE (mm)
+
+
+
+
+                                                                                                                                    Figure 5. Recovered metric CoM trajectory for a representative
+                  200                                                                                                               Toeloop recorded from approximately 10 m. The height axis is
+                  150                                                                                                               exaggerated for visibility.
+                  100
+                  50
+                   0       Shot Put      Glide Shot Put         Javelin          Discus         Spin Discus                         borne phases to determine how strongly flight contributes to
+                                                                                                                                    the skating error.
+Figure 4. 3D CoM MAE stratified by body-to-camera orientation.
+Each frame is independently assigned to a facing, profile, or away
+orientation bin based on GT pelvis heading, so a sequence may                                                                                       Figure Skating: CoM Error by Motion Phase
+contribute to multiple bins.
+                                                                                                                                                          Contact (foot down)      Flight (airborne)
+
+We stratify frames by body-to-camera orientation using the                                                                           Toeloop
+reference hip axis only for analysis (Figure 4). Back-facing                                                                         Salchow
+configurations yield the lowest error in four of five events,                                                                           Loop
+while profile views exceed facing views in three of five.                                                                                 Flip
+Perpendicular orientations can increase overlap and occlu-
+                                                                                                                                         Lutz
+sion of distal joints, reducing the landmarks available for
+anatomical range estimation and depth sampling. Javelin is                                                                               Axel
+the exception, where translational motion during the run-up                                                                                    0         2            4            6             8
+                                                                                                                                                             3D CoM Error (% of scene range)
+dominates the orientation effect.
+Ballistic Movement. Figure skating provides the most
+                                                                                                                                    Figure 6. 3D CoM error during contact and flight across six figure-
+challenging regime, combining repeated airborne motion                                                                              skating jump types. Each point shows the phase-aggregated error
+with an athlete range of 10.1 m, nearly twice the other mo-                                                                         for one jump type, normalized by mean athlete-to-camera range,
+tion regimes. Jumps introduce rapid vertical acceleration,                                                                          gray lines connect contact and flight values for the same jump.
+large changes in body configuration, and extended periods
+without ground contact. MuyBridge reaches 707 mm 3D
+CoM MAE and 6.6% range AbsRel in this setting.                                                                                      We separate contact and flight phases to characterize perfor-
+MuyBridge recovers the overall spatial trajectory of the                                                                            mance during airborne ballistic motion (Figure 6). Contact
+jump while the athlete moves several meters through cam-                                                                            error ranges from 3.6–5.6% of athlete range, compared with
+era depth (Figure 5). At this range, small image-space                                                                              7.0–8.7% during flight, corresponding to a 1.5–2.3× in-
+perturbations produce larger metric displacements, and air-                                                                         crease. The same pattern appears across all six jump types,
+borne motion removes the ground-contact cue used for                                                                                indicating that the degradation is associated with airborne
+range estimation. We therefore separate grounded and air-                                                                           motion rather than a specific jump.
+
+
+                                                                                                                                7
+5.5. Ablation Study                                                            full set, showing that correlation with athlete range does not
+Representation and range cues. We ablate the key com-                          alone determine final CoM accuracy. Overall, broad key-
+ponents of MuyBridge to quantify the contributions of                          point coverage provides the most consistent performance
+keypoint-based depth sampling, the segmental body repre-                       across motion regimes.
+sentation, and individual metric range cues.                                   Depth usage. After ablating the keypoint-depth cue as a
+                                                                               whole, we separate its two uses in metric fusion. Sparse
+     Variant                   Running       Track & field       Skating       depth provides an aggregated depth-derived range estimate
+                                                                               and filters anatomical samples whose depth is inconsistent
+     Root-relative CoM∗          45              118               76
+     Constant sequence range    721              235              1890         with the athlete.
+     Torso-only body model      284              252               733
+     MuyBridge                  187              185               707          Variant                           Running   Track & field   Skating
+     No ground-contact cue      355              808              1220          MuyBridge                          187          185          707
+     No keypoint-depth cue      387              316               939          No depth-derived range estimate    392          207          904
+                                                                                No depth-consistency filtering     351          192          730
+Table 6. Ablation of the metric CoM formulation. Values are
+median 3D CoM MAE in mm. The upper block evaluates al-                         Table 8. Median 3D CoM MAE in mm after separately ablating
+ternative range and body representations, while the lower block                the two uses of sparse depth. Removing the depth-derived range
+removes individual range cues. ∗ Root-relative CoM excludes ab-                estimate retains depth-consistency filtering, while removing con-
+solute camera-to-athlete translation and is therefore not directly             sistency filtering retains the depth-derived range estimate.
+comparable to the metric variants.
+                                                                               Depth-derived range estimate provides the larger overall
+The ablations confirm that each component of the metric
+                                                                               contribution, with its removal increasing error by 205 mm
+formulation contributes to final CoM accuracy (Table 6).
+                                                                               in running and 197 mm in skating (Table 8). Depth-
+Holding athlete range constant increases error from 187 to
+                                                                               consistency filtering also reduces running error by 164 mm,
+721 mm in running and from 707 to 1890 mm in skat-
+                                                                               with smaller effects in track and field and skating. Using
+ing, while restricting reconstruction to the torso increases
+                                                                               both gives the lowest error across all three regimes.
+error to 284, 252, and 733 mm across the three motion
+regimes. Removing either the ground-contact or keypoint-
+depth cue also increases error across all motions. The full                    6. Conclusion
+MuyBridge formulation achieves the lowest metric error in                      We presented MuyBridge, a mobile system for metric
+every case, showing that sparse depth, physical range cues,                    center-of-mass estimation from monocular video using
+and segmental anatomy provide complementary informa-                           a three-stage fusion method based on keypoint depth,
+tion for metric CoM estimation.                                                anatomical constraints, and physical range cues. Across
+Sparse depth sampling. We vary the anatomical keypoints                        running, track and field, and figure skating, MuyBridge
+used to sample the relative depth field and evaluate their ef-                 maintains vertical CoM error between 33 and 41 mm and
+fect on the resulting range signal and metric CoM accuracy.                    localizes athlete range to 2.3–6.6% AbsRel while sustaining
+                                                                               CoM output at the 63 FPS pose-estimation rate with asyn-
+                         Running      Track & field          Skating
+                                                                               chronous 2.86 Hz depth updates on an iPhone 15. Among
+    Depth samples        r     mm        r       mm          r      mm         the evaluated methods, MuyBridge remains competitive
+    All 26 keypoints  0.949    187    0.779      185    0.642       707        for running while being the only system demonstrated on
+    12 limb keypoints 0.929    342    0.201      186    0.595       706        mobile hardware. Ablations further show that segmental
+    6 torso keypoints 0.906    341    0.313      185    0.590       633
+    Hip only          0.933    344    0.261      187    0.572       643
+                                                                               anatomy, sparse depth, dynamic range estimation, and phys-
+                                                                               ical range cues each contribute to final metric CoM accu-
+Table 7. Effect of anatomical keypoint sampling on metric CoM                  racy. Absolute localization remains primarily limited by
+estimation. r is the correlation between sampled relative depth                camera-to-athlete range, particularly under sustained trans-
+and true athlete range, and mm is median 3D CoM MAE. All 26                    lation and long-range airborne motion. MuyBridge also as-
+keypoints form the default MuyBridge configuration.                            sumes a one-time scene calibration, and its anthropomet-
+                                                                               ric reconstruction uses stature-scaled, sex-specific popula-
+All 26 keypoints provide the strongest range correlation in                    tion segment proportions. AthletePose3D contains only
+every regime and reduce running error from 341–344 mm                          eight athletes and provides markerless rather than marker-
+to 187 mm (Table 7). Track and field is comparatively in-                      based reference trajectories. Future work on calibration ro-
+sensitive to the sampling set, remaining between 185 and                       bustness, subject-adaptive anthropometry, motion-adaptive
+187 mm. In skating, torso-only sampling achieves the low-                      range estimation, and lighter depth backbones could further
+est error at 633 mm despite lower range correlation than the                   enhance mobile biomechanics beyond controlled settings.
+
+
+                                                                           8
+References                                                                     ods to measure center of mass displacement in three dimen-
+                                                                               sions during gait. Human Movement Science, 25(2):238–
+ [1] F. Barbier, P. Allard, K. Guelton, B. Colobert, and A.-                   256, 2006. 1
+     P. Godillon-Maquinghen. Estimation of the 3-d center of              [14] Kjartan Halvorsen, Martin Eriksson, Lennart Gullstrand,
+     mass excursion from force-plate data during standing. IEEE                Fredrik Tinmark, and Johnny Nilsson. Minimal marker set
+     Transactions on Neural Systems and Rehabilitation Engi-                   for center of mass estimation in running. Gait & Posture, 30
+     neering, 11(1):31–37, 2003. 1                                             (4):552–555, 2009. 1
+ [2] Nathaniel A. Bates, Kevin R. Ford, Gregory D. Myer, and              [15] Mu Hu, Wei Yin, Chi Zhang, Zhipeng Cai, Xiaoxiao Long,
+     Timothy E. Hewett. Impact differences in ground reaction                  Hao Chen, Kaixuan Wang, Gang Yu, Chunhua Shen, and
+     force and center of mass between the first and second landing             Shaojie Shen. Metric3d v2: A versatile monocular geomet-
+     phases of a drop vertical jump and their implications for in-             ric foundation model for zero-shot metric depth and surface
+     jury risk assessment. Journal of Biomechanics, 46(7):1237–                normal estimation. IEEE Transactions on Pattern Analysis
+     1241, 2013. 1                                                             and Machine Intelligence, 46(12):10579–10596, 2024. 1, 2
+ [3] Shariq Farooq Bhat, Reiner Birkl, Diana Wofk, Peter                  [16] Yunlong Huang, Junshuo Liu, Ke Xian, and Robert Caim-
+     Wonka, and Matthias Müller. Zoedepth: Zero-shot trans-                   ing Qiu. Posemamba: Monocular 3d human pose estimation
+     fer by combining relative and metric depth. arXiv preprint                with bidirectional global-local spatio-temporal state space
+     arXiv:2302.12288, 2023. 2                                                 model. In AAAI Conference on Artificial Intelligence, pages
+ [4] Aleksei Bochkovskiy, Amaël Delaunoy, Hugo Germain,                       3842–3850, 2025. 1, 2
+     Marcel Santos, Yichao Zhou, Stephan R. Richter, and                  [17] Tao Jiang, Peng Lu, Li Zhang, Ning Ma, Rui Han, Chengqi
+     Vladlen Koltun. Depth pro: Sharp monocular metric depth in                Lyu, Yining Li, and Kai Chen. Rtmpose: Real-time multi-
+     less than a second. In International Conference on Learning               person pose estimation based on mmpose. arXiv preprint
+     Representations, 2025. 2                                                  arXiv:2303.07399, 2023. 2, 3
+ [5] Yohann Cabon, Naila Murray, and Martin Humenberger. Vir-             [18] Sheng Jin, Lumin Xu, Jin Xu, Can Wang, Wentao Liu, Chen
+     tual KITTI 2. arXiv preprint arXiv:2001.10773, 2020. 3                    Qian, Wanli Ouyang, and Ping Luo. Whole-body human
+ [6] Yu-Wei Chao, Yunfan Liu, Xieyang Liu, Huayi Zeng, and                     pose estimation in the wild. In European Conference on
+     Jia Deng. Learning to detect human-object interactions. In                Computer Vision (ECCV), pages 196–214, 2020. 3
+     2018 IEEE Winter Conference on Applications of Computer              [19] Tomoya Kaichi, Shohei Mori, Hideo Saito, Kosuke Taka-
+     Vision (WACV), pages 381–389, 2018. 3                                     hashi, Dan Mikami, Mariko Isogawa, and Hideaki Kimata.
+ [7] Xiangqi Chen, Chengzhuan Yang, Jiashuaizi Mo, Yaxin Sun,                  Estimation of center of mass for sports scene using weighted
+     Hicham Karmouni, Yunliang Jiang, and Zhonglong Zheng.                     visual hull. In 2018 IEEE/CVF Conference on Computer
+     Cspnext: A new efficient token hybrid backbone. Engineer-                 Vision and Pattern Recognition Workshops (CVPRW), pages
+     ing Applications of Artificial Intelligence, 132:107886, 2024.            1809–1815, 2018. 1, 2
+     3                                                                    [20] Angjoo Kanazawa, Michael J. Black, David W. Jacobs, and
+ [8] Hu Cui, Wenqiang Hua, Renjing Huang, Shurui Jia, and                      Jitendra Malik. End-to-end recovery of human shape and
+     Tessai Hayama. Sasmamba: A lightweight structure-aware                    pose. In 2018 IEEE/CVF Conference on Computer Vision
+     stride state space model for 3d human pose estimation. In                 and Pattern Recognition (CVPR), pages 7122–7131, 2018. 1
+     2026 IEEE/CVF Winter Conference on Applications of Com-              [21] Bingxin Ke, Kevin Qu, Tianfu Wang, Nando Metzger,
+     puter Vision (WACV), pages 2721–2730, 2026. 2                             Shengyu Huang, Bo Li, Anton Obukhov, and Konrad
+ [9] Paolo de Leva. Adjustments to zatsiorsky-seluyanov’s seg-                 Schindler. Marigold: Affordable adaptation of diffusion-
+     ment inertia parameters. Journal of Biomechanics, 29(9):                  based image generators for image analysis. IEEE Transac-
+     1223–1230, 1996. 1, 2, 5                                                  tions on Pattern Analysis and Machine Intelligence, pages
+[10] Hao-Shu Fang, Jiefeng Li, Hongyang Tang, Chao Xu, Haoyi                   1–18, 2025. 2, 3
+     Zhu, Yuliang Xiu, Yong-Lu Li, and Cewu Lu. Alpha-                    [22] Rawal Khirodkar, Timur Bagautdinov, Julieta Martinez, Su
+     pose: Whole-body regional multi-person pose estimation                    Zhaoen, Austin James, Peter Selednik, Stuart Anderson, and
+     and tracking in real-time. IEEE Transactions on Pattern                   Shunsuke Saito. Sapiens: Foundation for human vision mod-
+     Analysis and Machine Intelligence, 45(6):7157–7173, 2023.                 els. In European Conference on Computer Vision (ECCV),
+     3                                                                         pages 206–228, 2024. 1
+[11] Caroline Forsell and Kjartan Halvorsen. A method for deter-          [23] Farnoosh Koleini, Muhammad Usama Saleem, Pu Wang,
+     mining minimal sets of markers for the estimation of center               Hongfei Xue, Ahmed Helmy, and Abbey Fenwick. Biopose:
+     of mass, linear and angular momentum. Journal of Biome-                   Biomechanically-accurate 3d pose estimation from monoc-
+     chanics, 42(3):361–365, 2009. 1                                           ular videos. In 2025 IEEE/CVF Winter Conference on Ap-
+[12] Shubham Goel, Georgios Pavlakos, Jathushan Rajasegaran,                   plications of Computer Vision (WACV), pages 6330–6339,
+     Angjoo Kanazawa, and Jitendra Malik. Humans in 4d: Re-                    2025. 1, 2
+     constructing and tracking humans with transformers. In               [24] Gabrielle C. Labrozzi, Holly Warner, Nathaniel S.
+     IEEE/CVF International Conference on Computer Vision                      Makowski, Musa L. Audu, and Ronald J. Triolo. Center of
+     (ICCV), pages 14737–14748, 2023. 1, 6                                     mass estimation for impaired gait assessment using inertial
+[13] Elena M. Gutierrez-Farewik, Asa Bartonek, and Helena                      measurement units. IEEE Transactions on Neural Systems
+     Saraste. Comparison and evaluation of two common meth-                    and Rehabilitation Engineering, 32:12–22, 2024. 1
+
+
+                                                                      9
+[25] Yanjie Li, Sen Yang, Peidong Liu, Shoukui Zhang, Yunx-                    depth estimation: Mixing datasets for zero-shot cross-dataset
+     iao Wang, Zhicheng Wang, Wankou Yang, and Shu-Tao Xia.                    transfer. IEEE Transactions on Pattern Analysis and Ma-
+     Simcc: A simple coordinate classification perspective for hu-             chine Intelligence, 44(3):1623–1637, 2022. 1
+     man pose estimation. In European Conference on Computer              [38] Mike Roberts, Jason Ramapuram, Anurag Ranjan, Atulit
+     Vision (ECCV), pages 89–106, 2022. 3                                      Kumar, Miguel Ángel Bautista, Nathan Paczan, Russ Webb,
+[26] Shun-Ping Lin, Wen-Hsu Sung, Fon-Chu Kuo, Terry B. J.                     and Joshua M. Susskind. Hypersim: A photorealistic syn-
+     Kuo, and Jin-Jong Chen. Impact of center-of-mass acceler-                 thetic dataset for holistic indoor scene understanding. In
+     ation on the performance of ultramarathon runners. Journal                2021 IEEE/CVF International Conference on Computer Vi-
+     of Human Kinetics, 44:41–52, 2014. 1                                      sion (ICCV), pages 10892–10902, 2021. 3, 5
+[27] Liyang Liu, Shilong Zhang, Zhanghui Kuang, Aojun Zhou,               [39] István Sárándi and Gerard Pons-Moll. Neural localizer fields
+     Jing-Hao Xue, Xinjiang Wang, Yimin Chen, Wenming Yang,                    for continuous 3d human pose and shape estimation. In Ad-
+     Qingmin Liao, and Wayne Zhang. Group fisher pruning                       vances in Neural Information Processing Systems (NeurIPS),
+     for practical network compression. In Proceedings of the                  2024. 2, 6
+     38th International Conference on Machine Learning, pages             [40] István Sárándi, Timm Linder, Kai Oliver Arras, and Bastian
+     7021–7032, 2021. 4                                                        Leibe. Metrabs: Metric-scale truncation-robust heatmaps for
+[28] Simian Luo, Yiqin Tan, Longbo Huang, Jian Li, and Hang                    absolute 3d human pose estimation. IEEE Transactions on
+     Zhao. Latent consistency models: Synthesizing high-                       Biometrics, Behavior, and Identity Science, 3:16–30, 2021. 6
+     resolution images with few-step inference. arXiv preprint            [41] Takeshi Shimba. An estimation of center of gravity from
+     arXiv:2310.04378, 2023. 3                                                 force platform data. Journal of Biomechanics, 17(1):53–60,
+[29] Chengqi Lyu, Wenwei Zhang, Haian Huang, Yue Zhou,                         1984. 1
+     Yudong Wang, Yanyi Liu, Shilong Zhang, and Kai Chen.
+                                                                          [42] Nathan Silberman, Derek Hoiem, Pushmeet Kohli, and Rob
+     Rtmdet: An empirical study of designing real-time object
+                                                                               Fergus. Indoor segmentation and support inference from
+     detectors. arXiv preprint arXiv:2212.07784, 2022. 3
+                                                                               rgbd images. In Computer Vision – ECCV 2012, pages 746–
+[30] Andrea Mapelli, Matteo Zago, Laura Fusini, Domenico
+                                                                               760. Springer, 2012. 5
+     Galante, Andrea Colombo, and Chiarella Sforza. Validation
+                                                                          [43] Emeline Simonetti, Elena Bergamini, Giuseppe Vannozzi,
+     of a protocol for the estimation of three-dimensional body
+                                                                               Joseph Bascou, and Hélène Pillet. Estimation of 3d body
+     center of mass kinematics in sport. Gait & Posture, 39(1):
+                                                                               center of mass acceleration and instantaneous velocity from
+     460–465, 2014. 1
+                                                                               a wearable inertial sensor network in transfemoral amputee
+[31] Soroush Mehraban, Vida Adeli, and Babak Taati. Mo-
+                                                                               gait: A case study. Sensors, 21(9):3129, 2021. 1
+     tionagformer: Enhancing 3d human pose estimation with a
+     transformer-gcnformer network. In 2024 IEEE/CVF Win-                 [44] Ke Sun, Bin Xiao, Dong Liu, and Jingdong Wang. Deep
+     ter Conference on Applications of Computer Vision (WACV),                 high-resolution representation learning for human pose esti-
+     pages 6905–6915, 2024. 1, 2, 6                                            mation. In 2019 IEEE/CVF Conference on Computer Vision
+                                                                               and Pattern Recognition (CVPR), pages 5693–5703, 2019. 1
+[32] Gyeongsik Moon, Ju Yong Chang, and Kyoung Mu Lee.
+     Camera distance-aware top-down approach for 3d multi-                [45] Shashank Tripathi, Lea Müller, Chun-Hao P. Huang, Omid
+     person pose estimation from a single rgb image. In 2019                   Taheri, Michael J. Black, and Dimitrios Tzionas. 3d hu-
+     IEEE/CVF International Conference on Computer Vision                      man pose estimation via intuitive physics. In Proceedings
+     (ICCV), pages 10132–10141, 2019. 2                                        of the IEEE/CVF Conference on Computer Vision and Pat-
+[33] Priyanka Patel and Michael J. Black. Camerahmr: Aligning                  tern Recognition (CVPR), pages 4713–4725, 2023. 1, 2
+     people with perspective. In International Conference on 3D           [46] Scott D. Uhlrich, Antoine Falisse, Łukasz Kidziński, Julie
+     Vision (3DV), pages 1562–1571, 2025. 1, 6                                 Muccini, Michael Ko, Akshay S. Chaudhari, Jennifer L.
+[34] Jihua Peng, Yanghong Zhou, and P. Y. Mok. Ktpformer:                      Hicks, and Scott L. Delp. Opencap: Human movement dy-
+     Kinematics and trajectory prior knowledge-enhanced trans-                 namics from smartphone videos. PLoS Computational Biol-
+     former for 3d human pose estimation. In 2024 IEEE/CVF                     ogy, 19(10):e1011462, 2023. 1, 2
+     Conference on Computer Vision and Pattern Recognition                [47] Jonas Uhrig, Nick Schneider, Lukas Schneider, Uwe Franke,
+     (CVPR), pages 1123–1132, 2024. 2                                          Thomas Brox, and Andreas Geiger. Sparsity invariant cnns.
+[35] Luigi Piccinelli, Yung-Hsu Yang, Christos Sakaridis, Mattia               In 2017 International Conference on 3D Vision (3DV), pages
+     Segù, Siyuan Li, Luc Van Gool, and Fisher Yu. Unidepth:                  11–20, 2017. 5
+     Universal monocular metric depth estimation. In 2024                 [48] Ruicheng Wang, Sicheng Xu, Yue Dong, Yu Deng, Jianfeng
+     IEEE/CVF Conference on Computer Vision and Pattern                        Xiang, Zelong Lv, Guangzhong Sun, Xin Tong, and Jiaolong
+     Recognition (CVPR), pages 10106–10116, 2024. 2                            Yang. Moge-2: Accurate monocular geometry with metric
+[36] Luigi Piccinelli, Christos Sakaridis, Yung-Hsu Yang, Mat-                 scale and sharp details. In Advances in Neural Information
+     tia Segu, Siyuan Li, Wim Abbeloos, and Luc Van Gool.                      Processing Systems, pages 40377–40408, 2025. 2
+     Unidepthv2: Universal monocular metric depth estimation              [49] Yufu Wang, Yu Sun, Priyanka Patel, Kostas Daniilidis,
+     made simpler. IEEE Transactions on Pattern Analysis and                   Michael J. Black, and Muhammed Kocabas. Prompthmr:
+     Machine Intelligence, 48(3):2354–2367, 2026. 1                            Promptable human mesh recovery. In 2025 IEEE/CVF
+[37] René Ranftl, Katrin Lasinger, David Hafner, Konrad                       Conference on Computer Vision and Pattern Recognition
+     Schindler, and Vladlen Koltun. Towards robust monocular                   (CVPR), pages 1148–1159, 2025. 2
+
+
+                                                                     10
+[50] David A. Winter. Human balance and posture control during          D. Fused Pipeline Profiling
+     standing and walking. Gait & Posture, 3(4):193–214, 1995.
+     1                                                                  Table 13 adds peak memory and compute to Table 3. Peak
+[51] Yan Xia, Xiaowei Zhou, Etienne Vouga, Qixing Huang, and            memory tracks the depth branch across all three resolutions,
+     Georgios Pavlakos. Reconstructing humans with a biome-             since the branches do not peak concurrently.
+     chanically accurate skeleton. In 2025 IEEE/CVF Conference
+     on Computer Vision and Pattern Recognition (CVPR), pages           E. Running Partition by Camera View
+     5355–5365, 2025. 1, 2
+                                                                        Table 14 breaks the running result of Table 4 down by view.
+[52] Yufei Xu, Jing Zhang, Qiming Zhang, and Dacheng Tao. Vit-
+     pose++: Vision transformer for generic body pose estima-
+                                                                        Camera 4 returns the best lateral and vertical components
+     tion. IEEE Transactions on Pattern Analysis and Machine            with the worst depth component, so variation across views
+     Intelligence, 46(2):1212–1230, 2024. 1                             is dominated by camera-depth localization.
+[53] Xitong Yang, Devansh Kukreja, Don Pinkus, Anushka Sagar,
+     Taosha Fan, Jinhyung Park, Soyong Shin, Jinkun Cao, Jiawei         F. Jump Height in Figure Skating
+     Liu, Nicolas Ugrinovic, Matt Feiszli, Jitendra Malik, Piotr
+                                                                        Jump height, the takeoff-to-apex rise of the vertical CoM, is
+     Dollár, and Kris Kitani. Sam 3d body: Robust full-body hu-
+     man mesh recovery. arXiv preprint arXiv:2602.15989, 2026.          recovered to 62 mm MAE at r = 0.84 across 719 sequence–
+     2                                                                  camera pairs spanning 0.26–1.31 m reference height, with a
+[54] Calvin Yeung, Tomohiro Suzuki, Ryota Tanaka, Zhuoer Yin,           mean signed error of +12 mm (Table 15, Figure 8).
+     and Keisuke Fujii. Athletepose3d: A benchmark dataset for
+     3d human pose estimation and kinematic validation in ath-
+     letic movements. In 2025 IEEE/CVF Conference on Com-
+     puter Vision and Pattern Recognition Workshops (CVPRW),
+     pages 5945–5956, 2025. 1, 5
+[55] Vladimir Zatsiorsky and Vitali Seluyanov. Estimation of the
+     mass and inertia characteristics of the human body. Journal
+     of Biomechanics, 23:31–39, 1990. 2
+[56] Wentao Zhu, Xiaoxuan Ma, Zhaoyang Liu, Libin Liu, Wayne
+     Wu, and Yizhou Wang. Motionbert: A unified perspective on
+     learning human motion representations. In 2023 IEEE/CVF
+     International Conference on Computer Vision (ICCV), pages
+     15039–15053, 2023. 1
+
+
+A. Qualitative Reconstruction
+Figure 7 shows end-to-end output on three AthletePose3D
+sequences. The depth field is sampled only at keypoint lo-
+cations, for whole-body range and consistency gating.
+
+B. Extended Pose Network Evaluation
+Table 9 attributes the pose cost of Table 3 to the detector and
+the keypoint backbone. The backbone dominates, at 12.53
+of 15.58 ms and 100.2 of 126.8 MB.
+Table 10 reports mean and percentile latencies from the
+same 100-pass trace. The p99 stays within 2.5 ms of the
+median, so throughput is stable under continuous execution.
+
+C. Extended Depth Network Evaluation
+Table 11 extends Table 2 to the full monocular-depth metric
+suite. The ordering of Table 2 holds across every metric.
+Table 12 attributes the 349.9 ms depth update to its three
+graphs. The UNet carries 210.7 ms, 845.0 MB, and the full
+1,185 MB peak, so it sets the cost of the branch.
+
+
+                                                                   11
+                                                                                                                   
+                                                                                          
+
+
+
+ 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+Figure 7. Qualitative end-to-end reconstruction on three AthletePose3D sequences. Each row shows the RGB frame, the predicted depth
+field, the 2D keypoints, the image-plane center of mass against the reference, and the recovered metric center of mass.
+
+
+
+
+              Variant              Latency (ms) ↓       FPS ↑       Size (MB)     Energy (mJ) ↓    Peak mem (MB)            FLOPs / MACs
+              BBox head                 3.05             328.0         3.3              4.6              26.6             0.31 GF / 0.155 GM
+              Keypoint backbone        12.53              81.0        14.1             18.8             100.2             0.67 GF / 0.335 GM
+              Full HPE network         15.58              63.0        17.4             23.4             126.8             0.98 GF / 0.490 GM
+
+                           Table 9. Per-submodule on-device profiling of the pose network on the Neural Engine.
+
+
+
+
+                        Variant                p50       p90        p99      Mean     Energy (mJ) ↓     Mem before        Mem peak
+                        BBox head             3.12       3.57      3.79      3.05           4.6           15.58            26.56
+                        Keypoint backbone     13.36      13.89     14.23     12.53          18.8          31.61            100.25
+                        Full pass             16.50      17.50     18.00     15.58          23.4          47.20            126.80
+
+           Table 10. Tail latencies and memory behaviour of the pose network on an iPhone 15. Latencies in ms, memory in MB.
+
+
+
+
+ Dataset         Model             AbsRel ↓      SqRel ↓         RMSElin ↓      RMSElog ↓     log10 ↓    δ1 ↑     δ2 ↑       δ3 ↑    iRMSE ↓   SILog ↓
+                 Marigold (F32)      0.132           0.574         3.588          0.2640      0.0662    0.852     0.972      0.990     823.0    26.04
+ KITTI-Depth
+                 Ours (INT8)         0.155           0.688         3.885          0.2800      0.0738    0.776     0.952      0.985     679.1    27.70
+                 Marigold (F32)      0.128           0.184         0.738          0.1680      0.0494    0.880     0.956      0.981     48.4     16.62
+ Hypersim†
+                 Ours (INT8)         0.149           0.226         0.800          0.2271      0.0610    0.849     0.945      0.971     46.2     22.23
+                 Marigold (F32)      0.053       0.0216            0.230          0.0804      0.0226    0.976     0.993      0.998    0.0419     8.02
+ NYU-Depth
+                 Ours (INT8)         0.061       0.0259            0.253          0.0891      0.0259    0.965     0.993      0.998    0.0469     8.89
+
+Table 11. Full depth accuracy of the compressed network against the full-precision Marigold reference, extending Table 2. Evaluation
+follows the Marigold protocol; † denotes the held-out Hypersim test split.
+
+
+
+
+                                                                             12
+          Module      Resolution    Latency (ms) ↓        FPS ↑    Size (MB)       Energy (mJ) ↓   Peak mem (MB)        FLOPs / MACs
+          Encoder     256×192              46.68           21.4       34.3              70.0               74          2.18 GF / 1.09 GM
+                      256×256              61.26           16.3       34.3              91.9               81          2.18 GF / 1.09 GM
+                      320×320              55.67           18.0       34.3              83.5               98          2.18 GF / 1.09 GM
+          UNet        256×192              210.7           4.75      845.0             406.1               1185       51.99 GF / 25.99 GM
+                      256×256              242.2           4.13      845.0             455.4               1182       67.98 GF / 33.99 GM
+                      320×320              215.6           4.64      845.0             413.3               1208      103.98 GF / 51.99 GM
+          Decoder     256×192              92.51           10.8       49.6             138.8               66          2.20 GF / 1.10 GM
+                      256×256              121.1           8.3        49.6             181.6               66          2.20 GF / 1.10 GM
+                      320×320              113.4           9.0        49.6             170.1               67          2.20 GF / 1.10 GM
+          Full pass   256×192              349.9           2.86      928.9             615.0               1185        56.4 GF / 28.2 GM
+                      256×256              424.6           2.35      928.9             729.0               1182        72.4 GF / 36.2 GM
+                      320×320              384.7           2.60      928.9             667.0               1208       108.4 GF / 54.2 GM
+
+                       Table 12. On-device profiling of the INT8 depth module, by submodule and input resolution.
+
+
+
+
+                 Resolution   Latency (ms) ↓       FPS ↑     Energy (mJ) ↓        Size (MB)    Peak mem (MB) ↓      FLOPs / MACs
+                 256×192           349.9           2.86           638.4             946.3           1185           57.4 GF / 28.7 GM
+                 256×256           424.6           2.35           752.4             946.3           1182           73.4 GF / 36.7 GM
+                 320×320           384.7           2.60           690.4             946.3           1208          109.4 GF / 54.7 GM
+
+Table 13. Fused pipeline after Core ML export, extending Table 3 with peak memory and computational cost. Latency reports the critical
+path under concurrent pose and depth execution, while energy and model size include both branches.
+
+
+
+
+                                                                             13
+    View            n     3D CoM      Lateral X   Vertical Y    Depth Z
+                           (mm)         (mm)        (mm)         (mm)
+    Camera 1        30      227          43           33          165
+    Camera 2        37      216         102           33          181
+    Camera 3        37      151          53           30          120
+    Camera 4        37      308          38           21          300
+    All views       141     187          44           33          166
+
+Table 14. Running partition by camera view, absolute 3D CoM
+MAE and its per-axis split, medians over pairs.
+
+
+
+
+   Jump         n        MAE (mm) ↓     r↑    Bias (mm)    GT range (m)
+   Toeloop   120             63        0.86       +16          0.43–1.31
+   Salchow   120             61        0.87       +23          0.38–1.02
+   Loop      120             67        0.89       +1           0.26–1.28
+   Flip      120             53        0.89       +13          0.40–1.11
+   Lutz      120             74        0.67       +28          0.47–0.96
+   Axel      119             53        0.77       −9           0.37–1.00
+   All       719             62        0.84       +12          0.26–1.31
+
+Table 15. Jump-height recovery by jump type, computed once
+per sequence–camera pair as the takeoff-to-apex vertical CoM dis-
+placement. Entries report median absolute error over pairs; r is
+the correlation with reference height, bias is the mean signed er-
+ror, and GT range is the reference span. This vertical-displacement
+metric is not directly comparable to the absolute 3D CoM MAE of
+Table 4.
+
+
+
+
+Figure 8. Predicted against reference jump height across all figure-
+skating sequence–camera pairs. The dashed line is the identity.
+
+
+
+
+                                                                           14
+

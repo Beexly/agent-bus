@@ -1,0 +1,7764 @@
+MoPLEx: Estimating Plackett-Luce Mixture Models for Multi-Objective Alignment
+Dongyue Li
+Affiliation:
+Northeastern University, Boston, MA
+Email:
+li.dongyu@northeastern.edu
+Ziniu Zhang
+Affiliation:
+Northeastern University, Boston, MA
+Email:
+zhang.zini@northeastern.edu
+Lu Wang
+Affiliation:
+University of Michigan, Ann Arbor, MI
+Email:
+wangluxy@umich.edu
+Hongyang R. Zhang
+Affiliation:
+Northeastern University, Boston, MA
+Email:
+ho.zhang@northeastern.edu
+Abstract
+We study learning a mixture of
+k
+k
+Plackett-Luce models from multi-way ranking responses from annotators that may represent heterogeneous underlying preferences. This problem has many applications in AI alignment and preference optimization. Prior work has studied mixtures of Bradley–Terry models from pairwise comparisons. However, estimating a mixture of multi-way ranking models can become theoretically unidentifiable when
+k
+k
+exceeds
+m
+/
+2
+m/2
+, where
+m
+m
+is the ranking length. We design an efficient algorithm to address this issue by first augmenting the rankings to a larger size (e.g., generating comparisons from a base model), followed by a gradient-based estimation to reduce inference cost (in the input embedding space). With this procedure in mind, we then fit a mixture of Plackett-Luce (PL) models via an expectation-maximization-style iteration, or
+MoPLEx
+in short. We conduct extensive experiments to verify this algorithm. First, we find that the gradient-based approximation estimates true probabilities with less than 5% error on models with up to 34 billion parameters. Second,
+MoPLEx
+improves clustering and ranking accuracy by an average of 43.7% and 15.2% over baselines using a single PL model or a mixture of Bradley-Terry models, on UltraFeedback and PERSONA datasets. These results demonstrate the effectiveness of
+MoPLEx
+for tackling multi-way rankings following heterogeneous preferences through measuring alignment via gradients.
+1
+Introduction
+We study language model alignment given preference data drawn from several heterogeneous subpopulations. The central challenge is to identify the clustering structures and learn a corresponding mixture of ranking models
+Zhao et al. (2016)
+;
+Awasthi et al. (2014)
+. This problem arises in scenarios when preferences are collected from diverse annotator subpopulations or scored along several evaluation criteria
+Kirk et al. (2024)
+;
+Castricato et al. (2025)
+. These different subgroups can rank candidate responses differently, yielding a mixture of rankings that a single ranking model cannot accurately capture
+Chakraborty et al. (2024)
+. In this paper, we tackle this problem by designing a new algorithm to learn a mixture of ranking models using a gradient-based estimation procedure.
+One natural approach is to extend the Bradley-Terry (BT) model used in RLHF and DPO
+Rafailov et al. (2023)
+to a mixture model. For example, recent work trains a mixture of BT models by regularizing mixture weights to a uniform prior
+Shen et al. (2025)
+, or by using an expectation-maximization algorithm to alternate between cluster assignment and model optimization
+Chakraborty et al. (2024)
+. However, these methods apply to rankings of two choices (i.e., pairwise comparisons), leaving learning mixtures on longer rankings open. While BT models can be generalized to Plackett-Luce (PL) models
+Rafailov et al. (2023)
+, existing methods focus on fitting single models rather than mixtures.
+Figure 1:
+Left
+: Given
+n
+n
+rankings over
+m
+m
+candidate responses per prompt, we aim to learn a mixture of
+k
+k
+Plackett-Luce models, implemented via an ensemble of
+k
+k
+adapters on a base language model.
+We identify an unidentifiability problem: when the ranking length is small (specifically, when
+m
+≤
+2
+​
+k
+−
+1
+m\leq 2k-1
+), there exist two distinct mixture models that yield the same ranking distribution, making the true clusters unidentifiable.
+Right
+: We propose an algorithm to address this problem. First, we augment the ranking length by generating additional responses from the base model, outputting a larger partial ranking.
+Second, to reduce the computational cost, we estimate the model outputs on responses via a first-order approximation in the input embedding space. This computes outputs and gradients for a small number of
+a
+a
+anchor responses, reducing the runtime and memory cost from
+O
+⁡
+(
+k
+​
+m
+)
+O(km)
+to
+O
+⁡
+(
+k
+​
+a
+)
+O(ka)
+.
+A key problem in this setting is identifiability, where two distinct mixture models can produce the same ranking probability distributions, making it hard to identify the true clusters. For example, consider ranking four responses drawn equally from two true clusters:
+A
+≻
+B
+≻
+C
+≻
+D
+A\succ B\succ C\succ D
+and
+B
+≻
+A
+≻
+D
+≻
+C
+B\succ A\succ D\succ C
+. Observing only rankings of length
+m
+≤
+3
+m\leq 3
+yields the same marginal distributions as another clustering (
+A
+≻
+B
+≻
+D
+≻
+C
+A\succ B\succ D\succ C
+and
+B
+≻
+A
+≻
+C
+≻
+D
+B\succ A\succ C\succ D
+), as shown in Figure
+4
+.
+We then formulate a broader pattern that a mixture of
+k
+k
+models is unidentifiable when the ranking length
+m
+m
+is short.
+Our synthetic experiments show that a mixture of BT models collapses to random guessing when
+k
+>
+2
+k>2
+, whereas increasing the ranking size beyond
+2
+​
+k
+2k
+recovers the true clusters.
+This work proposes an algorithm that overcomes this limitation. First, to address insufficient ranking lengths, we augment the ranking length
+m
+m
+by generating additional candidate responses using the base language model before training.
+Second, training the
+k
+k
+-mixture ranking models over
+m
+m
+candidates requires
+O
+⁡
+(
+k
+​
+m
+)
+O(km)
+forward passes per iteration, which is computationally expensive. We design a gradient-based estimation procedure to reduce the cost to
+O
+⁡
+(
+k
+​
+a
+)
+O(ka)
+with
+a
+a
+typically three times smaller than
+m
+m
+in practice. Our idea is to first compute exact outputs and gradients for the
+a
+a
+anchor responses. Then, we can estimate outputs for the remaining responses using a first-order approximation in the input embedding space, without performing full model computation.
+Taken together, we design an algorithm named
+MoPLEx
+to efficiently scale the learning of mixtures of Plackett-Luce models on top of any base model. See Figure
+1
+for an illustration of our approach.
+We extensively evaluate our approach across a range of preference optimization datasets and language models. First, our gradient estimation method approximates full model outputs with under
+5
+% error on models with up to 34 billion parameters. Second, for datasets involving multiple evaluation criteria and annotator subpopulations, our algorithm improves clustering and ranking accuracy by
+43.7
+% and
+15.2
+%, respectively, compared to baselines that use a single ranking model or a mixture of BT models. Furthermore, our method reduces GPU runtime and memory costs by up to
+3
+×
+\times
+compared to full computation of Plackett-Luce models. By increasing ranking lengths three times, our method yields a
+4.6
+% performance gain over full models on the original short rankings. The code for replicating these empirical findings is available at
+https://github.com/VirtuosoResearch/MoPLEx-implementation
+.
+2
+Preliminaries
+We study learning a mixture of Plackett-Luce models from a ranking dataset. In the context of text data, we are given rankings over text responses for an input prompt. Our input is a dataset
+𝒟
+=
+{
+(
+x
+i
+,
+Y
+i
+,
+σ
+i
+)
+}
+i
+=
+1
+n
+\mathcal{D}=\{(x_{i},Y_{i},\sigma_{i})\}_{i=1}^{n}
+, where each instance comprises a prompt
+x
+x
+, a set of
+m
+m
+candidate responses
+Y
+=
+{
+y
+1
+,
+…
+,
+y
+m
+}
+Y=\{y_{1},\dots,y_{m}\}
+, and a multiway ranking
+σ
+\sigma
+. This ranking is a permutation over
+[
+m
+]
+[m]
+that defines an order
+y
+σ
+⁡
+(
+1
+)
+≻
+y
+σ
+⁡
+(
+2
+)
+≻
+⋯
+≻
+y
+σ
+⁡
+(
+m
+)
+y_{\sigma(1)}\succ y_{\sigma(2)}\succ\dots\succ y_{\sigma(m)}
+, where
+σ
+⁡
+(
+t
+)
+\sigma(t)
+denotes the index of the response at rank
+t
+t
+.
+In practice, rankings are often gathered from diverse annotator populations or evaluation criteria. This can yield different rankings over the same candidate responses where a single ranking model cannot adequately capture
+Chakraborty et al. (2024)
+;
+Shen et al. (2025)
+.
+We illustrate an example in Figure
+2
+.
+Thus, we model such ranking datasets by a mixture of
+k
+k
+Plackett-Luce ranking models, each corresponding to a cluster, where
+k
+k
+is treated as a hyperparameter. Our objective is to identify the cluster assignment for each ranking and to learn the corresponding ranking models.
+Figure 2:
+We plot the helpfulness scores for the top and bottom-ranked responses from the UltraFeedback dataset.
+Left
+: Responses ranked by helpfulness exhibit clear score separation.
+Right
+: Rankings based on truthfulness are nearly indistinguishable using helpfulness scores. Thus, a single ranking model cannot capture rankings given by various evaluation criteria.
+Figure 3:
+We illustrate the unidentifiability limit of a mixture model with
+k
+=
+2
+k=2
+.
+Left
+: If the given dataset contains rankings of length
+m
+=
+3
+m=3
+(or
+m
+=
+2
+m=2
+), two possible cases of underlying clusters can yield the same marginal distributions. The mixture model is mathematically incapable of identifying the true clusters.
+Right
+: If the given dataset contains rankings of length
+m
+=
+4
+m=4
+, the two sets of clusters yield distinct distributions, and the mixture model can identify the correct underlying clusters.
+Figure 4:
+We validate the unidentifiability of the mixture of PL models in a synthetic experiment, with varying numbers of clusters
+k
+k
+. We find that for a small
+m
+m
+, the underlying clusters cannot be fully recovered.
+Mixtures of Plackett-Luce models.
+Let
+z
+i
+∈
+{
+1
+,
+…
+,
+k
+}
+z_{i}\in\{1,\dots,k\}
+denote the cluster assignment for example
+i
+i
+, and let
+α
+c
+\alpha_{c}
+be the prior probability of cluster
+c
+c
+, where
+∑
+c
+=
+1
+k
+α
+c
+=
+1
+\sum_{c=1}^{k}\alpha_{c}=1
+. For a given cluster
+c
+c
+, the likelihood of observing a specific ranking
+σ
+i
+\sigma_{i}
+is given by a ranking model
+P
+θ
+c
+​
+(
+σ
+i
+∣
+x
+i
+,
+Y
+i
+,
+z
+i
+=
+c
+)
+P_{\theta_{c}}(\sigma_{i}\mid x_{i},Y_{i},z_{i}=c)
+. The objective is to learn the model parameters
+{
+θ
+c
+}
+c
+=
+1
+k
+\{\theta_{c}\}^{k}_{c=1}
+and mixing weights
+{
+α
+c
+}
+c
+=
+1
+k
+\{\alpha_{c}\}^{k}_{c=1}
+by maximizing the log-likelihood:
+∑
+i
+=
+1
+n
+log
+⁡
+(
+∑
+c
+=
+1
+k
+α
+c
+⋅
+P
+θ
+c
+​
+(
+σ
+i
+∣
+x
+i
+,
+Y
+i
+,
+z
+i
+=
+c
+)
+)
+.
+\displaystyle\sum_{i=1}^{n}\log\left(\sum_{c=1}^{k}\alpha_{c}\cdot P_{\theta_{c}}(\sigma_{i}\mid x_{i},Y_{i},z_{i}=c)\right).
+(1)
+One natural approach to estimate the mixture model is via the expectation-maximization algorithm. Each ranking
+σ
+i
+\sigma_{i}
+is assigned to the cluster that yields the highest posterior probability.
+The Plackett-Luce (PL) model is commonly used to compute the probability of a ranking.
+Let
+r
+θ
+c
+​
+(
+x
+,
+y
+)
+r_{\theta_{c}}(x,y)
+be the score assigned by the model for cluster
+c
+c
+.
+P
+θ
+c
+​
+(
+σ
+i
+∣
+x
+i
+,
+Y
+i
+,
+z
+i
+=
+c
+)
+P_{\theta_{c}}(\sigma_{i}\mid x_{i},Y_{i},z_{i}=c)
+is defined as:
+∏
+t
+=
+1
+m
+−
+1
+exp
+⁡
+(
+r
+θ
+c
+​
+(
+x
+i
+,
+y
+i
+,
+σ
+i
+​
+(
+t
+)
+)
+)
+∑
+l
+=
+t
+m
+exp
+⁡
+(
+r
+θ
+c
+​
+(
+x
+i
+,
+y
+i
+,
+σ
+i
+​
+(
+l
+)
+)
+)
+.
+\displaystyle\prod_{t=1}^{m-1}\frac{\exp\left(r_{\theta_{c}}(x_{i},y_{i,\sigma_{i}(t)})\right)}{\sum_{l=t}^{m}\exp\left(r_{\theta_{c}}(x_{i},y_{i,\sigma_{i}(l)})\right)}.
+(2)
+Substituting (
+2
+) into Equation (
+1
+) yields the mixture of PL models.
+The mixture of BT models is a special case when
+m
+=
+2
+m=2
+. Extensions to other ranking models are discussed in Appendix
+A.5
+.
+In practice, we can fine-tune a language model to parameterize the score
+r
+θ
+c
+​
+(
+x
+,
+y
+)
+r_{\theta_{c}}(x,y)
+. For example, following DPO
+Rafailov et al. (2023)
+, we can define it as the scaled log-probability ratio:
+r
+θ
+c
+​
+(
+x
+,
+y
+)
+:=
+β
+​
+log
+⁡
+π
+θ
+c
+​
+(
+y
+∣
+x
+)
+π
+ref
+​
+(
+y
+∣
+x
+)
+,
+\displaystyle r_{\theta_{c}}(x,y):=\beta\log\frac{\pi_{\theta_{c}}(y\mid x)}{\pi_{\text{ref}}(y\mid x)},
+(3)
+where
+π
+ref
+\pi_{\text{ref}}
+is a base reference model and
+β
+\beta
+is a hyperparameter controlling the KL-divergence.
+Problem statement.
+Given an input of
+n
+n
+rankings, each over
+m
+m
+candidate responses to an input prompt, we aim to fit a mixture of
+k
+k
+Plackett-Luce models on top of these rankings (each corresponding to a cluster), with mixture weights of clusters
+{
+α
+c
+}
+c
+=
+1
+k
+\{\alpha_{c}\}_{c=1}^{k}
+and model parameters of each cluster
+{
+θ
+c
+}
+c
+=
+1
+k
+\{\theta_{c}\}_{c=1}^{k}
+.
+In particular, the estimation problem involves 1) identifying the cluster assignment for each ranking, and 2) estimating the corresponding Plackett-Luce (PL) model for each group, and its mixture weight.
+Within each PL model, we will assume that the score of each input ranking is computed according to Equations (
+2
+) and (
+3
+).
+3
+Unidentifiability of Mixture Models
+This section presents a limitation that the mixture of Plackett-Luce (PL) models is unidentifiable when the size
+m
+m
+is small. Unidentifiability occurs when two distinct sets of mixtures produce the same ranking distributions, making it impossible to recover the true clusters (See Definition
+A.1
+). This limits the ability of mixture Bradley-Terry models to identify multiple clusters.
+Figure
+4
+illustrates this limitation using four candidate responses (
+A
+,
+B
+,
+C
+,
+D
+A,B,C,D
+). Suppose the true distribution consists of two equal clusters:
+A
+≻
+B
+≻
+C
+≻
+D
+A\succ B\succ C\succ D
+and
+B
+≻
+A
+≻
+D
+≻
+C
+B\succ A\succ D\succ C
+. If we only observe rankings of length
+m
+≤
+3
+m\leq 3
+, this setup yields the same marginal distributions as an alternative clustering (
+A
+≻
+B
+≻
+D
+≻
+C
+A\succ B\succ D\succ C
+and
+B
+≻
+A
+≻
+C
+≻
+D
+B\succ A\succ C\succ D
+). Thus, it is difficult to distinguish the true clusters from alternative ones. In contrast, learning from rankings of length
+m
+=
+4
+m=4
+can identify the clusters correctly.
+Building on the insights from
+Zhao et al. (2016)
+, we note that the unidentifiability of the mixture of PL models depends on the cluster number
+k
+k
+and the ranking size
+m
+m
+.
+Proposition 3.1
+(Slightly adapted from
+Zhao et al. (2016)
+)
+.
+For a mixture of
+k
+k
+PL models defined over
+m
+m
+-way rankings, when
+m
+≤
+2
+​
+k
+−
+1
+m\leq 2k-1
+, the model is non-identifiable. That is, there exist two sets of distinct weights and parameters that induce an identical distribution over the space of
+m
+m
+-way rankings.
+The result suggests that, for a larger number of clusters, more candidate responses are needed to identify the underlying clusters. The proof is deferred to Appendix
+A.3
+.
+We now validate the above limitation of the mixture models. We construct a synthetic dataset to simulate various criteria. Each candidate response is represented by a list of
+k
+k
+integers, where the
+c
+c
+-th integer serves as the score for cluster
+c
+∈
+{
+1
+,
+…
+,
+k
+}
+c\in\{1,\dots,k\}
+. We train a Qwen-3-0.6B model, varying the ranking size
+m
+m
+from 2 to 8 and the clusters
+k
+k
+from 2 to 4. We then measure the clustering accuracy on a held-out set between the inferred and true cluster assignments. Details are described in Section
+B
+.
+As shown in Figure
+4
+, the underlying clusters cannot be fully recovered when
+m
+m
+is small. Notably, relying on pairwise comparisons (when
+m
+=
+2
+m=2
+) collapses to random guessing for
+k
+=
+3
+k=3
+and
+k
+=
+4
+k=4
+. Conversely, increasing the ranking size enables the model to identify the true clusters.
+4
+Our Approach
+In this section, we present an efficient algorithm for learning mixture models. Our algorithm involves two components: First, we augment the ranking by generating additional responses. Second, we design an efficient gradient-based implementation for estimating Plackett-Luce mixtures on the expanded rankings.
+4.1
+Augmenting the ranking
+First, we propose to augment the ranking by generating additional responses. For an input prompt
+x
+x
+, we expand the response set to size
+m
+′
+m^{\prime}
+by generating
+m
+′
+−
+m
+m^{\prime}-m
+new responses with the base model. Because no annotation is available for the generated responses, we treat them as ranked lower than existing responses as an approximation.
+These new responses are appended as unranked candidates at the bottom of the existing ranking, resulting in a partial
+m
+′
+m^{\prime}
+-way ranking:
+y
+σ
+⁡
+(
+1
+)
+≻
+⋯
+≻
+y
+σ
+⁡
+(
+m
+)
+≻
+{
+y
+m
++
+1
+,
+…
+,
+y
+m
+′
+}
+y_{\sigma(1)}\succ\dots\succ y_{\sigma(m)}\succ\{y_{m+1},\dots,y_{m^{\prime}}\}
+.
+Our motivation is that the augmented responses are
+sampled from an unaligned base model, so they are likely to be ranked below the original candidates that are curated by annotators. To validate this, we score the generated responses using a ranking model trained on each evaluation criterion of the UltraFeedback dataset. Over 81% of the generated responses score below existing responses, and none is ranked in the top two positions. On the other hand, considering all possible cases of ranking all additional responses is computationally expensive.
+Denote
+Y
+′
+=
+Y
+∪
+{
+y
+m
++
+1
+,
+…
+,
+y
+m
+′
+}
+Y^{\prime}=Y\cup\{y_{m+1},\dots,y_{m^{\prime}}\}
+. We compute the probability
+P
+θ
+c
+​
+(
+σ
+∣
+x
+,
+Y
+′
+,
+z
+=
+c
+)
+P_{\theta_{c}}(\sigma\mid x,Y^{\prime},z=c)
+as:
+∏
+t
+=
+1
+m
+exp
+⁡
+(
+r
+θ
+c
+​
+(
+x
+,
+y
+σ
+⁡
+(
+t
+)
+)
+)
+∑
+l
+=
+t
+m
+exp
+⁡
+(
+r
+θ
+c
+​
+(
+x
+,
+y
+σ
+⁡
+(
+l
+)
+)
+)
++
+Z
+′
+​
+(
+r
+θ
+c
+)
+,
+\displaystyle\prod_{t=1}^{m}\frac{\exp\left(r_{\theta_{c}}(x,y_{\sigma(t)})\right)}{\sum_{l=t}^{m}\exp\left(r_{\theta_{c}}(x,y_{\sigma(l)})\right)+Z^{\prime}(r_{\theta_{c}})},
+(4)
+where
+Z
+′
+​
+(
+r
+θ
+c
+)
+:=
+∑
+j
+=
+m
++
+1
+m
+′
+exp
+⁡
+(
+r
+θ
+c
+​
+(
+x
+,
+y
+j
+)
+)
+Z^{\prime}(r_{\theta_{c}}):=\sum_{j=m+1}^{m^{\prime}}\exp(r_{\theta_{c}}(x,y_{j}))
+. The scores of the augmented responses are included in the denominator.
+Then, we learn the mixture of PL models by substituting (
+4
+) into Equation (
+1
+).
+Next, we show that with augmented responses, the identifiability can be achieved.
+Proposition 4.1
+.
+Let
+Y
+aug
+=
+{
+y
+m
++
+1
+,
+…
+,
+y
+m
+′
+}
+Y^{\textup{aug}}=\{y_{m+1},\dots,y_{m^{\prime}}\}
+be a set of additional responses, forming an expanded set
+Y
+′
+=
+Y
+∪
+Y
+aug
+Y^{\prime}=Y\cup Y^{\textup{aug}}
+of size
+m
+′
+m^{\prime}
+.
+Let
+𝒮
+m
+′
+,
+m
+\mathcal{S}_{m^{\prime}\!,m}
+be the space of partial rankings where each
+σ
+∈
+𝒮
+m
+′
+,
+m
+\sigma\in\mathcal{S}_{m^{\prime}\!,m}
+orders
+m
+m
+responses of
+Y
+′
+Y^{\prime}
+and leaves the other
+m
+′
+−
+m
+m^{\prime}-m
+at the end of the ranking:
+y
+σ
+⁡
+(
+1
+)
+≻
+⋯
+≻
+y
+σ
+⁡
+(
+m
+)
+≻
+{
+y
+σ
+⁡
+(
+m
++
+1
+)
+,
+…
+,
+y
+σ
+⁡
+(
+m
+′
+)
+}
+,
+\displaystyle y_{\sigma(1)}\succ\dots\succ y_{\sigma(m)}\succ\{y_{\sigma(m+1)},\dots,y_{\sigma(m^{\prime})}\},
+so that
+|
+𝒮
+m
+′
+,
+m
+|
+=
+m
+′
+!
+/
+(
+m
+′
+−
+m
+)
+!
+|\mathcal{S}_{m^{\prime}\!,m}|=m^{\prime}!/(m^{\prime}-m)!
+, and the probability of each
+σ
+∈
+𝒮
+m
+′
+,
+m
+\sigma\in\mathcal{S}_{m^{\prime}\!,m}
+is given by Equation (
+4
+).
+Assume that the augmented responses have distinct scores in every cluster
+c
+c
+, meaning
+r
+θ
+c
+​
+(
+x
+,
+y
+i
+)
+≠
+r
+θ
+c
+​
+(
+x
+,
+y
+j
+)
+r_{\theta_{c}}(x,y_{i})\neq r_{\theta_{c}}(x,y_{j})
+(in Equation (
+3
+)) for all distinct
+y
+i
+,
+y
+j
+∈
+Y
+aug
+y_{i},y_{j}\in Y^{\textup{aug}}
+. When
+m
+′
+−
+m
+≥
+k
+m^{\prime}-m\geq k
+and
+m
+≥
+2
+m\geq 2
+, the mixture of
+k
+k
+PL models over
+𝒮
+m
+′
+,
+m
+\mathcal{S}_{m^{\prime}\!,m}
+is identifiable in the sense of Definition
+A.1
+.
+The idea is that conditioned on the assumption of distinct scores for the generated responses, a matrix representing all possible ranking probabilities under the mixture model has sufficiently many independent rows to match its column dimension, thus exhibiting full column rank. The proof is given in Appendix
+A.4
+.
+We empirically verify the assumption that generated responses have distinct scores. Recall that the score is computed via model log-likelihoods over the responses. Generating non-duplicate responses at a high sampling temperature can produce responses with distinct scores. We evaluate the scores of the generated responses on the UltraFeedback dataset. We find that using a sampling temperature of
+2
+2
+yields no responses with the same scores under each evaluation criterion. Furthermore, we compute the coefficient of variation for their scores, computed as the standard deviation of the scores divided by their mean. The coefficient of variation is over 73%, indicating substantial variance in the scores.
+4.2
+Estimating Plackett-Luce mixtures
+Learning the mixture model on expanded rankings is computationally expensive. Evaluating a mixture of
+k
+k
+PL models over
+m
+m
+responses involves
+k
+​
+m
+km
+full model forward passes at each iteration. Next, we introduce a method to reduce the computational cost from
+O
+⁡
+(
+k
+​
+m
+)
+O(km)
+to
+O
+⁡
+(
+k
+​
+a
+)
+O(ka)
+with a much smaller constant
+a
+a
+than
+m
+m
+.
+We estimate
+r
+θ
+​
+(
+x
+,
+y
+)
+r_{\theta}(x,y)
+based on a first-order approximation property that has been observed widely on language models
+Zhang et al. (2025c)
+.
+The idea is to estimate the output of the model using a first-order approximation in the input embedding space.
+Let
+h
+⁡
+(
+x
+,
+y
+)
+h(x,y)
+be the input embedding of the response
+y
+y
+for prompt
+x
+x
+, and let
+r
+θ
+c
+​
+(
+x
+,
+y
+)
+r_{\theta_{c}}(x,y)
+be a function of
+h
+⁡
+(
+x
+,
+y
+)
+h(x,y)
+. Given an anchor example
+(
+x
+,
+y
+0
+)
+(x,y_{0})
+, we examine the first-order approximation of the model output
+r
+θ
+​
+(
+x
+,
+y
+)
+r_{\theta}(x,y)
+as:
+r
+θ
+​
+(
+x
+,
+y
+)
+≈
+r
+θ
+​
+(
+x
+,
+y
+0
+)
++
+\displaystyle r_{\theta}(x,y)\approx r_{\theta}(x,y_{0})+
+⟨
+∇
+h
+r
+θ
+​
+(
+x
+,
+y
+0
+)
+,
+h
+⁡
+(
+x
+,
+y
+)
+−
+h
+⁡
+(
+x
+,
+y
+0
+)
+⟩
++
+ϵ
+x
+,
+y
+,
+\displaystyle\langle\nabla_{h}r_{\theta}(x,y_{0}),h(x,y)-h(x,y_{0})\rangle+\epsilon_{x,y},
+(5)
+where
+∇
+h
+\nabla_{h}
+denotes the gradient of
+r
+θ
+r_{\theta}
+with respect to the input embeddings
+h
+h
+, and
+ϵ
+x
+,
+y
+\epsilon_{x,y}
+is the approximation error. For responses of different lengths, we apply the approximation up to the length of the shorter response and ignore padding tokens.
+We demonstrate empirically that the error
+ϵ
+x
+,
+y
+\epsilon_{x,y}
+remains small across various models and datasets. We evaluate
+ϵ
+x
+,
+y
+\epsilon_{x,y}
+across three LMs from 0.6 to 34 billion parameters, on the UltraFeedback dataset
+Cui et al. (2024)
+. For each example
+(
+x
+,
+Y
+,
+σ
+)
+(x,Y,\sigma)
+, we randomly select one anchor response and estimate the outputs of the remaining responses. We compute the estimation errors over 50 randomly selected examples. Table
+1
+reports the average squared relative error,
+(
+ϵ
+x
+,
+y
+/
+r
+θ
+​
+(
+x
+,
+y
+)
+)
+2
+({\epsilon_{x,y}}/{r_{\theta}(x,y)})^{2}
+, grouped by the relative distance in their input embeddings,
+‖
+h
+⁡
+(
+x
+,
+y
+)
+−
+h
+⁡
+(
+x
+,
+y
+0
+)
+‖
+/
+‖
+h
+⁡
+(
+x
+,
+y
+0
+)
+‖
+{\|h(x,y)-h(x,y_{0})\|}/{\|h(x,y_{0})\|}
+.
+We find that the estimation error remains less than
+5
+%. Additionally, the model with more parameters tends to yield a smaller error. These results suggest that Equation (
+5
+) can accurately approximate the model output for estimating ranking probabilities. Similar results are observed on other datasets and are described in detail in Table
+5
+of Appendix
+B
+.
+Table 1:
+Relative approximation error of
+ϵ
+x
+,
+y
+\epsilon_{x,y}
+, tested with language models of up to 34 billion parameters.
+Distance
+Qwen-0.6B
+Gemma-2B
+CodeLlama-34B
+0
+%
+−
+5
+%
+0\%-5\%
+0.1
+±
+0.0
+%
+0.1_{\pm 0.0}\%
+0.1
+±
+0.1
+%
+0.1_{\pm 0.1}\%
+0.1
+±
+0.0
+%
+0.1_{\pm 0.0}\%
+5
+%
+−
+10
+%
+5\%-10\%
+0.6
+±
+0.1
+%
+0.6_{\pm 0.1}\%
+0.5
+±
+0.1
+%
+0.5_{\pm 0.1}\%
+0.6
+±
+0.0
+%
+0.6_{\pm 0.0}\%
+10
+%
+−
+15
+%
+10\%-15\%
+1.7
+±
+0.2
+%
+1.7_{\pm 0.2}\%
+1.5
+±
+0.1
+%
+1.5_{\pm 0.1}\%
+1.4
+±
+0.1
+%
+1.4_{\pm 0.1}\%
+15
+%
+−
+20
+%
+15\%-20\%
+2.9
+±
+0.1
+%
+2.9_{\pm 0.1}\%
+3.2
+±
+0.3
+%
+3.2_{\pm 0.3}\%
+3.3
+±
+0.3
+%
+3.3_{\pm 0.3}\%
+20
+%
+−
+25
+%
+20\%-25\%
+4.3
+±
+0.3
+%
+4.3_{\pm 0.3}\%
+4.8
+±
+0.4
+%
+4.8_{\pm 0.4}\%
+4.0
+±
+0.3
+%
+4.0_{\pm 0.3}\%
+We then leverage this approximation to efficiently train the mixture of PL models. Specifically, we apply the first-order approximation to estimate the output for each response in a PL model. At each iteration, we randomly sample a subset of
+a
+a
+anchor responses,
+Y
+a
+⊆
+Y
+Y_{a}\subseteq Y
+. For each anchor
+y
+i
+∈
+Y
+a
+y_{i}\in Y_{a}
+, we compute the exact output
+r
+θ
+​
+(
+x
+,
+y
+i
+)
+r_{\theta}(x,y_{i})
+and its gradient
+g
+i
+=
+∇
+h
+r
+θ
+​
+(
+x
+,
+y
+i
+)
+g_{i}=\nabla_{h}r_{\theta}(x,y_{i})
+. For the remaining
+m
+−
+a
+m-a
+candidates, we estimate their outputs
+r
+^
+θ
+​
+(
+x
+,
+y
+j
+)
+\hat{r}_{\theta}(x,y_{j})
+by applying Equation (
+5
+) and averaging the first-order approximations derived from all
+a
+a
+anchors:
+1
+a
+​
+∑
+y
+i
+∈
+Y
+a
+(
+r
+θ
+​
+(
+x
+,
+y
+i
+)
++
+g
+i
+⊤
+​
+(
+h
+⁡
+(
+x
+,
+y
+j
+)
+−
+h
+⁡
+(
+x
+,
+y
+i
+)
+)
+)
+.
+\displaystyle\frac{1}{a}\sum_{y_{i}\in Y_{a}}\left(r_{\theta}(x,y_{i})+g_{i}^{\top}(h(x,y_{j})-h(x,y_{i}))\right).
+The procedure is described in Algorithm
+1
+.
+Next, we fit a mixture of PL models with the expectation-maximization algorithm, which alternates between two steps.
+First, given
+θ
+(
+t
+)
+\theta^{(t)}
+and
+α
+(
+t
+)
+\alpha^{(t)}
+at step
+t
+t
+, we compute the posterior probability that the ranking
+σ
+i
+\sigma_{i}
+was generated by cluster
+c
+c
+:
+γ
+i
+,
+c
+:=
+α
+c
+(
+t
+)
+⋅
+P
+^
+θ
+(
+t
+)
+​
+(
+σ
+i
+∣
+x
+i
+,
+Y
+i
+,
+z
+i
+=
+c
+)
+∑
+l
+=
+1
+k
+α
+l
+(
+t
+)
+⋅
+P
+^
+θ
+(
+t
+)
+​
+(
+σ
+i
+∣
+x
+i
+,
+Y
+i
+,
+z
+i
+=
+l
+)
+.
+\displaystyle\gamma_{i,c}:=\frac{\alpha_{c}^{(t)}\cdot\hat{P}_{\theta^{(t)}}(\sigma_{i}\mid x_{i},Y_{i},z_{i}=c)}{\sum_{l=1}^{k}\alpha_{l}^{(t)}\cdot\hat{P}_{\theta^{(t)}}(\sigma_{i}\mid x_{i},Y_{i},z_{i}=l)}.
+(6)
+Second, we update the parameters by maximizing the log-likelihood. The prior probabilities are updated as:
+α
+c
+(
+t
++
+1
+)
+=
+1
+n
+​
+∑
+i
+=
+1
+n
+γ
+i
+,
+c
+\alpha_{c}^{(t+1)}=\frac{1}{n}\sum_{i=1}^{n}\gamma_{i,c}
+. Then, we update model parameters by minimizing the weighted negative log-likelihood as:
+−
+∑
+c
+=
+1
+k
+∑
+i
+=
+1
+n
+γ
+i
+,
+c
+log
+P
+^
+θ
+c
+(
+t
+)
+(
+σ
+i
+∣
+x
+i
+,
+Y
+i
+,
+z
+i
+=
+c
+)
+.
+\displaystyle-\sum_{c=1}^{k}\sum_{i=1}^{n}\gamma_{i,c}\log\hat{P}_{\theta^{(t)}_{c}}(\sigma_{i}\mid x_{i},Y_{i},z_{i}=c).
+(7)
+We do not backpropagate gradients on the outputs estimated by gradients.
+Algorithm 1
+Gradient-based Estimation of Ranking Probabilities
+Input:
+Input prompt
+x
+x
+, candidate responses
+Y
+=
+{
+y
+1
+,
+…
+,
+y
+m
+}
+Y=\{y_{1},\dots,y_{m}\}
+, ranking
+σ
+\sigma
+, current model
+r
+θ
+r_{\theta}
+Require:
+Number of anchors
+a
+a
+1:
+Y
+a
+←
+Y_{a}\leftarrow
+Sample
+a
+a
+anchor responses from
+Y
+Y
+2:
+for
+y
+i
+∈
+Y
+a
+y_{i}\in Y_{a}
+do
+⊳
+\triangleright
+Exact evaluations
+3:
+r
+θ
+​
+(
+x
+,
+y
+i
+)
+←
+r_{\theta}(x,y_{i})\leftarrow
+Model output
+4:
+g
+i
+=
+∇
+h
+r
+θ
+​
+(
+x
+,
+y
+i
+)
+←
+g_{i}=\nabla_{h}r_{\theta}(x,y_{i})\leftarrow
+Gradient over the input embedding space
+5:
+end
+for
+6:
+for
+y
+j
+∈
+Y
+∖
+Y
+a
+y_{j}\in Y\setminus Y_{a}
+do
+⊳
+\triangleright
+Approximation
+7:
+for
+y
+i
+∈
+Y
+a
+y_{i}\in Y_{a}
+do
+8:
+δ
+i
+,
+j
+←
+h
+⁡
+(
+x
+,
+y
+j
+)
+−
+h
+⁡
+(
+x
+,
+y
+i
+)
+\delta_{i,j}\leftarrow h(x,y_{j})-h(x,y_{i})
+9:
+end
+for
+10:
+r
+^
+θ
+​
+(
+x
+,
+y
+j
+)
+←
+1
+a
+​
+∑
+y
+i
+∈
+Y
+a
+(
+r
+θ
+​
+(
+x
+,
+y
+i
+)
++
+g
+i
+⊤
+​
+δ
+i
+,
+j
+)
+\hat{r}_{\theta}(x,y_{j})\leftarrow\frac{1}{a}\sum_{y_{i}\in Y_{a}}(r_{\theta}(x,y_{i})+{g}_{i}^{\top}{\delta}_{i,j})
+11:
+end
+for
+12:
+P
+^
+θ
+c
+←
+\hat{P}_{\theta_{c}}\leftarrow
+Estimate ranking probability in Equation (
+4
+) using the estimated scores
+13:
+Return
+P
+^
+θ
+c
+\hat{P}_{\theta_{c}}
+Taken together, we summarize the complete procedure in Algorithm
+2
+.
+We compare our approach to related methods in terms of runtime and memory in Table
+2
+.
+In Appendix
+A.5
+, we will also discuss an extension of our approach to estimating a mixture of Mallows models.
+Algorithm 2
+Learning a Mixture of Plackett-Luce Models with Expectation-Maximization (
+MoPLEx
+)
+Input:
+n
+n
+rankings
+𝒟
+=
+{
+(
+x
+i
+,
+Y
+i
+,
+σ
+i
+)
+}
+i
+=
+1
+n
+\mathcal{D}=\{(x_{i},Y_{i},\sigma_{i})\}_{i=1}^{n}
+, a base language model
+π
+ref
+\pi_{\text{ref}}
+Require:
+Number of clusters
+k
+k
+, ranking size
+m
+′
+m^{\prime}
+, number of anchors
+a
+a
+, learning rate
+η
+\eta
+, number of training epochs
+T
+T
+1:
+for
+(
+x
+i
+,
+Y
+i
+,
+σ
+i
+)
+∈
+𝒟
+(x_{i},Y_{i},\sigma_{i})\in\mathcal{D}
+do
+⊳
+\triangleright
+Augmentation
+2:
+Y
+i
+g
+←
+Y_{i}^{\text{g}}\leftarrow
+Generate
+m
+′
+−
+m
+m^{\prime}-m
+responses by
+π
+ref
+\pi_{\text{ref}}
+3:
+Y
+i
+′
+←
+Y
+i
+∪
+Y
+i
+g
+Y_{i}^{\prime}\leftarrow Y_{i}\cup Y_{i}^{\text{g}}
+4:
+end
+for
+1:
+θ
+c
+(
+0
+)
+←
+{\theta^{(0)}_{c}}\leftarrow
+Initialize from
+π
+ref
+\pi_{\text{ref}}
+for
+c
+∈
+{
+1
+,
+…
+,
+k
+}
+c\in\{1,\dots,k\}
+2:
+α
+c
+(
+0
+)
+←
+1
+/
+k
+\alpha^{(0)}_{c}\leftarrow 1/k
+for
+c
+∈
+{
+1
+,
+…
+,
+k
+}
+c\in\{1,\dots,k\}
+3:
+for
+t
+=
+0
+,
+…
+,
+T
+−
+1
+t=0,\dots,T-1
+do
+4:
+for
+(
+x
+i
+,
+Y
+i
+′
+,
+σ
+i
+)
+∈
+𝒟
+(x_{i},Y^{\prime}_{i},\sigma_{i})\in\mathcal{D}
+do
+⊳
+\triangleright
+E-step
+5:
+P
+^
+θ
+c
+(
+t
+)
+←
+\hat{P}_{\theta^{(t)}_{c}}\leftarrow
+Apply Algorithm
+1
+to estimate ranking probability for
+c
+∈
+{
+1
+,
+…
+,
+k
+}
+c\in\{1,\dots,k\}
+6:
+γ
+i
+,
+c
+←
+\gamma_{i,c}\leftarrow
+Compute the posterior probability in Equation (
+6
+) for
+c
+∈
+{
+1
+,
+…
+,
+k
+}
+c\in\{1,\dots,k\}
+7:
+end
+for
+8:
+for
+c
+∈
+{
+1
+,
+…
+,
+k
+}
+c\in\{1,\dots,k\}
+do
+⊳
+\triangleright
+M-step
+9:
+α
+c
+(
+t
++
+1
+)
+←
+1
+n
+​
+∑
+i
+=
+1
+n
+γ
+i
+,
+c
+\alpha^{(t+1)}_{c}\leftarrow\frac{1}{n}\sum_{i=1}^{n}\gamma_{i,c}
+10:
+P
+^
+θ
+c
+(
+t
+)
+←
+\hat{P}_{\theta^{(t)}_{c}}\leftarrow
+Apply Algorithm
+1
+11:
+θ
+c
+(
+t
++
+1
+)
+←
+\theta^{(t+1)}_{c}\leftarrow
+Minimize Equation (
+7
+)
+12:
+end
+for
+13:
+end
+for
+14:
+Return
+{
+θ
+c
+(
+T
+)
+,
+α
+c
+(
+T
+)
+}
+c
+=
+1
+k
+\{{\theta^{(T)}_{c}},\alpha^{(T)}_{c}\}_{c=1}^{k}
+5
+Experiments
+We evaluate our algorithm by answering the following questions: How accurately does our algorithm identify underlying clusters and rank responses, particularly compared to baselines using mixtures of BT models? To what extent does our algorithm reduce computational and memory overhead? How does each component of our algorithm affect downstream performance?
+We evaluate our methods across datasets involving multiple evaluation criteria and diverse user demographics. Our method outperforms baselines using single ranking models and mixtures of BT models by
+43.7
+% and
+15.2
+% in clustering and ranking accuracy, respectively. Furthermore, it reduces computational and memory costs by up to
+3
+×
+\times
+, matching the performance of training PL models with full computation. Lastly, ablation studies isolate each component of the algorithm.
+5.1
+Experimental setup
+Table 2:
+A summary of the runtime and memory usage by
+MoPLEx
+. Here,
+k
+k
+is the number of mixture components,
+m
+m
+is the number of responses in rankings, and
+a
+a
+is the number of anchor responses.
+T
+T
+is the runtime of the base training method, and
+A
+A
+is the memory usage on one response. In practice, the runtime and memory overhead (
+T
+g
+T_{g}
+and
+A
+g
+A_{g}
+) in the gradient estimation
+is much smaller than
+T
+T
+and
+A
+A
+.
+a
+a
+is typically three times smaller than
+m
+m
+.
+Approach
+Runtime
+Memory
+Fit a single PL model
+m
+​
+T
+mT
+m
+​
+A
+mA
+Fit mixtures of PL models
+k
+​
+m
+​
+T
+kmT
+k
+​
+m
+​
+A
+kmA
+MoPLEx
+(Algorithm
+2
+)
+k
+​
+a
+​
+T
++
+T
+g
+kaT+T_{g}
+k
+​
+a
+​
+A
++
+A
+g
+kaA+A_{g}
+Datasets and models.
+First, we consider settings with multiple evaluation criteria, each as a distinct cluster. We use the UltraFeedback dataset
+Cui et al. (2024)
+, which ranks four candidate responses (
+m
+=
+4
+m=4
+) per prompt across four criteria: helpfulness, honesty, instruction-following, and truthfulness (
+k
+=
+4
+k=4
+). We use a subset where these criteria follow different rankings, yielding 3,612 training, 448 validation, and 452 test rankings.
+Second, we consider settings where rankings originate from diverse user demographics, treating each as a cluster. We use the Persona dataset
+Castricato et al. (2025)
+, which provides pairwise comparisons (
+m
+=
+2
+m=2
+). We select a subset of 12 distinct profiles (
+k
+=
+12
+k=12
+) spanning two age ranges, two sexes, and four races, resulting in 1,905 training, 237 validation, and 258 test rankings. We use Qwen-3-0.6B as the base language model. For both datasets, the input prompts have no overlap between training and test.
+Table 3:
+We report the average clustering and ranking accuracy (%) on the UltraFeedback and Persona datasets. We compare
+MoPLEx
+against baselines that train single ranking models and mixtures of BT models. We run each experiment with three random seeds and report the average results with standard deviations.
+Methods
+UltraFeedback
+Persona
+Clustering Accuracy
+MiCRo
+26.6
+±
+\pm
+2.1
+19.6
+±
+\pm
+0.4
+MaxMin-RLHF
+27.2
+±
+\pm
+0.4
+18.4
+±
+\pm
+0.2
+EM-DPO
+26.9
+±
+\pm
+2.1
+18.3
+±
+\pm
+0.5
+MoPLEx
+(Alg.
+2
+)
+70.9
+±
+\pm
+2.3
+57.1
+±
+\pm
+0.5
+Ranking Accuracy
+DPO
+58.2
+±
+\pm
+1.5
+57.7
+±
+\pm
+0.2
+LiPO
+63.3
+±
+\pm
+0.6
+57.1
+±
+\pm
+0.8
+MiCRo
+57.7
+±
+\pm
+0.4
+53.2
+±
+\pm
+0.8
+MaxMin-RLHF
+60.6
+±
+\pm
+0.7
+49.8
+±
+\pm
+0.1
+EM-DPO
+59.3
+±
+\pm
+0.9
+49.6
+±
+\pm
+1.5
+MoPLEx
+(Alg.
+2
+)
+75.0
+±
+\pm
+2.9
+76.4
+±
+\pm
+0.6
+Figure 5:
+We compare GPU hours and GPU memory between our method and fully training the mixtures of PL models, evaluated on the Persona dataset with
+k
+=
+12
+k=12
+clusters. Our method reduces runtime and memory cost by up to
+3
+×
+\times
+with comparable performance.
+We evaluate the training by using a batch size of 2 and a context length of 1024.
+Baselines.
+We compare against two types of representative baselines: (1) single ranking models, DPO
+Rafailov et al. (2023)
+and its extensions; and (2) mixtures of BT models (MaxMin-RLHF
+Chakraborty et al. (2024)
+, MiCRo
+Shen et al. (2025)
+, and EM-DPO
+Chidambaram et al. (2026)
+). We fix the base model for all baselines.
+Implementations.
+We use DPO as the base method and fine-tune with LoRA adapters. We set
+k
+k
+to
+4
+4
+and
+12
+12
+for the datasets, respectively. We set the ranking sizes
+m
+′
+m^{\prime}
+between
+4
+4
+and
+32
+32
+and the number of anchors
+a
+a
+between
+1
+1
+and
+8
+8
+. The effects of varying
+k
+k
+,
+m
+′
+m^{\prime}
+, and
+a
+a
+are presented in Section
+5.3
+.
+5.2
+Experimental results
+Table 4:
+We report the ranking accuracies (%) on the UltraFeedback dataset across individual evaluation dimensions and their average. We compare our approach against baselines using a single ranking model and mixtures of BT models.
+In addition, we report an ablation study of leaving out each component of
+MoPLEx
+on the UltraFeedback dataset.
+Ranking accuracy is measured as the proportion of correctly predicted pairs out of the six possible pairs per four-response ranking. We report the mean and standard deviation over three random seeds.
+Ranking accuracy (%)
+Helpfulness
+Honesty
+Instruction-following
+Truthfulness
+Average
+DPO
+56.4
+±
+\pm
+3.5
+53.1
+±
+\pm
+0.2
+60.0
+±
+\pm
+1.6
+72.2
+±
+\pm
+0.0
+58.2
+±
+\pm
+1.5
+LiPO
+63.8
+±
+\pm
+0.9
+58.8
+±
+\pm
+0.9
+56.2
+±
+\pm
+0.5
+74.5
+±
+\pm
+0.4
+63.3
+±
+\pm
+0.6
+MiCRo
+58.8
+±
+\pm
+1.4
+52.1
+±
+\pm
+2.9
+57.2
+±
+\pm
+3.9
+70.8
+±
+\pm
+2.0
+57.7
+±
+\pm
+0.4
+MaxMin-RLHF
+73.0
+±
+\pm
+0.6
+51.1
+±
+\pm
+0.1
+57.8
+±
+\pm
+1.6
+48.6
+±
+\pm
+1.9
+60.6
+±
+\pm
+0.7
+EM-DPO
+65.7
+±
+\pm
+8.3
+54.2
+±
+\pm
+7.4
+58.3
+±
+\pm
+0.8
+61.9
+±
+\pm
+2.8
+59.3
+±
+\pm
+0.9
+MoPLEx
+(Algorithm
+2
+)
+79.4
+±
+\pm
+3.9
+73.0
+±
+\pm
+1.3
+76.9
+±
+\pm
+2.6
+70.5
+±
+\pm
+1.3
+75.0
+±
+\pm
+2.9
+w/o Plackett-Luce models
+75.7
+±
+2.1
+75.7\pm 2.1
+71.3
+±
+3.7
+71.3\pm 3.7
+70.4
+±
+2.3
+70.4\pm 2.3
+69.2
+±
+2.3
+69.2\pm 2.3
+71.6
+±
+2.7
+71.6\pm 2.7
+w/o generated responses
+75.0
+±
+2.9
+75.0\pm 2.9
+67.2
+±
+2.2
+67.2\pm 2.2
+72.2
+±
+2.6
+72.2\pm 2.6
+68.3
+±
+2.7
+68.3\pm 2.7
+70.7
+±
+2.6
+70.7\pm 2.6
+w/o mixture models
+71.2
+±
+2.8
+71.2\pm 2.8
+63.8
+±
+1.4
+63.8\pm 1.4
+66.4
+±
+0.8
+66.4\pm 0.8
+60.6
+±
+2.1
+60.6\pm 2.1
+65.5
+±
+1.8
+65.5\pm 1.8
+w/o gradient estimation
+80.4
+±
+2.7
+80.4\pm 2.7
+72.2
+±
+1.7
+72.2\pm 1.7
+76.8
+±
+2.8
+76.8\pm 2.8
+72.8
+±
+2.7
+72.8\pm 2.7
+75.6
+±
+2.3
+75.6\pm 2.3
+Evaluation metrics.
+We evaluate the mixture models on both clustering and ranking accuracy. For clustering, we assign each ranking to the cluster with the highest posterior probability. Due to permutation, we align inferred labels with ground-truth clusters via optimal matching to compute accuracy. For ranking, we measure how accurately each model predicts the rankings of every pair of responses within its assigned cluster, reporting the average across all clusters.
+Table
+3
+summarizes the performance on the UltraFeedback and Persona datasets.
+MoPLEx
+yields a
+43.7
+% improvement in clustering accuracy over mixture-of-BT baselines (including MiCRo, MaxMin-RLHF, and EM-DPO).
+Furthermore,
+MoPLEx
+achieves a
+15.2
+% relative improvement in ranking accuracy over these baselines on average. Results for each cluster on the UltraFeedback dataset are described in Table
+4
+, and the rest are described in Appendix
+B
+.
+We further evaluate the efficiency by measuring the training runtime in GPU hours and GPU memory usage in GB.
+Figure
+5
+compares our method against a mixture of PL models with full computation on the Persona dataset, varying the ranking size
+m
+m
+from 2 to 32 and the number of anchors
+a
+a
+between
+2
+,
+4
+,
+2,4,
+and
+6
+6
+. Notably, fully training the PL model exceeds the 48GB memory limit whenever
+m
+>
+20
+m>20
+. By using
+a
+=
+2
+a=2
+anchors, our method maintains comparable performance while reducing runtime and memory overhead by 2
+×
+\times
+and 3
+×
+\times
+, respectively. Furthermore, with
+a
+=
+6
+a=6
+anchors, our approach scales to rankings of
+m
+=
+32
+m=32
+and outperforms the best fully trained PL models (at
+m
+=
+20
+m=20
+) by 4.6%, while using 1.6
+×
+\times
+less runtime and 1.9
+×
+\times
+less memory.
+5.3
+Ablation studies
+Effect of each component in
+MoPLEx
+.
+First, we conduct an ablation study to isolate the effect of each component in our algorithm. We compare our approach against four variants: (1) replacing Plackett-Luce models with Bradley-Terry models by transforming multi-way rankings into pairwise comparisons (w/o PL models); (2) training the PL mixture model without generating new responses (w/o generated responses); (3) training a single PL model instead of a mixture of PL models (w/o mixture models); and (4) using exact computation for all responses instead of gradient estimation (w/o gradient estimation). We report the results in Table
+4
+on the UltraFeedback dataset. The results show that our algorithm outperforms the first three variants. Furthermore, it matches the ranking accuracy of training a mixture of PL models with full computation while cutting GPU memory costs by 50%.
+Effect of generated responses diversity.
+Next, we evaluate how the diversity of generated responses affects our algorithm. To control the diversity, we train our algorithm on the UltraFeedback dataset, varying the sampling temperature during generation between 0.5, 1.0, 2.0, and 4.0. Higher temperature yields more diverse responses. We show the ranking accuracy for the four criteria and their average in Table
+8
+of Appendix
+B
+. The results show that a high sampling temperature (around 2.0) yields diverse responses and benefits ranking accuracy. Higher temperatures degrade the generated responses and reduce accuracy.
+Choice of hyperparameters.
+We conduct ablation studies to analyze hyperparameters on the Persona dataset. Increasing
+k
+k
+beyond 12 yields no significant gains in clustering or ranking accuracy. Second, expanding the augmented ranking size
+m
+′
+m^{\prime}
+from 2 to 32 improves performance. These gains plateau after
+m
+′
+=
+26
+m^{\prime}=26
+. Finally, although more anchors improve approximation, increasing
+a
+a
+beyond 6 provides no obvious gain to overall performance. We report the full results in Appendix
+B
+.
+6
+Related Work
+Efficient learning from ranking data is an important problem in areas like social choice and language model alignment
+Conitzer et al. (2024)
+.
+To capture more complex rankings, prior works have modeled intransitive rankings
+Makhijani and Ugander (2019)
+, partial rankings
+Awadelkarim and Ugander (2024)
+, and ranking distributions centered around multiple orderings
+Seshadri et al. (2020)
+.
+Most relevant to our study is learning mixture models for ranking. Prior work has established identifiability conditions for Plackett-Luce (PL) models and designed a generalized method of moments to learn two-component PL models
+Zhao et al. (2016)
+. Polynomial-time algorithms are developed to provably learn mixtures of two Mallows models via tensor decomposition
+Awasthi et al. (2014)
+and learn mixtures with any constant number of components
+Liu and Moitra (2018)
+. While prior works focus on learning from rankings such as voting data, our work studies learning mixtures of ranking models on text datasets and designs efficient algorithms for language models.
+Several studies have designed ranking models beyond BT models in preference optimization. GPO
+Zhang et al. (2025a)
+embeds responses into a latent space to capture intransitive pairwise rankings. Recent work has proposed learning a single multi-way ranking model with surrogate losses to approximate ranking metrics
+Zhao et al. (2025)
+. For datasets with multiple evaluation criteria, prior works have trained regression models on evaluation scores
+Wang et al. (2024b)
+;
+Wang et al. (2024a)
+. EM-DPO
+Chidambaram et al. (2026)
+learns mixtures of BT models from partial rankings. In contrast, our work focuses on learning mixtures of multi-way ranking models.
+Another line of work involves computing the influence of training data on model predictions. A commonly used technique is influence functions, effective for tracking the impact of training segments in sequence tagging
+Jain et al. (2022)
+. Prior work proposed function vectors to represent input-output functions using a set of attention heads in language models
+Todd et al. (2024)
+. To model task relationships, existing methods compute higher-order task affinity aggregated from multitask training outcomes across task subsets
+Li et al. (2023a)
+or fit linear surrogate models to approximate these outcomes
+Li et al. (2023b)
+.
+Gradients have been used as features for efficiently computing model influence functions for modeling task relationships
+Li et al. (2024a)
+;
+Li et al. (2024b)
+;
+Yang et al. (2025)
+. Recent methods leverage these gradient features to group tasks and train weighted ensembles of low-rank adapters
+Li et al. (2025b)
+. Such gradient-based approaches have also been extended to model task relationships in multi-objective reinforcement learning
+Zhang et al. (2025b)
+and multitask algorithmic reasoning
+Li et al. (2025a)
+.
+There is a vast body of work on learning from a mixture of data distributions. For example, previous studies have applied kernel methods to learn predictors for a test distribution using labeled samples from several related distributions
+Blanchard et al. (2011)
+. In a multitask learning setting for predicting rewards across multiple arms in contextual bandits, kernel mean embeddings have been used to measure task similarities by characterizing each arm based on its contextual probability distribution
+Deshmukh et al. (2017)
+. While traditional semantic class learning and label propagation rely on graph structural linkages
+Kozareva et al. (2011)
+, our algorithm resolves structural unidentifiability in rank aggregation through generative ranking augmentation.
+Mixture proportion estimation has been studied to estimate the proportion with clean and corrupted data, for training classifiers from noisy labels
+Scott (2015)
+.
+Expectation-maximization algorithms are designed to jointly fit truncated multivariate Gaussian distributions to truncated and censored data
+Lee and Scott (2012)
+. In comparison, our work designs an algorithm to learn a mixture of Plackett-Luce models from a text dataset with multiple preference criteria.
+7
+Conclusion
+This paper investigates learning from datasets with multiple distinct ranking distributions. We identify the unidentifiability limit of mixture ranking models. To address this, we propose an efficient algorithm that resolves unidentifiability and scales to large models. Evaluations on datasets with preferences from multiple evaluation criteria or demographic populations demonstrate our method’s performance and efficiency advantages over existing approaches, including learning a single ranking model and mixtures of Bradley-Terry models.
+Limitations and Future Works
+First, our algorithm treats generated responses ranked lower than existing responses in the dataset as an approximation. While empirical evidence supports this approximation, exceptions where generated responses rank higher can occur in practice. One alternative is to compute the probability of all possible rankings for new responses. While computing all possible cases is computationally expensive, designing an efficient algorithm to estimate these rankings is an interesting direction for future work.
+Second, while our current approach learns mixtures of ranking models with a fixed number of components, dynamically adapting this number in continual learning settings remains a promising open problem. Additionally, our method evaluates single-turn conversational data. Extending this approach to multi-turn conversations where user preferences dynamically evolve presents another valuable direction for future research. Our method provides a foundation to scale up learning ranking models for such extensions.
+Potential Risks
+We discuss a few potential risks.
+Our work focuses on learning a mixture of Plackett-Luce models to identify clusters of rankings. Because the algorithm groups preferences into distinct clusters, it might learn spurious correlations between the preferences and certain specific demographics. One future direction is to examine misclassification errors in each group and consider group distributionally robust optimization.
+Acknowledgment
+We are grateful to Byron Wallace for several discussions related to this paper.
+Thanks to Zhenshuo Zhang and Youran Ye for their feedback.
+The work of D. Li, Z. Zhang, and H. Zhang is in part supported by NSF award IIS-2412008.
+AI assistants have been used to enhance the clarity and presentation of the work. Specifically, the tools are used for proofreading, identifying typographical or grammatical mistakes, and polishing writing. Furthermore, AI assistants are used in formatting and verifying the mathematical notations and derivations of this paper.
+References
+Awadelkarim and Ugander (2024)
+Amel Awadelkarim and Johan Ugander. 2024.
+Statistical models of top-k partial orders.
+In
+SIGKDD Conference on Knowledge Discovery and Data Mining (KDD)
+.
+Awasthi et al. (2014)
+Pranjal Awasthi, Avrim Blum, Or Sheffet, and Aravindan Vijayaraghavan. 2014.
+Learning mixtures of ranking models.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Blanchard et al. (2011)
+Gilles Blanchard, Gyemin Lee, and Clayton Scott. 2011.
+Generalizing from several related classification tasks to a new unlabeled sample.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Castricato et al. (2025)
+Louis Castricato, Nathan Lile, Rafael Rafailov, Jan-Philipp Fränken, and Chelsea Finn. 2025.
+Persona: A reproducible testbed for pluralistic alignment.
+In
+International Conference on Computational Linguistics (COLING)
+.
+Chakraborty et al. (2024)
+Souradip Chakraborty, Jiahao Qiu, Hui Yuan, Alec Koppel, Dinesh Manocha, Furong Huang, Amrit Singh Bedi, and Mengdi Wang. 2024.
+Maxmin-rlhf: alignment with diverse human preferences.
+In
+ICML
+.
+Chidambaram et al. (2026)
+Keertana Chidambaram, Karthik Vinay Seetharaman, and Vasilis Syrgkanis. 2026.
+Direct preference optimization with unobserved preference heterogeneity: The necessity of ternary preferences.
+AISTATS
+.
+Conitzer et al. (2024)
+Vincent Conitzer, Rachel Freedman, Jobst Heitzig, Wesley H Holliday, Bob M Jacobs, Nathan Lambert, Milan Mossé, Eric Pacuit, Stuart Russell, Hailey Schoelkopf, Emanuel Tewolde, and William S. Zwicker. 2024.
+Position: social choice should guide ai alignment in dealing with diverse human feedback.
+In
+International Conference on Machine Learning (ICML)
+, pages 9346–9360.
+Cui et al. (2024)
+Ganqu Cui, Lifan Yuan, Ning Ding, Guanming Yao, Wei Zhu, Yuan Ni, Guotong Xie, Zhiyuan Liu, and Maosong Sun. 2024.
+Ultrafeedback: Boosting language models with high-quality feedback.
+In
+International Conference on Machine Learning (ICML)
+.
+Deshmukh et al. (2017)
+Aniket Anand Deshmukh, Urun Dogan, and Clayton Scott. 2017.
+Multi-task learning for contextual bandits.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Jain et al. (2022)
+Sarthak Jain, Varun Manjunatha, Byron C Wallace, and Ani Nenkova. 2022.
+Influence functions for sequence tagging models.
+In
+Findings of EMNLP 2022
+.
+Kirk et al. (2024)
+Hannah Rose Kirk, Alexander Whitefield, Paul Rottger, Andrew M Bean, Katerina Margatina, Rafael Mosquera-Gomez, Juan Ciro, Max Bartolo, Adina Williams, He He, Bertie Vidgen, and Scott A Hale. 2024.
+The prism alignment dataset: What participatory, representative and individualised human feedback reveals about the subjective and multicultural alignment of large language models.
+NeurIPS
+.
+Kozareva et al. (2011)
+Zornitsa Kozareva, Konstantin Voevodski, and Shang-Hua Teng. 2011.
+Class label enhancement via related instances.
+In
+Proceedings of the 2011 Conference on Empirical Methods in Natural Language Processing
+, pages 118–128.
+Lee and Scott (2012)
+Gyemin Lee and Clayton Scott. 2012.
+EM algorithms for multivariate Gaussian mixture models with truncated and censored data.
+Computational Statistics & Data Analysis
+.
+Li et al. (2023a)
+Dongyue Li, Haotian Ju, Aneesh Sharma, and Hongyang R. Zhang. 2023a.
+Boosting multitask learning on graphs through higher-order task affinities.
+In
+SIGKDD Conference on Knowledge Discovery and Data Mining (KDD)
+.
+Li et al. (2023b)
+Dongyue Li, Huy Nguyen, and Hongyang R. Zhang. 2023b.
+Identification of negative transfers in multitask learning using surrogate models.
+Transactions on Machine Learning Research (TMLR)
+.
+Li et al. (2024a)
+Dongyue Li, Aneesh Sharma, and Hongyang R. Zhang. 2024a.
+Scalable multitask learning using gradient-based estimation of task affinity.
+In
+SIGKDD Conference on Knowledge Discovery and Data Mining (KDD)
+.
+Li et al. (2025a)
+Dongyue Li, Zhenshuo Zhang, Minxuan Duan, Edgar Dobriban, and Hongyang R. Zhang. 2025a.
+Efficiently learning branching networks for multitask algorithmic reasoning.
+arXiv preprint arXiv:2512.01113
+.
+Li et al. (2024b)
+Dongyue Li, Ziniu Zhang, Lu Wang, and Hongyang R. Zhang. 2024b.
+Scalable fine-tuning from multiple data sources: A first-order approximation approach.
+In
+Findings of EMNLP 2024
+.
+Li et al. (2025b)
+Dongyue Li, Ziniu Zhang, Lu Wang, and Hongyang R. Zhang. 2025b.
+Efficient ensemble for fine-tuning language models on multiple datasets.
+In
+Annual Meeting of the Association for Computational Linguistics (ACL)
+.
+Liu and Moitra (2018)
+Allen Liu and Ankur Moitra. 2018.
+Efficiently learning mixtures of Mallows models.
+In
+Annual Symposium on Foundations of Computer Science (FOCS)
+. IEEE.
+Makhijani and Ugander (2019)
+Rahul Makhijani and Johan Ugander. 2019.
+Parametric models for intransitivity in pairwise rankings.
+In
+The World Wide Web Conference (WWW)
+.
+Rafailov et al. (2023)
+Rafael Rafailov, Archit Sharma, Eric Mitchell, Stefano Ermon, Christopher D Manning, and Chelsea Finn. 2023.
+Direct preference optimization: Your language model is secretly a reward model.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Scott (2015)
+Clayton Scott. 2015.
+A rate of convergence for mixture proportion estimation, with application to learning from noisy labels.
+In
+Artificial Intelligence and Statistics (AISTATS)
+. PMLR.
+Seshadri et al. (2020)
+Arjun Seshadri, Stephen Ragain, and Johan Ugander. 2020.
+Learning rich rankings.
+Advances in Neural Information Processing Systems (NeurIPS)
+, 33:9435–9446.
+Shen et al. (2025)
+Jingyan Shen, Jiarui Yao, Rui Yang, Yifan Sun, Feng Luo, Rui Pan, Tong Zhang, and Han Zhao. 2025.
+Micro: Mixture modeling and context-aware routing for personalized preference learning.
+In
+Empirical Methods in Natural Language Processing (EMNLP)
+.
+Todd et al. (2024)
+Eric Todd, Millicent Li, Arnab Sen Sharma, Aaron Mueller, Byron Wallace, and David Bau. 2024.
+Function vectors in large language models.
+In
+International Conference on Learning Representations (ICLR)
+, volume 2024.
+Wang et al. (2024a)
+Haoxiang Wang, Yong Lin, Wei Xiong, Rui Yang, Shizhe Diao, Shuang Qiu, Han Zhao, and Tong Zhang. 2024a.
+Arithmetic control of LLMs for diverse user preferences: Directional preference alignment with multi-objective rewards.
+In
+ACL
+.
+Wang et al. (2024b)
+Haoxiang Wang, Wei Xiong, Tengyang Xie, Han Zhao, and Tong Zhang. 2024b.
+Interpretable preferences via multi-objective reward modeling and mixture-of-experts.
+In
+Findings of EMNLP
+.
+Yang et al. (2025)
+Fan Yang, Hongyang R. Zhang, Sen Wu, Christopher Ré, and Weijie J. Su. 2025.
+Precise high-dimensional asymptotics for quantifying heterogeneous transfers.
+Journal of Machine Learning Research
+, 26(113):1–88.
+Zhang et al. (2025a)
+Yifan Zhang, Ge Zhang, Yue Wu, Kangping Xu, and Quanquan Gu. 2025a.
+Beyond Bradley-Terry models: A general preference model for language model alignment.
+In
+International Conference on Machine Learning (ICML)
+.
+Zhang et al. (2025b)
+Zhenshuo Zhang, Minxuan Duan, Youran Ye, and Hongyang R. Zhang. 2025b.
+Scalable multi-objective and meta reinforcement learning via gradient estimation.
+arXiv preprint arXiv:2511.12779
+.
+Zhang et al. (2025c)
+Ziniu Zhang, Zhenshuo Zhang, Dongyue Li, Lu Wang, Jennifer Dy, and Hongyang R. Zhang. 2025c.
+Linear-time demonstration selection for in-context learning via gradient estimation.
+In
+Empirical Methods in Natural Language Processing (EMNLP)
+.
+Zhao et al. (2025)
+Yang Zhao, Yixin Wang, and Mingzhang Yin. 2025.
+Permutative preference alignment from listwise ranking of human judgments.
+In
+Empirical Methods in Natural Language Processing (EMNLP)
+.
+Zhao et al. (2016)
+Zhibing Zhao, Peter Piech, and Lirong Xia. 2016.
+Learning mixtures of Plackett-Luce models.
+In
+International Conference on Machine Learning (ICML)
+. PMLR.
+Appendix A
+Omitted Technical Materials
+A.1
+Notations
+We describe the notation used throughout the paper. The dataset
+𝒟
+=
+{
+(
+x
+i
+,
+Y
+i
+,
+σ
+i
+)
+}
+i
+=
+1
+n
+\mathcal{D}=\{(x_{i},Y_{i},\sigma_{i})\}_{i=1}^{n}
+consists of
+n
+n
+ranking instances. Each instance pairs an input prompt
+x
+i
+x_{i}
+with a set
+Y
+i
+=
+{
+y
+1
+,
+…
+,
+y
+m
+}
+Y_{i}=\{y_{1},\dots,y_{m}\}
+of
+m
+m
+candidate responses and a ranking
+σ
+i
+\sigma_{i}
+, a permutation of the candidate indices recording the order in which the responses are preferred.
+m
+′
+m^{\prime}
+denotes the ranking length once the generated responses have been appended.
+a
+a
+denotes how many responses are evaluated exactly as anchors for gradient-based estimation.
+h
+⁡
+(
+x
+,
+y
+)
+h(x,y)
+is the input embedding of response
+y
+y
+under prompt
+x
+x
+.
+k
+k
+is the number of clusters, each corresponding to one ranking distribution.
+z
+i
+z_{i}
+is the unobserved cluster assignment of instance
+i
+i
+. The mixing weight
+α
+c
+\alpha_{c}
+is the prior probability of cluster
+c
+c
+, and
+γ
+i
+,
+c
+\gamma_{i,c}
+is the corresponding posterior, that is, the responsibility of cluster
+c
+c
+for instance
+i
+i
+. For a cluster
+c
+c
+, the ranking probability is written as
+P
+θ
+c
+P_{\theta_{c}}
+and is determined by a scalar score
+r
+θ
+c
+​
+(
+x
+,
+y
+)
+r_{\theta_{c}}(x,y)
+assigned to each response. The score is given by a language model
+π
+θ
+c
+\pi_{\theta_{c}}
+and a reference model
+π
+ref
+\pi_{\text{ref}}
+, with
+β
+\beta
+controlling the strength of the KL-divergence penalty between them.
+A.2
+Preliminaries
+To precisely describe the concepts used in this paper, we first define the identifiability of a mixture of
+k
+k
+Plackett-Luce models, following the terminology from
+Zhao et al. (2016)
+.
+A Plackett-Luce (PL) model defines the probability distribution over rankings of
+m
+m
+alternatives. In our context, these alternatives are candidate responses
+{
+y
+1
+,
+…
+,
+y
+m
+}
+\{y_{1},\dots,y_{m}\}
+to a prompt
+x
+x
+. A ranking
+σ
+\sigma
+specifies the order
+y
+σ
+⁡
+(
+1
+)
+≻
+y
+σ
+⁡
+(
+2
+)
+≻
+⋯
+≻
+y
+σ
+⁡
+(
+m
+)
+y_{\sigma(1)}\succ y_{\sigma(2)}\succ\dots\succ y_{\sigma(m)}
+, where
+σ
+⁡
+(
+t
+)
+\sigma(t)
+denotes the response index at rank
+t
+t
+. Given a score vector
+r
+r
+in a space
+{
+r
+|
+r
+i
+∈
+[
+0
+,
+1
+]
+,
+for
+i
+=
+1
+,
+…
+,
+m
+,
+and
+∑
+i
+=
+1
+m
+r
+i
+=
+1
+}
+\{r|r_{i}\in[0,1],\text{for }i=1,\dots,m,\text{and }\sum_{i=1}^{m}r_{i}=1\}
+, with a score assigned to each alternative, the probability of observing ranking
+σ
+\sigma
+is:
+P
+⁡
+(
+σ
+|
+r
+)
+=
+∏
+i
+=
+1
+m
+−
+1
+r
+σ
+⁡
+(
+i
+)
+∑
+j
+=
+i
+m
+r
+σ
+⁡
+(
+j
+)
+.
+\displaystyle P(\sigma|{}r)=\prod_{i=1}^{m-1}\frac{r_{\sigma(i)}}{\sum_{j=i}^{m}r_{\sigma(j)}}.
+Recall that we compute these scores using a language model parameterized by
+θ
+\theta
+, denoted as
+r
+θ
+​
+(
+x
+,
+y
+)
+r_{\theta}(x,y)
+, using DPO.
+In this section, we focus on analyzing the identifiability of PL models in terms of the score vector
+r
+r
+following
+Zhao et al. (2016)
+. We do not discuss the identifiability of the network parameters
+θ
+\theta
+, while recognizing that distinct network weights could yield identical scores for the same input.
+For a PL model with score vectors
+r
+,
+v
+∈
+ℝ
+m
+r,v\in\mathbb{R}^{m}
+, the model is strictly identifiable if
+P
+(
+⋅
+|
+r
+)
+=
+P
+(
+⋅
+|
+v
+)
+P(\cdot|{}r)=P(\cdot|{}v)
+implies
+r
+=
+v
+r=v
+. For mixture models, we state the definition to account for label switching, where permuting the indices of the mixture components does not change the marginal distribution.
+Definition A.1
+(Identifiability of
+k
+k
+-PL)
+.
+A mixture of
+k
+k
+Plackett-Luce models (
+k
+k
+-PL) over
+m
+m
+alternatives is identifiable if there do not exist two distinct mixture formulations that produce the same distribution over all rankings. Specifically, the model is identifiable if there do not exist:
+1.
+Two integers
+k
+1
+,
+k
+2
+≤
+k
+k_{1},k_{2}\leq k
+,
+2.
+A set of pairwise different score vectors
+r
+(
+1
+)
+,
+…
+,
+r
+(
+k
+1
+)
+r^{(1)},\dots,r^{(k_{1})}
+and
+v
+(
+1
+)
+,
+…
+,
+v
+(
+k
+2
+)
+v^{(1)},\dots,v^{(k_{2})}
+(no two vectors are exactly the same),
+3.
+Strictly positive mixing weights
+α
+(
+1
+)
+=
+(
+α
+1
+(
+1
+)
+,
+…
+,
+α
+k
+1
+(
+1
+)
+)
+{\alpha}^{(1)}=(\alpha^{(1)}_{1},\dots,\alpha^{(1)}_{k_{1}})
+and
+α
+(
+2
+)
+=
+(
+α
+1
+(
+2
+)
+,
+…
+,
+α
+k
+2
+(
+2
+)
+)
+{\alpha}^{(2)}=(\alpha^{(2)}_{1},\dots,\alpha^{(2)}_{k_{2}})
+where
+∑
+r
+=
+1
+k
+1
+α
+r
+(
+1
+)
+=
+1
+\sum_{r=1}^{k_{1}}\alpha^{(1)}_{r}=1
+and
+∑
+r
+=
+1
+k
+2
+α
+r
+(
+2
+)
+=
+1
+\sum_{r=1}^{k_{2}}\alpha^{(2)}_{r}=1
+,
+such that for every possible ranking
+σ
+\sigma
+, the following equality holds:
+∑
+c
+=
+1
+k
+1
+α
+c
+(
+1
+)
+​
+P
+​
+(
+σ
+|
+r
+(
+c
+)
+)
+=
+∑
+c
+=
+1
+k
+2
+α
+c
+(
+2
+)
+​
+P
+​
+(
+σ
+|
+v
+(
+c
+)
+)
+.
+\displaystyle\sum_{c=1}^{k_{1}}\alpha^{(1)}_{c}P(\sigma|{}r^{(c)})=\sum_{c=1}^{k_{2}}\alpha^{(2)}_{c}P(\sigma|{}v^{(c)}).
+(8)
+To prove the identifiability of
+k
+k
+-PL models, we analyze the rank of a probability matrix involving the probabilities over
+m
+!
+m!
+possible rankings over
+m
+m
+alternatives.
+For a PL model with a score vector
+r
+r
+, we represent a distribution over all
+m
+!
+m!
+rankings as an
+m
+!
+×
+1
+m!\times 1
+column vector, denoted as
+f
+m
+​
+(
+r
+)
+f_{m}(r)
+, where each entry is the probability of a specific ranking
+σ
+\sigma
+. For example, when
+m
+=
+3
+m=3
+, we have:
+f
+3
+​
+(
+r
+)
+=
+(
+Pr
+⁡
+(
+y
+1
+≻
+y
+2
+≻
+y
+3
+|
+r
+)
+Pr
+⁡
+(
+y
+1
+≻
+y
+3
+≻
+y
+2
+|
+r
+)
+Pr
+⁡
+(
+y
+2
+≻
+y
+1
+≻
+y
+3
+|
+r
+)
+Pr
+⁡
+(
+y
+2
+≻
+y
+3
+≻
+y
+1
+|
+r
+)
+Pr
+⁡
+(
+y
+3
+≻
+y
+1
+≻
+y
+2
+|
+r
+)
+Pr
+⁡
+(
+y
+3
+≻
+y
+2
+≻
+y
+1
+|
+r
+)
+)
+=
+(
+r
+1
+​
+r
+2
+1
+−
+r
+1
+r
+1
+​
+r
+3
+1
+−
+r
+1
+r
+1
+​
+r
+2
+1
+−
+r
+2
+r
+2
+​
+r
+3
+1
+−
+r
+2
+r
+1
+​
+r
+3
+1
+−
+r
+3
+r
+2
+​
+r
+3
+1
+−
+r
+3
+)
+.
+\displaystyle f_{3}(r)=\begin{pmatrix}\Pr(y_{1}\succ y_{2}\succ y_{3}|{}r)\\
+\Pr(y_{1}\succ y_{3}\succ y_{2}|{}r)\\
+\Pr(y_{2}\succ y_{1}\succ y_{3}|{}r)\\
+\Pr(y_{2}\succ y_{3}\succ y_{1}|{}r)\\
+\Pr(y_{3}\succ y_{1}\succ y_{2}|{}r)\\
+\Pr(y_{3}\succ y_{2}\succ y_{1}|{}r)\end{pmatrix}=\begin{pmatrix}\frac{r_{1}r_{2}}{1-r_{1}}\\
+\frac{r_{1}r_{3}}{1-r_{1}}\\
+\frac{r_{1}r_{2}}{1-r_{2}}\\
+\frac{r_{2}r_{3}}{1-r_{2}}\\
+\frac{r_{1}r_{3}}{1-r_{3}}\\
+\frac{r_{2}r_{3}}{1-r_{3}}\end{pmatrix}.
+Then, we define a probability matrix
+F
+F
+as an
+m
+!
+×
+2
+​
+k
+m!\times 2k
+matrix formed by concatenating the column vectors of these
+2
+​
+k
+2k
+PL models. Given
+r
+(
+1
+)
+,
+…
+,
+r
+(
+2
+​
+k
+)
+r^{(1)},\dots,r^{(2k)}
+, we define
+F
+=
+[
+f
+m
+​
+(
+r
+(
+1
+)
+)
+,
+f
+m
+​
+(
+r
+(
+2
+)
+)
+,
+…
+,
+f
+m
+​
+(
+r
+(
+2
+​
+k
+)
+)
+]
+.
+\displaystyle F=\Big[f_{m}(r^{(1)}),f_{m}(r^{(2)}),\dots,f_{m}(r^{(2k)})\Big].
+(9)
+The entry
+F
+σ
+,
+c
+F_{\sigma,c}
+corresponds to the probability of a ranking
+σ
+\sigma
+in the
+c
+c
+-th PL model. Note that
+F
+F
+is a function of the
+2
+​
+k
+2k
+score vectors.
+We prove the identifiability or non-identifiability of
+k
+k
+-PL by analyzing the rank of
+F
+F
+.
+If the rank of
+F
+F
+is
+2
+​
+k
+2k
+for all pairwise different vectors (
+r
+(
+1
+)
+,
+…
+,
+r
+(
+2
+​
+k
+)
+r^{(1)},\dots,r^{(2k)}
+), then the
+k
+k
+-PL model is identifiable. Conversely, if the rank of
+F
+F
+is less than
+2
+​
+k
+2k
+, the
+k
+k
+-PL model is non-identifiable.
+A.3
+Proof for Proposition
+3.1
+Now we present the proof of Proposition
+3.1
+for the non-identifiability of mixture ranking models.
+The key idea is to show that the row space of the probability matrix
+F
+F
+can exhibit a reduced dimensionality under a construction. Under this construction, the row space of the probabilities
+m
+!
+m!
+possible rankings can be represented by
+m
+m
+row vectors, thus proving that the rank
+F
+F
+is less than
+2
+​
+k
+2k
+. We then prove that this dimensionality collapse leads to two
+k
+k
+-PL models that yield the same distributions.
+Proof of Proposition
+3.1
+.
+Our proof is based on analyzing the
+m
+!
+×
+2
+​
+k
+m!\times 2k
+probability matrix
+F
+F
+.
+To demonstrate unidentifiability, we aim to prove that a non-zero coefficient vector
+β
+∈
+ℝ
+2
+​
+k
+\beta\in\mathbb{R}^{2k}
+exists such that
+F
+​
+β
+=
+𝟎
+F\beta=\mathbf{0}
+.
+To prove the unidentifiability, we construct a specific symmetric structure for
+r
+(
+c
+)
+r^{(c)}
+, and show that under such a construction, the mixture of the ranking models is unidentifiable. We construct a combined pool of
+2
+​
+k
+2k
+distinct latent clusters. Let
+r
+(
+c
+)
+r^{(c)}
+denote the score vector for cluster
+c
+∈
+{
+1
+,
+…
+,
+2
+​
+k
+}
+c\in\{1,\dots,2k\}
+. For a given set of
+m
+m
+alternatives
+Y
+=
+{
+y
+1
+,
+y
+2
+,
+…
+,
+y
+m
+}
+Y=\{y_{1},y_{2},\dots,y_{m}\}
+, we assign the following scores under each cluster
+c
+c
+:
+•
+We assign a distinct score
+e
+c
+∈
+(
+0
+,
+1
+)
+e_{c}\in(0,1)
+to alternative
+y
+1
+y_{1}
+. We ensure
+e
+i
+≠
+e
+j
+e_{i}\neq e_{j}
+for all
+i
+≠
+j
+i\neq j
+.
+•
+We assign an identical score
+b
+c
+=
+1
+−
+e
+c
+m
+−
+1
+b_{c}=\frac{1-e_{c}}{m-1}
+to all remaining alternatives
+y
+2
+,
+…
+,
+y
+m
+y_{2},\dots,y_{m}
+.
+Now, we evaluate the entries of
+F
+σ
+,
+c
+F_{\sigma,c}
+under this specific construction. Let
+t
+∈
+{
+1
+,
+…
+,
+m
+}
+t\in\{1,\dots,m\}
+denote the rank position of alternative
+y
+1
+y_{1}
+in the permutation
+σ
+\sigma
+. In the Plackett-Luce model, the probability of selecting the alternatives in the order specified by
+σ
+\sigma
+is computed as a sequence of
+m
+−
+1
+m-1
+choices. This sequential product simplifies by grouping the choices into three cases:
+•
+First, before rank
+t
+t
+(steps
+1
+1
+to
+t
+−
+1
+t-1
+), an alternative with score
+b
+c
+b_{c}
+is chosen. Assuming the scores sum to 1 (
+e
+c
++
+(
+m
+−
+1
+)
+​
+b
+c
+=
+1
+e_{c}+(m-1)b_{c}=1
+), the remaining sum of scores at step
+j
+j
+is
+1
+−
+(
+j
+−
+1
+)
+​
+b
+c
+1-(j-1)b_{c}
+. The probability for these steps is
+∏
+j
+=
+1
+t
+−
+1
+b
+c
+1
+−
+(
+j
+−
+1
+)
+​
+b
+c
+\prod_{j=1}^{t-1}\frac{b_{c}}{1-(j-1)b_{c}}
+.
+•
+Second, at rank
+t
+t
+, alternative
+y
+1
+y_{1}
+with score
+e
+c
+e_{c}
+is chosen. The remaining sum of scores is
+1
+−
+(
+t
+−
+1
+)
+​
+b
+c
+1-(t-1)b_{c}
+. The probability is
+e
+c
+1
+−
+(
+t
+−
+1
+)
+​
+b
+c
+\frac{e_{c}}{1-(t-1)b_{c}}
+.
+•
+Third, after rank
+t
+t
+(steps
+t
++
+1
+t+1
+to
+m
+m
+), all remaining
+m
+−
+t
+m-t
+alternatives have the identical score
+b
+c
+b_{c}
+. By symmetry, the probability of any specific ordering of these remaining identical alternatives is simply
+1
+(
+m
+−
+t
+)
+!
+\frac{1}{(m-t)!}
+.
+Therefore, the likelihood entry simplifies to a function that depends strictly on
+y
+1
+y_{1}
+’s rank position
+t
+t
+and the cluster
+c
+c
+. Let us denote this unique probability value as
+v
+t
+,
+c
+v_{t,c}
+:
+v
+t
+,
+c
+=
+1
+(
+m
+−
+t
+)
+!
+​
+e
+c
+​
+b
+c
+t
+−
+1
+∏
+j
+=
+0
+t
+−
+1
+(
+1
+−
+j
+​
+b
+c
+)
+.
+\displaystyle v_{t,c}=\frac{1}{(m-t)!}\frac{e_{c}b_{c}^{t-1}}{\prod_{j=0}^{t-1}(1-jb_{c})}.
+(10)
+Because the probability
+F
+σ
+,
+c
+F_{\sigma,c}
+evaluates exactly to
+v
+t
+,
+c
+v_{t,c}
+for
+any
+ranking
+σ
+\sigma
+where
+y
+1
+y_{1}
+is at rank
+t
+t
+, the
+m
+!
+m!
+rows of the likelihood matrix
+F
+F
+consist of only
+m
+m
+unique types of rows. We can formally express this by factorizing the
+m
+!
+×
+2
+​
+k
+m!\times 2k
+matrix
+F
+F
+into the product of two smaller matrices,
+M
+M
+and
+V
+V
+:
+F
+=
+M
+​
+V
+,
+F=MV,
+(11)
+where we explicitly construct
+M
+M
+and
+V
+V
+as follows:
+•
+V
+V
+is an
+m
+×
+2
+​
+k
+m\times 2k
+matrix capturing the unique probability values across all clusters. Its
+(
+t
+,
+c
+)
+(t,c)
+-th entry is exactly
+V
+t
+,
+c
+=
+v
+t
+,
+c
+V_{t,c}=v_{t,c}
+, representing the sequence probability in cluster
+c
+c
+when
+y
+1
+y_{1}
+is chosen at step
+t
+t
+.
+•
+M
+M
+is an
+m
+!
+×
+m
+m!\times m
+binary indicator matrix. Its rows represent the
+m
+!
+m!
+possible rankings
+σ
+\sigma
+, and its columns represent the
+m
+m
+possible rank positions
+t
+t
+. The entry
+M
+σ
+,
+t
+=
+1
+M_{\sigma,t}=1
+if alternative
+y
+1
+y_{1}
+is exactly at position
+t
+t
+in ranking
+σ
+\sigma
+, and
+0
+0
+otherwise.
+Since
+y
+1
+y_{1}
+can occupy exactly one position in any given ranking, each row of
+M
+M
+contains exactly one
+1
+1
+and
+m
+−
+1
+m-1
+zeros. Multiplying row
+σ
+\sigma
+of
+M
+M
+by column
+c
+c
+of
+V
+V
+simply selects the correct value
+v
+t
+,
+c
+v_{t,c}
+to form
+F
+σ
+,
+c
+F_{\sigma,c}
+.
+Since the inner dimension of both matrices is
+m
+m
+, we establish the exact dimensionality bound for
+F
+F
+:
+rank
+​
+(
+F
+)
+=
+min
+⁡
+{
+m
+,
+2
+​
+k
+}
+.
+\displaystyle\text{rank}(F)=\min\{m,2k\}.
+Thus, the dimension of the null space of
+F
+F
+is larger than
+1
+1
+, under the proposition’s condition
+m
+≤
+2
+​
+k
+−
+1
+m\leq 2k-1
+. Therefore, the null space of
+F
+F
+is strictly non-trivial, guaranteeing the existence of a non-zero vector
+β
+\beta
+such that
+F
+​
+β
+=
+𝟎
+F\beta=\mathbf{0}
+.
+Furthermore, because the rows of
+F
+F
+represent probabilities over an exhaustive sample space,
+∑
+σ
+F
+σ
+,
+c
+=
+1
+\sum_{\sigma}F_{\sigma,c}=1
+for all
+c
+c
+. Summing the rows of
+F
+​
+β
+=
+𝟎
+F\beta=\mathbf{0}
+yields:
+∑
+σ
+∑
+c
+=
+1
+2
+​
+k
+F
+σ
+,
+c
+​
+β
+c
+=
+0
+\displaystyle\sum_{\sigma}\sum_{c=1}^{2k}F_{\sigma,c}\beta_{c}=0
+=
+\displaystyle=
+∑
+c
+=
+1
+2
+​
+k
+β
+c
+​
+(
+∑
+σ
+F
+σ
+,
+c
+)
+=
+∑
+c
+=
+1
+2
+​
+k
+β
+c
+=
+0
+.
+\displaystyle\sum_{c=1}^{2k}\beta_{c}\left(\sum_{\sigma}F_{\sigma,c}\right)=\sum_{c=1}^{2k}\beta_{c}=0.
+Since
+β
+\beta
+is a non-zero vector whose elements sum to zero, it must contain both strictly positive and strictly negative elements. Let
+I
++
+=
+{
+c
+∣
+β
+c
+>
+0
+}
+I_{+}=\{c\mid\beta_{c}>0\}
+and
+I
+−
+=
+{
+c
+∣
+β
+c
+<
+0
+}
+I_{-}=\{c\mid\beta_{c}<0\}
+. We define a normalization constant
+W
+=
+∑
+c
+∈
+I
++
+β
+c
+=
+∑
+c
+∈
+I
+−
+−
+β
+c
+W=\sum_{c\in I_{+}}\beta_{c}=\sum_{c\in I_{-}}-\beta_{c}
+.
+We now construct the two mixtures. We define two disjoint subsets of cluster parameters
+r
+=
+{
+r
+(
+c
+)
+}
+c
+∈
+I
++
+r=\{r^{(c)}\}_{c\in I_{+}}
+and
+r
+′
+=
+{
+r
+(
+c
+)
+}
+c
+∈
+I
+−
+r^{\prime}=\{r^{(c)}\}_{c\in I_{-}}
+. We construct their corresponding mixing weights as
+α
+c
+=
+β
+c
+W
+\alpha_{c}=\frac{\beta_{c}}{W}
+for
+c
+∈
+I
++
+c\in I_{+}
+, and
+α
+c
+′
+=
+−
+β
+c
+W
+\alpha^{\prime}_{c}=\frac{-\beta_{c}}{W}
+for
+c
+∈
+I
+−
+c\in I_{-}
+.
+Because
+F
+​
+β
+=
+𝟎
+F\beta=\mathbf{0}
+, we have:
+∑
+c
+∈
+I
++
+α
+c
+​
+F
+σ
+,
+c
+=
+∑
+c
+∈
+I
+−
+α
+c
+′
+​
+F
+σ
+,
+c
+for all
+​
+σ
+.
+\sum_{c\in I_{+}}\alpha_{c}F_{\sigma,c}=\sum_{c\in I_{-}}\alpha^{\prime}_{c}F_{\sigma,c}\quad\text{for all }\sigma.
+This confirms that the mixture model defined by
+(
+r
+,
+α
+)
+(r,\alpha)
+and the disjoint mixture model defined by
+(
+r
+′
+,
+α
+′
+)
+(r^{\prime},\alpha^{\prime})
+produce the same marginal probability distribution over the
+m
+m
+-way rankings, proving the model is non-identifiable.
+∎
+A.4
+Proof for Proposition
+4.1
+Next, we present the proof for analyzing the rank of the probability matrix of partial rankings over the augmented set of responses.
+We assume that the generated responses exhibit distinct scores. We show that, under this assumption, a probability matrix (representing all possible ranking probabilities under the mixture model) has sufficiently many independent rows to match its column dimension, thus exhibiting a full column rank.
+Proof of Proposition
+4.1
+.
+Recall that we augment the original
+m
+m
+responses with additional generated responses and expand the candidate set to
+Y
+′
+Y^{\prime}
+with a size of
+m
+′
+m^{\prime}
+.
+In this proof, we examine the probability over the space of partial rankings over
+m
+′
+m^{\prime}
+alternatives, formed by selecting a ranked list of
+m
+m
+items and leaving the remaining
+m
+′
+−
+m
+m^{\prime}-m
+items unranked at the bottom. The total number of partial rankings in the expanded space is
+m
+′
+!
+(
+m
+′
+−
+m
+)
+!
+\frac{m^{\prime}!}{(m^{\prime}-m)!}
+.
+For an augmented set of
+m
+′
+m^{\prime}
+alternatives, we denote such a partial ranking
+σ
+\sigma
+as
+y
+σ
+⁡
+(
+1
+)
+≻
+y
+σ
+⁡
+(
+2
+)
+≻
+⋯
+≻
+y
+σ
+⁡
+(
+m
+)
+≻
+{
+y
+σ
+⁡
+(
+m
++
+1
+)
+,
+…
+,
+y
+σ
+⁡
+(
+m
+′
+)
+}
+y_{\sigma(1)}\succ y_{\sigma(2)}\succ\dots\succ y_{\sigma(m)}\succ\{y_{\sigma(m+1)},\dots,y_{\sigma(m^{\prime})}\}
+. Given a score vector
+r
+r
+of dimension
+m
+′
+m^{\prime}
+, the probability of observing the partial ranking
+σ
+\sigma
+in a PL model is:
+P
+⁡
+(
+σ
+|
+r
+)
+=
+∏
+i
+=
+1
+m
+−
+1
+r
+σ
+⁡
+(
+i
+)
+∑
+j
+=
+i
+m
+r
+σ
+⁡
+(
+j
+)
++
+Z
+⁡
+(
+σ
+)
+,
+\displaystyle P(\sigma|{}r)=\prod_{i=1}^{m-1}\frac{r_{\sigma(i)}}{\sum_{j=i}^{m}r_{\sigma(j)}+Z(\sigma)},
+where
+Z
+⁡
+(
+σ
+)
+=
+∑
+t
+=
+m
++
+1
+m
+′
+r
+σ
+⁡
+(
+t
+)
+Z(\sigma)=\sum_{t=m+1}^{m^{\prime}}r_{\sigma(t)}
+represents the sum of scores of alternatives ranked at the bottom.
+Given
+2
+​
+k
+2k
+score vectors
+r
+(
+1
+)
+,
+…
+,
+r
+(
+2
+​
+k
+)
+r^{(1)},\dots,r^{(2k)}
+, we then define the probability matrix over the augmented set of alternatives as
+F
+aug
+F^{\textup{aug}}
+, which is a
+m
+′
+!
+(
+m
+′
+−
+m
+)
+!
+×
+2
+​
+k
+\frac{m^{\prime}!}{(m^{\prime}-m)!}\times 2k
+matrix, where each row corresponds to one of the possible partial rankings and each column corresponds to one of the
+2
+​
+k
+2k
+PL components.
+In the conditions of this proposition, we assume that the newly generated augmented responses exhibit distinct scores within each PL model. For any distinct additional alternatives
+i
+,
+j
+∈
+{
+m
++
+1
+,
+…
+,
+m
+′
+}
+i,j\in\{m+1,\dots,m^{\prime}\}
+, we assume
+r
+i
+(
+c
+)
+≠
+r
+j
+(
+c
+)
+r^{(c)}_{i}\neq r^{(c)}_{j}
+for each PL model
+c
+c
+. As these scores are distinct, the denominator term
+Z
+⁡
+(
+σ
+)
+Z(\sigma)
+depends on the specific combinatorial subset of items left unselected in the bottom
+σ
+\sigma
+. Consequently, for distinct partial rankings
+σ
+1
+≠
+σ
+2
+\sigma_{1}\neq\sigma_{2}
+that leave different subsets of items unranked, the denominators differ:
+Z
+⁡
+(
+σ
+1
+)
+≠
+Z
+⁡
+(
+σ
+2
+)
+Z(\sigma_{1})\neq Z(\sigma_{2})
+.
+This makes it impossible to factor
+F
+aug
+F^{\textup{aug}}
+into the rank-deficient form.
+We now show the identifiability of
+F
+aug
+F^{\textup{aug}}
+by examining its rank. We will show that for all possible pairwise different vectors, the rank of
+F
+aug
+F^{\textup{aug}}
+is equal to
+2
+​
+k
+2k
+. We first obtain a
+2
+​
+k
+×
+2
+​
+k
+2k\times 2k
+matrix
+F
+^
+=
+T
+×
+F
+aug
+\hat{F}=T\times F^{\textup{aug}}
+by linearly combining some row vectors of
+F
+aug
+F^{\textup{aug}}
+via a linear transformation
+T
+T
+. Then, we show that
+rank
+⁡
+(
+F
+^
+)
+=
+2
+​
+k
+\operatorname{rank}(\hat{F})=2k
+, which implies that
+rank
+⁡
+(
+F
+aug
+)
+=
+2
+​
+k
+\operatorname{rank}(F^{\textup{aug}})=2k
+.
+Under the conditions of the proposition, we have at least
+k
+k
+alternatives in the additional augmented set (
+m
+′
+−
+m
+≥
+k
+m^{\prime}-m\geq k
+). Without loss of generality, we select exactly
+k
+k
+items from the augmented set, denoted as
+y
+1
+,
+y
+2
+,
+…
+,
+y
+k
+y_{1},y_{2},\dots,y_{k}
+. Let
+r
+j
+(
+c
+)
+r_{j}^{(c)}
+denote the score of item
+y
+j
+y_{j}
+in the
+c
+c
+-th Plackett-Luce model, which is also the marginal probability that item
+y
+j
+y_{j}
+is ranked at the top. Denote a row vector
+ω
+(
+j
+)
+=
+[
+r
+j
+(
+1
+)
+,
+r
+j
+(
+2
+)
+,
+…
+,
+r
+j
+(
+2
+​
+k
+)
+]
+\omega^{(j)}=[r_{j}^{(1)},r_{j}^{(2)},\dots,r_{j}^{(2k)}]
+as these marginal probabilities across all
+2
+​
+k
+2k
+components.
+We obtain the
+2
+​
+k
+×
+2
+​
+k
+2k\times 2k
+matrix
+F
+^
+\hat{F}
+by summing over the corresponding rows in
+F
+aug
+F^{\textup{aug}}
+to obtain the following probabilities. Here, the matrix
+T
+T
+is a 0-1 matrix indicating the selection of rows:
+•
+The sum of all rows in
+F
+aug
+F^{\textup{aug}}
+, yielding the vector
+𝟏
+=
+[
+1
+,
+1
+,
+…
+,
+1
+]
+\mathbf{1}=[1,1,\dots,1]
+.
+•
+The sum of all rows that rank
+y
+j
+y_{j}
+at the top for
+j
+∈
+{
+2
+,
+…
+,
+k
+}
+j\in\{2,\dots,k\}
+, yielding the row vector
+ω
+(
+j
+)
+\omega^{(j)}
+.
+•
+The sum of all rows that rank
+y
+j
+y_{j}
+at the top and
+y
+1
+y_{1}
+as the second, for
+j
+∈
+{
+2
+,
+…
+,
+k
+}
+j\in\{2,\dots,k\}
+. The
+c
+c
+-th element of this row vector is
+r
+j
+(
+c
+)
+​
+r
+1
+(
+c
+)
+1
+−
+r
+j
+(
+c
+)
+\frac{r_{j}^{(c)}r_{1}^{(c)}}{1-r_{j}^{(c)}}
+.
+Then, the matrix
+F
+^
+\hat{F}
+takes the following form:
+F
+^
+=
+[
+1
+1
+…
+1
+r
+1
+(
+1
+)
+r
+1
+(
+2
+)
+…
+r
+1
+(
+2
+​
+k
+)
+r
+2
+(
+1
+)
+r
+2
+(
+2
+)
+…
+r
+2
+(
+2
+​
+k
+)
+⋱
+r
+k
+(
+1
+)
+r
+k
+(
+2
+)
+…
+r
+k
+(
+2
+​
+k
+)
+r
+2
+(
+1
+)
+​
+r
+1
+(
+1
+)
+1
+−
+r
+2
+(
+1
+)
+r
+2
+(
+2
+)
+​
+r
+1
+(
+2
+)
+1
+−
+r
+2
+(
+2
+)
+…
+r
+2
+(
+2
+​
+k
+)
+​
+r
+1
+(
+2
+​
+k
+)
+1
+−
+r
+2
+(
+2
+​
+k
+)
+⋱
+r
+k
+(
+1
+)
+​
+r
+1
+(
+1
+)
+1
+−
+r
+k
+(
+1
+)
+r
+k
+(
+2
+)
+​
+r
+1
+(
+2
+)
+1
+−
+r
+k
+(
+2
+)
+…
+r
+k
+(
+2
+​
+k
+)
+​
+r
+1
+(
+2
+​
+k
+)
+1
+−
+r
+k
+(
+2
+​
+k
+)
+]
+.
+\displaystyle\hat{F}=\begin{bmatrix}1&1&\dots&1\\
+r_{1}^{(1)}&r_{1}^{(2)}&\dots&r_{1}^{(2k)}\\
+r_{2}^{(1)}&r_{2}^{(2)}&\dots&r_{2}^{(2k)}\\
+\vdots&\vdots&\ddots&\vdots\\
+r_{k}^{(1)}&r_{k}^{(2)}&\dots&r_{k}^{(2k)}\\
+\frac{r_{2}^{(1)}r_{1}^{(1)}}{1-r_{2}^{(1)}}&\frac{r_{2}^{(2)}r_{1}^{(2)}}{1-r_{2}^{(2)}}&\dots&\frac{r_{2}^{(2k)}r_{1}^{(2k)}}{1-r_{2}^{(2k)}}\\
+\vdots&\vdots&\ddots&\vdots\\
+\frac{r_{k}^{(1)}r_{1}^{(1)}}{1-r_{k}^{(1)}}&\frac{r_{k}^{(2)}r_{1}^{(2)}}{1-r_{k}^{(2)}}&\dots&\frac{r_{k}^{(2k)}r_{1}^{(2k)}}{1-r_{k}^{(2k)}}\end{bmatrix}.
+Because the parameters are non-degenerate, at least one vector in
+{
+ω
+(
+1
+)
+,
+…
+,
+ω
+(
+k
+)
+}
+\{\omega^{(1)},\dots,\omega^{(k)}\}
+is linearly independent of
+𝟏
+\mathbf{1}
+. Without loss of generality, suppose
+ω
+(
+1
+)
+\omega^{(1)}
+is linearly independent of
+𝟏
+\mathbf{1}
+.
+Next, we prove the proposition by examining the following two cases.
+Case 1.
+ω
+(
+2
+)
+,
+…
+,
+ω
+(
+k
+)
+\omega^{(2)},\dots,\omega^{(k)}
+are all linear combinations of
+𝟏
+\mathbf{1}
+and
+ω
+(
+1
+)
+\omega^{(1)}
+. For all
+j
+∈
+{
+2
+,
+…
+,
+k
+}
+j\in\{2,\dots,k\}
+, we can rewrite
+r
+j
+(
+c
+)
+=
+p
+j
+​
+r
+1
+(
+c
+)
++
+q
+j
+r_{j}^{(c)}=p_{j}r_{1}^{(c)}+q_{j}
+for some constants
+p
+j
+,
+q
+j
+p_{j},q_{j}
+. In this case, the entries of
+F
+^
+\hat{F}
+are rational functions of
+r
+1
+(
+c
+)
+r_{1}^{(c)}
+. Because the scores of the augmented items are distinct,
+r
+1
+(
+c
+)
+r_{1}^{(c)}
+takes on pairwise different values across the
+2
+​
+k
+2k
+components.
+Then, we prove that the rank of
+F
+aug
+F^{\textup{aug}}
+is equal to
+2
+​
+k
+2k
+by contradiction. Suppose that
+rank
+⁡
+(
+F
+^
+)
+<
+2
+​
+k
+\operatorname{rank}(\hat{F})<2k
+. Then, there exists a non-zero vector
+t
+=
+[
+t
+1
+,
+…
+,
+t
+2
+​
+k
+]
+⊤
+t=[t_{1},\dots,t_{2k}]^{\top}
+spanning the null space, such that
+t
+⊤
+​
+F
+^
+=
+𝟎
+t^{\top}\hat{F}=\mathbf{0}
+.
+For the dot product of
+t
+t
+with the
+c
+c
+-th column of
+F
+^
+\hat{F}
+yields:
+t
+1
++
+t
+2
+​
+(
+r
+1
+(
+c
+)
+)
++
+∑
+j
+=
+2
+k
+t
+j
++
+1
+​
+(
+r
+j
+(
+c
+)
+)
++
+\displaystyle t_{1}+t_{2}(r_{1}^{(c)})+\sum_{j=2}^{k}t_{j+1}(r_{j}^{(c)})+
+∑
+j
+=
+2
+k
+t
+k
++
+j
+​
+(
+r
+j
+(
+c
+)
+​
+r
+1
+(
+c
+)
+1
+−
+r
+j
+(
+c
+)
+)
+=
+0
+.
+\displaystyle\sum_{j=2}^{k}t_{k+j}\left(\frac{r_{j}^{(c)}r_{1}^{(c)}}{1-r_{j}^{(c)}}\right)=0.
+By substituting
+r
+j
+(
+c
+)
+=
+p
+j
+​
+r
+1
+(
+c
+)
++
+q
+j
+r_{j}^{(c)}=p_{j}r_{1}^{(c)}+q_{j}
+into the above equation and letting the variable
+x
+=
+r
+1
+(
+c
+)
+x=r_{1}^{(c)}
+, we can define a function
+f
+⁡
+(
+x
+)
+f(x)
+such that
+f
+⁡
+(
+x
+)
+=
+0
+f(x)=0
+for every component
+c
+c
+.
+Then, we can convert this function into a polynomial
+g
+⁡
+(
+x
+)
+g(x)
+by the product of all its denominators. The highest degree terms in
+g
+⁡
+(
+x
+)
+g(x)
+have a maximum possible degree of
+k
+k
+. Thus,
+g
+⁡
+(
+x
+)
+g(x)
+is a polynomial of degree at most
+k
+k
+. Because
+g
+⁡
+(
+x
+)
+=
+0
+g(x)=0
+must hold across
+2
+​
+k
+2k
+PL-models, the polynomial
+x
+x
+must have
+2
+​
+k
+2k
+distinct roots. However, a non-zero polynomial of degree
+k
+k
+can have at most
+k
+k
+roots. Because
+k
+<
+2
+​
+k
+k<2k
+, this creates a contradiction. Therefore,
+rank
+⁡
+(
+F
+^
+)
+\operatorname{rank}(\hat{F})
+must equal
+2
+​
+k
+2k
+.
+Case 2.
+There exists an
+ω
+(
+i
+)
+\omega^{(i)}
+(where
+i
+∈
+{
+2
+,
+…
+,
+k
+}
+i\in\{2,\dots,k\}
+) that is linearly independent of
+𝟏
+\mathbf{1}
+and
+ω
+(
+1
+)
+\omega^{(1)}
+. Because
+ω
+(
+i
+)
+\omega^{(i)}
+cannot be expressed as a linear combination of
+𝟏
+\mathbf{1}
+and
+ω
+(
+1
+)
+\omega^{(1)}
+, inserting it into
+F
+^
+\hat{F}
+introduces an additional orthogonal row. Following the similar logic of Case 1, we can prove that
+rank
+⁡
+(
+F
+^
+)
+\operatorname{rank}(\hat{F})
+equals
+2
+​
+k
+2k
+.
+Since the rank of
+F
+^
+\hat{F}
+is equal to
+2
+​
+k
+2k
+and
+F
+^
+=
+T
+​
+F
+aug
+\hat{F}=TF^{\textup{aug}}
+, thus the rank of
+F
+aug
+F^{\textup{aug}}
+is at least
+2
+​
+k
+2k
+. As the column dimension of
+F
+aug
+F^{\textup{aug}}
+is
+2
+​
+k
+2k
+, thus, we have the rank of
+F
+aug
+F^{\textup{aug}}
+is
+2
+​
+k
+2k
+.
+∎
+(a)
+Varying the number of training rankings
+n
+n
+between
+1,000
+1{,}000
+and
+100,000
+100{,}000
+. Using rankings of
+m
+=
+2
+m=2
+cannot recover the clusters, even for a large
+n
+n
+.
+(b)
+Varying the ranking size
+m
+m
+between
+2
+,
+3
+,
+4
+,
+5
+2,3,4,5
+and
+6
+6
+, at
+n
+=
+100,000
+n=100{,}000
+rankings. Larger
+m
+m
+converges to higher accuracy.
+Figure 6:
+Validation accuracy of the inferred cluster assignments on the synthetic data, for
+k
+=
+2
+,
+3
+,
+4
+k=2,3,4
+clusters from left to right in each row. The two rows vary the two quantities that govern recovery: the amount of data in
+6(a)
+, and the length of each ranking in
+6(b)
+.
+A.5
+Extensions
+We present our method using the Mallows model that defines the probability of a ranking based on its distance from an ideal ranking
+σ
+c
+\sigma_{c}
+. Let
+d
+c
+​
+(
+⋅
+,
+⋅
+)
+d_{c}(\cdot,\cdot)
+be a distance metric and
+ϕ
+c
+​
+(
+x
+i
+)
+∈
+(
+0
+,
+1
+)
+\phi_{c}(x_{i})\in(0,1)
+be a dispersion parameter dictating annotator variance. The probability of the ranking is:
+ϕ
+c
+​
+(
+x
+i
+)
+d
+c
+​
+(
+σ
+i
+,
+σ
+c
+)
+∏
+j
+=
+1
+m
+∑
+l
+=
+0
+j
+−
+1
+ϕ
+c
+​
+(
+x
+i
+)
+l
+.
+\frac{\phi_{c}(x_{i})^{d_{c}(\sigma_{i},\sigma_{c})}}{\prod_{j=1}^{m}\sum_{l=0}^{j-1}\phi_{c}(x_{i})^{l}}.
+(12)
+We use the Reverse Major Index (RMJ) as the distance metric, which penalizes adjacent inversions, weighted by their rank position, where
+d
+c
+(
+σ
+i
+,
+σ
+c
+)
+=
+∑
+t
+=
+1
+m
+−
+1
+(
+m
+−
+t
+)
+⋅
+𝟙
+{
+r
+θ
+c
+(
+x
+i
+,
+y
+i
+,
+σ
+i
+​
+(
+t
+)
+)
+<
+r
+θ
+c
+(
+x
+i
+,
+y
+i
+,
+σ
+i
+​
+(
+t
++
+1
+)
+)
+}
+d_{c}(\sigma_{i},\sigma_{c})=\sum_{t=1}^{m-1}(m-t)\cdot\mathbbm{1}\left\{r_{\theta_{c}}(x_{i},y_{i,\sigma_{i}(t)})<r_{\theta_{c}}(x_{i},y_{i,\sigma_{i}(t+1)})\right\}
+.
+The
+(
+m
+−
+t
+)
+(m-t)
+weighting imposes a larger penalty for misrankings at the top of the list. Substituting this probability into Equation (
+1
+) forms the Mixture of Mallows models.
+Appendix B
+Omitted Experiments
+B.1
+Synthetic data
+We now describe the details of the synthetic experiment to show the unidentifiability of the mixture of ranking models.
+We construct the dataset as follows: each response
+y
+y
+is represented as a list of
+k
+k
+integers, where
+k
+k
+is the total number of clusters. The ground-truth utility of
+y
+y
+for an annotator in cluster
+c
+∈
+{
+1
+,
+…
+,
+k
+}
+c\in\{1,\dots,k\}
+is the
+c
+c
+-th integer in the list. In other words, cluster
+c
+c
+ranks responses by its
+c
+c
+-th integer.
+For example, consider three responses: “[1, 2, 3]”, “[2, 3, 1]”, “[3, 1, 2]”, the rankings from clusters 1 and 2 are given as:
+Cluster 1: [3, 1, 2]
+≻
+\succ
+[2, 3, 1]
+≻
+\succ
+[1, 2, 3]
+Cluster 2: [2, 3, 1]
+≻
+\succ
+[1, 2, 3]
+≻
+\succ
+[3, 1, 2]
+We generate a dataset with
+n
+n
+annotators and
+k
+k
+clusters. We conduct experiments in three settings with
+k
+k
+between
+2
+2
+,
+3
+3
+, and
+4
+4
+. We vary the slate size
+m
+∈
+{
+2
+,
+3
+,
+4
+,
+5
+,
+6
+,
+7
+,
+8
+}
+m\in\{2,3,4,5,6,7,8\}
+. We train a Qwen-3-0.6B model using the EM algorithm and evaluate the cluster assignment accuracy on a held-out validation set.
+Table 5:
+Relative approximation error of
+ϵ
+x
+,
+y
+\epsilon_{x,y}
+, tested with five language models of up to 34 billion parameters on the HelpSteer2 dataset.
+Distance
+Qwen-0.6B
+Gemma-2B
+DeepSeek-7B
+Llama-13B
+CodeLlama-34B
+0
+%
+−
+5
+%
+0\%-5\%
+0.1
+±
+0.0
+%
+0.1_{\pm 0.0}\%
+0.1
+±
+0.0
+%
+0.1_{\pm 0.0}\%
+0.1
+±
+0.0
+%
+0.1_{\pm 0.0}\%
+0.1
+±
+0.0
+%
+0.1_{\pm 0.0}\%
+0.1
+±
+0.0
+%
+0.1_{\pm 0.0}\%
+5
+%
+−
+10
+%
+5\%-10\%
+0.7
+±
+0.3
+%
+0.7_{\pm 0.3}\%
+0.6
+±
+0.3
+%
+0.6_{\pm 0.3}\%
+0.6
+±
+0.0
+%
+0.6_{\pm 0.0}\%
+0.5
+±
+0.2
+%
+0.5_{\pm 0.2}\%
+0.5
+±
+0.0
+%
+0.5_{\pm 0.0}\%
+10
+%
+−
+15
+%
+10\%-15\%
+1.6
+±
+0.1
+%
+1.6_{\pm 0.1}\%
+1.5
+±
+0.2
+%
+1.5_{\pm 0.2}\%
+1.7
+±
+0.1
+%
+1.7_{\pm 0.1}\%
+1.6
+±
+0.3
+%
+1.6_{\pm 0.3}\%
+1.5
+±
+0.4
+%
+1.5_{\pm 0.4}\%
+15
+%
+−
+20
+%
+15\%-20\%
+3.0
+±
+0.3
+%
+3.0_{\pm 0.3}\%
+3.1
+±
+0.1
+%
+3.1_{\pm 0.1}\%
+3.4
+±
+0.3
+%
+3.4_{\pm 0.3}\%
+3.0
+±
+0.5
+%
+3.0_{\pm 0.5}\%
+3.1
+±
+0.9
+%
+3.1_{\pm 0.9}\%
+20
+%
+−
+25
+%
+20\%-25\%
+5.4
+±
+0.4
+%
+5.4_{\pm 0.4}\%
+5.4
+±
+0.1
+%
+5.4_{\pm 0.1}\%
+5.0
+±
+0.3
+%
+5.0_{\pm 0.3}\%
+5.1
+±
+0.7
+%
+5.1_{\pm 0.7}\%
+5.3
+±
+0.2
+%
+5.3_{\pm 0.2}\%
+We show the validation accuracy of the cluster assignments when applying the algorithm to identify the underlying clusters with a ranking of different sizes
+m
+m
+.
+In Figure
+6(a)
+, we vary the number of rankings for training
+n
+n
+between
+1,000
+1,000
+and
+100,000
+100,000
+. We found that when using ranking over
+m
+=
+2
+m=2
+items, the algorithm cannot fully recover the clusters, even when increasing the number of rankings
+n
+n
+. For three (or four) underlying clusters, using
+m
+=
+2
+m=2
+achieves nearly the accuracy of random assignment (i.e.,
+1
+/
+k
+1/k
+).
+In contrast, a larger value of
+m
+m
+leads to a higher accuracy.
+We further show the convergence of the algorithm in Figure
+6(b)
+. In addition, when comparing the number of samples
+n
+n
+across settings with different numbers of clusters, we found that it requires more training samples with a large number of underlying clusters.
+Table 6:
+We report the clustering accuracies (%) on the UltraFeedback dataset for each evaluation dimension and their average. Our approach is compared against baselines utilizing a single ranking model and mixtures of BT models. During evaluation, we infer the cluster membership of each test instance via the learned mixture model and apply the corresponding cluster-specific head to predict the final ranking.
+All results report the mean and standard deviation over three random seeds.
+Clustering accuracy (%)
+Helpfulness
+Honesty
+Instruction following
+Truthfulness
+Average
+MiCRo
+33.4
+±
+\pm
+7.8
+28.7
+±
+\pm
+4.5
+22.8
+±
+\pm
+0.3
+21.7
+±
+\pm
+5.9
+26.6
+±
+\pm
+2.1
+MaxMin-RLHF
+27.5
+±
+\pm
+4.3
+14.4
+±
+\pm
+2.8
+35.3
+±
+\pm
+5.6
+27.1
+±
+\pm
+0.5
+27.2
+±
+\pm
+0.4
+EM-DPO
+25.1
+±
+\pm
+1.9
+22.7
+±
+\pm
+2.7
+33.2
+±
+\pm
+5.4
+23.2
+±
+\pm
+2.9
+26.9
+±
+\pm
+2.1
+MoPLEx
+(Alg.
+2
+)
+68.4
+±
+\pm
+2.3
+73.8
+±
+\pm
+0.4
+68.4
+±
+\pm
+1.3
+72.9
+±
+\pm
+3.1
+70.9
+±
+\pm
+2.3
+B.2
+Evaluation of approximation errors
+Table
+5
+shows the relative approximation error of the gradient estimation method across five different language models when tested on the HelpSteer2 dataset. The models evaluated range from 0.6 billion up to 34 billion parameters, specifically including Qwen-0.6B, Gemma-2B, DeepSeek-7B, Llama-13B, and CodeLlama-34B. The error remains low across all model sizes, starting at 0.1% for the closest distances and remaining between 5.0% and 5.4% for the largest distance bucket.
+Table 7:
+We report the clustering and ranking accuracies (%) on the Persona dataset across each cluster. Our approach is compared against baselines utilizing a single ranking model and mixtures of BT models. During evaluation, we infer the cluster membership of each test instance via the learned mixture model and apply the corresponding cluster-specific head to predict the final ranking. Ranking accuracy is measured as the proportion of correctly predicted pairs over all pairs. All results report the mean and standard deviation over three random seeds.
+Persona 1
+Persona 2
+Persona 3
+Persona 4
+Persona 5
+Persona 6
+Clustering accuracy (%)
+MiCRo
+11.7
+±
+\pm
+0.6
+10.5
+±
+\pm
+0.3
+21.7
+±
+\pm
+0.4
+16.6
+±
+\pm
+1.7
+15.0
+±
+\pm
+0.0
+47.8
+±
+\pm
+1.3
+MaxMin-RLHF
+35.2
+±
+\pm
+1.9
+15.7
+±
+\pm
+0.9
+8.0
+±
+\pm
+0.7
+8.3
+±
+\pm
+0.3
+2.0
+±
+\pm
+0.0
+30.4
+±
+\pm
+1.3
+EM-DPO
+58.8
+±
+\pm
+0.2
+26.3
+±
+\pm
+1.2
+8.7
+±
+\pm
+0.0
+8.3
+±
+\pm
+0.3
+25.0
+±
+\pm
+0.0
+39.1
+±
+\pm
+1.3
+MoPLEx
+(Alg.
+2
+)
+61.1
+±
+\pm
+1.1
+60.0
+±
+\pm
+0.4
+58.3
+±
+\pm
+0.3
+50.0
+±
+\pm
+0.0
+60.0
+±
+\pm
+0.5
+58.3
+±
+\pm
+1.3
+Ranking accuracy (%)
+DPO
+52.9
+±
+\pm
+2.4
+53.7
+±
+\pm
+0.8
+53.3
+±
+\pm
+0.6
+57.1
+±
+\pm
+0.4
+54.2
+±
+\pm
+3.0
+53.3
+±
+\pm
+1.6
+LiPO
+44.4
+±
+\pm
+0.4
+60.0
+±
+\pm
+0.0
+54.1
+±
+\pm
+0.6
+58.3
+±
+\pm
+1.3
+65.0
+±
+\pm
+0.1
+58.3
+±
+\pm
+0.3
+MiCRo
+64.7
+±
+\pm
+1.1
+52.6
+±
+\pm
+0.3
+65.2
+±
+\pm
+1.2
+50.0
+±
+\pm
+0.0
+30.0
+±
+\pm
+0.0
+56.5
+±
+\pm
+1.2
+MaxMin-RLHF
+52.9
+±
+\pm
+0.4
+63.1
+±
+\pm
+1.6
+56.5
+±
+\pm
+1.2
+58.3
+±
+\pm
+1.3
+35.0
+±
+\pm
+1.0
+56.5
+±
+\pm
+2.0
+EM-DPO
+70.5
+±
+\pm
+0.9
+52.6
+±
+\pm
+1.3
+39.1
+±
+\pm
+2.3
+58.3
+±
+\pm
+2.3
+40.0
+±
+\pm
+2.0
+56.5
+±
+\pm
+2.0
+MoPLEx
+(Alg.
+2
+)
+83.3
+±
+\pm
+1.3
+83.3
+±
+\pm
+2.3
+80.0
+±
+\pm
+2.0
+58.3
+±
+\pm
+0.3
+80.0
+±
+\pm
+1.0
+70.8
+±
+\pm
+0.3
+Persona 7
+Persona 8
+Persona 9
+Persona 10
+Persona 11
+Persona 12
+Clustering accuracy (%)
+MiCRo
+33.3
+±
+\pm
+0.2
+14.2
+±
+\pm
+0.9
+8.3
+±
+\pm
+0.3
+25.0
+±
+\pm
+0.0
+13.6
+±
+\pm
+0.4
+16.6
+±
+\pm
+1.7
+MaxMin-RLHF
+11.1
+±
+\pm
+0.1
+9.5
+±
+\pm
+0.2
+20.8
+±
+\pm
+0.3
+10.0
+±
+\pm
+0.0
+22.7
+±
+\pm
+0.3
+33.3
+±
+\pm
+1.3
+EM-DPO
+14.2
+±
+\pm
+0.6
+2.4
+±
+\pm
+0.4
+29.1
+±
+\pm
+0.7
+20.0
+±
+\pm
+0.0
+13.6
+±
+\pm
+0.4
+27.7
+±
+\pm
+1.8
+MoPLEx
+(Alg.
+2
+)
+50.0
+±
+\pm
+0.0
+54.5
+±
+\pm
+0.4
+57.6
+±
+\pm
+1.9
+63.6
+±
+\pm
+0.3
+66.6
+±
+\pm
+1.7
+61.1
+±
+\pm
+1.1
+Ranking accuracy (%)
+DPO
+53.3
+±
+\pm
+3.6
+52.9
+±
+\pm
+0.4
+54.6
+±
+\pm
+1.2
+54.6
+±
+\pm
+0.2
+56.3
+±
+\pm
+2.0
+57.5
+±
+\pm
+0.6
+LiPO
+55.5
+±
+\pm
+0.5
+50.0
+±
+\pm
+0.7
+42.3
+±
+\pm
+0.0
+45.4
+±
+\pm
+0.5
+66.6
+±
+\pm
+1.6
+77.7
+±
+\pm
+0.7
+MiCRo
+38.8
+±
+\pm
+0.9
+71.4
+±
+\pm
+1.3
+62.5
+±
+\pm
+2.0
+35.0
+±
+\pm
+0.6
+45.4
+±
+\pm
+0.5
+50.0
+±
+\pm
+2.0
+MaxMin-RLHF
+50.0
+±
+\pm
+1.0
+52.3
+±
+\pm
+1.8
+58.3
+±
+\pm
+0.3
+40.0
+±
+\pm
+2.0
+36.3
+±
+\pm
+1.6
+38.8
+±
+\pm
+0.9
+EM-DPO
+61.1
+±
+\pm
+1.1
+42.8
+±
+\pm
+1.6
+45.8
+±
+\pm
+1.3
+35.0
+±
+\pm
+0.5
+36.3
+±
+\pm
+1.6
+50.0
+±
+\pm
+2.0
+MoPLEx
+(Alg.
+2
+)
+100.0
+±
+\pm
+0.0
+63.6
+±
+\pm
+1.3
+80.7
+±
+\pm
+1.6
+63.6
+±
+\pm
+1.3
+79.1
+±
+\pm
+1.6
+66.6
+±
+\pm
+1.6
+B.3
+Comparing fine-tuned model generation
+We evaluate the generation of our fine-tuned models on the UltraFeedback dataset. We compute a win rate against the given response ranked at the top, given a reference response in the dataset. For each test prompt, we generate responses from both models and score them using a reward model trained solely on the ground-truth rankings of that corresponding cluster. The win rate is the percentage of times the fine-tuned model’s response achieves a higher reward score than the baseline’s response.
+We find that our method achieves an average win rate of 58%, outperforming baselines using single ranking models by 7% and mixture-of-BT baselines by 4.3% across all evaluated clusters. This indicates that our method aligns the language model’s generations with the distinct ranking distributions of each cluster. In contrast, because pairwise mixture models struggle to accurately identify the clusters, they fail to tailor their generations to the specific target cluster.
+B.4
+Additional computation and parameters
+Our algorithm generates additional responses prior to training, accounting for only a small fraction of the total runtime. Evaluated on a single A6000 GPU, response generation takes 1.1 GPU hours for the UltraFeedback dataset and 1.3 GPU hours for the Persona dataset, whereas model training requires 7.3 and 7.2 GPU hours, respectively. Overall, response generation consumes roughly 16% of the total runtime.
+We use LoRA adapters to implement the mixture of PL models. Each PL model corresponds to a distinct set of LoRA adapters. Thus, a mixture of
+k
+k
+models requires
+k
+k
+sets of adapters on top of the base model. In our experiments, setting
+k
+=
+4
+k=4
+for the UltraFeedback dataset introduces 13.5% additional parameters relative to the base model. For the Persona dataset, setting
+k
+=
+12
+k=12
+results in 40.5% additional parameters.
+Table 8:
+We report the ablation study results of varying the sampling temperature during response generation on the UltraFeedback dataset. We compare the ranking accuracy across four criteria and their average across temperatures of 0.5, 1.0, 2.0, and 4.0. Ranking accuracy is measured as the proportion of correctly predicted pairs out of the six possible pairs per four-response ranking. All results report the mean and standard deviation over three random seeds.
+Sampling Temperature
+Helpfulness
+Honesty
+Instruction-following
+Truthfulness
+Average
+0.5
+76.6
+±
+2.5
+76.6\pm 2.5
+69.7
+±
+1.6
+69.7\pm 1.6
+71.5
+±
+1.7
+71.5\pm 1.7
+75.8
+±
+1.8
+75.8\pm 1.8
+70.9
+±
+1.9
+70.9\pm 1.9
+1.0
+77.2
+±
+1.8
+77.2\pm 1.8
+72.8
+±
+2.9
+72.8\pm 2.9
+73.2
+±
+2.5
+73.2\pm 2.5
+68.9
+±
+1.3
+68.9\pm 1.3
+72.8
+±
+2.1
+72.8\pm 2.1
+2.0
+79.4
+±
+3.9
+79.4\pm 3.9
+73.0
+±
+1.3
+73.0\pm 1.3
+76.9
+±
+2.6
+76.9\pm 2.6
+70.5
+±
+1.3
+70.5\pm 1.3
+75.0
+±
+2.9
+75.0\pm 2.9
+4.0
+79.5
+±
+1.9
+79.5\pm 1.9
+72.9
+±
+2.1
+72.9\pm 2.1
+76.0
+±
+2.7
+76.0\pm 2.7
+71.7
+±
+1.8
+71.7\pm 1.8
+74.7
+±
+2.3
+74.7\pm 2.3
+Table 9:
+We report the average ranking accuracy on the Persona dataset across 12 demographic profiles when varying key hyperparameters: the number of clusters (
+k
+k
+), the augmented ranking size (
+m
+′
+m^{\prime}
+), and the number of anchors (
+a
+a
+). We vary one parameter at a time while keeping the others fixed at their default values (
+k
+=
+12
+,
+m
+′
+=
+26
+,
+a
+=
+6
+k=12,m^{\prime}=26,a=6
+). All results report the mean and standard deviation over three random seeds.
+Varying Number of Clusters (Fixed:
+m
+′
+=
+26
+,
+a
+=
+6
+m^{\prime}=26,a=6
+)
+Parameter
+k
+=
+4
+k=4
+k
+=
+8
+k=8
+k
+=
+12
+k=12
+k
+=
+16
+k=16
+Accuracy
+65.2
+±
+1.6
+65.2\pm 1.6
+69.6
+±
+0.9
+69.6\pm 0.9
+76.4
+±
+0.6
+76.4\pm 0.6
+76.7
+±
+0.4
+76.7\pm 0.4
+Varying Augmented Ranking Size (Fixed:
+k
+=
+12
+,
+a
+=
+6
+k=12,a=6
+)
+Parameter
+m
+′
+=
+12
+m^{\prime}=12
+m
+′
+=
+20
+m^{\prime}=20
+m
+′
+=
+26
+m^{\prime}=26
+m
+′
+=
+32
+m^{\prime}=32
+Accuracy
+59.6
+±
+2.6
+59.6\pm 2.6
+65.1
+±
+1.2
+65.1\pm 1.2
+76.4
+±
+0.6
+76.4\pm 0.6
+76.8
+±
+0.8
+76.8\pm 0.8
+Varying Number of Anchors (Fixed:
+k
+=
+12
+,
+m
+′
+=
+26
+k=12,m^{\prime}=26
+)
+Parameter
+a
+=
+2
+a=2
+a
+=
+4
+a=4
+a
+=
+6
+a=6
+a
+=
+8
+a=8
+Accuracy
+63.8
+±
+1.6
+63.8\pm 1.6
+72.4
+±
+1.8
+72.4\pm 1.8
+76.4
+±
+0.6
+76.4\pm 0.6
+76.4
+±
+0.9
+76.4\pm 0.9
+Table 10:
+Datasets used in our experiments. Recall that
+m
+m
+is the number of options and
+k
+k
+is the number of groups.
+Dataset
+m
+m
+k
+k
+Sources
+UltraFeedback
+4
+4
+openbmb/UltraFeedback
+Persona
+2
+12
+SynthLabsAI/PERSONA
+HelpSteer2
+2
+5
+nvidia/HelpSteer2
+Table 11:
+Base language models used in our experiments.
+Models
+Sources
+Qwen-3-0.6B
+Qwen/Qwen3-0.6B
+Gemma-2B
+google/gemma-2-2b-it
+DeepSeek-7B
+deepseek-ai/deepseek-llm-7b-base
+Llama-13B
+meta-llama/Llama-2-13b-chat-hf
+CodeLlama-34B
+meta-llama/CodeLlama-34b-Instruct-hf
+B.5
+Complete comparison
+We provide the complete results corresponding to the experiments and ablation studies discussed in the main text. Table
+6
+presents the clustering and ranking accuracies broken down by individual evaluation dimensions and their averages.
+Table
+7
+reports the clustering and ranking accuracies across all twelve demographic profiles on the Persona dataset.
+Table
+8
+reports the impact of varying the response generation sampling temperature on ranking accuracy across the evaluation criteria.
+Table
+9
+reports the results of our hyperparameter ablation study of varying the number of clusters, the augmented ranking size, and the number of anchors.
+B.6
+Discussions
+Datasets, model sizes, and compute cost.
+We evaluate our approach across several datasets that exhibit multi-dimensional evaluations and diverse user demographics. The details of the datasets, including their categories, ranking properties, and sources, are summarized in Table
+11
+.
+We conduct experiments using a range of base language models with varying parameter sizes to validate our gradient estimation approach. The models and their parameter counts are detailed in Table
+11
+.
+The total computational cost is described in Section
+5
+of this paper. We evaluate the runtime and memory cost on a machine with a single RTX-A6000 GPU and 48 CPUs.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

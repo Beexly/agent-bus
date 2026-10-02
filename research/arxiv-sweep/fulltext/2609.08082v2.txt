@@ -1,0 +1,1247 @@
+                                                                  Inference-Time Nash Alignment
+
+
+                                                            Hadi Hosseini                            Debmalya Mandal
+                                                      Penn State University, USA                  University of Warwick, UK
+                                                           hadi@psu.edu                       Debmalya.Mandal@warwick.ac.uk
+
+                                                                                    Duohan Zhang∗
+                                                                               Penn State University, USA
+arXiv:2609.08082v2 [cs.AI] 16 Sep 2026
+
+
+
+
+                                                                                  dqz5235@psu.edu
+
+
+
+                                                                                       Abstract
+                                                     Preference-based fine-tuning methods such as RLHF and DPO require substantial
+                                                     compute and large preference datasets. They also need direct access to the model
+                                                     parameters which are not provided by many state-of-the art models. Inference-time
+                                                     alignment offers a cost-effective alternative without updating model parameters.
+                                                     However, existing inference-time methods rely on a scalar reward model derived
+                                                     under a Bradley-Terry assumption, which cannot represent general preferences.
+                                                     Following recent work on fine-tuning with generalized preferences, in this work,
+                                                     we initiate the study of inference-time alignment under general preferences. We
+                                                     formulate the problem as obtaining a Nash equilibrium of a two-player zero-sum
+                                                     game between policies. We propose two algorithms: Best-of-Nash (BoN) and Nash
+                                                     Mirror Descent (NMD). We prove that both algorithms achieve a duality gap that
+                                                     matches the problem lower bound. Empirically, we implement the two methods
+                                                     on three datasets, which shows that our methods substantially outperform the base
+                                                     policy, converging to the performance of the fine-tuned models. Moreover, our
+                                                     results show that NMD remains robust across the regularization parameter.
+
+
+                                         1     Introduction
+                                         Preference-based fine-tuning methods such as Reinforcement Learning with Human Feedback
+                                         (RLHF) [Christiano et al., 2017] and Direct Preference Optimization (DPO) [Rafailov et al., 2023]
+                                         have become quintessential for aligning Large Language Models (LLMs) with human preferences.
+                                         These methods have proven highly effective across several domains including mathematical reasoning
+                                         and finance. However, they require substantial effort in acquiring high-quality human data, along
+                                         with considerable computational costs for training LLMs. For example, fine-tuning LLMs with either
+                                         Proximal Policy Optimization (PPO) [Schulman et al., 2017] or Group Relative Policy Optimization
+                                         (GRPO) [Shao et al., 2024] requires a large number of samples and often leads to instability in training.
+                                         Equally importantly, these approaches rely on white-box access to model parameters, whereas many
+                                         state-of-the-art models (e.g., GPT-5.4 Thinking [OpenAI, 2026], Gemini 3.1 Pro [Google, 2026], and
+                                         Claude Opus 4.7 [Anthropic, 2026]) are only accessible as black-box APIs.
+                                         To bridge this gap, inference-time alignment has recently drawn much attention. Unlike preference-
+                                         based fine-tuning, inference-time alignment modifies the generation process at run time without
+                                         updating model parameters. A popular line of work adopts a sample-and-rank paradigm, of which
+                                         Best-of-N sampling [Stiennon et al., 2020, Nakano et al., 2021, Huang et al., 2025] is the most widely
+                                         used – N candidate responses are drawn for a given prompt and the one with the highest score under
+                                         a reward model is returned. While simple in its nature, Best-of-N alignment is vulnerable to reward
+                                             ∗ Corresponding author.
+
+
+
+
+                                         Preprint.
+hacking: as N grows, the estimated reward of the selected response increases monotonically while its
+true task performance can degrade [Gao et al., 2023, Stroebl et al., 2024, Chow et al., 2024]. This
+phenomenon arises because reward model is at best an imperfect proxy for the true human preference
+distribution, a manifestation of Goodhart’s law.
+Furthermore, most inference-time methods exclusively assume that preferences can be modeled by a
+scalar reward function under the Bradley-Terry model [Bradley and Terry, 1952]. This assumption is
+restrictive: even when individual preferences are transitive, aggregated group-level preferences need
+not be [Munos et al., 2024]. Generalized preference models, which directly specify a probability
+that one response is preferred to another, have recently been studied for fine-tuning in, e.g., Nash
+Learning from Human Feedback (NLHF) [Munos et al., 2024]. To the best of our knowledge, tackling
+generalized preferences remains an open challenge in inference-time methods.
+In this work, we initiate the study of black-box inference-time alignment under generalized pref-
+erences. The preference model P∗ takes two responses y and y ′ conditioned on a prompt x, and
+evaluates the score P∗ (y ≻ y ′ |x) as the probability that a randomly chosen human prefers response y
+over y ′ given prompt x. Then we formulate inference-time alignment with generalized preferences as
+a two-player zero-sum game P∗ (π ≻ π ′ |x) := Ey∼π,y′ ∼π′ P∗ (y ≻ y ′ |x) between row player’s policy
+π and column player’s policy π ′ under the true preference P∗ . However, we do not have access to
+P∗ , and instead, use an imperfect preference model P    b (e.g. one learned from preference data [Jiang
+et al., 2023, Dong et al., 2024, Munos et al., 2024]) to query at inference time. Specifically, we ask
+the following question:
+
+         Given a base policy πref from which we can query responses and an imperfect
+         preference model P,
+                           b can we design an efficient algorithm to approximate the Nash
+         equilibrium at inference time?
+
+1.1   Our Contributions
+
+Prior work has explored Nash-based objectives in the fine-tuning setting [Munos et al., 2024] and
+has separately identified reward hacking as a key vulnerability of inference-time methods like Best-
+of-N [Stroebl et al., 2024, Chow et al., 2024]. We connect these two threads by proposing new
+inference-time methods with general preference models that achieve optimal regret. On the technical
+front, we link the alignment problem to the policy coverage and preference model error, which we
+will define formally in Section 2.
+In particular, our main contributions are the following.
+
+ 1. Best-of-Nash (BoN): We propose Best-of-Nash Alignment method which computes a minimax
+    solution from N samples according to an estimate of the preference matrix P̂. We show that the
+    duality gap of BoN alignment is at most O(ε(x)Cuni (x)) on a given prompt x, where ε(x) is the
+    error in the preference oracle, and Cuni (x) is a measure of data coverage.
+ 2. Nash Mirror Descent (NMD): As a more computationally efficient alternative, we propose
+    Nash Mirror Descent, a self-play algorithm that takes a KL-regularized mirror descent step
+    iteratively. We show that NMD is faster to implement, and the upper bound on the duality gap
+    of NMD is at most O(ε(x)Cuni (x)), matching the exact Best-of-Nash bound.
+ 3. Matching Lower Bound: We then show that the upper bound of BoN and NMD is essentially
+    optimal by constructing problem instances with lower bound at least Ω(ε(x)Cuni (x)).
+ 4. Experimental Evaluation: We evaluate our proposed mechanisms BoN and NMD on three
+    preference datasets: TLDR, HelpSteer2, and UltraFeedback. We show that both methods
+    substantially improve over the SFT base model, and match the win-rate of the fine-tuned alter-
+    native on TLDR. We also show that the win-rates of NMD are robust across the regularization
+    parameter, removing the need for hyperparameter tuning.
+
+1.2   Related Work
+
+Alignment with General Preferences. Azar et al. [2024] initiated the study of general preferences
+in LLM fine-tuning, and proposed an algorithm that maximizes the KL-regularized objective against
+a fixed policy. A subsequent line of works [Munos et al., 2024, Ye et al., 2024, Calandriello et al.,
+
+
+                                                   2
+2024, Rosset et al., 2024, Wu et al., 2024, Zhang et al., 2024, 2025, Swamy et al., 2024, Zhou et al.,
+2025] formulated the alignment problem as a two-player zero-sum game, and proposed fine-tuning
+algorithms to learn the Nash policy. Maura-Rivero et al. [2025] connected this line of works to social
+choice theory, showing that the Nash policy approximates maximal lottery outcomes. A related line
+of work studies alignment when annotators have heterogeneous preferences, which a single reward
+model fails to aggregate [Halpern et al., 2026, Shirali et al., 2026, Gölz et al., 2026].
+Inference-Time Alignment and Reward Hacking. Best-of-N sampling is a popular inference-time
+alignment approach, but it is vulnerable to reward hacking problem [Skalse et al., 2022], when an
+LLM exploits the learned reward model rather than the ground-truth reward. Huang et al. [2025]
+showed that Best-of-N incurs suboptimal regret relative to the problem’s lower bound, and proposed
+a χ2 -regularized algorithm that implements pessimism in the face of uncertainty to close this gap.
+Yu et al. [2026] took a different route, using lower confidence bounds on value estimates to mitigate
+reward hacking. Gui et al. [2024] combined RLHF with Best-of-N sampling to improve fine-tuning,
+however, they are concerned with reward-based setting. Finally, there is inference-time method based
+on search [Khanov et al., 2024, Yao et al., 2023] and rejection sampling [Chen et al., 2024, Shi et al.,
+2024], but these approaches don’t handle general preferences.
+Learning in Zero-sum Games. The central ingredient of our approach is no-regret learning algorithm
+for solving zero-sum games. Freund and Schapire [1999] showed that multiplicative weights update
+has no-regret guarantee. We use Mirror descent algorithm [Nemirovski, 2004, Nesterov, 2009,
+Rakhlin and Sridharan, 2013] for inference-time alignment. Our second algorithm is inspired by the
+optimistic variants of Mirror descent algorithm [Rakhlin and Sridharan, 2013]. Mirror Prox algorithm
+in Nemirovski [2004] is an extragradient type of method and closely related to optimistic MD (with
+similar convergence rate). It queries the gradient twice whereas we use the same gradient twice
+(predicted and current).
+
+2   Preliminary
+Denote X as the prompt space and Y as the response space. We begin with a base policy πref : X →
+∆(Y), where πref (y|x) is the probability that the base policy πref generates a response y given the
+prompt x. We also assume that there exists an unknown true preference oracle P∗ : X ×Y×Y → [0, 1],
+where P∗ (y ≻ y ′ |x) denotes the probability that the population prefers response y to y ′ given a
+prompt x. We assume that the preference model is skew-symmetric:
+                             P∗ (y ≻ y ′ |x) + P∗ (y ′ ≻ y|x) = 1, ∀x, y, y ′ ,
+which implies P∗ (y ≻ y|x) = 1/2. As a proxy, we have access to an imperfect preference oracle
+b : X ×Y ×Y → [0, 1], also assumed skew-symmetric. For a given prompt x, we measure the quality
+P
+              b via the square error with respect to P∗ , where responses are drawn independently from
+of the oracle P
+the base policy πref :
+                                                       b ≻ y ′ |x) − P∗ (y ≻ y ′ |x))2 ].
+                  ε2 (x) := Ey∼π (·|x),y′ ∼π (·|x) [(P(y
+                                 ref         ref
+
+
+Nash Equilibrium and Duality Gap. We formulate the problem as a two-player zero-sum game.
+Given row player’s policy π and column player’s policy π ′ , we denote the expected win-rate as
+                        P∗ (π ≻ π ′ |x) := Ey∼π(·|x),y′ ∼π′ (·|x) [P∗ (y ≻ y ′ |x)].
+Here the row player aims to maximize the win-rate, and the column player aims to minimize the
+win-rate. It is well-known that there exists a Nash Equilibrium (NE) of the game:
+                           π1∗ , π2∗ := argmaxπ1 argminπ2 P∗ (π1 ≻ π2 |x).
+We denote the Nash Equilibrium as π ∗ = π1∗ = π2∗ due to the skew-symmetric nature of P∗ . To
+measure how close a given policy π is to π ∗ , we use the duality gap. It captures the regret of policy
+π as the gap between its strongest adversary and its weakest dominance under the true preference
+model:
+                      DualGap(π) := max P∗ (π1 ≻ π|x) − min P∗ (π ≻ π2 |x)
+                                        π1                     π2
+The duality gap is nonnegative and DualGap(π) = 0 if π = π ∗ . Now given a reference policy πref ,
+                               b and a prompt x ∈ X , our goal is to generate a high-quality policy π̂
+an imperfect preference oracle P,
+with small duality gap:
+                                        DualGap(π̂) ≤ ϵ.
+We say π̂ is an ϵ-approximate Nash policy.
+
+
+                                                   3
+Universal Coverage. Coverage plays a significant role in the analysis of inference-time alignment
+[Huang et al., 2025]. It measures how much a policy, π concentrates probability mass relative to a
+reference policy, πref , upweighting outcomes that are more likely under π. We define the coverage of
+policy π as the ratio of π(y|x) over πref (y|x), where y is sampled from π(·|x):
+                                                                 
+                                      π                  π(y|x)
+                                    C (x) := E                      .
+                                              y∼π(·|x) πref (y|x)
+
+Coverage is closely related to the chi-square divergence: a direct calculation gives
+                                   χ2 (π(·|x), πref (·|x)) = C π (x) − 1,
+where the chi-square divergence is defined as χ2 (π(·|x), π ′ (·|x)) = Ey∼π′ (·|x) [( ππ(y|x)       2
+                                                                                        ′ (y|x) − 1) ]. Thus,
+            π
+we have C (x) ≥ 1 and the equality holds if and only if π(y|x) = πref (y|x) for all y. Inspired by
+literature in offline learning in zero-sum games [Cui and Du, 2022, Zhong et al., 2022, Zhang et al.,
+2023], we also define the universal coverage as the maximum coverage over any policy:
+                                                                     
+                                                             π(y|x)
+                                  Cuni (x) := max E                     .
+                                               π y∼π(·|x) πref (y|x)
+
+
+Intuitively, Cuni (x) captures the difficulty of recovering a Nash policy from samples drawn under πref .
+The two quantities ε(x) and Cuni (x) are the fundamental difficulty of inference-time alignment: no
+algorithm can output a good Nash approximation when the preference oracle P         b has high error or
+when πref poorly covers the response space.
+
+3    The Best-of-Nash Algorithm
+The inference-time Best-of-N alignment method relies on a scalar reward function by drawing N
+samples from policy πref and selecting a single response by taking the argmax under a reward model.
+However, it condenses the preference information into one number and could result in reward hacking.
+We propose an alternative approach, namely Best-of-Nash (Algorithm 1), that retains the sample-and-
+rank structure, but replaces the argmax with an equilibrium computation solely based on preference
+data: instead of picking one response, we output a distribution over the N samples that solves the
+Nash equilibrium of the empirical preference game.
+Formally, given an input x, we draw N candidate responses YbN = (y1 , . . . , yN ) ∼ πref (·|x) i.i.d.
+We then construct a probability matrix by querying P                               b i ≻ yj ) for
+                                                     b on each ordered pair, i.e. P(y
+1 ≤ i ≤ j ≤ N . The Nash equilibrium of the resulting two-player zero-sum game can be computed
+by Linear Programming (LP) [Adler, 2013].
+
+Algorithm 1 Best-of-Nash (BoN) Alignment
+ 1: Input: Prompt x, reference policy πref , preference oracle P,
+                                                               b sample size N .
+ 2: Draw Y
+         bN = (y1 , . . . , yN ) ∼ πref (·|x) i.i.d.
+                b i ≻ yj | x) for all 1 ≤ i < j ≤ N , and set Pbji ← 1 − Pbij , Pbii ← 1 .
+          bij ← P(y
+ 3: Query P                                                                            2
+ 4: Compute a Nash Equilibrium π̂ by solving the linear program
+                                                       N
+                                                       X
+                               max         v   s.t.          π(yj ) Pbji ≥ v   ∀ i ∈ [N ].
+                           π∈∆(Y
+                               bN ), v∈R
+                                                       j=1
+
+ 5: Return π̂.
+
+
+
+We provide the duality gap guarantee for BoN. The bound depends on the two fundamental parameters:
+the preference-oracle error ε(x) and the universal coverage Cuni (x).
+Theorem 1. For any prompt x, the policy π̂ returned by Algorithm 1 satisfies
+                                      DualGap(π̂) ≤ 3ε(x)Cuni (x)
+                 2
+when N ≥ 4 log( ε(x) ) · Cuni (x).
+
+
+                                                       4
+We provide the full proof below, and defer omitted lemmas to Section B.
+
+Proof. We omit the dependence on x for cleanliness. From now on we write S := YN as the candidate
+set, and we write π̂S to denote the dependence on S. By skew-symmetry of the zero-sum game, it
+suffices to upper-bound P∗ (π̃S ≻ π̂S ) − 1/2, where π̃S := δy∗ with y ∗ ∈ arg maxy P∗ (y ≻ π̂S | x).
+The central difficulty is a support mismatch: π̂S is supported on the N sampled responses, while
+π̃S may place mass anywhere in Y. To bridge this, we introduce πR,S , the distribution induced by
+approximate rejection sampling [Block and Polyanskiy, 2023, Huang et al., 2025] of π̃S from πref .
+Specifically, we denote πR,S as the distribution induced by RejectionSamplingN −1,M ( ππ̃ref
+                                                                                          S
+                                                                                             ; πref , x)
+(Algorithm 3) as an approximation to π̃. Then we decompose the probability that
+               P∗ (π̃S ≻ π̂S ) ≤ P∗ (πR,S ≻ π̂S ) + |P∗ (π̃S ≻ π̂S ) − P∗ (πR,S ≻ π̂S )|.
+We bound the first term P∗ (πR,S ≻ π̂S ) ≤ 21 + ε(x)Cuni (x) by Lemma 1. Then we bound the second
+term
+                                              X                        X
+       |P∗ (π̃S ≻ π̂S ) − P∗ (πR,S ≻ π̂S )| ≤     |π̃S (y) − πR,S (y)|   π̂S (y ′ )P∗ (y ≻ y ′ )
+                                                  y                          y′
+                                                  X
+                                              ≤       |π̃S (y) − πR,S (y)|
+                                                  y
+
+                                              ≤ 2DTV (π̃S , πR,S ),
+
+where the total-variation distance is defined as DTV (π, π ′ ) := 12 y |π(y) − π ′ (y)|. Thus, the second
+                                                                    P
+term is reduced to the TV distance between π̃S and πR,S , and then can be bounded due to the fact
+that πR,S is an approximation to π̃S . By Lemma 2, We have
+
+                                   DTV (π̃S , πR,S ) ≤ 14 ε2 (x)Cuni (x)
+                   N −1                       2
+by setting M = log(4/ε 2 (x)) and N ≥ 4 log( ε(x) ) · Cuni (x).
+
+
+By aggregating the bounds for both terms, we derive the upper bound
+                          DualGap(π̂S ) ≤ 2P∗ (π̃S ≻ π̂S ) − 1
+                                          ≤ 2(ε(x)Cuni (x) + 12 ε2 (x)Cuni (x))
+                                          ≤ 3ε(x)Cuni (x).
+For any fixed y, linearity gives
+                         P∗ (y ≻ π̂) = P∗ (y ≻ ES [π̂S ]) = ES [P∗ (y ≻ π̂S )].
+Finally, we take the expectation over the randomness of S:
+                               DualGap = 2 max ES [P∗ (y ≻ π̂S )] − 1
+                                                  y
+
+                                          ≤ 2ES [max P∗ (y ≻ π̂S )] − 1
+                                                      y
+
+                                          = ES [DualGap(π̂S )]
+                                          ≤ 3ε(x)Cuni (x)
+and the proof is complete.
+Remark 1. In Theorem 1 we assume that the LP solution is exact. When Algorithm 1 returns an
+ϵLP -approximation equilibrium, then we have DualGap ≤ 3ε(x)Cuni (x) + 2ϵLP .
+
+4   The Nash Mirror Descent Algorithm
+Best-of-Nash requires solving a linear programming with post-query time O(N 3.5 log(1/ϵ)) via
+interior-point methods. In this section, we propose Nash Mirror Descent (Algorithm 2), a self-play
+algorithm that achieves the same duality gap bound while replacing the LP with a sequence of
+closed-form updates.
+
+
+                                                      5
+Algorithm 2 Nash Mirror Descent Alignment
+ 1: Input: Prompt x, reference policy πref , preference oracle P̂, sample size N , regularization
+      parameter β.
+ 2: Sample N data YN = {y1 , y2 , . . . , yN } i.i.d. from πref (·|x).
+ 3: Initialize π1′ and π1 as the uniform distribution on YN .
+ 4: for t = 1, . . . , T − 1 do
+ 5:                           b ≻ πt |x) = Ey′ ∼π [P(y
+          Calculate r̂t (y) = P(y                     b ≻ y ′ |x)], ∀y ∈ YN .
+                                                   t
+                       ′
+ 6:       Calculate πt+1   = argmaxπ∈∆(YN ) ⟨π, r̂t ⟩ − β · KL(π||πt′ ).
+                                                                    ′
+ 7:       Calculate πt+1 = argmaxπ∈∆(YN ) ⟨π, r̂t ⟩ − β · KL(π||πt+1     ).
+ 8: end for                 PT
+ 9: Calculate π̂(y|x) = T1    t=1 πt (y|x), ∀y ∈ YN .
+10: Return π̂.
+
+
+
+NMD is inspired by Rakhlin and Sridharan [2013] for solving zero-sum games. The algorithm
+maintains two coupled policies: πt and πt′ , both supported on the N sampled responses. At each
+            ′
+iteration, πt+1 takes a mirror-descent step from πt while staying close to πt′ :
+                        ′                    b ≻ πt |x) − β · KL(π, π ′ ),
+                       πt+1 = argmaxπ∈∆(YN ) P(π                     t
+                                                                ′
+and πt+1 takes the same mirror descent step but stays close to πt+1 :
+                                            b ≻ πt |x) − β · KL(π, π ′ ).
+                      πt+1 = argmaxπ∈∆(YN ) P(π                     t+1
+       ′
+Here πt+1   aims to maximize the (estimated) probability that it wins against policy πt , with an
+KL regularization term ensuring staying close to πt′ (KL divergence is defined as KL(π, π ′ ) :=
+P             π(y)
+  y π(y) log( π ′ (y) )). Both updates admit closed-form solutions. Denote r̂t (y) := P(y ≻ πt |x) =
+                                                                                      b
+        b ≻ y ′ |x)], ∀y ∈ YN , we have
+Ey′ ∼π [P(y
+       t
+
+
+
+
+                ′
+                                           X                             X                 π(yi )
+               πt+1 = argmaxπ∈∆(YN )             r̂t (yi )π(yi ) − β ·       π(yi ) log(             ),
+                                             i                           i
+                                                                                           πt′ (yi )
+and the solution is
+                                 ′            π ′ (yi ) exp(r̂t (yi )/β)
+                                πt+1 (yi ) = P t ′                        .
+                                              j πt (yj ) exp(r̂t (yj )/β)
+
+Theorem 2. For any prompt x, by setting β = 2, T = ⌈ 2ε(x)C
+                                                       log N +1/2
+                                                            uni (x)
+                                                                    ⌉, the policy π̂ returned by
+Algorithm 2 has the duality gap
+                                     DualGap(π̂) ≤ 5ε(x)Cuni (x).
+                 2
+when N ≥ 4 log( ε(x) ) · Cuni (x).
+
+We provide a proof sketch below, and defer the whole proof to Section C.
+
+Proof Sketch. The structure parallels the proof of Theorem 1. By the skew-symmetry of the zero-sum
+game, it suffices to upper-bound P∗ (π̃ ≻ π̂) − 1/2, where π̃ := δy∗ with y ∗ ∈ arg maxy P∗ (y ≻ π̂ |
+x). Introducing the rejection-sampling approximation πR , we decompose
+                      P∗ (π̃ ≻ π̂) ≤ P∗ (πR ≻ π̂) + P∗ (π̃ ≻ π̂) − P∗ (πR ≻ π̂) .
+The second term is controlled by the property of approximate rejection sampling, similarly to that in
+Theorem 1. For the first term, we further decompose
+                      P∗ (πR ≻ π̂) ≤ P(π         b R ≻ π̂) − P∗ (πR ≻ π̂) ,
+                                     b R ≻ π̂) + P(π
+bounding the empirical term via the cumulative-regret guarantee of Nash Mirror Descent on the game
+b and the transfer term by Cuni (x)ε(x).
+P,
+Remark 2. Our theory prescribes a specific β = 2. In practice, our experiments (Section 6) show
+that the performance of NMD is empirically robust to the choice of β.
+
+
+                                                      6
+Remark 3 (Comparison of BoN and NMD). Theorem 1 and Theorem 2 give the same duality gap
+bound O(ε(x)Cuni (x)), and both algorithms share the same query complexity: O(N ) samples from
+πref and O(N 2 ) preference queries to P.
+                                       b The two algorithms differ in post-query complexity: BoN
+                                                                 log(N )
+solves an LP in O(N 3.5 log(1/ϵ)) time, while NMD runs T = O( ε(x)C  uni (x)
+                                                                             ) updates of O(N 2 ) each,
+                       2
+                   N log N
+for a total of O( ε(x)C uni (x)
+                                ).
+
+5     Lower Bound
+The upper bounds in Theorems 1 and 2 show that both BoN and NMD achieve duality gap
+O(ε(x)Cuni (x)) with an appropriate choice of parameters. A natural question is whether this rate is
+optimal. In this section, we answer this affirmatively by constructing problem instances on which any
+inference-time algorithm must incur duality gap Ω(ε(x)Cuni (x)).
+Theorem 3. Given a prompt x and K responses {y1 , . . . , yK }, let πref (yi |x) = 1/K for all i ∈ [K].
+                                              √
+For any alignment algorithm A and any ε0 ∈ (0, 2/(3K)], there exist preference oracles P∗ and P      b
+with ε(x) = ε0 such that:
+                               DualGap(A(P))b ≥ ε0 · C√    uni (x)
+                                                                   .
+                                                         2 2
+
+                                       b 1 ≻ yj ) = 1 +δ0 , ∀j ≥ 2, and P(y
+Proof Sketch. We set the construction: P(y                                  b j ≻ yk ) = 1 , ∀j, k ≥ 2
+                                     √                   2                                 2
+for a small value δ0 = ε0 Cuni (x)/(2 2). This makes y1 the dominant strategy under P.   b We assume
+that p := π̂(y1 ). Then we construct two real worlds A and B. In world A, P∗A amplifies y1 ’s margin
+over y2 , keeping y1 dominant. In world B, P∗B flips the (y1 , y2 ) entry so that y2 narrowly beats y1 ,
+making y2 the new dominant strategy. The duality gaps in the two worlds scale as 2(1 − p)δ0 and
+2pδ0 respectively, and the adversary picks the larger. The √  algorithm minimizes the maximum at
+p = 1/2, leaving a duality gap of at least δ0 = ε0 Cuni (x)/(2 2).
+
+The full proof is relegated to Section D.
+Remark 4 (Optimality of BoN and NMD). Combining Theorem 3 with Theorem 1 and Theorem 2
+yields a tight characterization: the optimal duality gap for inference-time alignment with general
+preferences is Θ(ε(x)Cuni (x)), achieved by both of our algorithms.
+Remark 5 (Contrast with reward-based alignment.). The duality gap Ω(ε(x)Cuni (x)) stands in sharp
+contrast to the optimal
+                    p rate for the reward-based inference time alignment, which [Huang et al., 2025]
+show is Θ(εRM (x) C π∗ (x)). Here εRM (x) is the reward model error, and π ∗ is the comparator
+policy. Two structuralpdifferences are notable. First, the coverage dependence is linear in Cuni (x)
+in our setting versus C π∗ (x) in the reward setting. This implies that bad coverage of the base
+policy hurts more when preferences are general than when they are scalar. Second, our relevant
+                                                                                    ∗
+coverage quantity is the universal coverage Cuni (x), not single-policy coverage C π , reflecting that
+inference-time alignment with general preferences is fundamentally harder than its reward-based
+counterpart.
+
+6     Experiments
+We evaluate our proposed alignment algorithms, Best-of-Nash and Nash Mirror Descent, on three
+datasets and study how their performance varies with sample size N , regularization parameter β, and
+the choice of base models and preference models.
+
+6.1   Setup
+
+Datasets and Models. We conduct experiments on three preference datasets that are commonly used
+for training and evaluating LLM alignment: TLDR (text summarization), HelpSteer2 (general-purpose
+helpfulness) [Wang et al., 2024b], and UltraFeedback [Cui et al., 2023] (instruction following). We
+sample 100 prompts for evaluation in each dataset. In our experiments, we consider three supervised
+fine-tuned (SFT) models as base models: LLaMA3-SFT (8B) [Dong et al., 2024], Mistral-Instruct
+
+
+                                                   7
+                               Dataset           Base SFT      BoN      NMD
+                               TLDR                62.9%      73.5%     73.1%
+                               HelpSteer2          44.1%      68.8%     67.8%
+                               UltraFeedback       23.9%      48.8%     46.7%
+
+Table 1: Comparison of expected win-rate (EWR) across three datasets. BoN and NMD sample
+N = 64 responses from LLaMA3-SFT and we use LLaMA3-PM as preference model; β = 1 for
+NMD.
+
+
+(7B), and Gemma-SFT (2B). Two aligned models are selected as our estimate preference oracle, P̂:
+LLaMA3-PM (8B) [Dong et al., 2024] and PairRM (0.4B) [Jiang et al., 2023].
+
+Evaluation. Our headline metric is expected win rate (EWR := win + draw/2). Results in the main
+paper mainly use LLaMA3-SFT as the base model until otherwise stated. We also compare results
+to LLaMA3-DPO (8B), a fine-tuned version of LLaMA3-SFT, to illustrate the performance of our
+algorithm against a model fine-tuned on preference data. We use an LLM as a judge [Zheng et al.,
+2023] since alignment is inherently preference-based, and LLMs provide a scalable and consistent
+proxy for human evaluations of model outputs. Concretely, we compare each generated response
+against a reference answer from the dataset, with judgments produced by DeepSeek-V4-Flash. To
+control positional bias [Zheng et al., 2023, Wang et al., 2024a], we query the judge twice per pair
+with orderings swapped, counting a win/loss only when both orderings agree and a draw otherwise.
+
+6.2    Main Results.
+
+Table 1 presents our headline comparison: BoN and NMD against the SFT base policy across all three
+datasets. Both BoN and NMD outperform the base SFT across all three datasets: both algorithms have
+an improvement of roughly 10% in TLDR, and ≈ 24% in HelpSteer2 and UltraFeedback. BoN and
+NMD have similar expected win-rates on all three datasets, consistent with the theoretical guarantees
+in Theorem 1 and Theorem 2.
+
+Comparison to DPO Figure 1 shows that BoN and NMD match the expected win-rate of LLaMA3-
+DPO with a reasonable number of samples, without any parameter updates. This suggests that careful
+inference-time alignment can substitute for fine-tuning when the preference oracle is sufficiently
+strong.
+
+Sample size N and regularization β. Figure 1a shows BoN’s expected win-rate on TLDR as N
+increases. EWR rises monotonically from 62.9% at N = 1 to 73.5% at N = 64, approaching the
+DPO baseline. This confirms the predicted scaling: with more samples, BoN better approximates the
+Nash equilibrium. Figure 1b shows that NMD’s EWR is flat across β, thus removing the need for
+hyper-parameter tuning.
+
+Preference oracle and base model. We show the effect of the preference model Pb and base model
+πref in Figure 2. The left panel compares LLaMA3-PM (8B) and PairRM (0.4B) as the preference
+oracle with LLaMA3-SFT fixed as the base model: despite the 20 times difference in size, the two
+yield rather similar EWRs on TLDR for both BoN and NMD. The right panel compares the three
+base models with LLaMA3-PM fixed as the preference oracle: Mistral-Instruct attains the highest
+EWR, followed by LLaMA3-SFT, with Gemma-SFT trailing by a clear margin.
+
+Post-query alignment run-time. As we show in Remark 3, BoN and NMD share the same query
+complexity, but differ in post-query computation. Figure 3 compares the post-query time of the
+two algorithms as N grows: BoN scales rapidly with N , while NMD remains nearly flat. This is
+consistent with our time complexity analysis.
+Omitted experiment details and additional experiments are deferred to Section E, including comparing
+our methods against three baseline methods.
+   1 LLaMA3-DPO model was fine-tuned on HelpSteer2 and UltraFeedback, making direct comparison unfair on these
+
+datasets.
+
+
+                                                      8
+                       100     5                                      8.6             5.8                4.2           4.6            4.0                                         100    4.0              4.2               4.2             5.2           6.0              5.2
+                                           16.6         10.2
+
+                        80                                                                    73.10           73.10         74.10          73.50                                   80          74.30            72.90             72.80           73.10                          73.00
+                              41                                           71.50                                                                                                                                                                                72.40
+                                                             68.80
+
+  Expected Rates (%)
+
+
+
+
+                                                                                                                                                             Expected Rates (%)
+                                                62.90
+                        60                                                                                                                                                         60
+
+                        40                                                                                                                                                         40
+                              54
+                                                        47.8          51.6          52.0                 50.4          52.8DPO EWR = 74.5
+                                                                                                                           EWR 51.0                                                     52.6              50.0             49.8            51.4           50.8
+                                                                                                                                                                                                                                                                        DPO EWR = 74.5
+                                                                                                                                                                                                                                                                        EWR51.2
+                        20                 42.4                                                                                                                                    20
+                                                                                                                             Win                                                                                                                                        Win
+                                                                                                                             Draw                                                                                                                                       Draw
+                                                                                                                             Lose                                                                                                                                       Lose
+                         0                 20           21            22               23                24            25             26                                            0
+                              DPO                                                                                                                                                       0.125             0.25              0.5             1              2                4
+                                                               N (Number of samples)                                                                                                                                    (Regularization parameter)
+
+                              (a) BoN with varying sample size N .                                                                                                                  (b) NMD with varying β and fixed N = 64.
+Figure 1: Win/Draw/Lose distribution and expected win-rate (Win + Draw/2) on the TLDR dataset.
+The dashed line indicates the baseline score for LLaMA3-DPO. We use LLaMA3-SFT as the reference
+policy and LLaMA3-PM as the preference oracle P.    b
+
+                                                                                                                                                                                                                                          8.0
+                       100         5.0                          4.0                5.2                          6.2             6.2                                               100    4.0            5.2
+                                                                                                                                                                                                                            26.2          31.9              32.0          33.5
+                        80                                                                                                                                                         80
+                                   41.0                                                                         39.4           40.0
+Expected Rates (%)
+
+
+
+
+                                                                                                                                                           Expected Rates (%)
+                                                               45.0            43.4                                                                                                     45.0           43.4
+                        60                                                                                                                                                         60
+                                                                                                                                                                                                                                                            42.4          43.5
+                        40                                                                                                                                                         40                                       73.8          67.3
+                                   54.0                        51.0            51.4                             54.4           53.8                                                     51.0           51.4
+                        20                                                                                                            Win                                          20                                                                                           Win
+                                                                                                                                      Draw                                                                                                                  25.6          23.1Draw
+                                                                                                                                      Lose                                                                                                                                   Lose
+                         0                                                                                                                                                          0
+                                   DPO                         BoN     NMD                                      BoN      NMD                                                            BoN            NMD                   BoN          NMD                  BoN        NMD
+                              (training)                        Llama3-PM                                          PairRM                                                                Llama3-SFT                        Mistral-Instruct                    Gemma-SFT
+                                                               Inference-time alignment (Llama3-SFT, N=64)                                                                                             Inference-time alignment (PM: Llama3-PM, N=64)
+
+
+Figure 2: Win/Draw/Lose distribution on the TLDR dataset. Left: we compare the Llama3-PM and
+PairRM for preference model, with the base model = LLama3-SFT. Right: we compare LLama3-SFT,
+Mistral-instruct, and Gemma-SFT for base model, with the preference model = LLama3-PM.
+
+
+7                            Conclusion and Limitations
+We initiate the study of inference-time alignment under general preferences, formulating the problem
+as computing a Nash equilibrium of a two-player zero-sum game between policies under an imperfect
+preference oracle. We propose two algorithms, Best-of-Nash (BoN) and Nash Mirror Descent (NMD),
+and prove that both algorithms achieve a duality gap of O(ε(x)Cuni (x)), which we show to be tight
+via a matching lower bound. The two algorithms differ in post-query computation: BoN solves a
+                                                                             N2
+linear programming in O(N 3.5 log(1/ϵ)) time, while NMD requires O( ε(x)C      uni (x)
+                                                                                       log(N )) time.
+Our work has several limitations. First, our theoretical guarantees depend on the quality of preference
+models via ε(x). When P    b is a poor proxy for the true preference P∗ , for example, on prompts that
+fall outside the distribution on which P b is trained, the methods may inherit the biases of P.
+                                                                                             b Second,
+inference-time alignment can only re-weight responses that are reachable under πref . When the base
+
+
+                                                                                                                BoN
+                                                                                                    12          NMD
+
+                                                                                                    10
+                                                                                    Real Time (s)
+
+
+
+
+                                                                                                     8
+
+                                                                                                     6
+
+                                                                                                     4
+
+                                                                                                     2
+                                                                                                                      20                    40                  60                        80                     100
+                                                                                                                                                   N (Sample Size)
+
+                                           Figure 3: Post-query time comparison of BoN and NMD for varying size N .
+
+
+                                                                                                                                                       9
+policy assigns negligible probability to high-quality responses, neither BoN nor NMD can recover
+them, and fine-tuning remains necessary. Lastly, our analysis treats each prompt independently and
+provides per-prompt guarantees, thereby neglecting shared structure across prompts such as similar
+tasks or styles.
+We end this section with a few future directions. Both BoN and NMD require O(N 2 ) pairwise
+queries to P,
+            b which can be a huge query cost; reducing this cost via active selection of pairs is an
+interesting direction. Another direction is to combine our inference-time theory with fine-tuning with
+general preferences. Finally, exploiting structure across prompts could improve sample-efficiency
+beyond the per-prompt rates we establish here.
+
+Acknowledgments
+We thank the anonymous reviewers for their comments and constructive feedback. HH acknowledges
+support from the National Science Foundation, NSF Awards IIS-2144413 and IIS-2107173.
+
+References
+Ilan Adler. The equivalence of linear programs and zero-sum games. International Journal of Game
+   Theory, 42(1):165–177, 2013.
+Anthropic. Introducing Claude Opus 4.7. https://www.anthropic.com/news/claude-opus-4
+ -7, 2026.
+Mohammad Gheshlaghi Azar, Zhaohan Daniel Guo, Bilal Piot, Remi Munos, Mark Rowland, Michal
+ Valko, and Daniele Calandriello. A general theoretical paradigm to understand learning from
+ human preferences. In International Conference on Artificial Intelligence and Statistics, pages
+ 4447–4455. PMLR, 2024.
+Adam Block and Yury Polyanskiy. The sample complexity of approximate rejection sampling with
+  applications to smoothed online learning. In The Thirty Sixth Annual Conference on Learning
+ Theory, pages 228–273. PMLR, 2023.
+Ralph Allan Bradley and Milton E Terry. Rank analysis of incomplete block designs: I. the method
+  of paired comparisons. Biometrika, 39(3/4):324–345, 1952.
+Daniele Calandriello, Daniel Guo, Remi Munos, Mark Rowland, Yunhao Tang, Bernardo Avila Pires,
+  Pierre Harvey Richemond, Charline Le Lan, Michal Valko, Tianqi Liu, et al. Human alignment of
+  large language models through online preference optimisation. arXiv preprint arXiv:2403.08635,
+  2024.
+Ruizhe Chen, Xiaotian Zhang, Meng Luo, Wenhao Chai, and Zuozhu Liu. Pad: Personalized
+  alignment of llms at decoding-time. arXiv preprint arXiv:2410.04070, 2024.
+Yinlam Chow, Guy Tennenholtz, Izzeddin Gur, Vincent Zhuang, Bo Dai, Sridhar Thiagarajan, Craig
+  Boutilier, Rishabh Agarwal, Aviral Kumar, and Aleksandra Faust. Inference-aware fine-tuning for
+  best-of-n sampling in large language models. arXiv preprint arXiv:2412.15287, 2024.
+Paul F Christiano, Jan Leike, Tom Brown, Miljan Martic, Shane Legg, and Dario Amodei. Deep
+  reinforcement learning from human preferences. Advances in neural information processing
+  systems, 30, 2017.
+Ganqu Cui, Lifan Yuan, Ning Ding, Guanming Yao, Wei Zhu, Yuan Ni, Guotong Xie, Zhiyuan Liu,
+  and Maosong Sun. Ultrafeedback: Boosting language models with high-quality feedback, 2023.
+Qiwen Cui and Simon S Du. When are offline two-player zero-sum markov games solvable?
+  Advances in Neural Information Processing Systems, 35:25779–25791, 2022.
+Hanze Dong, Wei Xiong, Bo Pang, Haoxiang Wang, Han Zhao, Yingbo Zhou, Nan Jiang, Doyen
+  Sahoo, Caiming Xiong, and Tong Zhang. Rlhf workflow: From reward modeling to online rlhf.
+  arXiv preprint arXiv:2405.07863, 2024.
+
+
+                                                 10
+Yoav Freund and Robert E Schapire. Adaptive game playing using multiplicative weights. Games
+  and Economic Behavior, 29(1-2):79–103, 1999.
+
+Leo Gao, John Schulman, and Jacob Hilton. Scaling laws for reward model overoptimization. In
+  International Conference on Machine Learning, pages 10835–10866. PMLR, 2023.
+
+Paul Gölz, Nika Haghtalab, and Kunhe Yang. Distortion of ai alignment: Does preference opti-
+  mization optimize for preferences? Advances in Neural Information Processing Systems, 38:
+  25969–26007, 2026.
+
+Google. Gemini 3.1 Pro Model Card. https://storage.googleapis.com/deepmind-media/M
+  odel-Cards/Gemini-3-1-Pro-Model-Card.pdf, 2026.
+
+Lin Gui, Cristina Gârbacea, and Victor Veitch. Bonbon alignment for large language models and
+  the sweetness of best-of-n sampling. Advances in Neural Information Processing Systems, 37:
+  2851–2885, 2024.
+
+Daniel Halpern, Evi Micha, Ariel Procaccia, and Itai Shapira. Pairwise calibrated rewards for
+  pluralistic alignment. Advances in Neural Information Processing Systems, 38:57882–57916,
+  2026.
+
+Audrey Huang, Adam Block, Qinghua Liu, Nan Jiang, Akshay Krishnamurthy, and Dylan J Foster.
+  Is best-of-n the best of them? coverage, scaling, and optimality in inference-time alignment. arXiv
+  preprint arXiv:2503.21878, 2025.
+
+Dongfu Jiang, Xiang Ren, and Bill Yuchen Lin. Llm-blender: Ensembling large language models
+ with pairwise ranking and generative fusion. In Proceedings of the 61st Annual Meeting of the
+ Association for Computational Linguistics (Volume 1: Long Papers), pages 14165–14178, 2023.
+
+Maxim Khanov, Jirayu Burapacheep, and Yixuan Li. Args: Alignment as reward-guided search.
+ arXiv preprint arXiv:2402.01694, 2024.
+
+Roberto-Rafael Maura-Rivero, Marc Lanctot, Francesco Visin, and Kate Larson. Jackpot! alignment
+  as a maximal lottery. arXiv preprint arXiv:2501.19266, 2025.
+
+Rémi Munos, Michal Valko, Daniele Calandriello, Mohammad Gheshlaghi Azar, Mark Rowland,
+  Zhaohan Daniel Guo, Yunhao Tang, Matthieu Geist, Thomas Mesnard, Côme Fiegel, et al. Nash
+  learning from human feedback. In Forty-first International Conference on Machine Learning,
+  2024.
+
+Reiichiro Nakano, Jacob Hilton, Suchir Balaji, Jeff Wu, Long Ouyang, Christina Kim, Christopher
+  Hesse, Shantanu Jain, Vineet Kosaraju, William Saunders, et al. Webgpt: Browser-assisted
+  question-answering with human feedback. arXiv preprint arXiv:2112.09332, 2021.
+
+Arkadi Nemirovski. Prox-method with rate of convergence o (1/t) for variational inequalities with
+  lipschitz continuous monotone operators and smooth convex-concave saddle point problems. SIAM
+  Journal on Optimization, 15(1):229–251, 2004.
+
+Yurii Nesterov. Primal-dual subgradient methods for convex problems. Mathematical programming,
+  120(1):221–259, 2009.
+
+OpenAI. GPT-5.4 Thinking System Card. https://deploymentsafety.openai.com/gpt-5-4
+ -thinking/gpt-5-4-thinking.pdf, 2026.
+
+QwenTeam. Qwen3 technical report, 2025. URL https://arxiv.org/abs/2505.09388.
+
+Rafael Rafailov, Archit Sharma, Eric Mitchell, Christopher D Manning, Stefano Ermon, and Chelsea
+  Finn. Direct preference optimization: Your language model is secretly a reward model. Advances
+  in neural information processing systems, 36:53728–53741, 2023.
+
+Sasha Rakhlin and Karthik Sridharan. Optimization, learning, and games with predictable sequences.
+  Advances in Neural Information Processing Systems, 26, 2013.
+
+
+                                                 11
+Corby Rosset, Ching-An Cheng, Arindam Mitra, Michael Santacroce, Ahmed Awadallah, and
+  Tengyang Xie. Direct nash optimization: Teaching language models to self-improve with general
+  preferences. arXiv preprint arXiv:2404.03715, 2024.
+John Schulman, Filip Wolski, Prafulla Dhariwal, Alec Radford, and Oleg Klimov. Proximal policy
+  optimization algorithms. arXiv preprint arXiv:1707.06347, 2017.
+Zhihong Shao, Peiyi Wang, Qihao Zhu, Runxin Xu, Junxiao Song, Xiao Bi, Haowei Zhang,
+  Mingchuan Zhang, YK Li, Yang Wu, et al. Deepseekmath: Pushing the limits of mathemat-
+  ical reasoning in open language models. arXiv preprint arXiv:2402.03300, 2024.
+Ruizhe Shi, Yifang Chen, Yushi Hu, Alisa Liu, Hannaneh Hajishirzi, Noah A Smith, and Simon S
+  Du. Decoding-time language model alignment with multiple objectives. Advances in Neural
+  Information Processing Systems, 37:48875–48920, 2024.
+Ali Shirali, Arash Nasr-Esfahany, Abdullah Alomar, Parsa Mirtaheri, Rediet Abebe, and Ariel
+  Procaccia. Direct alignment with heterogeneous preferences. Advances in Neural Information
+  Processing Systems, 38:69858–69898, 2026.
+Joar Skalse, Nikolaus Howe, Dmitrii Krasheninnikov, and David Krueger. Defining and characterizing
+  reward gaming. Advances in Neural Information Processing Systems, 35:9460–9471, 2022.
+Nisan Stiennon, Long Ouyang, Jeffrey Wu, Daniel Ziegler, Ryan Lowe, Chelsea Voss, Alec Radford,
+  Dario Amodei, and Paul F Christiano. Learning to summarize with human feedback. Advances in
+  neural information processing systems, 33:3008–3021, 2020.
+Benedikt Stroebl, Sayash Kapoor, and Arvind Narayanan. Inference scaling flaws: The limits of llm
+  resampling with imperfect verifiers. arXiv preprint arXiv:2411.17501, 3(8):14, 2024.
+Gokul Swamy, Christoph Dann, Rahul Kidambi, Zhiwei Steven Wu, and Alekh Agarwal. A minimaxi-
+  malist approach to reinforcement learning from human feedback. arXiv preprint arXiv:2401.04056,
+  2024.
+Peiyi Wang, Lei Li, Liang Chen, Zefan Cai, Dawei Zhu, Binghuai Lin, Yunbo Cao, Lingpeng Kong,
+  Qi Liu, Tianyu Liu, et al. Large language models are not fair evaluators. In Proceedings of the
+  62nd Annual Meeting of the Association for Computational Linguistics (Volume 1: Long Papers),
+  pages 9440–9450, 2024a.
+Zhilin Wang, Alexander Bukharin, Olivier Delalleau, Daniel Egert, Gerald Shen, Jiaqi Zeng, Oleksii
+  Kuchaiev, and Yi Dong. Helpsteer2-preference: Complementing ratings with preferences. arXiv
+  preprint arXiv:2410.01257, 2024b.
+Yue Wu, Zhiqing Sun, Huizhuo Yuan, Kaixuan Ji, Yiming Yang, and Quanquan Gu. Self-play
+  preference optimization for language model alignment. arXiv preprint arXiv:2405.00675, 2024.
+Shunyu Yao, Dian Yu, Jeffrey Zhao, Izhak Shafran, Tom Griffiths, Yuan Cao, and Karthik Narasimhan.
+  Tree of thoughts: Deliberate problem solving with large language models. Advances in neural
+  information processing systems, 36:11809–11822, 2023.
+Chenlu Ye, Wei Xiong, Yuheng Zhang, Nan Jiang, and Tong Zhang. A theoretical analysis of
+  nash learning from human feedback under general kl-regularized preference. arXiv preprint
+  arXiv:2402.07314, 4(5):10, 2024.
+Zhuohao Yu, Zhiwei Steven Wu, and Adam Block. From curiosity to caution: Mitigating reward
+  hacking for best-of-n with pessimism. arXiv preprint arXiv:2604.04648, 2026.
+Yuheng Zhang, Yu Bai, and Nan Jiang. Offline learning in markov games with general function
+  approximation. In International Conference on Machine Learning, pages 40804–40829. PMLR,
+  2023.
+Yuheng Zhang, Dian Yu, Baolin Peng, Linfeng Song, Ye Tian, Mingyue Huo, Nan Jiang, Haitao
+  Mi, and Dong Yu. Iterative nash policy optimization: Aligning llms with general preferences via
+  no-regret learning. arXiv preprint arXiv:2407.00617, 2024.
+
+
+                                               12
+Yuheng Zhang, Dian Yu, Tao Ge, Linfeng Song, Zhichen Zeng, Haitao Mi, Nan Jiang, and Dong Yu.
+  Improving llm general preference alignment via optimistic online mirror descent. arXiv preprint
+  arXiv:2502.16852, 2025.
+Lianmin Zheng, Wei-Lin Chiang, Ying Sheng, Siyuan Zhuang, Zhanghao Wu, Yonghao Zhuang,
+  Zi Lin, Zhuohan Li, Dacheng Li, Eric Xing, et al. Judging llm-as-a-judge with mt-bench and
+  chatbot arena. Advances in neural information processing systems, 36:46595–46623, 2023.
+Han Zhong, Wei Xiong, Jiyuan Tan, Liwei Wang, Tong Zhang, Zhaoran Wang, and Zhuoran Yang.
+  Pessimistic minimax value iteration: Provably efficient equilibrium learning from offline datasets.
+  In International Conference on Machine Learning, pages 27117–27142. PMLR, 2022.
+Runlong Zhou, Maryam Fazel, and Simon S Du. Extragradient preference optimization (egpo):
+  Beyond last-iterate convergence for nash learning from human feedback. arXiv preprint
+  arXiv:2503.08942, 2025.
+
+
+
+
+                                                 13
+A     Rejection Sampling
+
+In this section, we introduce the rejection sampling algorithm (Algorithm 3) [Block and Polyanskiy,
+2023, Huang et al., 2025]. The algorithm draws N samples i.i.d. from    n πref (·|x).
+                                                                                   o For each yi , it
+                                                                              w(yi |x)
+samples a Bernoulli random variable ξi where P(ξi = 1 | yi ) = min              M      ,1   . The algorithm
+returns yi if the Bernoulli random variable ξi = 1. If ξi = 0 for ∀i ∈ [N ], then the algorithm
+randomly samples a response from the reference policy πref .
+The main purpose of the rejection sampling algorithm is to approximate a target policy π(·|x) from
+πref by setting w(·|x) = ππ(·|x)
+                          ref (·|x)
+                                    . In the analysis of this paper, we mainly use the distribution induced
+by rejection sampling as an intermediate step.
+
+Algorithm 3 Rejection Sampling (RejectionSamplingN,M (w; πref , x))
+ 1: Input: Prompt x, base policy πref , importance weight w, truncation level M .
+ 2: Draw = (y1 , . . . , yN , yN +1 ) ∼ πref (· | x) i.i.d.
+ 3: for i = 1 . . . N do                                                     n                  o
+                                                                                      w(yi |x)
+ 4:    Sample Bernoulli random variable ξi such that P(ξi = 1 | yi ) = min              M      ,1
+ 5:    if ξi = 1 then
+ 6:         Return response y = yi .
+ 7:    end if
+ 8: end for
+ 9: Return response y = yN +1 .
+
+
+
+
+B     Omitted Proofs from Section 3
+
+In this section, let YN = {y1 , . . . , yN } denote the candidate set drawn i.i.d. from πref (· | x), let π̂
+be the policy returned by Algorithm 1, and let π̃ = δy∗ with y ∗ ∈ argmaxy∈Y P∗ (y ≻ π̂|x) denote
+a pure best response to π̂ under the true preference. Since the maximum of the linear functional
+π 7→ P∗ (π ≻ π̂|x) is attained at a point mass, we have that DualGap(π̂) = 2P∗ (π̃ ≻ π̂|x) − 1. We
+define πR as the distribution induced by RejectionSamplingN −1,M ππ̃ref ; πref , x run on the same
+candidate set YN . Under this coupling, every branch of Algorithm 3 returns an element of YN , so
+conditionally on YN we have πR | YN ∈ ∆(YN ). We write DTV (π̃, πR |YN ) for the TV distance
+between π̃ and πR given YN .
+Lemma 1. With π̂, π̃, and πR as defined above, we have
+
+                                                      1
+                                  P∗ (πR ≻ π̂|x) ≤      + ε(x)Cuni (x)
+                                                      2
+
+
+Proof. All displays below hold conditionally on YN , and taking expectation over the draw of YN
+at the end yields the stated bound. By the construction, {P(y
+                                                          b i ≻ yj |x)}i∈[N ],j∈[N ] is a two-player
+constant-sum matrix game with domain on the dataset YN = {yi }i∈[N ] ⊆ Y. Since (π̂, π̂) is a Nash
+Equilibrium computed by Algorithm 1, we have
+
+                                                                    b ≻ π ′ ).
+                         (π̂, π̂) = argmaxπ∈∆(YN ) argminπ′ ∈∆(YN ) P(π
+
+Since πR | YN ∈ ∆(YN ), the definition of the Nash equilibrium gives
+
+                 b R ≻ π̂|x) − P(π̂
+                 P(π           b ≻ π̂|x)
+                                                          b ≻ y ′′ |x) − P(y
+                  = EYN Ey∼πR |YN ,y′ ∼π̂|YN ,y′′ ∼π̂|YN [P(y            b ′ ≻ y ′′ |x)]
+                  ≤ 0.
+
+
+                                                    14
+More concretely, given the column player’s policy π̂, the best policy that the row player takes should
+be π̂. On the other hand, conditioned on YN , we calculate that
+|P∗ (πR ≻ π̂|YN ) − P(π
+                     b R ≻ π̂|YN )|
+ ≤ Ey∼π |Y Ey′ ∼π̂|Y |P∗ (y ≻ y ′ |x) − P(y
+         R   N           N
+                                         b ≻ y ′ |x)|
+                      πR (y | YN ) π̂(y ′ |YN ) ∗
+≤ Ey∼πref Ey′ ∼πref [                             |P (y ≻ y ′ |x) − P(y
+                                                                      b ≻ y ′ |x)|]
+                       πref (y|x) πref (y ′ |x)
+  s
+               πR (y|YN ) 2                  π̂(y ′ |YN ) 2
+                                                                q
+≤ Ey∼πref [(                 ) ]Ey′ ∼πref [(                 ) ]  Ey∼πref Ey′ ∼πref [|P∗ (y ≻ y ′ |x) − P(y
+                                                                                                        b ≻ y ′ |x)|2 ]
+                πref (y|x)                   πref (y ′ |x)
+  s                          s
+              πR (y|YN )                π̂(y ′ |YN )
+≤ Ey∼πR [                   ] Ey′ ∼π̂ [                 ] · ε(x)
+               πref (y|x)               πref (y ′ |x)
+≤ Cuni (x)ε(x).
+Combining the above computation, we have
+      P∗ (πR ≻ π̂|x) ≤ EY [P(π
+                            b R ≻ π̂ | YN ) + |P∗ (πR ≻ π̂ | YN ) − P(π
+                                 N
+                                                                    b R ≻ π̂ | YN )|]
+                              b ≻ π̂ | YN ) + |P∗ (πR ≻ π̂ | YN ) − P(π
+                       ≤ EYN [P(π̂                                  b R ≻ π̂ | YN )|]
+                           1
+                       ≤ + EYN [|P∗ (πR ≻ π̂|x) − P(π
+                                                   b R ≻ π̂|x)|]
+                           2
+                           1
+                       ≤ + ε(x)Cuni (x),
+                           2
+and the proof is complete.
+
+
+                                                                N −1
+Lemma 2. With π̃ and πR as defined above with M = log(4/ε          2 (x)) , and any σ(YN )-measurable
+
+policy π̂ ∈ ∆(YN ), we have that
+                                                   1
+                                    DTV (π̃, πR ) ≤ Cuni (x)ε2 (x)
+                                                   4
+                  2
+when N ≥ 4 log( ε(x) ) · Cuni (x). The statement holds for the output of Algorithm 1 and Algorithm 2.
+
+Proof. We omit the dependence on x. First, the condition on N implies N − 1 ≥ 2Cuni log(2/ε) =
+Cuni log(4/ε2 ), i.e. M ≥ Cuni ≥ 1/πref (y) for any y ∈ Y; hence w(y)/M ≤ 1 for all y and the
+acceptance probability in Algorithm 3 is exactly w(y)/M . Since w = π̃/πref is supported on the
+single point y ∗ , only candidates equal to y ∗ can be accepted. Therefore, conditioned on YN , we have
+                                                                      1           ∗
+                       πR |YN = qδyN + (1 − q)δy∗ , q = (1 −               ∗
+                                                                              )m(y ) ,
+                                                                  M πref (y )
+where m(y) = #{i ≤ N − 1 : yi = y}, and consequently DTV (π̃, πR |YN ) ≤ q.
+Then we bound q:
+                                             X               1
+                                        q≤         (1 −              )m(y) .
+                                                          M πref (y)
+                                             y∈Y
+For any fixed y, m(y) ∼ Bin(N − 1, πref (y)), and the probability generating function of the binomial
+gives
+                 1                                      1                  1 N −1
+     E[(1 −             )m(y) ] = (1 − πref (y) ·             )N −1 = (1 −   )    ≤ e−(N −1)/M .
+             M πref (y)                           M πref (y)               M
+By the definition of Cuni (x) we have Cuni (x) ≥ πref1(y) for any y, which along with y πref (y) = 1
+                                                                                     P
+                                               N −1
+implies |Y| ≤ Cuni . By substituting M = log(4/ε    2 ) , we bound
+
+                                       DTV (π̃, πR ) ≤ E[q]
+                                                      ≤ Cuni e−(N −1)/M
+                                                                 ε2
+                                                      ≤ Cuni ·      .
+                                                                 4
+
+
+                                                          15
+Then we take the expectation on YN and derive the desired result.
+
+C    Omitted Proofs from Section 4
+The following technical lemma takes the result from optimistic mirror descent literature [Rakhlin and
+Sridharan, 2013] that studies the general Bregman divergence. The KL divergence can be written by
+the Bregman divergence property:
+                    KL(π∥π ′ ) = Dψ (π, π ′ ) = ψ(π) − ψ(π ′ ) − ⟨∇ψ(π ′ ), π − π ′ ⟩,
+                P
+where ψ(π) =       y π(y) log π(y).
+Lemma 3 (Corollary of Lemma 1 in Rakhlin and Sridharan [2013]). Denote πt and r̂t as is computed
+in Algorithm 2. For any π ′ ∈ ∆(YN ), we have that
+          T                                             T                        T
+         X                                           1X                       βX
+             ⟨π ′ − πt , r̂t ⟩ ≤ β · KL(π ′ ∥π1′ ) +       ∥r̂t − r̂t−1 ∥2∞ −       ∥πt − πt−1 ∥21 .
+         t=1
+                                                     β t=1
+                                                                              4 t=2
+
+In the following, we provide a technical lemma that quantifies the samples required to compute an
+approximate Nash policy under the zero-sum matrix game P.b
+                                T
+Lemma 4. Denote π̂ = T1 t=1 πt as the policy returned by Algorithm 2. Given data size N
+                             P
+and a sufficiently small value ϵ > 0, we set β = 2 and T = ⌈(2 log N + 1/2)/ϵ⌉. Then for any
+π ′ ∈ ∆(YN ), we have
+                                       b ′ ≻ π̂) ≤ 1 + ϵ.
+                                       P(π
+                                                     2
+                                              PT                             ′
+Proof. Define r̂0 := 0. Recall that π̂ = T1      t=1 πt . For any policy π       ∈ ∆(YN ), we have that
+                                        T
+                         b ′ ≻ π̂) = 1
+                                       X
+                         P(π               b ′ ≻ πt )
+                                           P(π
+                                     T t=1
+                                                T
+                                          1   1 Xb ′
+                                      ≤     +     [P(π ≻ πt ) − P(π
+                                                                b t ≻ πt )]
+                                          2 T t=1
+                                               T
+                                          1   1X ′
+                                      ≤     +     ⟨π − πt , r̂t ⟩.
+                                          2 T t=1
+
+Note that for any π ′ ∈ ∆(YN ) and π1′ is a uniform distribution on YN , we have
+                                       KL(π ′ ∥π1′ ) ≤ log(N ).
+For t ≥ 2, we have |r̂t (y) − r̂t−1 (y)| = | y′ P̂ (y ≻ y ′ )(πt (y ′ ) − πt−1 (y ′ ))| ≤ ∥πt − πt−1 ∥1 .
+                                            P
+Substituting into Lemma 3, for any β ≥ 2:
+
+      T
+      X                                               T
+                                                      X
+          ′                                 2       β
+                                    1            1
+        ⟨π − πt , r̂t ⟩ ≤ β log N + β ∥r̂1 ∥∞ + β − 4    ∥πt − πt−1 ∥21 ≤ β log N + β1
+       t=1                                                        t=2
+
+where the last inequality holds because ∥r̂1 ∥∞ ≤ 1 and, for any β ≥ 2, β1 − β4 ≤ 0. Setting β = 2
+and T = ⌈(2 log N + 1/2)/ϵ⌉ yields
+
+                                                      T
+                                                      X
+                            P̂ (π ′ ≻ π̂) ≤ 12 + T1     ⟨π ′ − πt , r̂t ⟩ ≤ 12 + ϵ
+                                                      t=1
+
+        ′
+for all π ∈ ∆(YN ).
+
+
+
+                                                      16
+With the above technical lemma, we can finally show the duality gap bound for NMD.
+Theorem 2. For any prompt x, by setting β = 2, T = ⌈ 2ε(x)C
+                                                       log N +1/2
+                                                            uni (x)
+                                                                    ⌉, the policy π̂ returned by
+Algorithm 2 has the duality gap
+                                      DualGap(π̂) ≤ 5ε(x)Cuni (x).
+                 2
+when N ≥ 4 log( ε(x) ) · Cuni (x).
+
+Proof. First fix data size N . For any π ∈ ∆(YN ), we have that
+                          P∗ (π ≻ π̂) ≤ P(π        b ≻ π̂) − P∗ (π ≻ π̂)|
+                                        b ≻ π̂) + |P(π
+                                      ≤ P(π
+                                        b ≻ π̂) + Cuni (x)ε(x)
+                                     1
+                                       ≤+ 2Cuni (x)ε(x).
+                                     2
+Here the third line follows from Lemma 4, and the second line is the same computation as in Lemma 1
+so we omit the details.
+Let π̃ = δy∗ be a pure best response to π̂ and πR the coupled rejection-sampling law, both as defined
+at the head of Appendix B. Conditioned on YN ,
+            P∗ (π̃ ≻ π̂|YN ) ≤ P∗ (πR ≻ π̂|YN ) + |P∗ (πR ≻ π̂|YN ) − P∗ (π̃ ≻ π̂|YN )|
+                             ≤ P∗ (πR ≻ π̂ | YN ) + 2 DTV (π̃, πR |YN )
+                               1
+                             ≤ + 2Cuni (x)ε(x) + 2 DTV (π̃, πR |YN ),
+                               2
+where the last inequality applies the first display of this proof to the policy πR | YN ∈ ∆(YN ).
+                                                                    N −1
+Taking expectation over YN and applying Lemma 2 with M = log(4/ε        2 (x)) ,
+
+
+          P∗ (π̃ ≻ π̂ | YN ) ≤ 21 + 2Cuni (x)ε(x) + 12 Cuni (x)ε2 (x) ≤ 12 + 25 Cuni (x)ε(x),
+and hence DualGap(π̂) = 2 E[P∗ (π̃ ≻ π̂ | YN )] − 1 ≤ 5ε(x)Cuni (x).
+
+D    Omitted Proofs from Section 5
+Theorem 3. Given a prompt x and K responses {y1 , . . . , yK }, let πref (yi |x) = 1/K for all i ∈ [K].
+                                              √
+For any alignment algorithm A and any ε0 ∈ (0, 2/(3K)], there exist preference oracles P∗ and P      b
+with ε(x) = ε0 such that:
+                               DualGap(A(P))b ≥ ε0 · C√    uni (x)
+                                                                   .
+                                                         2 2
+                        √
+Proof. Set δ0 := ε0 K/(2 2) ≤ 1/6 by the assumption on ε0 . Define the imperfect oracle:
+     b 1 ≻ yj ) = 1 + δ0
+     P(y                         for all K ≥ j ≥ 2,          b j ≻ yk ) = 1
+                                                             P(y                 for all K ≥ j, k ≥ 2.
+                  2                                                       2
+
+Response y1 is the unique dominant strategy by P.
+                                               b Now write
+
+                                           π̂(y1 ) = p, π̂(y2 ) = q,
+for some p, q ∈ [0, 1].
+In the following, we construct two true preference oracles in two worlds A and B. In the world A,
+P∗A agrees with P
+                b except
+
+                      P∗A (y1 ≻ y2 ) = 12 + 3δ0 ,           P∗A (y2 ≻ y1 ) = 12 − 3δ0 .
+
+In the world B, P∗B agrees with P
+                                b except
+
+                          P∗B (y1 ≻ y2 ) = 12 − δ0 ,        P∗B (y2 ≻ y1 ) = 21 + δ0 .
+Since δ0 ≤ 1/6, both PA∗ and PB∗ take values in [0, 1].
+
+
+                                                       17
+Now we compute the oracle quality ε2A (x) and ε2B (x):
+                                                         8δ02
+                                   ε2A (x) = ε2B (x) =        = ε20 .
+                                                         K2
+In World A, y1 remains strictly dominant, so we compute:
+                              p     1                      1        1
+            P∗A (y1 ≻ π̂) =     + q( + 3δ0 ) + (1 − p − q)( + δ0 ) ≥ + (1 − p)δ0 .
+                              2     2                      2        2
+Therefore, we lower bound the duality gap in world A:
+                        DualGapA (π̂) ≥ 2P∗A (y1 ≻ π̂) − 1 ≥ 2(1 − p)δ0 .
+In World B, y2 beats y1 by margin δ0 , while y2 ties with yj for j ≥ 3, thus y2 is dominant. So we
+compute
+                                    1           q                  1    1
+                  P∗B (y2 ≻ π̂) = p( + δ0 ) + + (1 − p − q) · = + pδ0 .
+                                    2           2                  2    2
+Therefore, we lower bound the duality gap in world B:
+                           DualGapB (π̂) ≥ 2P∗B (y2 ≻ π̂) − 1 ≥ 2pδ0 .
+The adversary selects the world that is worse for the algorithm:
+                                                                 
+                              DualGap(π̂) ≥ max 2(1 − p)δ0 , 2pδ0 .
+The algorithm minimizes this by setting p = 1/2, yielding:
+                                                  ε0 K ε0 Cuni
+                                DualGap(π̂) ≥ δ0 = √ = √
+                                                  2 2   2 2
+since Cuni (x) = K.
+
+E     Additional Empirical Results
+E.1   Further Experimental Details
+
+All win/draw/lose judgments are produced by DeepSeek-V4-Flash (temperature = 0, at most 4 output
+tokens). The verbatim prompt given to the judge:
+         System: You are an impartial expert judge evaluating the quality
+         of two AI assistant responses to the same user prompt. Judge which
+         response better follows the user’s instructions and is more helpful,
+         correct, coherent and appropriately detailed for the request. Do
+         not let the length of a response, the order in which the responses
+         are presented, or stylistic flourishes bias your decision. Output
+         exactly one character: ’A’ if Response A is better, or ’B’ if
+         Response B is better. Do not output anything else.
+
+        User:
+        [User Prompt]
+        {prompt}
+        [Response A]
+        {a}
+        [Response B]
+        {b}
+         Which response is better?       Answer with a single letter:       A or B.
+
+E.2   Additional Experiments
+
+In this section, We compare our methods against three baselines: Borda Best-of-N , standard reward-
+based Best-of-N , and a fine-tuned Nash-MD-PG model [Munos et al., 2024].
+
+
+                                                 18
+                      Dataset              Base SFT    Best-of-Nash    Borda Best-of-N
+                      TLDR                     62.9%        73.5%           72.5%
+                      HelpSteer2               44.1%        68.8%           67.9%
+                      UltraFeedback            23.9%        48.8%           45.7 %
+Table 2: Comparison of expected win-rate (EWR) across three datasets. Best-of-Nash and Borda
+Best-of-N sample N = 64 responses from LLaMA3-SFT and we use LLaMA3-PM as preference
+model.
+
+
+Algorithm 4 Borda Best-of-N
+ 1: Input: Prompt x, reference policy πref , preference oracle P,
+                                                               b sample size N .
+ 2: Draw Y
+         bN = (y1 , . . . , yN ) ∼ πref (·|x) i.i.d.
+                b i ≻ yj | x) for all 1 ≤ i < j ≤ N , and set Pbji ← 1 − Pbij , Pbii ← 1 .
+          bij ← P(y
+ 3: Query P                                                                            2
+ 4: Compute the Borda score for each response:
+
+                                                    1 Xb
+                                      r̂(yi ) ←        Pij ,        ∀ i ∈ [N ].
+                                                  N −1
+                                                        j̸=i
+
+           b ← arg maxy∈Yb
+ 5: Return y
+                                  N
+                                      r̂(y).
+
+
+A New Borda Best-of-N Baseline. To control the oracle strength, we propose a Borda Best-of-N
+method under the same preference oracle, shown in Algorithm 4. We report the result in Table 2. We
+find that Borda Best-of-N attains win-rates close to Best-of-Nash and NMD across all three datasets.
+To understand this, we ran a diagnostic on the dataset: in 73.8% of N = 64 sub-samples, the Borda
+winner is a Condorcet winner of the empirical preference matrix—it beats every other candidate
+pairwise—in which case the Nash equilibrium of the sub-game is exactly the pure strategy on that
+response, so all three methods return the same response. The agreement is thus a structural property
+of the data rather than evidence that the equilibrium computation is redundant. On the remaining
+non-Condorcet sub-samples, argmax-style rules carry no guarantee.
+
+Standard Best-of-N. We implement the standard Best-of-N method under a fine-tuned Bradley–
+Terry reward model. We train the reward model and a pairwise preference model under an identical
+protocol, differing only in architecture: both fine-tune the same backbone (Qwen3-4B-Instruct-
+2507 [QwenTeam, 2025]) with a six-criterion linear head on the same HelpSteer2 training pairs. we
+draw N = 128 candidates per prompt from the base policy (LLaMA3-SFT, temperature 1.0) and
+compare three selectors: base SFT, Best-of-N under the Bradley-Terry reward, and Best-of-Nash
+under the pairwise preference matrix. We report the expected win rate (EWR) against the prompt’s
+human-preferred response, following the protocol of Section 6. Table 3 reports the results: both
+methods improve over the base policy by 17–21 percent, confirming that a well-trained oracle of
+either form provides a strong selection signal. Best-of-Nash attains a 4.0% higher win rate than
+reward-based Best-of-N.
+
+                       Selector                                     Expected win rate
+                   Base policy (random candidate)             47.0%
+                   Best-of-N (Bradley–Terry reward)           64.0%
+                   Best-of-Nash (pairwise preference)        68.0%
+      Table 3: Comparison of Best-of-N and Best-of-Nash on held-out HelpSteer 2 prompts.
+
+
+A Fine-tuned Nash-MD Baseline. Finally, we compare our methods against fine-tuning with
+general preferences: we fine-tune the base policy with Nash-MD-PG method [Munos et al., 2024]
+on HelpSteer2 and evaluate it against Best-of-Nash and NMD applied to the same base policy at
+inference time. We use Qwen3-0.6B as the base policy and LLaMA3-PM as the preference model. For
+the Nash-MD-PG method, we train the total of 1 epoch with learning rate of 2e-6, KL regularization
+
+
+                                                       19
+                      Method                     Win      Draw      Lose     EWR
+                      Base policy               13.0%     42.3%    44.7%    34.2%
+                      Nash-MD (fine-tuned)      14.0%     55.0%    31.0%    41.5%
+                      Best-of-Nash (N = 64)     29.0%     43.0%    28.0%    50.5%
+                      NMD (N = 64, β = 1)       33.0%     38.0%    29.0%    52.0%
+Table 4: Comparison of Best-of-Nash, NMD, and a fine-tuned Nash-MD on HelpSteer2. Best-of-Nash
+and NMD sample N = 64 responses from Qwen3-0.6B and we use LLaMA3-PM as preference
+model.
+
+
+
+coefficient of 0.01, a mixture coefficient of 0.5, and temperature 0.7. We report the result in Table 4.
+Fine-tuned Nash-MD-PG improves over the base policy (40.5% vs. 34.2% EWR), while Best-of-
+Nash and NMD—using the same preference model and no parameter updates—improve substantially
+further (50.5% and 52.0%). Notably, Nash-MD’s gain comes largely from converting losses into
+draws (a 59.0% draw rate vs. 42.3% for the base) while its outright win rate does not increase,
+whereas Best-of-Nash and NMD raise the win rate itself. At this model scale and training budget,
+inference-time equilibrium computation thus extracts more from the same preference model than
+fine-tuning on it. Thus, we read this as evidence that our methods are a strong training-free alternative.
+
+
+
+
+                                                   20
+
