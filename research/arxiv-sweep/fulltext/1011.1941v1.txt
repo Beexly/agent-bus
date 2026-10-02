@@ -1,0 +1,764 @@
+                                       An Optimization-Based Framework for Automated Market-Making
+                                                   Jacob Abernethy                                         Yiling Chen
+                                                  EECS Department                           School of Engineering and Applied Sciences
+                                           University of California, Berkeley                           Harvard University
+                                                jake@cs.berkeley.edu                                   yiling@eecs.harvard.edu
+arXiv:1011.1941v1 [cs.GT] 8 Nov 2010
+
+
+
+
+                                                                            Jennifer Wortman Vaughan
+                                                                           Computer Science Department
+                                                                        University of California, Los Angeles
+                                                                                   jenn@cs.ucla.edu
+
+
+
+                                                                                           Abstract
+                                               Building on ideas from online convex optimization, we propose a general framework for the design
+                                          of efficient securities markets over very large outcome spaces. The challenge here is computational.
+                                          In a complete market, in which one security is offered for each outcome, the market institution can
+                                          not efficiently keep track of the transaction history or calculate security prices when the outcome space
+                                          is large. The natural solution is to restrict the space of securities to be much smaller than the outcome
+                                          space in such a way that securities can be priced efficiently. Recent research has focused on searching for
+                                          spaces of securities that can be priced efficiently by existing market mechanisms designed for operating
+                                          complete markets. While there have been some successes, much of this research has led to hardness
+                                          results.
+                                               In this paper, we take a drastically different approach. We start with an arbitrary space of securities
+                                          with bounded payoff, and establish a framework to design markets tailored to this space. We prove that
+                                          any market satisfying a set of intuitive conditions must price securities via a convex potential function
+                                          and that the space of reachable prices must be precisely the convex hull of the security payoffs. We
+                                          then show how the convex potential function can be defined in terms of an optimization over the convex
+                                          hull of the security payoffs. The optimal solution to the optimization problem gives the security prices.
+                                          Using this framework, we provide an efficient market for predicting the landing location of an object on
+                                          a sphere. In addition, we show that we can relax our “no-arbitrage” condition to design a new efficient
+                                          market maker for pair betting, which is known to be #P-hard to price using existing mechanisms. This
+                                          relaxation also allows the market maker to charge transaction fees so that the depth of the market can be
+                                          dynamically increased as the number of trades increases.
+
+
+
+
+                                                                                               1
+1 Introduction
+Securities markets play a fundamental role in economics and finance. A securities market offers a set of
+contingent securities whose payoffs each depend on the future state of the world. For example, an Arrow-
+Debreu security pays $1 if a particular state of the world is reached and $0 otherwise [2, 3]. Consider an
+Arrow-Debreu security that will pay off in the event that a category 4 or higher hurricane passes through
+Florida in 2011. A Florida resident who is worried about his home being damaged might buy this security as
+a form of insurance to hedge his risk; if there is a hurricane powerful enough to damage his home, he will be
+compensated. Additionally, a risk neutral trader who has reason to believe that the probability of a category
+4 or higher hurricane landing in Florida in 2011 is p should be willing to buy this security at any price
+below p (or sell it at any price above p) to capitalize his information. For this reason, the market price of the
+security can be viewed as the traders’ collective estimate of how likely it is that a powerful hurricane will
+occur. Securities markets thus have dual functions: risk allocation and information aggregation. Insurance
+contracts, options, futures, and many other financial derivatives are examples of contingent securities.
+     A prediction market is a securities market primarily focused on information aggregation. For a future
+event with n mutually exclusive and exhaustive possible outcomes, a typical prediction market offers n
+Arrow-Debreu securities, each corresponding to a particular outcome. The prices of these securities form
+a probability distribution over the outcome space of the event, and can be viewed as the traders’ collective
+estimate of the likelihood of each outcome. Market-based probability estimates have proved to be accurate
+in a variety of domains including business, entertainment, and politics [4, 18, 25].
+     Denote a set of mutually exclusive and exhaustive states of the world as O. A securities market is com-
+plete if there are |O| − 1 linearly independent securities [2, 3, 19]. For example, a prediction market with
+n Arrow-Debreu securities for an n-outcome event is complete. With a complete securities market, any
+desired future payoff over the state space can be constructed by linearly combining these securities, which
+allows a trader to hedge any possible risk he may have. Furthermore, traders can change the market prices to
+reflect any valid probability distribution over the state space, allowing them to reveal any information. Com-
+pleteness therefore provides expressiveness for both risk allocation and information aggregation, making it
+a desirable property. However, completeness is not always achievable.
+     In many real-world settings, the state space can be exponentially large or infinite. For instance, a com-
+petition among n candidates results in a state space of n! rank orders, while the future price of a stock has
+an infinite state space. In such situations, operating a complete securities market is not practical due to the
+notorious difficulties that humans have estimating small probabilities and the computational intractability of
+managing a large security set. It is natural to offer a smaller set of structured securities instead. For example,
+instead of having one security for each rank ordering, pair betting allows securities of the form “$1 if candi-
+date A beats candidate B”. There has been a surge of recent research examining the tractability of running
+standard prediction market mechanisms (such as the popular Logarithmic Market Scoring Rule (LMSR)
+market maker [14]) over combinatorial state spaces by limiting the space of available securities [22]. While
+this line of research has led to a few positive results [10, 13], it has led more often to hardness results [9] or
+to markets with undesirable properties such as unbounded loss of the market institution [11].
+     In this paper, we propose a general framework to design automated market makers for securities markets.
+An automated market maker is a market institution who sets prices for each security and is always willing
+to accept trades at these prices. Unlike previous research aimed at finding a space of securities that can be
+efficiently priced using an existing market maker like LMSR, we start with an arbitrary space of securities
+and design a new market maker tailored to this space. Our framework is therefore extremely general. Both
+LMSR and Quad-SCPM [1] also fall under our framework.
+     We take an axiomatic approach. Given a space of securities with bounded payoff, we define a set of
+intuitive conditions that a reasonable market maker should satisfy. We prove that a market maker satisfying
+these conditions must price securities via a convex potential function, and that the space of reachable security
+
+                                                        2
+prices must be precisely the convex hull of the security payoffs. We then incorporate ideas from online
+convex optimization [16, 23] to define a convex cost function in terms of an optimization over the convex
+hull of the security payoffs. The optimal solution to the optimization problem gives the security prices. With
+this framework, we provide an efficient market for predicting the landing location of an object on a sphere.
+     We then show that we can relax our “no-arbitrage” condition to design a new efficient market maker for
+pair betting, which is known to be #P-hard to price using LMSR [9]. This relaxation also allows the market
+maker to charge transaction fees so that the depth of the market can be dynamically increased as the number
+of trades increases, a desirable property that the extension of LMSR recently proposed by Othman et al. [21]
+was specifically designed to satisfy.
+
+Preliminaries and Related Work: A simple cost function based market maker [7, 8, 14, 15] offers |O|
+Arrow-Debreu securities, each corresponding to a potential outcome of an event. The market maker deter-
+mines how much each security should cost using a differentiable cost function, C : R|O| → R, which is
+simply a potential function specifying the amount of money currently wagered in the market as a function
+of the number of shares of each security that have been purchased. If qo is the number of shares of security
+o currently held by traders, and a trader would like to purchase a bundle of ro shares for each security o ∈ O
+(where some ro could be zero or even negative, representing a sale), the trader must pay C(q + r) − C(q)
+to the market maker. The instantaneous price of security o (that is, the price per share of an infinitely small
+portion of a security) is then ∂C(q)/∂qo , and is denoted po (q).
+     The market designer is free to choose any differentiable cost function C that satisfies a few basic prop-
+erties. First, it must be the case that for every o ∈ O and every q ∈ R|O| , po (q) ≥ 0. This ensures that
+the price of a security is never negative.PSecond, if the market designer wishes to prevent arbitrage, it must
+be the case that for every q ∈ R|O| , o∈O po (q) = 1. That is, the sum of the instantaneous prices of
+the securities must always be 1. If the prices summed to something less than (respectively, greater than)
+1, then a trader could purchase (respectively, sell) small equal quantities of each security for a guaranteed
+profit.1 These conditions ensure that the current prices can always be viewed as a probability distribution
+over the outcome space. One example of a cost function based market that has received considerable atten-
+tion is Hanson’s PLogarithmic    Market Scoring Rule (LMSR) [7, 14, 15]. The cost function of the LMSR is
+                         q o /b
+C(q) = b log o∈O e , where b > 0 is a parameter of the market controlling the rate at which prices
+change. The corresponding price function for each security o is po (q) = ∂C(q)/∂qo = eqo /b / o′ ∈O eqo′ /b .
+                                                                                                      P
+     When |O| is large or infinite, calculating the cost of a purchase becomes intractable in general. Recent
+research has focused on restricting the allowable securities over a combinatorial outcome space and examin-
+ing whether LMSR prices can be computed efficiently in the restricted space. If the outcome space contains
+n! rank orders of n competing candidates, it is #P-hard for LMSR to price pair bets (e.g., “$1 if and only
+if candidate A beats candidate B”) or subset bets (e.g., “$1 if one of the candidates in subset C finishes at
+position k”) [9]. If the outcome space contains 2n Boolean values of n binary base events, it is #P-hard
+for LMSR to price securities on conjunctions of any two base events (e.g., “$1 if and only if a Democrat
+wins Florida and Ohio”) [9]. This line of research has led to some positive results when the uncertain event
+enforces particular structure on the outcome space. In particular, for a single-elimination tournament of n
+teams, securities such as “$1 if and only if team A wins a kth round game” and “$1 if and only if team A
+beats team B given they face off” can be priced efficiently in LMSR [10]. For a taxonomy tree on some
+statistic where the value of the statistic of a parent node is the sum of those of its children, securities such as
+“$1 if and only if the value of the statistic at node A belongs to [x, y]” can be priced efficiently in LMSR [13].
+     Our paper takes a drastically different approach. Instead of searching for supportable spaces of secu-
+rities for existing market makers, we design new market makers tailored to any security space of interest.
+   1                                                                      P
+    Othman et al. [21] recently analyzed a variation of LMSR in which         o∈O po (q) ≥ 1, violating this no-arbitrage condition.
+We also explore relaxations of the no-arbitrage condition in Section 3.
+
+
+
+                                                              3
+Additionally, rather than requiring that securities have a fixed $1 payoff when the underlying event happens,
+we allow more general contingent securities with arbitrary efficiently computable and bounded payoffs.
+     This research builds upon ideas from our earlier work [8] exploring the striking mathematical connec-
+tions between complete cost function based prediction markets and no-regret learning. In that work, we
+first showed that any complete cost function based prediction market can be interpreted as an algorithm for
+learning from expert advice by equating the set of outcomes or states of the world with the set of experts
+in the learning setting, and equating trades made in the market with expert losses. Furthermore,
+                                                                                           √      we showed
+that if the loss of the market maker is bounded, this bound can be used to derive an O( T ) regret bound
+for the corresponding learning algorithm. That work focused entirely on complete markets, while here we
+explore how to use these connections to design new market making mechanisms for broader security spaces.
+
+
+2 A New Framework for Market-Making Over Complex Security Spaces
+In the complete cost function based markets described above, the market maker offers an Arrow-Debreu
+security corresponding to each potential state of the world. We consider a market-design scenario where the
+state space O could potentially be quite large, or even infinite, making it infeasible to run such a market.
+Instead, we allow the market maker to offer a menu of K securities for some reasonably-sized K, with
+the payoff of each security described by an arbitrary but efficiently-computable function ρ : O → RK        +.
+Specifically, if a trader purchases a share of security i and the outcome is o, then the trader is paid ρi (o).
+We call such security spaces complex. A complex security space reduces to the complete security space if
+K = |O| and for each i ∈ {1, · · · , K}, ρi (o) = 1 if and only if o is the ith outcome. We consider traders
+that purchase security bundles r ∈ RK , and say that the payoff for r upon outcome o is exactly ρ(o) · r,
+where ρ(o) denotes the vector of payoffs for each security for outcome o. Let ρ(O) = {ρ(o)|o ∈ O}.
+    We do not presuppose a cost function based market. However, in Section 2.1, we show that the use of
+a convex potential function is necessary given some minor assumptions. In Section 2.2, we go on to show
+how to design an appropriate cost function by employing techniques from online convex optimization.
+
+2.1 Imposing Some Natural Restrictions on the Market Maker
+In this section we introduce a sequence of conditions or axioms that one might expect a market to satisfy, and
+show that these conditions lead to some natural mathematical restrictions on the costs of security bundles.
+(We consider relaxations of these conditions in Section 3.) Similar conditions were suggested for complete
+markets by Chen and Vaughan [8], who defined the notion of a valid cost function, and by Othman et al. [21],
+who discussed properties similar to our notions of path independence and expressiveness, among others.
+     Imagine a sequence of traders entering the marketplace and purchasing security bundles. Let
+r1 , r2 , r3 , . . . be the sequence of security bundles purchased. After t − 1 such purchases, the tth trader
+should be able to enter the marketplace and query the market maker for the cost of arbitrary bundles. The
+market maker must be able to furnish a cost Cost(r|r1 , . . . , rt−1 ) for any bundle r. If the trader chooses
+to purchase rt at a cost of Cost(rt |r1 , . . . , rt−1 ), the market maker may update the costs of each bundle
+accordingly. Our first condition requires that the cost of acquiring a bundle r must be the same regardless of
+how the trader splits up the purchase.
+
+Condition 1 (Path Independence). For any r, r′ , and r′′ such that r = r′ + r′′ , for any r1 , . . . , rt ,
+Cost(r|r1 , . . . , rt ) = Cost(r′ |r1 , . . . , rt ) + Cost(r′′ |r1 , . . . , rt , r′ ).
+
+     It turns out that this condition alone implies that prices can be represented by a cost function C, as
+illustrated in the following theorem. The proof is by induction on t.2
+  2
+      All omitted proofs appear in the appendix.
+
+
+                                                      4
+Theorem 1. Under Condition 1, there exists a cost function C : RK → R such that we may always write
+Cost(rt |r1 , . . . , rt−1 ) = C(r1 + . . . + rt−1 + rt ) − C(r1 + . . . + rt−1 ).
+
+    With this in mind, we drop the cumbersome Cost(r|r1 , . . . , rt ) notation from now on, and write the cost
+of a bundle r as C(q + r) − C(q), where q = r1 + . . . + rt is the vector of previous purchases.
+    Now, recall that one of the functions of a securities market is to aggregate traders’ beliefs into an ac-
+curate prediction. Each trader may have his own (potentially secret) information about the future, which
+we represent as a distribution p ∈ ∆|O| over the outcome space. The pricing mechanism should therefore
+incentivize the traders to reveal p, while simultaneously avoid providing arbitrage opportunities. Towards
+this goal, we introduce four additional conditions on our pricing mechanism.
+    The first condition ensures that the gradient of C is always well-defined. If we imagine that a trader
+can buy or sell an arbitrarily small bundle, we would like the cost of buying and selling an infinitesimally
+small quantity of any bundle to be the same. If ∇C(q) is well-defined, it can be interpreted as a vector of
+instantaneous prices for each security, with ∂C(q)/∂qo representing the price per share of an infinitesimally
+small amount of security o. Additionally, we can interpret ∇C(q) as the traders’ current estimates of the
+expected payoff of each security, in the same way that ∂C(q)/∂qo was interpreted as the probability of
+outcome o when considering the complete security space.
+
+Condition 2 (Existence of Instantaneous Prices). C is continuous and differentiable everywhere.
+
+    The next condition encompasses the idea that the market should react to trades in a sensible way in
+order to incorporate the private information of the traders. In particular, it says that the purchase of a
+security bundle r should never cause the market to lower the price of r. It turns out that this condition is
+closely related to incentive compatibility for a myopic trader. It is equivalent to requiring that a trader with
+a distribution p ∈ ∆|O| can never find it simultaneously profitable (in expectation) to buy a bundle r or to
+buy the bundle −r. In other words, there can not be more than one way to express one’s information.
+
+Condition 3 (Information Incorporation). For any q and r ∈ RK , C(q+2r)−C(q+r) ≥ C(q+r)−C(q).
+
+    The no arbitrage condition states that it is never possible for a trader to purchase a security bundle r and
+receive a positive profit regardless of the outcome.
+
+Condition 4 (No Arbitrage). For all q, r ∈ RK , there exists an o ∈ O such that C(q+ r)− C(q) ≥ r·ρ(o).
+
+    Finally, the expressiveness condition specifies that any trader can set the market prices to reflect his
+beliefs about the expected payoffs of each security if arbitrarily small portions of shares may be purchased.
+
+Condition 5 (Expressiveness). For any p ∈ ∆|O| , ∃q ∈ RK ∪ {∞, −∞} for which ∇C(q) = Eo∼p [ρ(o)].
+
+    Let H(·) denote a convex hull. We characterize the form of the cost function under these conditions.
+
+Theorem 2. Under Conditions 2-5, C must be convex with {∇C(q) : q ∈ RK } = H(ρ(O)).
+
+    Specifically, the existence of instantaneous prices implies that ∇C(q) is well-defined. The incorporation
+of information condition implies that C is convex. The convexity of C and the no arbitrage condition imply
+that {∇C(q) : q ∈ RK } ⊆ H(ρ(O)). Finally, the expressiveness condition is equivalent to requiring that
+H(ρ(O)) ⊆ {∇C(q) : q ∈ RK }.
+    This theorem tells us that to satisfy our conditions, the set of reachable prices of a market should be
+exactly the convex hull of ρ(O). For complete markets, this would imply that the set of reachable prices
+should be precisely the set of all probability distributions over the n outcomes.
+
+
+
+                                                       5
+2.2 Designing the Cost Function via Conjugate Duality
+The natural conditions we introduced above imply that to design a market for a set of K securities with
+payoffs specified by an arbitrary payoff function ρ : O → RK   + , we should use a cost function based market
+with a convex, differentiable cost function such that {∇C(q) : q ∈ RK } = H(ρ(O)). We now provide
+a general technique that can be used to design and compare properties of cost functions that satisfy these
+criteria. In order to accomplish this, we make use of tools from convex analysis.
+     It is well known3 that any closed, convex, differentiable function C : RK → R can be written in the
+form C(q) = supx∈dom(R) x · q − R(x) for a strictly convex function R called the conjugate of C. (The
+strict convexity of R follows from the differentiability of C.) Furthermore, any function that can be written
+in this form is convex. As we will show in Section 2.3, the gradient of C can be expressed in terms of
+this conjugate: ∇C(q) = argmaxx∈dom(R) x · q − R(x). To generate a convex cost function C such that
+∇C(q) ∈ Π for all q for some set Π, it is therefore sufficient to choose an appropriate conjugate function
+R, restrict the domain of R to Π, and define C as
+
+                                               C(q) = sup x · q − R(x) .                                                     (1)
+                                                          x∈Π
+
+    We call such a market a complex cost function based market. To generate a cost function C satisfying
+our five conditions, we need only to set Π = H(ρ(O)) and select a strictly convex function R.
+    This method of defining C is convenient for several reasons. First, it leads to markets that are efficient to
+implement whenever Π can be described by a polynomial number of simple constraints. Similar techniques
+have been applied to design learning algorithms in the online convex optimization framework [16, 23],
+where R plays the role of a regularizer, and have been shown to be efficient in a variety of combinatorial
+applications, including online shortest paths, online learning of perfect matchings, and online cut set [6].
+Second, it yields simple formulas for properties of markets that help us choose the best market to run. Two
+of these properties, worst-case monetary loss and worst-case information loss, are analyzed below.
+    Note that both the LMSR and Quad-SCPM [1] are examples of complex cost function based markets,
+though they are designed for the complete market setting only.
+
+2.3 Bounding Market Maker Loss and Loss of Information
+Before discussing market properties, it is useful to review some helpful properties of conjugates. The first
+is a convenient duality: For any convex, closed function C, the conjugate of the conjugate of C is C itself.
+This implies that if C is defined as in Equation 1, we may write R(x) = supq∈RK q · x − C(q). Since this
+maximization is unconstrained, the maximum occurs when ∇C(q) = x. (Note that this may hold for many
+different values of q.) Suppose for a particular pair (x∗ , q∗ ) we have ∇C(q∗ ) = x∗ . We can then rewrite
+this equation as R(x∗ ) = q∗ · x∗ − C(q∗ ), which gives us that C(q∗ ) = q∗ · x∗ − R(x∗ ). From Equation 1,
+this tells us that x∗ must be a maximizer of x · q − R(x). In fact, it is the unique maximizer due to strict
+convexity. This implies, as mentioned above, that ∇C(q) = argmaxx∈Π x · q − R(x).
+     By a similar argument we have that for any q, if ∇R(x) = q then x maximizes x · q − R(x) and
+therefore, as we have just shown, x = ∇C(q). However, the fact that x = ∇C(q) does not imply that
+∇R(x) = q; in the markets we consider, it is generally the case that x = ∇C(q) for multiple q.
+     We also make use of the notion of Bregman divergence. The Bregman divergence with respect to a
+convex function f is given by Df (x, y) := f (x) − f (y) − ∇f (y)(x − y). It is clear by convexity that
+Df (x, y) ≥ 0 for all x and y.
+   3
+    For a detailed discussion of convex conjugates and their properties, refer to a good text on convex optimization such as Boyd
+and Vandenberghe [5] or Hiriart-Urruty and Lemaréchal [17].
+
+
+
+
+                                                                6
+2.3.1   Bounding the Market Maker’s Monetary Loss
+When comparing market mechanisms, it is useful to consider the market maker’s worst-case monetary loss,
+supq∈RK (supo∈O (ρ(o) · q) − C(q) + C(0)). This quantity is simply the worst-case difference between
+the maximum amount that the market maker might have to pay the traders (supo∈O ρ(o) · q) and the amount
+of money collected by the market maker (C(q) − C(0)). The following theorem provides a bound on this
+loss in terms of the conjugate function R.
+
+Theorem 3. Consider any complex cost function based market with Π = H(ρ(O)). Let q denote the vector
+of quantities sold and o denote the true outcome. The monetary loss of the market maker is no more than
+
+                              R(ρ(o)) −      min      R(x) − DR (ρ(o), ∇C(q)) .
+                                          x∈H(ρ(O))
+
+Consequently, the worst-case market maker loss is no more than supx∈ρ(O) R(x) − minx∈H(ρ(O)) R(x).
+
+   This theorem tells us that as long as the conjugate function is bounded on H(ρ(O)), the market maker’s
+worst-case loss is also bounded. Furthermore, it quantifies the intuitive notion that the market maker will
+have higher profits when the distance between ρ(o) and the final vector of prices ∇C(q) is large. Viewed
+another way, the market maker will pay more when ∇C(q) is a good estimate of ρ(o).
+
+2.3.2   Bounding Information Loss
+Information loss can occur when securities are sold in discrete quantities (for example, single units), as they
+are in most real-world markets. Without the ability to purchase arbitrarily small bundles, traders may not be
+able to change the market prices to reflect their true beliefs about the expected payoff of each security, even
+if expressiveness is satisfied. We will argue that the amount of information lost is captured by the market’s
+bid-ask spread for the smallest trading unit. Given some q, the current bid-ask spread of security bundle r is
+defined to be (C(q + r) − C(q)) − (C(q) − C(q − r)). This is simply the difference between the current
+cost of buying the bundle r and the current price at which r could be sold.
+     To see how the bid-ask spread relates to information loss, suppose that the current vector of quantities
+sold is q. If securities must be sold in unit chunks, a rational, risk-neutral trader will not buy security i
+unless she believes the expected payoff of this security is at least C(q + ei ) − C(q). Similarly, she will not
+sell security i unless she believes the expected payoff is at most C(q) − C(q − ei ). If her estimate of the
+expected payoff of the security is between these two values, she has no incentive to buy or sell the security.
+In this case, it is only possible to infer that the trader believes the true expected payoff lies somewhere in the
+range [C(q) − C(q − ei ), C(q + ei ) − C(q)]. The bid-ask spread is precisely the size of this range.
+     Intuitively, the bid-ask spread relates to the depth of the market. When the bid-ask spread is small, a
+small order can change the prices of the securities dramatically. The market is shallow. When the bid-ask
+spread is large, large orders may only move the prices slightly. The market is deep. The bid-ask spread
+depends on how fast the instantaneous prices change. For complete markets, Chen and Pennock [7] use the
+inverse of ∂ 2 C(q)/∂qo2 to capture this notion for each security o independently. We define a market depth
+parameter, β, for our complex securities markets with twice-differentiable C in a similar spirit. We will
+bound the bid-ask spread in terms of this parameter. Using the market depth parameter, it is easy to see that
+there exists a clear trade-off between worst-case monetary loss and information loss.
+
+Definition 1. For any complex cost function based market, if C is twice-differentiable, the market depth
+parameter β(q) for a quantity vector q is defined as β(q) = 1/Vc (q), where Vc (q) is the largest eigenvalue
+of ∇2 C(q), the Hessian of C at q. The worst-case market depth is β = inf q∈RK β(q).
+
+
+
+                                                        7
+    Let relint(Π) be the relative interior of Π. If C is twice-differentiable, then for any q such that ∇C(q) ∈
+relint(Π), we have a correspondence between the Hessian of C at q and the Hessian of R at ∇C(q). More
+precisely, we have that u⊤ ∇2 C(q)u = u⊤ ∇−2 R(∇C(q))u for any u = x − x′ with x, x′ ∈ Π. (See, for
+example, Gorni [12] for more.) This means that β(q) is equivalently defined as the smallest eigenvalue of
+∇2 R(∇C(q))|Π ; that is, where we consider the second derivative only within the price region Π.
+    The definition of worst-case market depth implies that 1/β is an upper bound on the curvature of C,
+which implies that C is locally bounded by a quadratic with Hessian I/β. We can derive the following.
+
+Lemma 1. Consider a complex cost function based market with worst-case market depth β. For any q and
+r we have DC (q + r, q) ≤ krk2 /(2β).
+
+    It is easy to verify that the bid-ask spread can be written in terms of Bregman divergences. In particular,
+C(q + r) − C(q) − (C(q) − C(q − r)) = DC (q + r, q) + DC (q − r, q). This implies that the worst-case
+bid-ask spread of a market with market depth β can be upperbounded by a constant times 1/β. That is, as
+the market depth parameter increases, the bid-ask spread must decrease. The following theorem shows that
+this leads to an inherent tension between worst-case monetary loss and information loss.
+
+Theorem 4. For any complex cost function based market with worst-case market depth β, for any r, q
+meeting the conditions in Lemma 1, the bid-ask spread for bundle r with previous purchases q is no more
+than 2krk2 /β. The worst-case monetary loss of the market maker at least β · diam2 (H(ρ(O)))/8.
+
+    We can see that there is a direct trade-off between the upper bound of the bid-ask spread, which shrinks
+as β grows, and the lower bound of the worst-case loss of the market maker, which grows linearly in β. This
+trade-off is very intuitive. When the market is shallow (small β), small trades have a large impact on market
+prices, and traders cannot purchase too many shares of the same security without paying a lot. When the
+market is deep (large β), prices change slowly, allowing the market maker to gain more precise information,
+but simultaneously forcing the market maker to take on more risk since many shares of a security can be
+purchased at prices that are potentially too low. This trade-off can be adjusted by scaling R, which scales β.
+This is analogous to adjusting the “liquidity parameter” b in the LMSR.
+
+2.4 An Example
+To illustrate the use of our framework for market design, we consider the following example. An object
+orbiting the planet, perhaps a satellite, is predicted to fall to earth in the near future and will land at an
+unknown location, which we would like to predict. We represent locations on the earth as unit vectors
+u ∈ R3 . We will design a market with three securities, each corresponding to one coordinate of the final
+location of the object. In particular, security i will pay off ui + 1 dollars if the object lands in location
+u. (The addition of 1, while not strictly necessary, ensures that the payoffs, and therefore prices, remain
+positive, though it will be necessary for traders to sell securities to express certain beliefs.) This means that
+traders can purchase security bundles r ∈ R3 and, when the object lands at a location u, receive a payoff
+(u + 1) · r. Note that in this example, the outcome space is infinite, but the security space is small.
+    The price space H(ρ(O)) for this market will be the 2-norm unit ball centered at 1. To construct a
+market for this scenario, let us make the simple choice of R(x) = λkx − 1k2 for some parameter λ > 0.
+When kqk ≤ 2λ, there exists an x such that ∇R(x) = q. In particular, this is true for x = (1/2)q/λ + 1,
+and q · x − R(x) is minimized at this point. When kqk > 2λ, q · x − R(x) is minimized at an x on the
+boundary of H(ρ(O)). Specifically, it is minimized at x = q/||q|| + 1. From this, we can compute
+                                        (
+                                           1
+                                             kqk2 + q · 1,       when kqk ≤ 2λ,
+                               C(q) = 4λ
+                                          kqk + q · 1 − λ, when kqk > 2λ.
+
+
+                                                       8
+The market depth parameter β is 2λ; in fact, β(x) = 2λ for any price vector x in the interior of H(ρ(O)).
+By Theorem 3, the worst-case loss of the market maker is no more than λ, which is precisely the lower
+bound implied by Theorem 4. Finally, the divergence DC (q + r, q) ≤ krk2 /(4λ) for all q, r, with equality
+when kqk, kq + rk ≤ 2λ, implying that the bid-ask spread scales linearly with krk2 /λ.
+
+
+3 Relaxing the Feasible Price Region
+Thus far, we have argued that the space of feasible price vectors should be precisely H(ρ(O)). In this
+section, we consider more general price spaces. This generalization can be beneficial when dealing with
+security spaces for which the convex hull H(ρ(O)) is difficult to optimize over directly. It also enables the
+design of markets that grow increasingly deep without requiring a sacrifice in terms of worst-case loss.
+    As before, each market will be defined in terms of a pair (Π, R) where Π ⊆ Rd is a convex compact set
+of feasible prices and R : Rd → R is a strictly convex function with domain Π. The market’s cost function
+C will be the conjugate of R with respect to the set Π, as in Equation 1. The only difference is that we now
+allow Π to be distinct from H(ρ(O)). Not surprisingly, the choice of Π will affect the interest of the traders
+and the market maker. We prove several claims which will aid us in our market design. Proposition 1 tells
+us that the expressiveness condition should not be relaxed, while Proposition 2 tells us that the no-arbitrage
+condition can be. Together, these imply that we may safely choose Π to be a superset of H(ρ(O)).
+Proposition 1. For any complex cost function based market, the worst-case loss of the market maker is
+unbounded if ρ(O) * Π.
+    This (perhaps surprising) proposition tells us that expressiveness is not only useful for information ag-
+gregation, it is actually necessary for the market maker to avoid unbounded loss. The proof involves showing
+that if o is the final outcome and ρ(o) 6∈ Π, then it is possible to make an infinite sequence of trades such
+that each trade causes a constant amount of loss to the market maker.
+    In the following proposition, which is a simple extension of Theorem 3, we see that including additional
+price vectors in Π does not adversely impact the market maker’s worst-case loss, despite the fact that the
+no-arbitrage condition is violated.
+Proposition 2. Consider any complex cost function based market with R and Π satisfying
+supx∈H(ρ(O)) R(x) < ∞ and H(ρ(O)) ⊆ Π. Assume that the initial price vector satisfies ∇C(0) ∈
+H(ρ(O)). Let q denote the vector of quantities sold and o denote the true outcome. The monetary loss of
+the market maker is no more than R(ρ(o)) − minx∈H(ρ(O)) R(x) − DR (ρ(o), ∇C(q)).
+    This tells us that expanding Π can only help the market maker; increasing the range of ∇C(q) can
+only increase the divergence term. This may seem somewhat counterintuitive. We originally required that
+Π ⊆ H(ρ(O)) as a consequence of the no-arbitrage condition, and by relaxing this condition, we are
+providing traders with potential arbitrage opportunities. However, these arbitrage opportunities do not hurt
+the market maker. As long as the initial price vector lies in H(ρ(O)), any such situations where a trader can
+earn a guaranteed profit are effectively created (and paid for) by other traders! In fact, if the final price vector
+∇C(q) falls outside the convex hull, the divergence term will be strictly positive, improving the bound.
+    To elaborate on this point, let’s consider an example where Π is strictly larger than H(ρ(O)). Let q be
+the current vector of purchases, and assume the associated price vector x = ∇C(q) lies in the interior of
+H(ρ(O)). Consider a trader who purchases a bundle r such that the new price vector leaves this set, i.e.,
+y := ∇C(q + r) ∈   / H(ρ(O)). We claim that this choice can be strictly improved in the sense that there is
+an alternative bundle r′ whose associated profit, for any outcome o, is strictly greater than the profit for r.
+    For simplicity, assume y is an interior point of Π \ H(ρ(O)) so that q + r = ∇R(y). Define
+π(y) := arg miny′ ∈H(ρ(O)) DR (y′ , y), the minimum divergence projection of y into H(ρ(O)). The al-
+ternative bundle we consider is r′ = ∇R(π(y)) − q. Our trader pays C(q + r) − C(q + r′ ) less to purchase
+
+                                                         9
+r′ than to purchase r. Hence, for any outcome o, we see that the increased profit for r′ over r is
+          ρ(o) · (r′ − r) − C(q + r′ ) + C(q + r) > ρ(o) · (r′ − r) + ∇C(q + r′ ) · (r − r′ )
+                                                       = (ρ(o) − π(y)) · (r′ − r).                          (2)
+Notice that we achieve strict inequality precisely because ∇C(q+r′ ) 6= ∇C(q+r). Now use the optimality
+condition for π(y) to see that, since ρ(o) ∈ H(ρ(O)), ∇π(y) (DR (π(y), y)) · (ρ(o) − π(y)) ≥ 0. It is easy
+to check that ∇π(y) (DR (π(y), y)) = ∇R(π(y)) − ∇R(y) = r′ − r. Combining this last expression with
+the inequality above and (2) tells us that the profit increase is strictly greater than (ρ(o)−π(y))·(r′ −r) ≥ 0.
+Simply put, the trader receives a guaranteed positive increase in profit for any outcome o.
+    The next proposition shows that any time the price vector lies outside of ρ(o), traders could profit by
+moving it back inside. The proof uses a nice application of minimax duality for convex-concave functions.
+Proposition 3. For any complex cost function based market, given a current quantity vector q0 with cur-
+rent price vector ∇C(q0 ) = x0 , a trader has the opportunity to earn a guaranteed profit of at least
+minx∈H(ρ(O)) DR (x, x0 ).
+    In the case that x0 ∈ H(ρ(O)), DR (x, x0 ) is minimized when x = x0 and the bound is vacuous, as we
+would expect. The more interesting case occurs when the prices have fallen outside of H(ρ(O)), in which
+case a trader is guaranteed a riskless profit by moving the price vector to the closest point in H(ρ(O)).
+
+3.1 Pair-betting Market via Relaxation
+We now turn our attention to the design of a prediction market for the scenario in which the outcome is some
+ranking of a set of n competitors, such as n horses in a race. The outcome of such a race is a permutation
+π : [n] → [n], where π(i) is the final position of i, with π(i) = 1 being best, and [n] denotes the set
+{1, · · · , n}. A typical market for this setting might offer n Arrow-Debreu securities, with the ith security
+paying off if and only if π(i) = 1. Additionally, there might be a separate, independent markets allowing
+bets on horses to place (come in first or second) or show (come in first, second, or third). However, running
+independent markets for sets of outcomes with clear correlations is wasteful in that information revealed in
+one market does not automatically propagate to the others. Instead, we consider a complex market in which
+bettors can make arbitrary pair bets: for every i, j, a bettor can purchase a security which pays out if and
+only if π(i) > π(j). Pricing such bets using LMSR is known to be #P-hard [9].
+    We can represent the payoff structure of any such outcome π by a matrix Mπ defined by
+                                                   
+                                                   1, if π(i) > π(j)
+                                                   
+                                       Mπ (i, j) = 21 , if i = j
+                                                   
+                                                     0, if π(i) < π(j).
+                                                   
+
+We would like to choose our feasible price region as the set H({Mπ : π ∈ Sn }), where Sn is the set of
+permutations on [n]. Unfortunately, the computation of this convex hull is necessarily hard: if given only a
+separation oracle for the set H({Mπ : π ∈ Sn }), we could construct a linear program to solve the “minimum
+feedback arcset” problem, which is known to be NP-hard.
+    On the positive side, we see from the previous section that the market maker can work in a larger feasible
+price space without risking a larger loss. We thus relax our feasible price region Π to the set of matrices
+         2
+X ∈ Rn satisfying
+                                        X(i, j) ≥ 0                                ∀i, j ∈ [n]
+                                        X(i, j) = 1 − X(j, i)                      ∀i, j ∈ [n]
+                 X(i, j) + X(j, k) + X(k, i) ≥ 1                                ∀i, j, k ∈ [n]
+
+
+                                                      10
+    This relaxation was first discussed by Meggido [20], who referred to such matrices as generalized order
+matrices. He proved that, for n ≤ 4, we do have Π = H({Mπ : π ∈ Sn }), but gave a counterexample
+showing strict containment for n = 13. By using this relaxed price space, the market maker allows traders
+to bring the price vector outside of the convex hull, yet includes a set of basic (and natural) constraints on the
+prices. Such a market could be implemented with any strongly convex conjugate function (e.g., quadratic).
+
+3.2 Transaction Costs via Relaxation
+Let us return our attention to Proposition 2, which bounds the worst-case loss of the market maker. Notice
+the term R(ρ(o))−minx∈Π R(x) is strictly positive, and accounts for the market maker’s risk in offering the
+market. On the other hand, the term −DR (ρ(o), ∇C(q)) is non-positive, representing the potential profit
+that the market maker can earn if the final price vector ∇C(q) is far from ρ(o). The potential to make a
+profit may be appealing, but note that this term will approach 0 if ∇C(q) approaches ρ(o) as traders gain
+information. (Consider the behavior of traders in an election market as votes start to be tallied.) As discussed
+in Section 2.3.2, the market maker can reduce his worst-case loss by adjusting the depth parameter, but this
+will result in a shallow market with a larger bid-ask spread.
+     To combat these problems, we propose a technique that allows us to guarantee lower worst-case loss
+without creating a shallow market by relaxing the feasible price region Π. This relaxation is akin to intro-
+ducing a transaction cost. By constructing the correct conjugate function, we may obtain a market with a
+bounded worst-case loss, a potential profit, and market depth that grows with the number of trades.
+     For simplicity, we consider the complete market scenario in which the marker maker offers an Arrow-
+Debreu security for every outcome. Let oi denote outcome i and |O| = n. In P        this case, ρ(oi ) = ei , and
+H(ρ(O)) = ∆n , the n-simplex. We define Π := {x ∈ Rn : xi ≥ 0 ∀i, 1 ≤ nj=1 xj ≤ 1 + c}, where
+c is some maximal transaction cost. The transaction cost is not imposed on individual traders or individual
+securities, but is split among all securities. We also introduce the requirement that traders can only purchase
+positive bundles r ∈ Rn+ . In general, this restriction could prevent the traders from expressing “negative”
+beliefs, as we are disallowing the explicit shorting of securities, but in this particular market traders still
+have the ability to effectively short a security by purchasing equal quantities of the other n − 1 securities.
+     We must now choose any conjugate function R satisfying the the following conditions:
+
+   1. R grows no larger than a constant within ∆n , so the worst-case loss R(ei ) − R(x0 ) remains small.
+
+   2. Outside of ∆n , R(x) becomes increasingly curved as x approaches the constraint nj=1 xj = 1 + c.
+                                                                                            P
+      (Notice that the price vector x is guaranteed to approach this constraint as purchases are made since we
+      allow only positive bundles to be purchased and thus q can only grow.) Hence, the smallest eigenvalue
+      of ∇2 R(x), which is the market depth at x, must grow large as x approaches this boundary.
+
+    The construction we have proposed here has several nice properties. It has bounded worst-case loss
+due to condition 1, and increasing market depth by condition 2. It imposes a transaction cost by letting the
+prices leave the simplex, but it does so in a smooth fashion; the sum of prices only approaches the value
+1 + c after many trades have occurred, and at this point the market depth will have become large. Lastly,
+as a result of condition 2, we know that the market maker’s earnings increase as more trades occur, since
+minx′ ∈H(ρ(O)) DR (x′ , x) must eventually increase as the price vector x approaches the 1 + c constraint.
+    The idea of introducing transaction costs to allow increasing market depth was also proposed by
+Othman et al. [21], who introduced a modified LMSR market maker with a particular cost function C.
+Their market can be viewed as a special case of our approach, although it is not defined via conjugate
+duality. In particular, theyP set the feasible price region of their market maker as a convex subset of
+{x ∈ Rn : xi ≥ 0 ∀i, 1 ≤ nj=1 xj ≤ 1 + αn log n} for a positive parameter α.
+
+
+
+                                                       11
+References
+ [1] S. Agrawal, E. Delage, M. Peters, Z. Wang, and Y. Ye. A unified framework for dynamic prediction market
+     design. Operations Research, to appear, 2010.
+
+ [2] K. J. Arrow. The role of securities in the optimal allocation of risk-bearing. Review of Economic Studies, 31(2):
+     91–96, 1964.
+
+ [3] K. J. Arrow. Essays in the Theory of Risk Bearing. North Holland, Amsterdam, 1970.
+
+ [4] J. E. Berg, R. Forsythe, F. D. Nelson, and T. A. Rietz. Results from a dozen years of election futures markets
+     research. In C. A. Plott and V. Smith, editors, Handbook of Experimental Economic Results. 2001.
+
+ [5] S. Boyd and L. Vandenberghe. Convex Optimization. Cambridge University Press, 2004.
+
+ [6] N. Cesa-Bianchi and G. Lugosi. Combinatorial bandits. In submission, January 2010.
+
+ [7] Y. Chen and D. M. Pennock. A utility framework for bounded-loss market makers. In Proceedings of the 23rd
+     Conference on Uncertainty in Artificial Intelligence, 2007.
+
+ [8] Y. Chen and J. Wortman Vaughan. A new understanding of prediction markets via no-regret learning. In Pro-
+     ceedings of the 11th ACM Conference on Electronic Commerce, 2010.
+
+ [9] Y. Chen, L. Fortnow, N. Lambert, D. M. Pennock, and J. Wortman. Complexity of combinatorial market makers.
+     In Proceedings of the 9th ACM Conference on Electronic Commerce, 2008.
+
+[10] Y. Chen, S. Goel, and D. M. Pennock. Pricing combinatorial markets for tournaments. In Proceedings of the
+     40th ACM Symposium on Theory of Computing, 2008.
+
+[11] X. Gao, Y. Chen, and D. M. Pennock. Betting on the real line. In Proceedings of the 5th Workshop on Internet
+     and Network Economics, 2009.
+
+[12] G. Gorni. Conjugation and second-order properties of convex functions. Journal of Mathematical Analysis and
+     Applications, 158(2):293–315, 1991.
+
+[13] M. Guo and D. M. Pennock. Combinatorial prediction markets for event hierarchies. In Proceedings of The 8th
+     International Conference on Autonomous Agents and Multiagent Systems, 2009.
+
+[14] R. Hanson. Combinatorial information market design. Information Systems Frontiers, 5(1):105–119, 2003.
+
+[15] R. Hanson. Logarithmic market scoring rules for modular combinatorial information aggregation. Journal of
+     Prediction Markets, 1(1):3–15, 2007.
+
+[16] E. Hazan. A survey: The convex optimization approach to regret minimization. Draft, Sept. 2009.
+
+[17] J.-B. Hiriart-Urruty and C. Lemaréchal. Fundamentals of Convex Analysis. Springer, 2001.
+
+[18] J. Ledyard, R. Hanson, and T. Ishikida. An experimental test of combinatorial information markets. Journal of
+     Economic Behavior and Organization, 69:182–189, 2009.
+
+[19] A. Mas-Colell, M. D. Whinston, and J. R. Green. Microeconomics Theory. Oxford University Press, New York,
+     NY, 1995.
+
+[20] N. Megiddo. Mixtures of order matrices and generalized order matrices. Discrete Mathematics, 19(2):177–181,
+     1977. ISSN 0012-365X.
+
+[21] A. Othman, T. Sandholm, D. M. Pennock, and D. M. Reeves. A practical liquidity-sensitive automated market
+     maker. In Proceedings of the 11th ACM Conference on Electronic Commerce, 2010.
+
+
+
+                                                         12
+[22] D. M. Pennock and R. Sami. Computational aspects of prediction markets. In N. Nisan, T. Roughgarden, É.
+     Tardos, and V. Vazirani, editors, Algorithmic Game Theory. Cambridge University Press, 2007.
+
+[23] A. Rakhlin. Lecture notes on online learning. Draft, April 2009.
+
+[24] M. Sion. On general minimax theorems. Pacific Journal of Mathematics, 8(1):171–176, 1958.
+
+[25] J. Wolfers and E. Zitzewitz. Prediction markets. Journal of Economic Perspective, 18(2):107–126, 2004.
+
+
+
+Appendix
+Below we provide all proofs that were omitted from the paper.
+
+3.3 Proof of Theorem 1
+Let C(q) := Cost(q|∅). We shall prove, via induction, that for any t and any bundle sequence r1 , . . . , rt ,
+
+                  Cost(rt |r1 , . . . , rt−1 ) = C(r1 + . . . + rt−1 + rt ) − C(r1 + . . . + rt−1 ) .               (3)
+
+   When t = 1, this holds trivially. Assume that Equation 3 holds for all bundle sequences of any length
+t ≤ T . By Condition 1,
+
+         Cost(rT +1 |r1 , . . . , rT )
+           = Cost(rT +1 + rT |r1 , . . . , rT −1 ) − Cost(rT |r1 , . . . , rT −1 )
+                              T −1                  T −1                         T −1              T −1
+                                         !                 !                            !                      !!
+                               X                    X                            X                 X
+           = C rT +1 + rT +          rt − C              rt − C rT +                  rt − C              rt
+                                           t=1                t=1                   t=1            t=1
+                      T +1                   T
+                                  !                   !
+                      X                     X
+           = C               rt       −C         rt       ,
+                      t=1                  t=1
+
+and we see that Equation 3 holds for t = T + 1 too.
+
+3.4 Proof of Theorem 2
+We first prove convexity. Assume C is non-convex somewhere. Then there must exist some q and r such
+that C(q) > (1/2)C(q + r) + (1/2)C(q − r). This means C(q + r) − C(q) < C(q) − C(q − r), which
+contradicts Condition 3, so C must be convex.
+    Now, Condition 2 trivially guarantees that ∇C(q) is well-defined for any q. To see that {∇C(q) :
+q ∈ RK } ⊆ H(ρ(O)), let us assume there exists some q′ for which ∇C(q′ ) ∈    / H(ρ(O)). This can be
+reformulated in the following way: There must exists some halfspace, defined by a normal vector r, that
+separates ∇C(q′ ) from every member of ρ(O). More precisely
+
+                     ∇C(q′ ) ∈
+                             / H(ρ(O))                ⇐⇒       ∃r ∀o ∈ O :   ∇C(q′ ) · r ≤ ρ(o) · r.
+
+On the other hand, letting q := q′ − r, we see by convexity of C that C(q + r) − C(q) ≤ ∇C(q′ ) ·
+r. Combining these last two inequalities, we see that the price of bundle r purchased with history q is
+always smaller than the payoff for any outcome. This implies that there exists some arbitrage opportunity,
+contradicting Condition 4.
+   Finally, since H(ρ(O) = {Eo∼p [ρ(o)]|p ∈ ∆|O| }, Condition 5 implies that H(ρ(O)) ⊆ {∇C(q) :
+q ∈ RK }.
+
+                                                                13
+3.5 Proof of Theorem 3
+Since q is the final quantity vector, ∇C(q) is the final vector of instantaneous prices. From Equation 1, we
+have that C(q) = ∇C(q) · q − R(∇C(q)) and C(0) = − minx∈H(ρ(O)) R(x). The difference between the
+amount that the market maker must pay out and the amount that the market maker has previously collected
+is then
+
+    ρ(o) · q − C(q) + C(0)
+       = ρ(o) · q − (∇C(q) · q − R(∇C(q))) −              min    R(x)
+                                                     x∈H(ρ(O))
+       = q · (ρ(o) − ∇C(q)) + R(∇C(q)) −             min      R(x) + R(ρ(o)) − R(ρ(o))
+                                                  x∈H(ρ(O))
+       = R(ρ(o)) −        min      R(x) − (R(ρ(o)) − R(∇C(q)) − q · (ρ(o) − ∇C(q)))
+                       x∈H(ρ(O))
+       ≤ R(ρ(o)) −        min      R(x) − (R(ρ(o)) − R(∇C(q)) − ∇R(∇C(q)) · (ρ(o) − ∇C(q)))
+                       x∈H(ρ(O))
+       = R(ρ(o)) −        min      R(x) − DR (ρ(o), ∇C(q)) ,
+                       x∈H(ρ(O))
+
+where DR is the Bregman divergence with respect to R, as defined above. The inequality follows from the
+first-order optimality condition for convex optimization:
+
+                   x = arg min
+                           ′
+                               f (x′ )     =⇒      ∇f (x) · (y − x) ≥ 0 for any y ∈ Π.
+                            x ∈Π
+
+   Since the divergence is always nonnegative, this is upperbounded by R(ρ(o)) − minx∈H(ρ(O)) R(x),
+which is in turn upperbounded by supx∈ρ(O) R(x) − minx∈H(ρ(O)) R(x).
+
+3.6 Proof of Theorem 4
+The bound on the bid-ask spread follows immediately from Lemma 1 and the argument above. The value
+β lower-bounds the eigenvalues of R everywhere on Π. Hence, if we do a quadratic lower-bound of R
+from the point x0 = arg minx∈Π R(x) with Hessian defined by βI, then we see that R(x) − R(x0 ) ≥
+DR (x, x0 ) ≥ β2 kx − x0 k2 . In the worst-case, kx − x0 k = diam(H(ρ(O)))/2, which finishes the proof.
+
+3.7 Proof of Proposition 1
+Consider some outcome o such that ρ(o) ∈    / Π. The feasible price set Π = {∇C(q) : ∀q} is compact.
+Because ρ(o) ∈ / Π, there exists a hyperplane that strongly separates Π and ρ(o). In other words, there exists
+an k > 0 such that ||ρ(o) − ∇C(q)|| ≥ k.
+    When outcome o is realized, B(q) = ρ(o) · q − C(q) + C(0) is the market maker’s loss given q. We
+have ∇B(q) = ρ(o) − ∇C(q), which represents the instantaneous change of the market maker’s loss. For
+infinitesimal ǫ, let q′ = q + ǫ (ρ(o) − ∇C(q)). Then,
+
+      B(q′ ) = B(q) + ∇B(q) · [ǫ (ρ(o) − ∇C(q))] = B(q) + ǫ||ρ(o) − ∇C(q)||2 ≤ B(q) + ǫk2 .
+
+This shows that for any q we can find a q′ such that the market maker’s worst-case loss is at least increased
+by ǫk2 . This process can continue for infinite steps. Hence, we conclude that the market maker’s loss is
+unbounded.
+
+
+
+
+                                                     14
+3.8 Proof of Proposition 2
+This proof is nearly identical to the proof of Theorem 3. The only major difference is that now C(0) =
+− minx∈Π R(x) instead of C(0) = − minx∈H(ρ(O)) R(x), but this is equivalent since we have assumed that
+∇C(0) ∈ H(ρ(O)). R(ρ(o)) is still well-defined and finite since we have assumed that H(ρ(O)) ⊆ Π.
+
+
+3.9 Proof of Proposition 3
+A trader looking to earn a guaranteed profit when the current quantity is q0 hopes to purchase a bundle r
+so that the worst-case profit mino∈O ρ(o) · r − C(q0 + r) + C(q0 ) is as large as possible. Notice that this
+quantity is strictly positive since r = 0, which always has 0 profit, is one option. Thus, a trader would like
+to solve the following objective:
+
+                            max min ρ(o) · r − C(q0 + r) + C(q0 )
+                           r∈RK o∈O
+                       =      min      max x · r − C(q0 + r) + C(q0 )
+                           x∈H(ρ(O)) r∈RK
+                       =      min      max x · (q + r) − C(q0 + r) + C(q0 ) − x · q0
+                           x∈H(ρ(O)) r∈RK
+                       =      min      R(x) + C(q0 ) − x · q0
+                           x∈H(ρ(O))
+                       =      min      R(x) + x0 · q0 − R(x0 ) − x · q0
+                           x∈H(ρ(O))
+                       ≥      min      DR (x, x0 ).
+                           x∈H(ρ(O))
+
+The first equality with the min / max swap holds via Sion’s Minimax Theorem [24]. The last inequality was
+obtained using the first-order optimality condition of the solution x0 = arg maxx∈Π x · q0 − R(x) for the
+vector x − x0 which holds since x ∈ Π.
+
+
+
+
+                                                      15
+
