@@ -1,0 +1,7445 @@
+Paired comparisons for games of chance
+Thanks:
+The author was supported by the Simons Foundation Collaboration Grant 550031.
+Alex Cowan
+Address:
+Department of Mathematics, Harvard University, Cambridge, MA 02138 USA
+Email address:
+cowan@math.harvard.edu
+Date: August 7, 2026
+Abstract.
+We present a Bayesian rating system based on the method of paired comparisons. Our system is a flexible generalization of the well-known Glicko, and in particular can better accommodate games with significant elements of luck. Our system is currently in use in the online game
+Duelyst II
+, and in that setting outperforms Glicko2.
+1.
+Introduction
+The method of paired comparisons
+[
+4
+]
+is a framework for ranking many items by comparing them two at a time. Often the outcome of these comparisons is non-deterministic, only a small fraction of all possible pairs will be compared, and some pairs may be compared multiple times. In this paper we discuss the method of paired comparisons in the context of ranking the players of a symmetric competitive two-player game according to their
+strength
+, i.e. ability to win matches. We present a rating system which, based only on the outcomes of previously played matches, estimates how likely any player is to defeat any other player.
+There are several other systems designed for this purpose, such as Elo
+[
+6
+]
+, Glicko2
+[
+9
+]
+, and TrueSkill
+[
+11
+,
+15
+]
+. Our system is fundamentally a generalization of the well-known system Glicko
+[
+8
+]
+(but not Glicko2; see
+Remark
+2.19
+). With this generalization, we can adapt our system to specific situations in a way that avoids certain assumptions and certain approximations which might not be appropriate in those settings. In particular, Glicko and many other systems use the
+Bradley–Terry model
+[
+27
+,
+1
+]
+for estimating the winning chances of players whose strength is known exactly. This model tends to overestimate the winning chances of players much stronger than their opponents, and also reflects reality poorly when used in games with elements of luck; c.f.
+Example
+2.9
+and
+Section
+3.1
+. Our system is in use in the online collectible card game Duelyst II, and there our system outperforms Glicko2, which was the rating system the game used previously. We discuss this in
+Section
+5
+.
+The core part of our system is made up of three models:
+2.1
+is used to predict the outcome of matches,
+2.11
+is used to update the system’s beliefs about players based on match outcomes, and
+2.16
+is used to account for changes in player strength between matches due to external factors. The system functions by choosing some prior for a player’s strength to assign to unknown players, and then using
+2.11
+and
+2.16
+after each match.
+Models
+2.1
+,
+2.11
+, and
+2.16
+are presented in substantial generality, and to use our system one must choose values for three parameters:
+Λ
+\Lambda
+in
+2.1
+, a prior
+ν
+0
+\nu_{0}
+for unknown players to use in
+2.11
+, and
+κ
+\kappa
+in
+2.16
+. In
+Section
+3
+, we present the parameter choices we made for Duelyst II, and give a very succinct summary of the resulting system in
+Section
+3.4
+. We think similar choices will be reasonable in many other situations.
+An essential component of Glicko2’s popularity is that it is computationally feasible to use it in large scale applications, such as on the major chess website Lichess
+[
+14
+]
+. We present two sets of algorithms in
+Section
+4.2
+and
+Section
+4.3
+for implementing our system. These algorithms are efficient enough to be practical for similar applications; Duelyst II’s implementation can process roughly
+170
+170
+matches per second per vCPU. We also highlight the algorithms in
+Section
+4.1
+, which might help one in understanding the system, and
+Algorithm
+4.5
+and
+Algorithm
+4.6
+for taking convolutions of discrete distributions with Laplace distribution PDFs and CDFs which might be of independent interest. Implementation of all of these algorithms are available on the author’s GitHub
+[
+2
+]
+.
+Acknowledgments
+We thank Michael Snarski for many very helpful conversations, Oleg Maslennikov for integrating all aspects of our system into Duelyst II, and the Duelyst II community for their enthusiastic testing and thorough feedback.
+2.
+Model
+Our system is made up of three models.
+2.1
+is used to predict the outcome of matches.
+2.11
+is used after every match to update the system’s beliefs about the strengths of players.
+2.16
+is used after each of these updates, to account for changes in player strength between matches due to external factors.
+In this section, we present these models in general. To use our system in practice, one then has to choose values for the following parameters:
+•
+In
+2.1
+,
+Λ
+\Lambda
+•
+In
+2.11
+, a prior
+ν
+0
+\nu_{0}
+for unknown players
+•
+In
+2.16
+,
+κ
+\kappa
+We give a variety of examples of parameter choices for each individual model to highlight relationships to existing systems:
+•
+The Bradley–Terry model
+[
+27
+,
+1
+]
+in
+Example
+2.5
+and
+Example
+2.6
+•
+TrueSkill
+[
+11
+,
+15
+]
+in
+Example
+2.7
+•
+FIDE
+[
+7
+]
+in
+Example
+2.8
+•
+Glicko
+[
+8
+]
+in
+Example
+2.13
+and
+Example
+2.18
+In
+Section
+3
+, we give recommendations for parameter choices which we expect to be suitable for most applications, and which allow for a more concrete formulation of our system.
+2.1.
+Match outcomes
+The outcome of a match between two players
+A
+A
+and
+B
+B
+depends on both how well
+A
+A
+and
+B
+B
+perform in that match as well as the nature of the game that they are playing. In this section we present
+2.1
+for predicting match outcomes in a way that takes into consideration both of these factors.
+Model 2.1
+.
+•
+Let
+𝒮
+\mathcal{S}
+be a complete separable metric space.
+•
+Let
+𝒫
+⁡
+(
+𝒮
+)
+\mathcal{P}(\mathcal{S})
+be the set of Borel probability measures on
+𝒮
+\mathcal{S}
+.
+•
+Let
+Λ
+:
+𝒮
+2
+→
+[
+0
+,
+1
+]
+⊂
+ℝ
+\Lambda:\mathcal{S}^{2}\to[0,1]\subset\mathbb{R}
+be measurable and such that
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+1
+−
+Λ
+⁡
+(
+y
+,
+x
+)
+\Lambda(x,y)=1-\Lambda(y,x)
+for all
+x
+,
+y
+∈
+𝒮
+x,y\in\mathcal{S}
+.
+•
+For any
+μ
+A
+\mu_{A}
+and
+μ
+B
+\mu_{B}
+in
+𝒫
+⁡
+(
+𝒮
+)
+\mathcal{P}(\mathcal{S})
+, define
+L
+⁡
+(
+μ
+A
+,
+μ
+B
+)
+≔
+∫
+𝒮
+2
+Λ
+⁡
+(
+x
+,
+y
+)
+​
+μ
+A
+​
+(
+𝑑
+x
+)
+​
+μ
+B
+​
+(
+𝑑
+y
+)
+.
+\displaystyle L(\mu_{A},\mu_{B})\coloneqq\int_{\mathcal{S}^{2}}\Lambda(x,y)\,\mu_{A}(dx)\,\mu_{B}(dy).
+Players
+A
+A
+and
+B
+B
+are modeled by the probability measures
+μ
+A
+\mu_{A}
+and
+μ
+B
+\mu_{B}
+respectively, and the average score of
+A
+A
+playing against
+B
+B
+is modeled by
+L
+⁡
+(
+μ
+A
+,
+μ
+B
+)
+L(\mu_{A},\mu_{B})
+.
+We call
+Λ
+\Lambda
+a
+luck function
+. In
+2.1
+, games are determined by the choice of
+Λ
+\Lambda
+, and players by their associated probability measures. The luck function
+Λ
+\Lambda
+reflects the nature of the game being played, in particular how much luck influences the outcomes of matches, and should be chosen on a case-by-case basis. The probability measures associated to players reflect how consistently that player performs from match to match.
+When two fixed players
+A
+A
+and
+B
+B
+play multiple matches against one another and multiple outcomes are observed, in many situations it is possible to explain this variation in outcome equally well as a consequence of inconsistent performances by the players (reflected in
+μ
+A
+\mu_{A}
+and
+μ
+B
+\mu_{B}
+), as a consequence of an element of luck inherent in the game (reflected in
+Λ
+\Lambda
+), or by various combinations of these two factors.
+Example
+2.5
+and
+Example
+2.6
+show how the Bradley–Terry model
+[
+27
+,
+1
+]
+can arise from either the perspective of the game involving luck or players performing inconsistently.
+Definition 2.2
+.
+We take
+Heaviside function
+to be the function
+H
+:
+ℝ
+→
+ℝ
+H:\mathbb{R}\to\mathbb{R}
+defined as
+H
+⁡
+(
+x
+)
+=
+{
+0
+,
+x
+<
+0
+1
+2
+,
+x
+=
+0
+1
+,
+x
+>
+0
+.
+\displaystyle H(x)=\begin{cases}0,&x<0\\
+\frac{1}{2},&x=0\\
+1,&x>0.\end{cases}
+Definition 2.3
+.
+For any
+x
+∈
+𝒮
+x\in\mathcal{S}
+, the
+Dirac measure
+δ
+x
+∈
+𝒫
+⁡
+(
+𝒮
+)
+\delta_{x}\in\mathcal{P}(\mathcal{S})
+is defined by
+δ
+x
+​
+(
+U
+)
+=
+{
+0
+,
+x
+∉
+U
+1
+,
+x
+∈
+U
+\displaystyle\delta_{x}(U)=\begin{cases}0,&x\not\in U\\
+1,&x\in U\end{cases}
+for all Borel-measurable sets
+U
+⊆
+𝒮
+U\subseteq\mathcal{S}
+.
+Example 2.4
+.
+Take
+𝒮
+=
+ℝ
+\mathcal{S}=\mathbb{R}
+. If
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+H
+⁡
+(
+x
+−
+y
+)
+,
+\displaystyle\Lambda(x,y)=H(x-y),
+where
+H
+H
+is the Heaviside function as in
+Definition
+2.2
+, then
+2.1
+can be interpreted as a game in which the player who performs better in any given match wins that match. Conversely, if
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+1
+2
+for all
+x
+,
+y
+∈
+𝒮
+,
+\displaystyle\Lambda(x,y)=\frac{1}{2}\quad\text{for all $x,y\in\mathcal{S}$},
+then this can be interpreted as a game in which the outcome of every match is determined uniformly at random.
+If
+μ
+A
+\mu_{A}
+is a Dirac measure as in
+Definition
+2.3
+, i.e.
+μ
+A
+​
+(
+{
+x
+}
+)
+=
+1
+\mu_{A}(\{x\})=1
+for some
+x
+∈
+𝒮
+x\in\mathcal{S}
+, this can be interpreted as the player
+A
+A
+being perfectly consistent, performing with exactly the same strength every match. Conversely, if
+μ
+A
+\mu_{A}
+is a probability measure with high variance, then this can be interpreted as the player
+A
+A
+being very inconsistent in their performance. However, there is no analogue to the luck function
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+1
+2
+\Lambda(x,y)=\tfrac{1}{2}
+, essentially because there is no uniform probability distribution on
+ℝ
+\mathbb{R}
+. We will see in
+Section
+3.1
+that this discrepancy is significant.
+∎
+Example 2.5
+.
+The
+Bradley–Terry model
+[
+27
+,
+1
+]
+is the special case of
+2.1
+where
+𝒮
+=
+ℝ
+>
+0
+\mathcal{S}=\mathbb{R}_{>0}
+,
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+x
+x
++
+y
+,
+\Lambda(x,y)=\frac{x}{x+y},
+and
+μ
+A
+\mu_{A}
+and
+μ
+B
+\mu_{B}
+are Dirac measures. These choices can be interpreted as
+•
+the players
+A
+A
+and
+B
+B
+always perform at the same strength, and
+•
+it is possible for a match to be won by the player that played worse in that match.
+The Bradley–Terry model is often encountered under the reparameterizations
+x
+↦
+e
+x
+x\mapsto e^{x}
+[
+9
+]
+or
+x
+↦
+10
+x
+400
+x\mapsto 10^{\frac{x}{400}}
+[
+7
+,
+8
+]
+.
+∎
+Example 2.6
+.
+“Linear models” in the sense described by David in
+[
+4
+, §1.3, §4]
+is the special case of
+2.1
+where
+𝒮
+=
+ℝ
+\mathcal{S}=\mathbb{R}
+and
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+H
+⁡
+(
+x
+−
+y
+)
+\Lambda(x,y)=H(x-y)
+. As discussed in
+[
+4
+]
+, the Thurstone–Mosteller
+[
+23
+,
+24
+,
+16
+,
+17
+,
+18
+]
+and Bradley–Terry
+[
+27
+,
+1
+]
+models are recovered by requiring that
+μ
+A
+\mu_{A}
+and
+μ
+B
+\mu_{B}
+be normal distributions or Gumbel distributions with scale parameter
+1
+1
+. In contrast with
+Example
+2.5
+, these choices can be interpreted as
+•
+the players
+A
+A
+and
+B
+B
+perform at different strengths from one match to the next, and
+•
+every match is won by whichever player played best.
+Note that both this example and
+Example
+2.5
+recover the Bradley–Terry model, but do so in different ways, and can be interpreted differently.
+∎
+Example 2.7
+.
+The TrueSkill system
+[
+11
+,
+15
+]
+uses the special case of
+2.1
+in which
+𝒮
+=
+ℝ
+\mathcal{S}=\mathbb{R}
+,
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+{
+1
+x
+−
+y
+>
+ε
+1
+2
+|
+x
+−
+y
+|
+≤
+ε
+0
+x
+−
+y
+<
+−
+ε
+\displaystyle\Lambda(x,y)=\begin{cases}1&x-y>\varepsilon\\
+\frac{1}{2}&|x-y|\leq\varepsilon\\
+0&x-y<-\varepsilon\end{cases}
+for some
+ε
+>
+0
+\varepsilon>0
+, and
+μ
+A
+\mu_{A}
+and
+μ
+B
+\mu_{B}
+are normal distributions.
+∎
+Example 2.8
+.
+The rating system
+[
+7
+, §8]
+used by FIDE, the de facto governing body of chess, corresponds to
+2.1
+with
+𝒮
+=
+ℝ
+\mathcal{S}=\mathbb{R}
+, a choice of
+Λ
+\Lambda
+which is piecewise constant but well-approximated by the modified Bradley–Terry model
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+{
+10
+11
+if
+x
+−
+y
+>
+400
+1
+11
+if
+x
+−
+y
+<
+−
+400
+1
+1
++
+10
+y
+−
+x
+400
+if
+|
+x
+−
+y
+|
+≤
+400
+,
+\displaystyle\Lambda(x,y)=\begin{cases}\frac{10}{11}&\text{if $x-y>400$}\\
+\frac{1}{11}&\text{if $x-y<-400$}\\
+\frac{1}{1+10^{\frac{y-x}{400}}}&\text{if $|x-y|\leq 400$},\end{cases}
+and
+μ
+A
+,
+μ
+B
+\mu_{A},\mu_{B}
+Dirac measures.
+∎
+Example 2.9
+.
+Consider the game
+G
+β
+G_{\beta}
+in which a chess match is played with probability
+β
+∈
+(
+0
+,
+1
+)
+\beta\in(0,1)
+, and a winner is chosen uniformly at random with probability
+1
+−
+β
+1-\beta
+. If the game of chess is perfectly modeled by the Bradley–Terry model as presented in
+Example
+2.5
+, then the game
+G
+β
+G_{\beta}
+is best modeled by the choice of parameters
+𝒮
+=
+ℝ
+>
+0
+\mathcal{S}=\mathbb{R}_{>0}
+,
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+β
+​
+x
+x
++
+y
++
+(
+1
+−
+β
+)
+​
+1
+2
+,
+\Lambda(x,y)=\beta\frac{x}{x+y}+(1-\beta)\frac{1}{2},
+and
+μ
+A
+\mu_{A}
+and
+μ
+B
+\mu_{B}
+Dirac measures.
+None of the previous examples are good models for games in which it is impossible to win with probability arbitrarily close to
+1
+1
+. For instance, they cannot properly model the fact that the world champion of chess would win a match of
+G
+β
+G_{\beta}
+against both the author and a rock with probability
+1
++
+β
+2
+\tfrac{1+\beta}{2}
+, and the author would also win against the rock with probability
+1
++
+β
+2
+\tfrac{1+\beta}{2}
+. These sorts of considerations also cause problems when using the Rasch model
+[
+20
+]
+for multiple-choice tests where guessing is possible
+[
+12
+]
+.
+∎
+Example 2.10
+.
+Take
+𝒮
+=
+ℝ
+3
+\mathcal{S}=\mathbb{R}^{3}
+and
+Λ
+(
+(
+x
+1
+,
+x
+2
+,
+x
+3
+)
+,
+(
+y
+1
+,
+y
+2
+,
+y
+3
+)
+)
+=
+{
+1
+if
+#
+⁡
+{
+i
+∈
+{
+1
+,
+2
+,
+3
+}
+:
+x
+i
+>
+y
+i
+}
+≥
+2
+0
+if
+#
+⁡
+{
+i
+∈
+{
+1
+,
+2
+,
+3
+}
+:
+y
+i
+>
+x
+i
+}
+≥
+2
+1
+2
+otherwise
+.
+\displaystyle\Lambda\big((x_{1},x_{2},x_{3}),(y_{1},y_{2},y_{3})\big)=\begin{cases}1&\text{if $\#\{i\in\{1,2,3\}\,:\,x_{i}>y_{i}\}\geq 2$}\\
+0&\text{if $\#\{i\in\{1,2,3\}\,:\,y_{i}>x_{i}\}\geq 2$}\\
+\frac{1}{2}&\text{otherwise}.\end{cases}
+For Dirac measures
+μ
+A
+,
+μ
+B
+,
+μ
+C
+∈
+𝒫
+⁡
+(
+𝒮
+)
+\mu_{A},\mu_{B},\mu_{C}\in\mathcal{P}(\mathcal{S})
+defined by
+μ
+A
+​
+(
+{
+(
+3
+,
+3
+,
+3
+)
+}
+)
+=
+1
+,
+μ
+B
+​
+(
+{
+(
+4
+,
+4
+,
+1
+)
+}
+)
+=
+1
+,
+μ
+A
+​
+(
+{
+(
+5
+,
+2
+,
+2
+)
+}
+)
+=
+1
+,
+\displaystyle\mu_{A}(\{(3,3,3)\})=1,\quad\mu_{B}(\{(4,4,1)\})=1,\quad\mu_{A}(\{(5,2,2)\})=1,
+we have
+L
+⁡
+(
+μ
+A
+,
+μ
+B
+)
+=
+L
+⁡
+(
+μ
+B
+,
+μ
+C
+)
+=
+L
+⁡
+(
+μ
+C
+,
+μ
+A
+)
+=
+0
+.
+\displaystyle L(\mu_{A},\mu_{B})=L(\mu_{B},\mu_{C})=L(\mu_{C},\mu_{A})=0.
+This sort of non-transitivity arises in human play and is also an obstacle for machine learning
+[
+3
+,
+21
+,
+26
+]
+. It is unclear how one would properly model this non-transitivity with the widely-used linear models that were presented in
+Example
+2.6
+.
+∎
+2.1
+makes two assumptions about the function
+Λ
+\Lambda
+which we use to simplify
+2.11
+. However, there are situations in which these assumptions aren’t appropriate. We discuss the assumptions below. In both cases, it seems straightforward conceptually to omit the assumption, but then one must repeat the work done in subsequent sections without using the associated simplifications.
+The first assumption is that
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+1
+−
+Λ
+⁡
+(
+y
+,
+x
+)
+\Lambda(x,y)=1-\Lambda(y,x)
+. This is appropriate for symmetric games, but probably isn’t for asymmetric games. For example, the game in which players flip a coin to determine who plays with white in a game of chess is symmetric, but the game of chess after having picked colours is not. At the time of writing, there have been
+3,988,065,350
+3,\!988,\!065,\!350
+matches of chess played on
+lichess.org
+, and in them white scored
+52
+%
+52\%
+[
+13
+]
+. To model this, one might instead fix two different
+Λ
+\Lambda
+’s, each satisfying
+Λ
+⁡
+(
+x
+,
+x
+)
+=
+0.5
+±
+0.02
+\Lambda(x,x)=0.5\pm 0.02
+, and consider which player was playing with the white pieces to determine which one to use.
+The second assumption, that
+Λ
+⁡
+(
+x
+,
+y
+)
+∈
+[
+0
+,
+1
+]
+\Lambda(x,y)\in[0,1]
+, builds on the first. There are situations where one is interested not in the probability of each player winning, but other notions of score. For example, in poker “cash games” players can exchange money for chips at any time, and strive to win as many chips as possible. Thus, if
+A
+A
+and
+B
+B
+win
+a
+a
+and
+b
+b
+chips respectively while playing a prescribed number of hands against each other in a poker cash game, then it is most meaningful to consider the quantities
+a
+a
+and
+b
+b
+themselves, and not whether or not
+a
+>
+b
+a>b
+. This contrasts with games like Go, where the winner of the match is the player with the highest score, regardless of the magnitude of the scores or the difference between them. It seems more natural to model poker cash games with a choice of
+Λ
+\Lambda
+which takes values outside of
+[
+0
+,
+1
+]
+[0,1]
+. This also allows one to consider games which are not zero-sum. In two player games, when one player wins, the other loses, but other notions of score needn’t sum to zero. In the preceding poker example, one expects that
+a
++
+b
+<
+0
+a+b<0
+, as casinos take a small portion of each pot.
+2.2.
+Knowledge of players
+2.1
+posits that the player
+A
+A
+is determined by a Borel probability measure
+μ
+A
+∈
+𝒫
+⁡
+(
+𝒮
+)
+\mu_{A}\in\mathcal{P}(\mathcal{S})
+. Our rating system will not know with certainty what the true underlying measure
+μ
+A
+\mu_{A}
+is, and represents its current beliefs with a Borel probability measure
+ν
+A
+∈
+𝒫
+⁡
+(
+𝒫
+⁡
+(
+𝒮
+)
+)
+\nu_{A}\in\mathcal{P}(\mathcal{P}(\mathcal{S}))
+. The only observations our rating system will consider are match outcomes, and
+2.11
+gives the resulting posteriors.
+Model 2.11
+.
+Let
+𝒮
+\mathcal{S}
+and
+L
+L
+be as in
+2.1
+. For any
+ν
+A
+\nu_{A}
+and
+ν
+B
+\nu_{B}
+in
+𝒫
+⁡
+(
+𝒫
+⁡
+(
+𝒮
+)
+)
+\mathcal{P}(\mathcal{P}(\mathcal{S}))
+, define
+ν
+A
+,
+A
+>
+B
+\nu_{A,A>B}
+to be any element of
+𝒫
+⁡
+(
+𝒫
+⁡
+(
+𝒮
+)
+)
+\mathcal{P}(\mathcal{P}(\mathcal{S}))
+satisfying, for all Borel-measurable sets
+U
+⊆
+𝒫
+⁡
+(
+𝒮
+)
+U\subseteq\mathcal{P}(\mathcal{S})
+,
+∫
+U
+ν
+A
+,
+A
+>
+B
+​
+(
+𝑑
+μ
+)
+=
+∫
+U
+[
+∫
+𝒫
+⁡
+(
+𝒮
+)
+L
+⁡
+(
+μ
+,
+μ
+′
+)
+​
+ν
+B
+​
+(
+d
+​
+μ
+′
+)
+]
+​
+ν
+A
+​
+(
+𝑑
+μ
+)
+∫
+𝒫
+⁡
+(
+𝒮
+)
+[
+∫
+𝒫
+⁡
+(
+𝒮
+)
+L
+⁡
+(
+μ
+,
+μ
+′
+)
+​
+ν
+B
+​
+(
+d
+​
+μ
+′
+)
+]
+​
+ν
+A
+​
+(
+𝑑
+μ
+)
+.
+\displaystyle\int_{U}\nu_{A,A>B}(d\mu)=\frac{\int_{U}\left[\int_{\mathcal{P}(\mathcal{S})}L(\mu,\mu^{\prime})\,\nu_{B}(d\mu^{\prime})\right]\nu_{A}(d\mu)}{\int_{\mathcal{P}(\mathcal{S})}\left[\int_{\mathcal{P}(\mathcal{S})}L(\mu,\mu^{\prime})\,\nu_{B}(d\mu^{\prime})\right]\nu_{A}(d\mu)}.
+Define
+ν
+A
+,
+B
+>
+A
+\nu_{A,B>A}
+as above but with all instances of
+L
+⁡
+(
+μ
+,
+μ
+′
+)
+L(\mu,\mu^{\prime})
+replaced by
+L
+⁡
+(
+μ
+′
+,
+μ
+)
+L(\mu^{\prime},\mu)
+.
+The prior distribution over probability measures associated to a player
+A
+A
+is modeled by
+ν
+A
+\nu_{A}
+, and the posterior after observing a match in which
+A
+A
+defeats
+B
+B
+or
+B
+B
+defeats
+A
+A
+is modeled by
+ν
+A
+,
+A
+>
+B
+\nu_{A,A>B}
+or
+ν
+A
+,
+B
+>
+A
+\nu_{A,B>A}
+.
+After updating the prior
+ν
+A
+\nu_{A}
+to the posterior
+ν
+A
+,
+A
+>
+B
+\nu_{A,A>B}
+or
+ν
+A
+,
+B
+>
+A
+\nu_{A,B>A}
+, that posterior will then be used as the prior when processing the next match
+A
+A
+plays.
+In some games there are match outcomes such as draws which are neither wins nor losses. When one can reasonably model these outcomes by a real number
+θ
+\theta
+, e.g.
+θ
+=
+1
+2
+\theta=\tfrac{1}{2}
+for draws, then we suggest taking the posterior, which we’ll denote
+ν
+A
+,
+θ
+\nu_{A,\theta}
+, to be any probability measure which satisfies
+(1)
+∫
+U
+ν
+A
+,
+θ
+​
+(
+𝑑
+μ
+)
+=
+∫
+U
+[
+∫
+𝒫
+⁡
+(
+𝒮
+)
+L
+​
+(
+μ
+,
+μ
+′
+)
+θ
+​
+L
+​
+(
+μ
+′
+,
+μ
+)
+1
+−
+θ
+​
+ν
+B
+​
+(
+d
+​
+μ
+′
+)
+]
+​
+ν
+A
+​
+(
+𝑑
+μ
+)
+∫
+𝒫
+⁡
+(
+𝒮
+)
+[
+∫
+𝒫
+⁡
+(
+𝒮
+)
+L
+​
+(
+μ
+,
+μ
+′
+)
+θ
+​
+L
+​
+(
+μ
+′
+,
+μ
+)
+1
+−
+θ
+​
+ν
+B
+​
+(
+d
+​
+μ
+′
+)
+]
+​
+ν
+A
+​
+(
+𝑑
+μ
+)
+\displaystyle\int_{U}\nu_{A,\theta}(d\mu)=\frac{\int_{U}\left[\int_{\mathcal{P}(\mathcal{S})}L(\mu,\mu^{\prime})^{\theta}L(\mu^{\prime},\mu)^{1-\theta}\,\nu_{B}(d\mu^{\prime})\right]\nu_{A}(d\mu)}{\int_{\mathcal{P}(\mathcal{S})}\left[\int_{\mathcal{P}(\mathcal{S})}L(\mu,\mu^{\prime})^{\theta}L(\mu^{\prime},\mu)^{1-\theta}\,\nu_{B}(d\mu^{\prime})\right]\nu_{A}(d\mu)}
+for all Borel-measurable sets
+U
+⊆
+𝒫
+⁡
+(
+𝒮
+)
+U\subseteq\mathcal{P}(\mathcal{S})
+. Our reasoning for this is the same as the reasoning given in
+[
+8
+, §2]
+. This formula can also be viewed as encompassing the one given in
+2.11
+if one takes
+θ
+=
+1
+\theta=1
+if
+A
+>
+B
+A>B
+and
+θ
+=
+0
+\theta=0
+if
+B
+>
+A
+B>A
+. It may be helpful in some cases to note that the assumptions in
+2.1
+imply that
+L
+⁡
+(
+μ
+′
+,
+μ
+)
+=
+1
+−
+L
+⁡
+(
+μ
+,
+μ
+′
+)
+L(\mu^{\prime},\mu)=1-L(\mu,\mu^{\prime})
+.
+One must choose what prior
+ν
+0
+∈
+𝒫
+⁡
+(
+𝒫
+⁡
+(
+𝒮
+)
+)
+\nu_{0}\in\mathcal{P}(\mathcal{P}(\mathcal{S}))
+to assign to a player which is completely unknown to the system. Below, we give one type of prior which is a convenient choice for many applications.
+Definition 2.12
+.
+For a given complete separable metric space
+𝒮
+\mathcal{S}
+, we will call a Borel probability measure
+ν
+∈
+𝒫
+⁡
+(
+𝒫
+⁡
+(
+𝒮
+)
+)
+\nu\in\mathcal{P}(\mathcal{P}(\mathcal{S}))
+Dirac-only
+if and only if, for all Borel-measurable
+U
+⊆
+𝒫
+⁡
+(
+𝒮
+)
+U\subseteq\mathcal{P}(\mathcal{S})
+,
+U
+∩
+{
+δ
+x
+:
+x
+∈
+𝒮
+}
+=
+∅
+⟹
+ν
+⁡
+(
+U
+)
+=
+0
+,
+\displaystyle U\cap\big\{\delta_{x}\,:\,x\in\mathcal{S}\big\}=\emptyset\quad\implies\quad\nu(U)=0,
+where
+δ
+x
+\delta_{x}
+is the Dirac measure as in
+Definition
+2.3
+.
+Dirac-only priors are convenient for two reasons:
+(1)
+If
+ν
+A
+\nu_{A}
+is Dirac-only, then the posteriors
+ν
+A
+,
+A
+>
+B
+\nu_{A,A>B}
+and
+ν
+A
+,
+B
+>
+A
+\nu_{A,B>A}
+from
+2.11
+are too.
+(2)
+If
+ν
+\nu
+is Dirac-only, then we can treat
+ν
+\nu
+as an element of
+𝒫
+⁡
+(
+𝒮
+)
+\mathcal{P}(\mathcal{S})
+via
+ν
+⁡
+(
+U
+⊆
+𝒮
+)
+≔
+ν
+⁡
+(
+{
+δ
+x
+:
+x
+∈
+U
+}
+)
+.
+\displaystyle\nu(U\subseteq\mathcal{S})\coloneqq\nu\!\left(\big\{\delta_{x}\,:\,x\in U\big\}\right).
+Example 2.13
+.
+This example gives a description of the Bayesian inference part of the widely-used Glicko system
+[
+8
+]
+. Take
+𝒮
+=
+ℝ
+\mathcal{S}=\mathbb{R}
+and
+Λ
+\Lambda
+to be the parameterization of the Bradley–Terry model
+[
+27
+,
+1
+]
+given by
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+1
+1
++
+10
+y
+−
+x
+400
+.
+\displaystyle\Lambda(x,y)=\frac{1}{1+10^{\frac{y-x}{400}}}.
+To an unknown player, assign a Dirac-only (
+Definition
+2.12
+) prior
+ν
+0
+\nu_{0}
+which, viewed as a probability measure on
+ℝ
+\mathbb{R}
+, is a normal distribution. When updating according to
+2.11
+, approximate the marginal likelihood
+∫
+𝒫
+⁡
+(
+𝒮
+)
+L
+⁡
+(
+μ
+,
+μ
+′
+)
+​
+ν
+B
+​
+(
+d
+​
+μ
+′
+)
+\int_{\mathcal{P}(\mathcal{S})}L(\mu,\mu^{\prime})\,\nu_{B}(d\mu^{\prime})
+by a normal density with the same mode and second derivative at that mode; see
+[
+8
+, Appendix A]
+for details. A consequence of this approximation is that the posterior
+ν
+A
+,
+θ
+\nu_{A,\theta}
+(
+Eq.
+1
+) is again normal.
+∎
+Example 2.14
+.
+Take
+𝒮
+=
+ℝ
+\mathcal{S}=\mathbb{R}
+and
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+H
+⁡
+(
+x
+−
+y
+)
+\Lambda(x,y)=H(x-y)
+, where
+H
+H
+is the Heaviside function (
+Definition
+2.2
+). Suppose Alice and Abi share the account
+A
+A
+in an online game, and in any given match Alice plays with probability
+p
+∈
+(
+0
+,
+1
+)
+p\in(0,1)
+and Abi plays otherwise. When Alice plays she always performs with strength
+x
+1
+x_{1}
+, and when Abi plays she always performs with strength
+x
+2
+x_{2}
+. Suppose there is another player
+B
+B
+which always performs with strength
+y
+y
+.
+In the case where our rating system is aware of all this information except for the value of
+p
+p
+, we can model the situation as follows. Let
+μ
+p
+\mu_{p}
+be a probability measure satisfying
+μ
+p
+​
+(
+{
+x
+1
+}
+)
+=
+p
+\mu_{p}(\{x_{1}\})=p
+and
+μ
+p
+​
+(
+{
+x
+2
+}
+)
+=
+1
+−
+p
+\mu_{p}(\{x_{2}\})=1-p
+. A reasonable choice of prior
+ν
+A
+\nu_{A}
+would be the measure which, for any Borel-measurable subset
+U
+U
+of
+[
+0
+,
+1
+]
+[0,1]
+, gives probability
+λ
+⁡
+(
+U
+)
+\lambda(U)
+to the set
+{
+μ
+p
+:
+p
+∈
+U
+}
+\{\mu_{p}\,:\,p\in U\}
+, where
+λ
+\lambda
+is the Lebesgue measure. This corresponds to a uniform prior for
+p
+p
+. The prior
+ν
+B
+\nu_{B}
+should be taken to be
+δ
+δ
+y
+\delta_{\delta_{y}}
+(
+Definition
+2.3
+).
+If
+x
+1
+<
+y
+<
+x
+2
+x_{1}<y<x_{2}
+, then observations of match outcomes between
+A
+A
+and
+B
+B
+are essentially samples of Bernoulli random variable with unknown parameter
+p
+p
+, and the rating system is attempting to determine
+p
+p
+.
+2.11
+uses the usual Bayesian inference to estimate
+p
+p
+and yields a beta distribution.
+If one considers only Dirac-only choices of
+ν
+A
+\nu_{A}
+, like in
+Example
+2.13
+, then one cannot reasonably model the situation given in this example. If it is known that
+B
+B
+always performs with strength
+y
+y
+and that every match is won by the player who performed better, then, after a single observation of
+A
+>
+B
+A>B
+, the posterior
+ν
+A
+,
+A
+>
+B
+\nu_{A,A>B}
+gives probability
+0
+0
+to all
+δ
+x
+\delta_{x}
+with
+x
+<
+y
+x<y
+. The posterior after observing both
+A
+>
+B
+A>B
+and
+B
+>
+A
+B>A
+would give probability
+0
+0
+to all
+δ
+x
+\delta_{x}
+with
+x
+≠
+y
+x\neq y
+. If
+p
+p
+is far from
+1
+2
+\tfrac{1}{2}
+, then
+δ
+y
+\delta_{y}
+would be a very poor guess for
+μ
+A
+\mu_{A}
+. If there is another player
+C
+C
+who is known to always perform with strength
+z
+z
+satisfying
+x
+1
+<
+y
+<
+z
+<
+x
+2
+x_{1}<y<z<x_{2}
+, then assuming
+μ
+A
+\mu_{A}
+is a Dirac measure would cause system to believe that the sequence of match outcomes
+A
+>
+B
+A>B
+,
+B
+>
+A
+B>A
+, and
+A
+>
+C
+A>C
+could never occur, and in the proportion
+p
+​
+(
+1
+−
+p
+)
+2
+p(1-p)^{2}
+of cases in which it does the system’s behaviour would be undefined.
+∎
+Example 2.15
+.
+In this example we restate
+2.11
+under the assumption that
+ν
+A
+\nu_{A}
+and
+ν
+B
+\nu_{B}
+are discrete distributions over discrete distributions. We use the following notation:
+•
+(
+α
+i
+)
+i
+(\alpha_{i})_{i}
+and
+(
+β
+j
+)
+j
+(\beta_{j})_{j}
+are integer-indexed sequences of non-negative real numbers which each sum to
+1
+1
+, as are
+(
+p
+i
+,
+k
+)
+k
+(p_{i,k})_{k}
+for each
+i
+i
+, and
+(
+q
+j
+,
+ℓ
+)
+ℓ
+(q_{j,\ell})_{\ell}
+for each
+j
+j
+.
+•
+(
+x
+i
+,
+k
+)
+k
+(x_{i,k})_{k}
+and
+(
+y
+j
+,
+ℓ
+)
+ℓ
+(y_{j,\ell})_{\ell}
+are integer-indexed sequences of elements of
+𝒮
+\mathcal{S}
+.
+•
+δ
+∗
+\delta_{*}
+is the Dirac measure at
+∗
+*
+(
+Definition
+2.3
+).
+•
+∝
+\propto
+means that values should be normalized so that they sum to
+1
+1
+.
+Write
+ν
+A
+\displaystyle\nu_{A}
+=
+∑
+i
+α
+i
+​
+δ
+μ
+A
+,
+i
+,
+\displaystyle=\sum_{i}\alpha_{i}\delta_{\mu_{A,i}},\quad
+ν
+B
+\displaystyle\nu_{B}
+=
+∑
+j
+β
+j
+​
+δ
+μ
+B
+,
+j
+,
+\displaystyle=\sum_{j}\beta_{j}\delta_{\mu_{B,j}},
+μ
+A
+,
+i
+\displaystyle\mu_{A,i}
+=
+∑
+k
+p
+i
+,
+k
+​
+δ
+x
+i
+,
+k
+,
+\displaystyle=\sum_{k}p_{i,k}\delta_{x_{i,k}},\quad
+μ
+B
+,
+j
+\displaystyle\mu_{B,j}
+=
+∑
+ℓ
+q
+j
+,
+ℓ
+​
+δ
+y
+j
+,
+ℓ
+.
+\displaystyle=\sum_{\ell}q_{j,\ell}\delta_{y_{j,\ell}}.
+Then
+L
+⁡
+(
+μ
+A
+,
+i
+,
+μ
+B
+,
+j
+)
+=
+∑
+k
+,
+ℓ
+p
+i
+,
+k
+​
+q
+j
+,
+ℓ
+​
+Λ
+​
+(
+x
+i
+,
+k
+,
+y
+j
+,
+ℓ
+)
+\displaystyle L(\mu_{A,i},\mu_{B,j})=\sum_{k,\ell}p_{i,k}q_{j,\ell}\Lambda(x_{i,k},y_{j,\ell})
+and
+ν
+A
+,
+A
+>
+B
+=
+∑
+i
+α
+^
+i
+​
+δ
+μ
+A
+,
+i
+,
+α
+^
+i
+∝
+α
+i
+​
+∑
+j
+β
+j
+​
+∑
+k
+,
+ℓ
+p
+i
+,
+k
+​
+q
+j
+,
+ℓ
+​
+Λ
+​
+(
+x
+i
+,
+k
+,
+y
+j
+,
+ℓ
+)
+.
+∎
+\displaystyle\nu_{A,A>B}=\sum_{i}\hat{\alpha}_{i}\delta_{\mu_{A,i}},\quad\quad\hat{\alpha}_{i}\propto\alpha_{i}\sum_{j}\beta_{j}\sum_{k,\ell}p_{i,k}q_{j,\ell}\Lambda(x_{i,k},y_{j,\ell}).\qed
+2.3.
+Player growth
+In practice, the strength of a player
+A
+A
+is likely change over time for a variety of reasons. For example,
+A
+A
+might read a book to learn a new chess opening, or acquire new cards in a collectible card game. Using
+2.11
+to process many of
+A
+A
+’s matches can easily lead to situations where
+ν
+A
+\nu_{A}
+gives probability nearly
+0
+0
+to certain measures. If external factors then cause
+A
+A
+’s strength to change, a purely Bayesian system might need to observe many match outcomes before it gives a non-negligible probability to the measure corresponding to
+A
+A
+’s new strength. In this section, we present
+2.16
+for how a player’s underlying measure can change between matches.
+Model 2.16
+.
+Let
+𝒮
+\mathcal{S}
+be a complete separable metric space. Fix a function
+κ
+:
+𝒫
+⁡
+(
+𝒮
+)
+→
+𝒫
+⁡
+(
+𝒫
+⁡
+(
+𝒮
+)
+)
+\kappa:\mathcal{P}(\mathcal{S})\to\mathcal{P}(\mathcal{P}(\mathcal{S}))
+and denote by
+κ
+μ
+\kappa_{\mu}
+the value of
+κ
+\kappa
+evaluated at
+μ
+\mu
+. Given any
+ν
+∈
+𝒫
+⁡
+(
+𝒫
+⁡
+(
+𝒮
+)
+)
+\nu\in\mathcal{P}(\mathcal{P}(\mathcal{S}))
+, define
+ν
+~
+\tilde{\nu}
+to be any element of
+𝒫
+⁡
+(
+𝒫
+⁡
+(
+𝒮
+)
+)
+\mathcal{P}(\mathcal{P}(\mathcal{S}))
+satisfying, for all Borel-measurable sets
+U
+⊆
+𝒫
+⁡
+(
+𝒮
+)
+U\subseteq\mathcal{P}(\mathcal{S})
+,
+∫
+U
+ν
+~
+​
+(
+d
+​
+μ
+′
+)
+≔
+∫
+𝒫
+⁡
+(
+𝒮
+)
+∫
+U
+κ
+μ
+​
+(
+d
+​
+μ
+′
+)
+​
+ν
+​
+(
+𝑑
+μ
+)
+.
+\displaystyle\int_{U}\tilde{\nu}(d\mu^{\prime})\coloneqq\int_{\mathcal{P}(\mathcal{S})}\int_{U}\kappa_{\mu}(d\mu^{\prime})\,\nu(d\mu).
+The possibility of the strength of
+A
+A
+changing between matches because of external factors is modeled by replacing the measure
+ν
+A
+\nu_{A}
+2.11
+associates to them by
+ν
+~
+A
+\tilde{\nu}_{A}
+.
+We call the function
+κ
+\kappa
+a
+kernel
+.
+Example 2.17
+.
+If
+κ
+μ
+=
+δ
+μ
+\kappa_{\mu}=\delta_{\mu}
+for all
+μ
+∈
+𝒫
+⁡
+(
+𝒮
+)
+\mu\in\mathcal{P}(\mathcal{S})
+, then
+ν
+~
+=
+ν
+\tilde{\nu}=\nu
+for all
+ν
+\nu
+. Here
+δ
+μ
+\delta_{\mu}
+denotes the Dirac measure at
+μ
+\mu
+(
+Definition
+2.3
+).
+∎
+Example 2.18
+.
+Recall the description of the Glicko system given in
+Example
+2.13
+. Let
+φ
+(
+⋅
+|
+x
+,
+σ
+2
+)
+\varphi(\,\cdot\,|\,x,\sigma^{2})
+be the normal density on
+ℝ
+\mathbb{R}
+with mean
+x
+x
+and variance
+σ
+2
+\sigma^{2}
+. As described in
+[
+8
+, §3.2]
+, one step of the Glicko system is using
+2.16
+with
+κ
+δ
+x
+\kappa_{\delta_{x}}
+the Dirac-only measure (
+Definition
+2.12
+) satisfying
+κ
+δ
+x
+​
+(
+{
+δ
+y
+:
+y
+∈
+U
+}
+)
+=
+∫
+U
+φ
+⁡
+(
+y
+|
+x
+,
+σ
+2
+)
+​
+𝑑
+y
+\displaystyle\kappa_{\delta_{x}}(\{\delta_{y}\,:\,y\in U\})=\int_{U}\varphi(y\,|\,x,\sigma^{2})\,dy
+for some fixed
+σ
+2
+\sigma^{2}
+and all Borel-measurable
+U
+⊆
+ℝ
+U\subseteq\mathbb{R}
+. As mentioned in
+Example
+2.13
+, this formulation of Glicko only involves
+ν
+\nu
+which are Dirac-only, so the value
+κ
+μ
+\kappa_{\mu}
+when
+μ
+\mu
+isn’t a Dirac measure is irrelevant. It’s computationally convenient that if
+ν
+\nu
+and
+κ
+\kappa
+are normal in this sense, then
+ν
+~
+\tilde{\nu}
+is again normal; c.f.
+[
+8
+, Eq. (7)]
+.
+∎
+Remark 2.19
+.
+In some applications allowing
+κ
+\kappa
+to depend on the player can increase the accuracy of the model. The main innovation of Glicko2
+[
+9
+]
+over Glicko is choosing such a dependence. However, this can incentivize players seeking to maximize their rating to intentionally lose games in some circumstances
+[
+5
+, §5.1]
+. Competitive players of Pokémon GO have done this and perceive the resulting rankings to be inaccurate
+[
+25
+]
+.
+3.
+Parameter choices
+Our system is in use in the online collectible card game Duelyst II. To implement the system, we needed to choose values for the parameters listed at the beginning of
+Section
+2
+:
+•
+In
+2.1
+, a luck function
+Λ
+\Lambda
+•
+In
+2.11
+, a prior
+ν
+0
+\nu_{0}
+for unknown players
+•
+In
+2.16
+, a kernel
+κ
+\kappa
+In this section we present the choices we made and give a concrete description of the resulting system. Our system is succinctly summarized in
+Section
+3.4
+. We expect that similar choices will be suitable for many applications, and discuss minor variations other situations might call for.
+3.1.
+The luck function
+Λ
+\Lambda
+and its tails
+For Duelyst II, we take
+𝒮
+=
+ℝ
+\mathcal{S}=\mathbb{R}
+. There are situations like those discussed in
+Example
+2.10
+which call for different choices of
+𝒮
+\mathcal{S}
+, but we didn’t feel that this was necessary for our application.
+Our choice of
+Λ
+\Lambda
+is
+(2)
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+1
+−
+β
+2
++
+β
+1
++
+exp
+⁡
+(
+y
+−
+x
+)
+\displaystyle\Lambda(x,y)=\frac{1-\beta}{2}+\frac{\beta}{1+\exp(y-x)}
+with
+β
+=
+0.8
+\beta=0.8
+. This is the
+Λ
+\Lambda
+from
+Example
+2.9
+, and we discuss it there. When displaying ratings in game, we first apply the transformation
+(3)
+x
+↦
+400
+log
+⁡
+10
+​
+x
++
+1500
+\displaystyle x\mapsto\frac{400}{\log 10}x+1500
+so that we match the parameterization of the Bradley–Terry model used by FIDE
+[
+7
+]
+and Glicko
+[
+8
+]
+.
+Our
+Λ
+\Lambda
+is a linear combination of a constant function and a sigmoid. We chose a logistic curve for the sigmoid, but we would guess that other choices, like a normal CDF as in the Thurstone–Mosteller model
+[
+23
+,
+24
+,
+16
+,
+17
+,
+18
+]
+, would work just as well. In contrast, the constant term in
+Λ
+\Lambda
+has a very large impact on the behaviour of the system.
+Figure 3.1
+.
+Difference in means (
+4
+) between
+ν
+A
+∼
+𝒩
+⁡
+(
+m
+,
+σ
+2
+)
+\nu_{A}\sim\mathcal{N}(m,\sigma^{2})
+and
+ν
+A
+,
+A
+>
+B
+\nu_{A,A>B}
+as a function of
+m
+m
+. Here
+ν
+B
+=
+δ
+δ
+2000
+\nu_{B}=\delta_{\delta_{2000}}
+, and
+Λ
+\Lambda
+is given by (
+2
+) and (
+3
+) with, from left to right,
+β
+=
+0.8
+\beta=0.8
+,
+0.99
+0.99
+, and
+1
+1
+. The maximum differences for
+m
+∈
+[
+0
+,
+4000
+]
+m\in[0,4000]
+are highlighted.
+3.1
+illustrates the effect of including a constant term in
+Λ
+\Lambda
+. We suppose
+B
+B
+’s strength is always
+2000
+2000
+(i.e.
+ν
+B
+=
+δ
+δ
+2000
+\nu_{B}=\delta_{\delta_{2000}}
+; c.f.
+Definition
+2.3
+),
+A
+A
+’s strength is an unknown real number (i.e.
+ν
+A
+\nu_{A}
+is “Dirac-only” as in
+Definition
+2.12
+), and the system’s prior
+ν
+A
+\nu_{A}
+for
+A
+A
+’s strength is a normal distribution with mean
+m
+m
+and variance
+σ
+2
+\sigma^{2}
+. If the match outcome
+A
+>
+B
+A>B
+is observed, then the system uses
+2.11
+to update its belief about
+A
+A
+’s strength. Let
+m
+′
+m^{\prime}
+be the mean of
+A
+A
+’s updated distribution
+ν
+A
+,
+A
+>
+B
+\nu_{A,A>B}
+.
+3.1
+plots the difference
+m
+′
+−
+m
+m^{\prime}-m
+as a function of
+m
+m
+for
+Λ
+\Lambda
+as in (
+2
+) and reparameterized according to (
+3
+),
+β
+=
+0.8
+\beta=0.8
+,
+0.99
+0.99
+,
+1
+1
+, and various
+σ
+\sigma
+. Unpacking the definitions, one can write the quantity being plotted explicitly:
+(4)
+m
+′
+−
+m
+=
+1
+−
+β
+2
+​
+m
++
+∫
+ℝ
+β
+1
++
+10
+2000
+−
+x
+400
+​
+exp
+⁡
+(
+−
+(
+x
+−
+m
+)
+2
+2
+​
+σ
+2
+)
+​
+x
+​
+d
+​
+x
+2
+​
+π
+​
+σ
+2
+1
+−
+β
+2
++
+∫
+ℝ
+β
+1
++
+10
+2000
+−
+x
+400
+​
+exp
+⁡
+(
+−
+(
+x
+−
+m
+)
+2
+2
+​
+σ
+2
+)
+​
+d
+​
+x
+2
+​
+π
+​
+σ
+2
+−
+m
+.
+\displaystyle m^{\prime}-m=\frac{\displaystyle{\frac{1-\beta}{2}m+\int_{\mathbb{R}}\frac{\beta}{1+10^{\frac{2000-x}{400}}}\exp\!\left(-\frac{(x-m)^{2}}{2\sigma^{2}}\right)\frac{x\,dx}{\sqrt{2\pi\sigma^{2}}}}}{\displaystyle{\frac{1-\beta}{2}+\int_{\mathbb{R}}\frac{\beta}{1+10^{\frac{2000-x}{400}}}\exp\!\left(-\frac{(x-m)^{2}}{2\sigma^{2}}\right)\frac{dx}{\sqrt{2\pi\sigma^{2}}}}}-m.
+When
+β
+<
+1
+\beta<1
+, one interpretation is that, like in
+Example
+2.9
+, there is a nonzero chance that the winner of a match is decided uniformly at random. If
+B
+B
+is vastly stronger than
+A
+A
+, then, when the match outcome
+A
+>
+B
+A>B
+is observed, the only plausible explanation is that the outcome of the match was in fact decided by chance, and the posterior distribution
+ν
+A
+,
+A
+>
+B
+\nu_{A,A>B}
+for
+A
+A
+is very similar to their prior
+ν
+A
+\nu_{A}
+. In (
+4
+), this intuition is reflected in the value of the integrals being much smaller than the constant terms, because there is nearly no overlap between the factors
+β
+1
++
+10
+2000
+−
+x
+400
+and
+exp
+⁡
+(
+−
+(
+x
+−
+m
+)
+2
+2
+​
+σ
+2
+)
+,
+\frac{\beta}{1+10^{\frac{2000-x}{400}}}\quad\text{and}\quad\exp\!\left(-\tfrac{(x-m)^{2}}{2\sigma^{2}}\right),
+which respectively come from the sigmoidal term in
+Λ
+\Lambda
+(defined in (
+2
+)) and the prior
+ν
+A
+\nu_{A}
+.
+In contrast, when
+β
+=
+1
+\beta=1
+, the constant terms in the numerator and denominator of (
+4
+) vanish, and the difference in the means of
+ν
+A
+\nu_{A}
+and
+ν
+A
+,
+A
+>
+B
+\nu_{A,A>B}
+is the ratio of the two exponentially small integrals. Essentially, the system views the chance of
+A
+A
+having strength comparable to
+B
+B
+’s as vanishingly small, but also views the chance of observing the match outcome
+A
+>
+B
+A>B
+as vanishingly small. Because
+ν
+A
+\nu_{A}
+has the
+exp
+⁡
+(
+−
+x
+2
+)
+\exp(-x^{2})
+tails of a normal distribution, but
+Λ
+\Lambda
+has the much heavier tail
+exp
+⁡
+(
+−
+x
+)
+\exp(-x)
+, almost all of the mass in the integrals comes from
+x
+≈
+m
+x\approx m
+. A straightforward calculation shows that
+m
+′
+−
+m
+⟶
+σ
+2
+​
+log
+⁡
+10
+400
+m^{\prime}-m\longrightarrow\frac{\sigma^{2}\log 10}{400}
+as
+m
+⟶
+−
+∞
+m\longrightarrow-\infty
+.
+The behaviour with
+β
+=
+1
+\beta=1
+overall seems much less reasonable to us than when
+β
+<
+1
+\beta<1
+, since it leads to massive rating changes for
+A
+A
+based on ratios of minuscule probabilities. We view these probabilities as being substantially smaller than the chance that something bizarre has happened that the
+β
+=
+1
+\beta=1
+model is not equipped to consider, and believe that a model that better reflects reality should not view this match outcome as extremely strong evidence that
+A
+A
+is tremendously underrated.
+3.1
+shows that changing
+β
+\beta
+from
+1
+1
+to
+0.99
+0.99
+changes the behaviour of the model much more than changing
+β
+\beta
+from
+0.99
+0.99
+to
+0.8
+0.8
+.
+Figure 3.2
+.
+Change in rating after each match for the two Duelyst II players that have played the most matches at the time of writing, plotted against difference between their rating and their opponent’s. The first
+100
+100
+matches from each player are excluded.
+We note that
+[
+10
+, Fig. 1]
+reports that four widely-used systems based on the Bradley–Terry model all overestimate the performance of very highly rated competitors, that Sonas reports observing the same phenomenon in the popular article
+[
+22
+]
+with a dataset of
+1.54
+1.54
+million chess games from FIDE, and that FIDE truncates the tails of the
+Λ
+\Lambda
+it uses; see
+Example
+2.8
+. This is consistent with our qualitative assessment of
+3.1
+above: the Bradley–Terry model, with exponential asymptotes at
+0
+0
+and
+1
+1
+, overestimates the winning chances of a much higher rated player.
+The two players who have played the most matches in our Duelyst II dataset of the first
+1,126,592
+1,\!126,\!592
+ranked matches played since the game’s launch, who we call
+P
+P
+and
+Q
+Q
+. have played
+2162
+2162
+and
+2142
+2142
+matches respectively, and are ranked by our system to be at the
+95
+th
+95^{\text{th}}
+and
+99.95
+th
+99.95^{\text{th}}
+percentiles among all players having played at least one ranked match.
+3.2
+shows the change in rating, i.e. mean of
+ν
+P
+\nu_{P}
+or
+ν
+Q
+\nu_{Q}
+, after each of their matches beyond the first
+100
+100
+they played. The horizontal axis shows the rating difference at the time of the match between the player and their opponent.
+P
+P
+is shown in red, and
+Q
+Q
+in blue. Points above the axis are wins and points below are losses, except for the
+10
+10
+distinctly visible draws separate from the rest of the points.
+The shape of the clusters in
+3.2
+is similar to what’s shown in
+3.1
+, as expected. The qualitative observation that the blue points are noisier than the red points is explained by the fact that
+Var
+​
+(
+ν
+Q
+)
+\text{Var}(\nu_{Q})
+varies between about
+52
+2
+52^{2}
+and
+62
+2
+62^{2}
+for the plotted matches, whereas
+Var
+​
+(
+ν
+P
+)
+\text{Var}(\nu_{P})
+is almost always between
+48
+2
+48^{2}
+and
+52
+2
+52^{2}
+.
+3.2.
+ν
+0
+\nu_{0}
+for unknown players
+Duelyst II’s implementation considers only values of
+ν
+\nu
+which are Dirac-only (
+Definition
+2.12
+). We can then view
+ν
+\nu
+as a probability distribution on
+ℝ
+\mathbb{R}
+, with the interpretation that each player’s strength could in principle be described by a single real number, and
+ν
+\nu
+describes the system’s knowledge of said real number. The prior
+ν
+0
+\nu_{0}
+we assign to an unknown player, viewed as a distribution on
+ℝ
+\mathbb{R}
+, is
+(5)
+ν
+0
+=
+∑
+k
+=
+0
+n
+ρ
+⁡
+(
+x
+k
+)
+​
+δ
+x
+k
+\displaystyle\nu_{0}=\sum_{k=0}^{n}\rho(x_{k})\,\delta_{x_{k}}
+with
+x
+k
+=
+−
+M
++
+2
+​
+M
+n
+​
+k
+,
+ρ
+⁡
+(
+x
+k
+)
+∝
+φ
+⁡
+(
+x
+k
+|
+0
+,
+σ
+0
+2
+)
+,
+\displaystyle x_{k}=-M+\frac{2M}{n}k,\quad\text{}\quad\rho(x_{k})\propto\varphi(x_{k}\,|\,0,\sigma_{0}^{2}),
+n
+=
+1000
+,
+M
+=
+7
+,
+σ
+0
+2
+=
+0.7
+2
+.
+\displaystyle n=1000,\quad\text{}\quad M=7,\quad\text{}\quad\sigma_{0}^{2}=0.7^{2}.
+Here
+δ
+x
+k
+\delta_{x_{k}}
+is a Dirac measure (
+Definition
+2.3
+),
+φ
+(
+⋅
+|
+x
+,
+σ
+0
+2
+)
+\varphi(\,\cdot\,|\,x,\sigma_{0}^{2})
+is the normal density with mean
+x
+x
+and variance
+σ
+0
+2
+\sigma_{0}^{2}
+, and
+∝
+\propto
+indicates that the values of
+ρ
+⁡
+(
+x
+k
+)
+\rho(x_{k})
+are rescaled so that they sum to
+1
+1
+.
+It would be more natural to take
+ν
+0
+\nu_{0}
+to be the normal distribution
+𝒩
+⁡
+(
+0
+,
+0.7
+2
+)
+\mathcal{N}(0,0.7^{2})
+, but we choose the discrete distribution (
+5
+) with finite support because it is straightforward to implement: we can encode (
+5
+) as the tuple
+(
+ρ
+⁡
+(
+x
+0
+)
+,
+…
+,
+ρ
+⁡
+(
+x
+1000
+)
+)
+∈
+ℝ
+1001
+\left(\rho(x_{0}),\dots,\rho(x_{1000})\right)\in\mathbb{R}^{1001}
+, a list of
+1001
+1001
+real numbers. The measure (
+5
+) is an approximation to
+𝒩
+⁡
+(
+0
+,
+0.7
+2
+)
+\mathcal{N}(0,0.7^{2})
+in the sense of weak convergence as
+n
+,
+M
+⟶
+∞
+n,M\longrightarrow\infty
+.
+We chose the values of
+n
+=
+1000
+n=1000
+,
+M
+=
+7
+M=7
+, and
+σ
+0
+2
+=
+0.7
+2
+\sigma_{0}^{2}=0.7^{2}
+by examining the system’s performance on the dataset of the first
+1,126,592
+1,\!126,\!592
+ranked matches played since Duelyst II’s launch. We were primarily concerned with producing a reliable ranking for the game’s strongest players. The resulting rankings were relatively insensitive to these choices.
+We found that, for this dataset, taking
+σ
+0
+2
+=
+1
+\sigma_{0}^{2}=1
+lead to a small but non-negligible chance for players who happened to do very well in their first few matches getting ranked inappropriately highly, whereas taking
+σ
+0
+2
+=
+0.7
+2
+\sigma_{0}^{2}=0.7^{2}
+seemingly did not. Taking smaller values of
+σ
+0
+2
+\sigma_{0}^{2}
+would require top players to play more matches to be accurately rated.
+The numbers
+M
+M
+and
+n
+n
+control how precisely the system can determine a player’s strength, but larger values make the system more computationally expensive to use in practice. We chose
+M
+=
+7
+M=7
+because no player had non-negligible mass outside
+[
+−
+M
+,
+M
+]
+[-M,M]
+, and
+n
+=
+1000
+n=1000
+because doubling this value did not meaningfully change the system’s output for our dataset.
+3.3.
+The kernel
+κ
+\kappa
+For Duelyst II, we took
+κ
+\kappa
+to be
+(6)
+κ
+δ
+x
+=
+∑
+k
+=
+0
+n
+K
+⁡
+(
+x
+,
+x
+k
+)
+​
+δ
+x
+k
+\displaystyle\kappa_{\delta_{x}}=\sum_{k=0}^{n}K(x,x_{k})\,\delta_{x_{k}}
+with
+x
+k
+=
+−
+M
++
+2
+​
+M
+n
+​
+k
+,
+K
+⁡
+(
+x
+,
+x
+k
+)
+∝
+φ
+⁡
+(
+x
+|
+x
+k
+,
+σ
+κ
+2
+)
+,
+\displaystyle x_{k}=-M+\frac{2M}{n}k,\quad\text{}\quad K(x,x_{k})\propto\varphi(x\,|\,x_{k},\sigma_{\kappa}^{2}),
+n
+=
+1000
+,
+M
+=
+7
+,
+σ
+κ
+2
+=
+0.03
+2
+,
+\displaystyle n=1000,\quad\text{}\quad M=7,\quad\text{}\quad\sigma_{\kappa}^{2}=0.03^{2},
+using the same notation as
+Eq.
+5
+. Because all
+ν
+\nu
+’s that arise will be Dirac-only (
+Definition
+2.12
+), the value of
+κ
+μ
+\kappa_{\mu}
+when
+μ
+\mu
+is not a Dirac measure irrelevant. As was the case in
+Section
+3.2
+, a more natural choice for
+κ
+\kappa
+, viewed as a distribution on
+ℝ
+\mathbb{R}
+, would be the normal distribution
+𝒩
+⁡
+(
+x
+k
+,
+σ
+κ
+2
+)
+\mathcal{N}(x_{k},\sigma_{\kappa}^{2})
+(and in some applications it might be desirable to take
+κ
+\kappa
+to be, more generally, a mixture of normal distributions with the same mean), but, for computational convenience, we want
+ν
+~
+\tilde{\nu}
+to give
+0
+0
+mass to
+ℝ
+\
+{
+x
+0
+,
+…
+,
+x
+n
+}
+\mathbb{R}\backslash\{x_{0},\dots,x_{n}\}
+.
+3.4.
+Summary
+In Duelyst II, each player
+A
+A
+is represented as a tuple of
+1001
+1001
+real numbers:
+(
+ρ
+A
+​
+(
+14
+1000
+⋅
+0
+−
+7
+)
+,
+ρ
+A
+​
+(
+14
+1000
+⋅
+1
+−
+7
+)
+,
+…
+,
+ρ
+A
+​
+(
+14
+1000
+​
+k
+−
+7
+)
+,
+…
+,
+ρ
+A
+​
+(
+7
+)
+)
+.
+\bigg(\rho_{A}(\tfrac{14}{1000}\cdot 0-7),\,\rho_{A}(\tfrac{14}{1000}\cdot 1-7),\dots,\,\rho_{A}(\tfrac{14}{1000}k-7),\dots,\,\rho_{A}(7)\bigg).
+New players are set such that
+ρ
+A
+​
+(
+x
+)
+∝
+1
+2
+​
+π
+⋅
+0.7
+2
+​
+exp
+⁡
+(
+−
+x
+2
+2
+⋅
+0.7
+2
+)
+.
+\rho_{A}(x)\propto\frac{1}{\sqrt{2\pi\cdot 0.7^{2}}}\exp\!\left(-\frac{x^{2}}{2\cdot 0.7^{2}}\right).
+Here and later,
+∝
+\propto
+indicates that the values are then normalized so that they sum to
+1
+1
+.
+After the match outcome
+A
+>
+B
+A>B
+is observed, the system updates the values of
+ρ
+A
+\rho_{A}
+and
+ρ
+B
+\rho_{B}
+to
+ρ
+A
+,
+A
+>
+B
+​
+(
+x
+)
+∝
+ρ
+A
+​
+(
+x
+)
+​
+∑
+k
+=
+0
+1000
+ρ
+B
+​
+(
+14
+1000
+​
+k
+−
+7
+)
+​
+[
+0.1
++
+0.8
+1
++
+exp
+⁡
+(
+(
+14
+1000
+​
+k
+−
+7
+)
+−
+x
+)
+]
+,
+\displaystyle\rho_{A,A>B}(x)\propto\rho_{A}(x)\sum_{k=0}^{1000}\rho_{B}\!\left(\tfrac{14}{1000}k-7\right)\left[0.1+\frac{0.8}{1+\exp\!\left((\frac{14}{1000}k-7)-x\right)}\right],
+ρ
+B
+,
+A
+>
+B
+​
+(
+x
+)
+∝
+ρ
+B
+​
+(
+x
+)
+​
+∑
+k
+=
+0
+1000
+ρ
+A
+​
+(
+14
+1000
+​
+k
+−
+7
+)
+​
+[
+0.1
++
+0.8
+1
++
+exp
+⁡
+(
+x
+−
+(
+14
+1000
+​
+k
+−
+7
+)
+)
+]
+.
+\displaystyle\rho_{B,A>B}(x)\propto\rho_{B}(x)\sum_{k=0}^{1000}\rho_{A}\!\left(\tfrac{14}{1000}k-7\right)\left[0.1+\frac{0.8}{1+\exp\!\left(x-(\frac{14}{1000}k-7)\right)}\right].
+We evaluate these expressions using the Fast Fourier Transform (FFT) as described in
+Section
+4.2
+. The values of
+ρ
+A
+\rho_{A}
+and
+ρ
+B
+\rho_{B}
+are then replaced with the values of
+ρ
+A
+,
+A
+>
+B
+\rho_{A,A>B}
+and
+ρ
+B
+,
+A
+>
+B
+\rho_{B,A>B}
+.
+Immediately after completing the step above,
+ρ
+A
+\rho_{A}
+is replaced with
+ρ
+~
+A
+\tilde{\rho}_{A}
+, defined by
+ρ
+~
+A
+​
+(
+x
+)
+∝
+∑
+k
+=
+0
+1000
+ρ
+A
+​
+(
+14
+1000
+​
+k
+−
+7
+)
+​
+1
+2
+​
+π
+⋅
+0.03
+2
+​
+exp
+⁡
+(
+−
+(
+x
+−
+(
+14
+1000
+​
+k
+−
+7
+)
+)
+2
+2
+⋅
+0.03
+2
+)
+,
+\displaystyle\tilde{\rho}_{A}(x)\propto\sum_{k=0}^{1000}\rho_{A}\!\left(\tfrac{14}{1000}k-7\right)\frac{1}{\sqrt{2\pi\cdot 0.03^{2}}}\exp\!\left(-\frac{\left(x-(\tfrac{14}{1000}k-7)\right)^{2}}{2\cdot 0.03^{2}}\right),
+and
+ρ
+B
+\rho_{B}
+is replaced with
+ρ
+~
+B
+\tilde{\rho}_{B}
+defined analogously. FFT is used to compute the values of
+ρ
+~
+A
+\tilde{\rho}_{A}
+and
+ρ
+~
+B
+\tilde{\rho}_{B}
+.
+4.
+Algorithms
+Our rating system operates as follows:
+•
+Assign a prior
+ν
+0
+\nu_{0}
+to unknown players (see
+2.11
+and
+Section
+3.2
+).
+•
+After every match:
+(1)
+update
+ν
+A
+\nu_{A}
+and
+ν
+B
+\nu_{B}
+to
+ν
+A
+,
+A
+>
+B
+\nu_{A,A>B}
+and
+ν
+B
+,
+A
+>
+B
+\nu_{B,A>B}
+using to
+2.11
+,
+(2)
+replace
+ν
+A
+\nu_{A}
+and
+ν
+B
+\nu_{B}
+with
+ν
+~
+A
+\tilde{\nu}_{A}
+and
+ν
+~
+B
+\tilde{\nu}_{B}
+using
+2.16
+,
+where
+A
+A
+and
+B
+B
+are the winner and loser of that match respectively.
+We call step 1 above
+match processing
+, and step 2
+kernel processing
+.
+In this section, we present three algorithms for each of these steps, for three special cases of parameter choices. In all three cases, we will assume that the playing strength of an arbitrary player
+A
+A
+is an unknown fixed real number that is an element of a known finite set
+S
+A
+S_{A}
+(which can depend on
+A
+A
+) of size at most
+n
++
+1
+n+1
+(which cannot depend on
+A
+A
+).
+In
+Section
+4.1
+, we give an algorithm that is fully general besides the assumptions above. This algorithm takes time
+≫
+n
+2
+\gg n^{2}
+for each of the match processing step from
+2.11
+and the kernel processing step from
+2.16
+, whereas the other two algorithms we present take time
+≪
+n
+1
++
+ε
+\ll n^{1+\varepsilon}
+for these steps. This algorithm is useful because it is the simplest of the three.
+In
+Section
+4.2
+, we give an algorithm based on the Fast Fourier Transform (FFT) that processes matches and kernels in time
+≪
+n
+1
++
+ε
+\ll n^{1+\varepsilon}
+, but requires some mild additional assumptions. This is the algorithm that we think is most useful for applications, and that we used in Duelyst II.
+In
+Section
+4.3
+, we give another algorithm that processes matches and kernels in
+≪
+n
+1
++
+ε
+\ll n^{1+\varepsilon}
+, but does not rely on FFT, and instead is completely elementary. It makes the somewhat restrictive assumption that the functions
+Λ
+\Lambda
+and
+κ
+\kappa
+are essentially short linear combinations of CDFs or PDFs of Laplace distributions respectively, but omits assumptions on
+S
+A
+S_{A}
+that were necessary for the FFT-based algorithms.
+4.1.
+Naive algorithms
+Let
+ρ
+A
+\rho_{A}
+be such that
+ρ
+A
+​
+(
+x
+)
+=
+ν
+A
+​
+(
+{
+x
+}
+)
+\rho_{A}(x)=\nu_{A}(\{x\})
+for all
+x
+x
+. If the match
+A
+>
+B
+A>B
+is observed, then
+A
+A
+’s posterior distribution is given by
+(7)
+ρ
+A
+,
+A
+>
+B
+​
+(
+x
+)
+∝
+ρ
+A
+​
+(
+x
+)
+​
+∑
+x
+k
+∈
+S
+B
+ρ
+B
+​
+(
+x
+k
+)
+​
+Λ
+​
+(
+x
+,
+x
+k
+)
+.
+\displaystyle\rho_{A,A>B}(x)\propto\rho_{A}(x)\sum_{x_{k}\in S_{B}}\rho_{B}(x_{k})\,\Lambda(x,x_{k}).
+Evaluating
+ρ
+A
+,
+A
+>
+B
+​
+(
+x
+)
+\rho_{A,A>B}(x)
+for a specific
+x
+x
+by summing the right hand side above directly takes time
+𝒪
+⁡
+(
+n
+)
+\mathcal{O}(n)
+. The function
+ρ
+A
+\rho_{A}
+is supported on at most
+n
+n
+points, so overall the posterior can be computed in time
+𝒪
+⁡
+(
+n
+2
+)
+\mathcal{O}(n^{2})
+. If
+B
+>
+A
+B>A
+is observed instead, then the same formula can be used with
+Λ
+⁡
+(
+x
+,
+x
+k
+)
+\Lambda(x,x_{k})
+replaced by
+Λ
+⁡
+(
+x
+k
+,
+x
+)
+=
+1
+−
+Λ
+⁡
+(
+x
+,
+x
+k
+)
+\Lambda(x_{k},x)=1-\Lambda(x,x_{k})
+.
+Example 4.1
+.
+Suppose
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+x
+x
++
+y
+,
+\displaystyle\displaystyle{\Lambda(x,y)=\frac{x}{x+y}},
+ρ
+A
+​
+(
+2
+)
+=
+9
+20
+,
+ρ
+A
+​
+(
+5
+)
+=
+3
+20
+,
+ρ
+A
+​
+(
+13
+)
+=
+8
+20
+,
+\displaystyle\rho_{A}(2)=\frac{9}{20},\quad\quad\rho_{A}(5)=\frac{3}{20},\quad\quad\rho_{A}(13)=\frac{8}{20},
+ρ
+B
+​
+(
+3
+)
+=
+2
+11
+,
+ρ
+B
+​
+(
+7
+)
+=
+4
+11
+,
+ρ
+B
+​
+(
+11
+)
+=
+5
+11
+.
+\displaystyle\rho_{B}(3)=\frac{2}{11},\quad\quad\rho_{B}(7)=\frac{4}{11},\quad\quad\rho_{B}(11)=\frac{5}{11}.
+If
+A
+>
+B
+A>B
+is observed, then
+ρ
+A
+,
+A
+>
+B
+​
+(
+2
+)
+\displaystyle\rho_{A,A>B}(2)
+∝
+ρ
+A
+​
+(
+2
+)
+​
+∑
+x
+k
+∈
+{
+3
+,
+7
+,
+11
+}
+ρ
+B
+​
+(
+x
+k
+)
+​
+2
+2
++
+x
+k
+=
+719
+7150
+,
+\displaystyle\propto\rho_{A}(2)\sum_{x_{k}\in\{3,7,11\}}\rho_{B}(x_{k})\frac{2}{2+x_{k}}=\frac{719}{7150},
+ρ
+A
+,
+A
+>
+B
+​
+(
+5
+)
+\displaystyle\rho_{A,A>B}(5)
+∝
+43
+704
+,
+\displaystyle\propto\frac{43}{704},
+ρ
+A
+,
+A
+>
+B
+​
+(
+13
+)
+\displaystyle\rho_{A,A>B}(13)
+∝
+208
+825
+.
+\displaystyle\propto\frac{208}{825}.
+Normalizing gives
+ρ
+A
+,
+A
+>
+B
+​
+(
+2
+)
+=
+69024
+284005
+≈
+0.24
+,
+ρ
+A
+,
+A
+>
+B
+​
+(
+5
+)
+=
+41925
+284005
+≈
+0.15
+,
+ρ
+A
+,
+A
+>
+B
+​
+(
+13
+)
+=
+173056
+284005
+≈
+0.61
+.
+\displaystyle\rho_{A,A>B}(2)=\frac{69024}{284005}\approx 0.24,\quad\quad\rho_{A,A>B}(5)=\frac{41925}{284005}\approx 0.15,\quad\quad\rho_{A,A>B}(13)=\frac{173056}{284005}\approx 0.61.
+Similarly,
+ρ
+B
+,
+A
+>
+B
+​
+(
+3
+)
+=
+74724
+284005
+≈
+0.26
+,
+ρ
+B
+,
+A
+>
+B
+​
+(
+7
+)
+=
+105456
+284005
+≈
+0.37
+,
+ρ
+B
+,
+A
+>
+B
+​
+(
+11
+)
+=
+103825
+284005
+≈
+0.37
+.
+\displaystyle\rho_{B,A>B}(3)=\frac{74724}{284005}\approx 0.26,\quad\quad\rho_{B,A>B}(7)=\frac{105456}{284005}\approx 0.37,\quad\quad\rho_{B,A>B}(11)=\frac{103825}{284005}\approx 0.37.
+Note that we use
+ρ
+A
+\rho_{A}
+, not
+ρ
+A
+,
+A
+>
+B
+\rho_{A,A>B}
+, to update
+ρ
+B
+\rho_{B}
+.
+∎
+Let
+K
+:
+ℝ
+2
+→
+ℝ
+K:\mathbb{R}^{2}\to\mathbb{R}
+be defined by
+κ
+δ
+x
+=
+∑
+x
+k
+∈
+S
+A
+K
+⁡
+(
+x
+,
+x
+k
+)
+​
+δ
+x
+k
+\displaystyle\kappa_{\delta_{x}}=\sum_{x_{k}\in S_{A}}K(x,x_{k})\,\delta_{x_{k}}
+as in (
+6
+). Then
+ρ
+~
+A
+\tilde{\rho}_{A}
+can be computed as
+(8)
+ρ
+~
+A
+​
+(
+x
+)
+∝
+∑
+x
+k
+∈
+S
+A
+ρ
+A
+​
+(
+x
+k
+)
+​
+K
+​
+(
+x
+,
+x
+k
+)
+\displaystyle\tilde{\rho}_{A}(x)\propto\sum_{x_{k}\in S_{A}}\rho_{A}(x_{k})\,K(x,x_{k})
+for
+x
+∈
+S
+A
+x\in S_{A}
+. Like the case with match processing discussed above, computing
+ρ
+~
+A
+\tilde{\rho}_{A}
+this way takes time
+𝒪
+⁡
+(
+n
+2
+)
+\mathcal{O}(n^{2})
+.
+Example 4.2
+.
+Suppose
+S
+A
+=
+{
+1
+,
+2
+,
+…
+,
+100
+}
+S_{A}=\{1,2,\dots,100\}
+and
+K
+⁡
+(
+x
+,
+y
+)
+=
+{
+1
+3
+if
+​
+x
+−
+y
+∈
+{
+−
+1
+,
+0
+,
+1
+}
+0
+otherwise,
+ρ
+A
+​
+(
+n
+)
+=
+{
+1
+10
+if
+n
+is a perfect square
+0
+otherwise.
+\displaystyle K(x,y)=\begin{cases}\frac{1}{3}&\text{if }x-y\in\{-1,0,1\}\\
+0&\text{otherwise,}\end{cases}\quad\quad\rho_{A}(n)=\begin{cases}\frac{1}{10}&\text{if $n$ is a perfect square}\\
+0&\text{otherwise.}\end{cases}
+Then
+ρ
+~
+A
+​
+(
+n
+)
+=
+{
+1
+28
+n
+∈
+U
+0
+otherwise,
+\displaystyle\tilde{\rho}_{A}(n)=\begin{cases}\frac{1}{28}&n\in U\\
+0&\text{otherwise,}\end{cases}
+where
+U
+\displaystyle U
+=
+{
+n
+∈
+ℤ
+∩
+[
+1,100
+]
+:
+for some
+δ
+∈
+{
+−
+1
+,
+0
+,
+1
+}
+,
+n
++
+δ
+∈
+[
+1,100
+]
+​
+and
+​
+n
++
+δ
+∈
+ℤ
+}
+\displaystyle=\big\{n\in\mathbb{Z}\cap[1,100]\,:\,\text{for some $\delta\in\{-1,0,1\}$, $n+\delta\in[1,100]\text{ and }\sqrt{n+\delta}\in\mathbb{Z}$}\big\}
+=
+{
+1
+,
+2
+,
+3
+,
+4
+,
+5
+,
+8
+,
+9
+,
+10
+,
+15
+,
+16
+,
+17
+,
+24
+,
+25
+,
+26
+,
+35
+,
+36
+,
+37
+,
+48
+,
+49
+,
+50
+,
+63
+,
+64
+,
+65
+,
+80
+,
+81
+,
+82
+,
+99
+,
+100
+}
+.
+∎
+\displaystyle=\{1,2,3,4,5,8,9,10,15,16,17,24,25,26,35,36,37,48,49,50,63,64,65,80,81,82,99,100\}.\qed
+4.2.
+FFT-based algorithms
+We write
+f
+​
+(
+n
+)
+=
+𝒪
+~
+​
+(
+g
+​
+(
+n
+)
+)
+f(n)=\tilde{\mathcal{O}}(g(n))
+to mean
+f
+⁡
+(
+n
+)
+=
+𝒪
+⁡
+(
+g
+⁡
+(
+n
+)
+​
+n
+ε
+)
+f(n)=\mathcal{O}(g(n)n^{\varepsilon})
+for all
+ε
+>
+0
+\varepsilon>0
+. Define
+ρ
+A
+,
+ρ
+B
+\rho_{A},\rho_{B}
+, and
+K
+K
+as in the previous section. We will recognize (
+7
+) and (
+8
+) as convolutions, and then use the Fast Fourier Transform (FFT) to compute them in time
+𝒪
+~
+​
+(
+n
+)
+\tilde{\mathcal{O}}(n)
+. In this section, we assume the following:
+•
+S
+A
+=
+S
+B
+S_{A}=S_{B}
+,
+•
+S
+A
+=
+{
+x
+0
+,
+…
+,
+x
+n
+}
+S_{A}=\{x_{0},\dots,x_{n}\}
+with
+x
+k
+=
+k
+​
+Δ
+x_{k}=k\Delta
+for some
+Δ
+∈
+ℝ
+>
+0
+\Delta\in\mathbb{R}_{>0}
+,
+•
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+1
+−
+β
+2
++
+β
+​
+F
+​
+(
+x
+−
+y
+)
+\Lambda(x,y)=\tfrac{1-\beta}{2}+\beta F(x-y)
+for some
+β
+∈
+[
+0
+,
+1
+]
+\beta\in[0,1]
+and
+F
+:
+ℝ
+→
+[
+0
+,
+1
+]
+F:\mathbb{R}\to[0,1]
+increasing with asymptotes at
+0
+0
+and
+1
+1
+,
+•
+K
+⁡
+(
+x
+,
+y
+)
+=
+G
+⁡
+(
+x
+−
+y
+)
+K(x,y)=G(x-y)
+for some
+G
+:
+ℝ
+→
+ℝ
+G:\mathbb{R}\to\mathbb{R}
+.
+We begin by presenting an algorithm for kernel processing. With the assumptions above, (
+8
+) can be written as
+ρ
+~
+A
+​
+(
+k
+​
+Δ
+)
+=
+∑
+j
+=
+0
+n
+ρ
+A
+​
+(
+j
+​
+Δ
+)
+​
+G
+​
+(
+(
+k
+−
+j
+)
+​
+Δ
+)
+.
+\displaystyle\tilde{\rho}_{A}(k\Delta)=\sum_{j=0}^{n}\rho_{A}(j\Delta)\,G\big((k-j)\Delta\big).
+We recognize this as a discrete convolution:
+ρ
+~
+A
+=
+ρ
+A
+∗
+G
+\tilde{\rho}_{A}=\rho_{A}*G
+. We can then compute all the values in the list
+ρ
+~
+A
+=
+(
+ρ
+~
+A
+​
+(
+0
+)
+,
+ρ
+~
+A
+​
+(
+Δ
+)
+,
+…
+,
+ρ
+~
+A
+​
+(
+n
+​
+Δ
+)
+)
+\tilde{\rho}_{A}=\big(\tilde{\rho}_{A}(0),\tilde{\rho}_{A}(\Delta),\dots,\tilde{\rho}_{A}(n\Delta)\big)
+in time
+𝒪
+~
+​
+(
+n
+)
+\tilde{\mathcal{O}}(n)
+by using FFT.
+Our algorithm for computing the posterior (
+7
+) is similar, but involves some additional elementary manipulations. Define
+R
+⁡
+(
+x
+)
+≔
+F
+⁡
+(
+x
+)
+−
+H
+⁡
+(
+x
+)
+,
+\displaystyle R(x)\coloneqq F(x)-H(x),
+where
+H
+H
+is the Heaviside function (
+Definition
+2.2
+). Our assumptions imply that
+R
+⁡
+(
+x
+)
+⟶
+0
+R(x)\longrightarrow 0
+as
+|
+x
+|
+⟶
+∞
+|x|\longrightarrow\infty
+, and that
+ρ
+A
+,
+A
+>
+B
+​
+(
+k
+​
+Δ
+)
+∝
+ρ
+A
+​
+(
+k
+​
+Δ
+)
+​
+(
+1
+−
+β
+2
++
+β
+⁡
+(
+L
+R
+​
+(
+k
+​
+Δ
+)
++
+L
+H
+​
+(
+k
+​
+Δ
+)
+)
+)
+​
+and
+\displaystyle\rho_{A,A>B}(k\Delta)\propto\rho_{A}(k\Delta)\left(\frac{1-\beta}{2}+\beta\big(L_{R}(k\Delta)+L_{H}(k\Delta)\big)\right)\text{ and}
+ρ
+A
+,
+A
+<
+B
+​
+(
+k
+​
+Δ
+)
+∝
+ρ
+A
+​
+(
+k
+​
+Δ
+)
+​
+(
+1
++
+β
+2
+−
+β
+⁡
+(
+L
+R
+​
+(
+k
+​
+Δ
+)
++
+L
+H
+​
+(
+k
+​
+Δ
+)
+)
+)
+,
+\displaystyle\rho_{A,A<B}(k\Delta)\propto\rho_{A}(k\Delta)\left(\frac{1+\beta}{2}-\beta\big(L_{R}(k\Delta)+L_{H}(k\Delta)\big)\right),
+where
+L
+R
+​
+(
+k
+​
+Δ
+)
+≔
+∑
+j
+=
+0
+n
+ρ
+B
+​
+(
+j
+​
+Δ
+)
+​
+R
+​
+(
+(
+k
+−
+j
+)
+​
+Δ
+)
+and
+L
+H
+​
+(
+k
+​
+Δ
+)
+≔
+∑
+j
+=
+0
+n
+ρ
+B
+​
+(
+j
+​
+Δ
+)
+​
+H
+​
+(
+(
+k
+−
+j
+)
+​
+Δ
+)
+.
+\displaystyle L_{R}(k\Delta)\coloneqq\sum_{j=0}^{n}\rho_{B}(j\Delta)\,R\big((k-j)\Delta\big)\quad\text{and}\quad L_{H}(k\Delta)\coloneqq\sum_{j=0}^{n}\rho_{B}(j\Delta)\,H\big((k-j)\Delta\big).
+The function
+L
+R
+L_{R}
+is a convolution:
+L
+R
+=
+ρ
+B
+∗
+R
+L_{R}=\rho_{B}*R
+. We compute all values in the list
+L
+R
+=
+(
+L
+R
+​
+(
+0
+)
+,
+…
+,
+L
+R
+​
+(
+n
+​
+Δ
+)
+)
+L_{R}=\big(L_{R}(0),\dots,L_{R}(n\Delta)\big)
+in time
+𝒪
+~
+​
+(
+n
+)
+\tilde{\mathcal{O}}(n)
+using FFT.
+The following algorithm computes all values in the list
+L
+H
+=
+(
+L
+H
+​
+(
+0
+)
+,
+…
+,
+L
+H
+​
+(
+n
+​
+Δ
+)
+)
+L_{H}=\big(L_{H}(0),\dots,L_{H}(n\Delta)\big)
+in time
+𝒪
+⁡
+(
+n
+)
+\mathcal{O}(n)
+.
+Algorithm 4.3
+.
+Compute
+L
+H
+​
+(
+k
+​
+Δ
+)
+L_{H}(k\Delta)
+for all
+k
+∈
+{
+0
+,
+1
+,
+…
+,
+n
+}
+k\in\{0,1,\dots,n\}
+.
+Σ
+←
+0
+\Sigma\leftarrow 0
+for
+0
+≤
+k
+≤
+n
+0\leq k\leq n
+do
+Σ
+←
+Σ
++
+1
+2
+​
+ρ
+B
+​
+(
+k
+​
+Δ
+)
+\Sigma\leftarrow\Sigma+\frac{1}{2}\rho_{B}(k\Delta)
+(Because
+H
+⁡
+(
+0
+)
+=
+1
+2
+H(0)=\tfrac{1}{2}
+)
+L
+H
+​
+(
+k
+​
+Δ
+)
+←
+Σ
+L_{H}(k\Delta)\leftarrow\Sigma
+Σ
+←
+Σ
++
+1
+2
+​
+ρ
+B
+​
+(
+k
+​
+Δ
+)
+\Sigma\leftarrow\Sigma+\frac{1}{2}\rho_{B}(k\Delta)
+end
+for
+4.3.
+Laplace algorithms
+Let
+ρ
+A
+\rho_{A}
+,
+ρ
+B
+\rho_{B}
+, and
+K
+K
+be as in
+Section
+4.1
+. Define
+f
+⁡
+(
+x
+|
+b
+)
+≔
+1
+2
+​
+b
+​
+exp
+⁡
+(
+−
+|
+x
+|
+b
+)
+and
+F
+⁡
+(
+x
+|
+b
+)
+≔
+{
+1
+2
+​
+exp
+⁡
+(
+−
+|
+x
+|
+b
+)
+x
+<
+0
+1
+−
+1
+2
+​
+exp
+⁡
+(
+−
+|
+x
+|
+b
+)
+x
+≥
+0
+.
+\displaystyle f(x\,|\,b)\coloneqq\frac{1}{2b}\exp\!\left(-\frac{|x|}{b}\right)\quad\text{and}\quad F(x\,|\,b)\coloneqq\begin{cases}\tfrac{1}{2}\exp\!\left(-\frac{|x|}{b}\right)&x<0\\
+1-\tfrac{1}{2}\exp\!\left(-\frac{|x|}{b}\right)&x\geq 0.\end{cases}
+These are respectively the PDF and CDF of a Laplace distribution. Assume
+•
+Λ
+⁡
+(
+x
+,
+y
+)
+=
+1
+−
+β
+2
++
+β
+​
+∑
+j
+=
+1
+ℓ
+p
+j
+​
+F
+​
+(
+x
+−
+y
+|
+a
+j
+)
+\Lambda(x,y)=\frac{1-\beta}{2}+\beta\sum_{j=1}^{\ell}p_{j}F(x-y\,|\,a_{j})
+for non-negative reals
+p
+j
+p_{j}
+which sum to
+1
+1
+,
+•
+K
+⁡
+(
+x
+,
+y
+)
+=
+∑
+j
+=
+1
+ℓ
+q
+j
+​
+f
+​
+(
+x
+−
+y
+|
+b
+j
+)
+K(x,y)=\sum_{j=1}^{\ell}q_{j}f(x-y\,|\,b_{j})
+for non-negative reals
+q
+j
+q_{j}
+which sum to
+1
+1
+.
+With these assumptions, (
+7
+) and (
+8
+) become
+ρ
+A
+,
+A
+>
+B
+\displaystyle\rho_{A,A>B}
+∝
+ρ
+a
+​
+(
+x
+)
+​
+[
+1
+−
+β
+2
++
+β
+​
+∑
+j
+=
+1
+ℓ
+p
+j
+​
+∑
+x
+k
+∈
+S
+B
+ρ
+B
+​
+(
+x
+k
+)
+​
+F
+​
+(
+x
+−
+x
+k
+|
+a
+j
+)
+]
+\displaystyle\propto\rho_{a}(x)\left[\frac{1-\beta}{2}+\beta\sum_{j=1}^{\ell}p_{j}\sum_{x_{k}\in S_{B}}\rho_{B}(x_{k})F(x-x_{k}\,|\,a_{j})\right]
+and
+ρ
+~
+A
+​
+(
+x
+)
+\displaystyle\tilde{\rho}_{A}(x)
+∝
+∑
+j
+=
+1
+ℓ
+q
+j
+​
+∑
+x
+k
+∈
+S
+A
+ρ
+A
+​
+(
+x
+k
+)
+​
+f
+​
+(
+x
+−
+x
+k
+|
+b
+j
+)
+.
+\displaystyle\propto\sum_{j=1}^{\ell}q_{j}\sum_{x_{k}\in S_{A}}\rho_{A}(x_{k})f(x-x_{k}\,|\,b_{j}).
+We evaluate the inner sums for all
+x
+∈
+S
+A
+x\in S_{A}
+simultaneously in time
+𝒪
+~
+​
+(
+n
+)
+\tilde{\mathcal{O}}(n)
+using
+Algorithm
+4.6
+and
+Algorithm
+4.5
+described below. Doing the remaining arithmetic in the usual way, we evaluate the right hand sides for all
+x
+∈
+S
+A
+x\in S_{A}
+in time
+𝒪
+~
+​
+(
+ℓ
+​
+n
+)
+\tilde{\mathcal{O}}(\ell n)
+. The final normalization can be done in time
+𝒪
+⁡
+(
+n
+)
+\mathcal{O}(n)
+.
+The rest of this section explains
+Algorithm
+4.6
+and
+Algorithm
+4.5
+. Fix
+ρ
+:
+ℝ
+→
+ℝ
+\rho:\mathbb{R}\to\mathbb{R}
+non-negative, supported on
+x
+1
+,
+…
+,
+x
+n
+x_{1},\dots,x_{n}
+, and such that its values sum to
+1
+1
+. Define
+Q
+:
+ℝ
+→
+ℝ
+Q:\mathbb{R}\to\mathbb{R}
+by
+Q
+⁡
+(
+y
+)
+≔
+∑
+k
+=
+1
+n
+ρ
+⁡
+(
+x
+k
+)
+​
+f
+​
+(
+y
+−
+x
+k
+|
+b
+)
+.
+\displaystyle Q(y)\coloneqq\sum_{k=1}^{n}\rho(x_{k})f(y-x_{k}\,|\,b).
+Algorithm
+4.5
+takes as input an arbitrary finite set of real numbers
+y
+1
+,
+…
+,
+y
+m
+y_{1},\dots,y_{m}
+and computes, in time
+𝒪
+~
+​
+(
+m
++
+n
+)
+\tilde{\mathcal{O}}(m+n)
+, all of the
+m
+m
+quantities
+Q
+⁡
+(
+y
+1
+)
+,
+…
+,
+Q
+⁡
+(
+y
+m
+)
+Q(y_{1}),\dots,Q(y_{m})
+. Define
+Q
+L
+​
+(
+y
+)
+≔
+∑
+x
+k
+≤
+y
+ρ
+⁡
+(
+x
+k
+)
+​
+f
+​
+(
+y
+−
+x
+k
+|
+b
+)
+and
+Q
+R
+​
+(
+y
+)
+≔
+∑
+x
+k
+>
+y
+ρ
+⁡
+(
+x
+k
+)
+​
+f
+​
+(
+y
+−
+x
+k
+|
+b
+)
+.
+\displaystyle Q_{L}(y)\coloneqq\sum_{x_{k}\leq y}\rho(x_{k})f(y-x_{k}\,|\,b)\quad\text{and}\quad Q_{R}(y)\coloneqq\sum_{x_{k}>y}\rho(x_{k})f(y-x_{k}\,|\,b).
+The following observation, which is immediate from the definitions, is the main idea underlying
+Algorithm
+4.5
+and
+Algorithm
+4.6
+.
+Observation 4.4
+.
+If
+y
+y
+and
+Δ
+\Delta
+are such that
+{
+x
+1
+,
+…
+,
+x
+n
+}
+∩
+[
+y
+,
+y
++
+Δ
+]
+=
+∅
+\{x_{1},\dots,x_{n}\}\cap[y,y+\Delta]=\emptyset
+, then
+Q
+L
+​
+(
+y
++
+Δ
+)
+=
+e
+−
+Δ
+b
+​
+Q
+L
+​
+(
+y
+)
+and
+Q
+R
+​
+(
+y
++
+Δ
+)
+=
+e
+Δ
+b
+​
+Q
+R
+​
+(
+y
+)
+.
+\displaystyle Q_{L}(y+\Delta)=e^{-\frac{\Delta}{b}}Q_{L}(y)\quad\text{and}\quad Q_{R}(y+\Delta)=e^{\frac{\Delta}{b}}Q_{R}(y).
+Algorithm 4.5
+.
+Compute
+Q
+⁡
+(
+y
+i
+)
+Q(y_{i})
+for all
+y
+i
+∈
+{
+y
+1
+,
+…
+,
+y
+m
+}
+y_{i}\in\{y_{1},\dots,y_{m}\}
+.
+U
+←
+{
+x
+1
+,
+…
+,
+x
+n
+}
+∪
+{
+y
+1
+,
+…
+,
+y
+m
+}
+U\leftarrow\{x_{1},\dots,x_{n}\}\cup\{y_{1},\dots,y_{m}\}
+Sort
+U
+U
+from smallest to largest.
+L
+←
+0
+L\leftarrow 0
+z
+0
+←
+U
+⁡
+[
+0
+]
+z_{0}\leftarrow U[0]
+for
+z
+∈
+U
+z\in U
+do
+Δ
+←
+z
+−
+z
+0
+\Delta\leftarrow z-z_{0}
+L
+←
+e
+−
+Δ
+b
+​
+L
++
+1
+2
+​
+b
+​
+ρ
+​
+(
+z
+)
+L\leftarrow e^{-\frac{\Delta}{b}}L+\tfrac{1}{2b}\rho(z)
+Q
+⁡
+(
+z
+)
+←
+L
+Q(z)\leftarrow L
+z
+0
+←
+z
+z_{0}\leftarrow z
+end
+for
+Sort
+U
+U
+from largest to smallest.
+R
+←
+0
+R\leftarrow 0
+for
+z
+∈
+U
+z\in U
+do
+Δ
+←
+z
+0
+−
+z
+\Delta\leftarrow z_{0}-z
+R
+←
+e
+−
+Δ
+b
+​
+R
+R\leftarrow e^{-\frac{\Delta}{b}}R
+Q
+⁡
+(
+z
+)
+←
+Q
+⁡
+(
+z
+)
++
+R
+Q(z)\leftarrow Q(z)+R
+R
+←
+R
++
+1
+2
+​
+b
+​
+ρ
+​
+(
+z
+)
+R\leftarrow R+\tfrac{1}{2b}\rho(z)
+z
+0
+←
+z
+z_{0}\leftarrow z
+end
+for
+It is possible to compute the contribution from
+Q
+R
+​
+(
+y
+i
+)
+Q_{R}(y_{i})
+during the first iteration over
+U
+U
+. However, doing so requires that the arithmetic be done using
+≫
+1
+b
+​
+(
+max
+​
+U
+−
+min
+​
+U
+)
+\gg\tfrac{1}{b}(\text{max}\,U-\text{min}\,U)
+bits of precision because
+Q
+R
+​
+(
+y
++
+Δ
+)
+Q_{R}(y+\Delta)
+grows exponentially in
+Δ
+\Delta
+. In almost all applications it’ll be the case that
+1
+b
+​
+(
+max
+​
+U
+−
+min
+​
+U
+)
+≫
+m
++
+n
+\tfrac{1}{b}(\text{max}\,U-\text{min}\,U)\gg m+n
+, and the algorithm won’t run in time
+𝒪
+~
+​
+(
+m
++
+n
+)
+\tilde{\mathcal{O}}(m+n)
+.
+Define
+T
+:
+ℝ
+→
+ℝ
+T:\mathbb{R}\to\mathbb{R}
+by
+T
+⁡
+(
+y
+)
+≔
+∑
+k
+=
+1
+n
+ρ
+⁡
+(
+x
+k
+)
+​
+F
+​
+(
+y
+−
+x
+k
+|
+b
+)
+.
+\displaystyle T(y)\coloneqq\sum_{k=1}^{n}\rho(x_{k})F(y-x_{k}\,|\,b).
+T
+⁡
+(
+y
+)
+T(y)
+can be decomposed into the three sums
+T
+⁡
+(
+y
+)
+=
+∑
+x
+k
+≤
+y
+ρ
+⁡
+(
+x
+k
+)
+−
+∑
+x
+k
+≤
+y
+1
+2
+​
+ρ
+​
+(
+x
+k
+)
+​
+exp
+⁡
+(
+x
+k
+−
+y
+b
+)
++
+∑
+x
+k
+>
+y
+1
+2
+​
+ρ
+​
+(
+x
+k
+)
+​
+exp
+⁡
+(
+y
+−
+x
+k
+b
+)
+.
+\displaystyle T(y)=\sum_{x_{k}\leq y}\rho(x_{k})-\sum_{x_{k}\leq y}\tfrac{1}{2}\rho(x_{k})\exp\!\left(\frac{x_{k}-y}{b}\right)+\sum_{x_{k}>y}\tfrac{1}{2}\rho(x_{k})\exp\!\left(\frac{y-x_{k}}{b}\right).
+With this decomposition and the ideas used to produce
+Algorithm
+4.3
+and
+Algorithm
+4.5
+, we can construct
+Algorithm
+4.6
+that takes as input a set
+{
+y
+1
+,
+…
+,
+y
+m
+}
+\{y_{1},\dots,y_{m}\}
+and computes all of the corresponding values
+T
+⁡
+(
+y
+i
+)
+T(y_{i})
+in time
+𝒪
+~
+​
+(
+m
++
+n
+)
+\tilde{\mathcal{O}}(m+n)
+.
+Algorithm 4.6
+.
+Compute
+T
+⁡
+(
+y
+i
+)
+T(y_{i})
+for all
+y
+i
+∈
+{
+y
+1
+,
+…
+,
+y
+m
+}
+y_{i}\in\{y_{1},\dots,y_{m}\}
+.
+U
+←
+{
+x
+1
+,
+…
+,
+x
+n
+}
+∪
+{
+y
+1
+,
+…
+,
+y
+m
+}
+U\leftarrow\{x_{1},\dots,x_{n}\}\cup\{y_{1},\dots,y_{m}\}
+Sort
+U
+U
+from smallest to largest.
+M
+←
+0
+M\leftarrow 0
+L
+←
+0
+L\leftarrow 0
+z
+0
+←
+U
+⁡
+[
+0
+]
+z_{0}\leftarrow U[0]
+for
+z
+∈
+U
+z\in U
+do
+Δ
+←
+z
+−
+z
+0
+\Delta\leftarrow z-z_{0}
+M
+←
+M
++
+ρ
+⁡
+(
+z
+)
+M\leftarrow M+\rho(z)
+L
+←
+e
+−
+Δ
+b
+​
+L
++
+1
+2
+​
+ρ
+​
+(
+z
+)
+L\leftarrow e^{-\frac{\Delta}{b}}L+\tfrac{1}{2}\rho(z)
+T
+⁡
+(
+z
+)
+←
+M
+−
+L
+T(z)\leftarrow M-L
+z
+0
+←
+z
+z_{0}\leftarrow z
+end
+for
+Sort
+U
+U
+from largest to smallest.
+R
+←
+0
+R\leftarrow 0
+for
+z
+∈
+U
+z\in U
+do
+Δ
+←
+z
+0
+−
+z
+\Delta\leftarrow z_{0}-z
+R
+←
+e
+−
+Δ
+b
+​
+R
+R\leftarrow e^{-\frac{\Delta}{b}}R
+T
+⁡
+(
+z
+)
+←
+T
+⁡
+(
+z
+)
++
+R
+T(z)\leftarrow T(z)+R
+R
+←
+R
++
+1
+2
+​
+ρ
+​
+(
+z
+)
+R\leftarrow R+\tfrac{1}{2}\rho(z)
+z
+0
+←
+z
+z_{0}\leftarrow z
+end
+for
+5.
+Performance in Duelyst II
+In this section, we compare the performance of Glicko2 with our system, as well as our system but with
+β
+=
+0.9
+\beta=0.9
+instead of
+β
+=
+0.8
+\beta=0.8
+in (
+2
+), on the dataset of the first
+1,126,592
+1,\!126,\!592
+ranked matches played since Duelyst II’s launch. Duelyst II used Glicko2
+[
+9
+]
+to rate players previously, with parameters chosen to be the same as the ones used in the prequel Duelyst between 2016 to 2020:
+τ
+=
+0.5
+\tau=0.5
+and default rating
+1500
+1500
+, RD
+200
+200
+, and volatility
+0.06
+0.06
+[
+19
+]
+.
+Each of the three systems we analyze in this section we processed the matches in our dataset in chronological order. For each match, each system estimated the probability
+p
+p
+of the observed match outcome occurring. Our system estimated
+p
+p
+using
+2.1
+, and Glicko2 estimated
+p
+p
+using
+[
+8
+, Eq. (16)]
+. For the matches in which both players had variance less than
+70
+2
+70^{2}
+after the reparameterization (
+3
+), we computed
+−
+log
+⁡
+p
+-\log p
+, the
+log loss
+of that match. The average log loss was
+0.6625
+0.6625
+for Glicko2,
+0.6613
+0.6613
+for
+β
+=
+0.8
+\beta=0.8
+, and
+0.6559
+0.6559
+for
+β
+=
+0.9
+\beta=0.9
+.
+Figure 5.1
+.
+Left: Log loss of each match by rating difference. Right: Proportion of the dataset’s total log loss by rating difference, normalized to integrate to average log loss.
+The left image in
+5.1
+plots the log loss of each match individually, coloured by system. The horizontal axis is the difference in the ratings of the two players. For each colour, the three distinct curves correspond to wins by the weaker player (top), draws (middle), and wins by the stronger player (bottom). The number of matches being plotted is large:
+557973
+557973
+for Glicko2,
+566213
+566213
+for
+β
+=
+0.8
+\beta=0.8
+, and
+653660
+653660
+for
+β
+=
+0.9
+\beta=0.9
+, causing many of the points to overlap.
+The right image of
+5.1
+quantifies the density of points in the left image by showing the relative contribution of each rating difference to the total log loss in the dataset. Let
+K
+⁡
+(
+x
+,
+y
+)
+≔
+1
+2
+​
+π
+⋅
+5
+2
+​
+exp
+⁡
+(
+−
+(
+x
+−
+y
+)
+2
+2
+⋅
+5
+2
+)
+K(x,y)\coloneqq\frac{1}{\sqrt{2\pi\cdot 5^{2}}}\exp\!\left(-\frac{(x-y)^{2}}{2\cdot 5^{2}}\right)
+denote a Gaussian kernel with variance
+5
+2
+5^{2}
+. The curve plotted on the right is proportional to
+∑
+−
+log
+p
+⋅
+K
+⁡
+(
+x
+,
+|
+r
+A
+−
+r
+B
+|
+)
+∫
+0
+∞
+K
+⁡
+(
+x
+,
+t
+)
+​
+𝑑
+t
+,
+\displaystyle\sum-\log p\cdot\frac{K(x,|r_{A}-r_{B}|)}{\int_{0}^{\infty}K(x,t)\,dt},
+where the sum is over matches in which both players have variance at most
+70
+2
+70^{2}
+, the quantities
+r
+A
+r_{A}
+and
+r
+B
+r_{B}
+denote the means of the players (i.e. their ratings),
+p
+p
+is the probability of the observed match outcome occurring as estimated by each system, and
+x
+x
+is the variable for the horizontal axis. The proportionality constant is such that the plotted function integrates to the average log loss.
+While the value
+β
+=
+0.9
+\beta=0.9
+had smaller total log loss than the value
+β
+=
+0.8
+\beta=0.8
+which was implemented, our judgment was that
+β
+=
+0.8
+\beta=0.8
+was the better choice for our purposes for two reasons.
+First, in our application, maximizing the probability observing the empirical data was not our goal. For us, it was much more important to accurately rank the game’s top players relative to each other. The choice
+β
+=
+0.8
+\beta=0.8
+yields more stable and reliable rankings, which is very important in practice.
+Second, many players actively enjoy interacting with the in-game rating system; trying to maximize the number the game displays to them becomes one of their primary objectives. From the perspective of game design, harshly penalizing unlucky losses is remarkably frustrating.
+References
+[1]
+Ralph Allan Bradley and Milton E. Terry.
+Rank analysis of incomplete block designs. I. The method of
+paired comparisons.
+Biometrika
+, 39:324–345, 1952.
+[2]
+Alex Cowan.
+BlatMMR.
+https://github.com/thealexcowan/blatmmr
+, March 2023.
+[3]
+Wojciech M. Czarnecki, Gauthier Gidel, Brendan Tracey, Karl Tuyls, Shayegan
+Omidshafiei, David Balduzzi, and Max Jaderberg.
+Real world games look like spinning tops.
+In H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin,
+editors,
+Advances in Neural Information Processing Systems
+, volume 33,
+pages 17443–17454. Curran Associates, Inc., 2020.
+[4]
+H. A. David.
+The method of paired comparisons
+, volume 41 of
+Griffin’s
+Statistical Monographs & Courses
+.
+Charles Griffin & Co., Ltd., London; The Clarendon Press, Oxford
+University Press, New York, second edition, 1988.
+[5]
+Aram Ebtekar and Paul Liu.
+Elo-MMR: A rating system for massive multiplayer competitions.
+In
+Proceedings of the Web Conference 2021
+, WWW ’21, pages
+1772–1784, New York, NY, USA, 2021. Association for Computing Machinery.
+[6]
+Arpad E. Elo.
+The Rating of Chessplayers, Past and Present
+.
+Arco Pub., New York, 2nd edition, 1986.
+[7]
+FIDE.
+Rating regulations.
+https://handbook.fide.com/chapter/B022022
+, 2023.
+[Online; accessed 25 January 2023].
+[8]
+Mark E. Glickman.
+Parameter estimation in large dynamic paired comparison experiments.
+Applied Statistics
+, 48(3):377–394, 1999.
+[9]
+Mark E. Glickman.
+Dynamic paired comparison models with stochastic variances.
+J. Appl. Stat.
+, 28(6):673–689, 2001.
+[10]
+Mark E. Glickman, Jonathan Hennessy, and Alister Bent.
+A comparison of rating systems for competitive women’s beach
+volleyball.
+Statistica Applicata - Italian Journal of Applied Statistics
+,
+30(2):233–254, Feb. 2020.
+[11]
+Ralf Herbrich, Tom Minka, and Thore Graepel.
+TrueSkill(TM): A bayesian skill rating system.
+In
+Advances in Neural Information Processing Systems 20
+, pages
+569–576. MIT Press, January 2007.
+[12]
+Trevor A. Holster and J. Lake.
+Guessing and the Rasch model.
+Language Assessment Quarterly
+, 13(2):124–141, 2016.
+[13]
+Lichess.
+Analysis board.
+https://lichess.org/analysis
+, 2023.
+[Online; accessed 23 January 2023].
+[14]
+Lichess.
+Rating system source code.
+https://github.com/lichess-org/lila/blob/master/modules/rating/src/main/glicko2/RatingCalculator.scala
+,
+2023.
+[Online; accessed 28 February 2023].
+[15]
+Tom Minka, Ryan Cleven, and Yordan Zaykov.
+TrueSkill 2: An improved bayesian skill rating system.
+Technical Report MSR-TR-2018-8, Microsoft, March 2018.
+[16]
+Frederick Mosteller.
+Remarks on the method of paired comparisons: I. The least squares
+solution assuming equal standard deviations and equal correlations.
+Psychometrika
+, 16:3–9, 1951.
+[17]
+Frederick Mosteller.
+Remarks on the method of paired comparisons: II. The effect of an
+aberrant standard deviation when equal standard deviations and equal
+correlations are assumed.
+Psychometrika
+, 16:203–206, 1951.
+[18]
+Frederick Mosteller.
+Remarks on the method of paired comparisons: III. A test of
+significance for paired comparisons when equal standard deviations and equal
+correlations are assumed.
+Psychometrika
+, 16:207–218, 1951.
+[19]
+Open Duelyst.
+Glicko2 parameters.
+https://github.com/open-duelyst/duelyst/blob/main/server/lib/data_access/rank.coffee#L527
+,
+2023.
+[Online; accessed 22 February 2023].
+[20]
+Georg Rasch.
+Studies in mathematical psychology: I. Probabilistic models for
+some intelligence and attainment tests.
+1960.
+[21]
+Ricky Sanjaya, Jun Wang, and Yaodong Yang.
+Measuring the non-transitivity in chess.
+Algorithms
+, 15(5), 2022.
+[22]
+Jeff Sonas.
+The Elo rating system – correcting the expectancy table.
+https://en.chessbase.com/post/the-elo-rating-system-correcting-the-expectancy-tables
+,
+2011.
+[Online; accessed 29 January 2023].
+[23]
+L. L. Thurstone.
+A law of comparative judgment.
+Psychological Review
+, 34:273–286, 1927.
+[24]
+L. L. Thurstone.
+Psychophysical analysis.
+The American Journal of Psychology
+, 38(3):368–389, 1927.
+[25]
+vlfph.
+Farming Volatility: How a major flaw in a well-known rating system
+takes over the GBL leaderboard.
+https://www.reddit.com/r/TheSilphRoad/comments/hwff2d/farming_volatility_how_a_major_flaw_in_a/
+,
+2023.
+[Online; accessed 25 January 2023].
+[26]
+Xue Yan, Yali Du, Binxin Ru, Jun Wang, Haifeng Zhang, and Xu Chen.
+Learning to Identify Top Elo Ratings: A Dueling Bandits
+Approach
+, pages 6375–6383.
+AAAI Press, 2022.
+[27]
+E. Zermelo.
+Die Berechnung der Turnier-Ergebnisse als ein Maximumproblem
+der Wahrscheinlichkeitsrechnung.
+Math. Z.
+, 29(1):436–460, 1929.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

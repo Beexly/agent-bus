@@ -1,0 +1,10758 @@
+A State-Space Perspective on Modelling and
+Inference for Online Skill Rating
+sam.power@bristol.ac.uk
+Samuel Duffield
+Affiliation:
+Normal Computing
+Affiliation:
+Samuel Power
+Affiliation:
+School of Mathematics, University of Bristol, UK
+Affiliation:
+Lorenzo Rimella
+Affiliation:
+Department of Mathematics and Statistics, Lancaster University, UK, and
+Affiliation:
+ESOMAS, University of Torino, IT
+4th August 2023
+Abstract
+We summarise popular methods used for skill rating in competitive sports, along with their inferential paradigms and introduce new approaches based on sequential Monte Carlo and discrete hidden Markov models. We advocate for a state-space model perspective, wherein players’ skills are represented as time-varying, and match results serve as observed quantities. We explore the steps to construct the model and the three stages of inference: filtering, smoothing and parameter estimation. We examine the challenges of scaling up to numerous players and matches, highlighting the main approximations and reductions which facilitate statistical and computational efficiency. We additionally compare approaches in a realistic experimental pipeline that can be easily reproduced and extended with our open-source Python package,
+abile
+.
+1
+Introduction
+In the quantitative analysis of competitive sports, a fundamental task is to estimate the skills of the different agents (‘players’) involved in a given competition based on the outcome of comparisons (‘matches’) between said players, often in an online setting. Skill rating is of paramount importance as it serves as a foundational tool for assessing and comparing the abilities of players and how they vary over time. By accurately quantifying skill levels, rating systems inform strategic decision-making and enhance the overall sporting level. Common applications include chess
+(
+FIDE 2023
+)
+, online gaming
+(
+Herbrich
+et al. 2006
+)
+, education
+(
+Pelánek 2016
+)
+, tennis
+(
+Kovalchik 2016
+)
+and team-based sports like football
+(
+Hvattum and
+Arntzen 2010
+)
+, basketball
+(
+Štrumbelj and
+Vračar 2012
+)
+and many more
+(
+Stefani 2011
+;
+Ötting et al. 2020
+)
+. Skill ratings not only facilitate player ranking, but also serve as a basis for dynamic matchmaking and player seeding, ensuring that competitive matches are engaging and well-matched. Moreover, in professional sports, skill rating plays a pivotal role in talent scouting and gauging overall performance, providing data-driven insights for coaches, analysts, bettors and fanatics. As technology and statistical methodologies continue to advance, skill rating systems are expected to evolve further, benefiting an ever-widening spectrum of sports and competitive domains.
+There are several established approaches to the task of skill estimation, including among others the Bradley-Terry model
+(
+Bradley and
+Terry 1952
+)
+, the Elo rating system
+(
+Elo 1978
+)
+, the Glicko rating system
+(
+Glickman 1999
+)
+, and TrueSkill
+(
+Herbrich
+et al. 2006
+)
+each with various levels of complexity and statistical foundation. In these works, statistical models are often left implicit or not even present, hindering the incorporation of additional structure into estimation routines. Therefore, we propose a state-space modelling approach that separates model definition from inference and decomposes both aspects into their fundamental elements. This modularisation empowers practitioners to easily experiment with different model structures (e.g. binary vs non-binary match outcomes) and inferential paradigms (e.g. sequential Monte Carlo vs extended Kalman filter), ultimately selecting the most suitable combination for their specific needs.
+Our key contributions can be summarised as follows:
+•
+We provide a unified state-space model framework for the skill rating, which encompasses and extends existing approaches by fostering the decoupling and modularisation of model design and general purpose inference. The state-space model represents a customisable blueprint, adaptable to specific needs (e.g. non-Gaussian dynamics, Bivariate-Poisson likelihoods, and more). We detail the relevant inference objectives (filtering, smoothing and parameter estimation) outlining their purpose, applications, and efficient implementation strategies.
+•
+We rigorously formalise the
+factorial approximation
+as the necessary bias introduced in order to scale computations up to realistic settings with numerous players while retaining statistical fidelity.
+•
+We draw from the state-space model literature a suite of inferential methods. Including sequential Monte Carlo and finite-space methods that are completely novel in the setting of skill ratings and suffer from fewer sources of bias than previous model-based approaches, see Table
+1
+.
+•
+We walk through a realistic workflow of fitting and deploying the aforementioned skill rating tools on real datasets. We emphasise the key steps of model design and inference and explain how different components can be incorporated to improve prediction, robustness and interpretability.
+•
+An open-source, lightweight and extensible Python package is provided to ensure complete reproducibility of the results and facilitate the use of the proposed and reviewed methodologies (
+github.com/SamDuffield/abile
+).
+The paper will proceed as follows. In Section
+2
+, we describe a high-level formalism for state-space formulations of the skill estimation problem. In Section
+3
+, we outline the possible inference objectives for this problem and how they interact as well as the general structure of tractable inference, induced approximations and relevant complexity considerations. In Section
+4
+, we review a variety of concrete procedures for the skill estimation problem, combining probabilistic models and inference algorithms unifying existing approaches and introducing new ones. In Section
+5
+, we perform some numerical experiments, demonstrating and contrasting some of the varied approaches to real data. Finally, in Section
+6
+, we conclude with a discussion on general recommendations and extensions.
+2
+Model Specification
+Throughout, we will use various terminology which is specific to the skill estimation problem. We will use ‘sport’ to denote a sport in the abstract (e.g. football), and will use ‘match’ to denote a specific instance of this sport being played (e.g. a match between two football teams). All matches will be contested between two competing ‘players’ (e.g. a football team is a ‘player’), one of whom is designated as the ‘home’ player, and the other as the ‘away’ player (even for sports in which there is no notion of ‘home ground’ or ‘home advantage’). A ‘competition’ refers to a specific sport, a collection of players of that sport, a set of matches between these players, and a set of results of these matches (e.g. the results of the English Premier League). Each match is also associated to a time
+t
+∈
+[
+0
+,
+∞
+)
+t\in\left[0,\infty\right)
+denoting when the match was played, which we call a ‘matchtime’. Driven by the popularity and simplicity of pairwise comparison
+(
+Gorgi
+et al. 2019
+;
+Wheatcroft 2021
+)
+, we will focus on the aforementioned scenario where a ‘match’ is played by only two ‘players’, although the framework is general and easily extends to multiplayer comparisons which we later discuss in
+4.6
+.
+Notationally, given an integer
+N
+∈
+𝐍
+N\in\nat
+we use
+[
+N
+]
+\left[N\right]
+for the set of integers from
+1
+1
+to
+N
+N
+. The total number of players in the competition is denoted
+N
+∈
+𝐍
+N\in\nat
+, and
+K
+∈
+𝐍
+K\in\nat
+denotes the total number of matches played in the competition. We order the matchtimes as
+t
+1
+⩽
+t
+2
+⩽
+⋯
+⩽
+t
+K
+t_{1}\leqslant t_{2}\leqslant\cdots\leqslant t_{K}
+(noting that matches may take place contemporaneously). Matches are then indexed in correspondence with this ordering, i.e. match
+1
+1
+took place at time
+t
+=
+t
+1
+t=t_{1}
+, etc.; we also adopt the convention that
+t
+0
+=
+0
+t_{0}=0
+. We explicitly model the skills of all players over the full-time window
+[
+0
+,
+T
+]
+[0,T]
+, even if individual players may enter the competition at a later time.
+We now discuss modelling choices. Our key interest is to infer the skills of players in a fixed competition, given access to the outcomes of matches which are played in that competition. We model player skills as taking values in a totally ordered set
+𝒳
+\mathcal{X}
+, i.e. skills are treated as ordinal, with the convention that higher skill ratings are indicative of more favourable match outcomes for a player.
+The structure of the match outcomes (denoted
+y
+k
+y_{k}
+for the outcome of the
+k
+k
+th match) depends on the application and model design. Most simply and commonly, they can be represented by a finite, discrete set
+y
+k
+∈
+𝒴
+y_{k}\in\mathcal{Y}
+, e.g.
+𝒴
+=
+{
+draw
+,
+home win
+,
+away win
+}
+\mathcal{Y}=\left\{\text{draw},\text{home win},\text{away win}\right\}
+. Other structures are also readily accommodated, e.g. recording the number of points scored by each team as
+y
+k
+∈
+𝒴
+=
+𝐍
+2
+y_{k}\in\mathcal{Y}=\nat^{2}
+.
+Our generic model will consist of the players’ skills and the match outcomes; we detail here the construction of the full joint likelihood. Players’ skills are allowed to vary with time, and we write
+x
+t
+i
+∈
+𝒳
+x_{t}^{i}\in\mathcal{X}
+for the skill value of the
+i
+i
+th player at time
+t
+t
+and in an abuse of notation, we will also use
+x
+k
+i
+x_{k}^{i}
+to denote the skill value of the
+i
+i
+th player at observation time
+t
+k
+t_{k}
+. We will, where possible, index skills with letters
+t
+t
+or
+k
+k
+so that the continuous/discrete nature of the time index is clear from the context. For discrete-time indices, we also make use of the notation
+x
+0
+:
+k
+x_{0:k}
+or
+y
+1
+:
+k
+y_{1:k}
+to denote the joint vector of skills or observations at discrete times.
+We assume that the initial skills of the players are all drawn mutually independently of one another, i.e. for
+i
+∈
+[
+N
+]
+i\in\left[N\right]
+,
+x
+0
+i
+∼
+m
+0
+i
+x_{0}^{i}\sim m_{0}^{i}
+independently for some initial distribution
+m
+0
+i
+m_{0}^{i}
+. We also assume that the evolution of each player’s skill over time is independent of one another. We further assume that each of these evolutions is Markovian, i.e. for each
+i
+∈
+[
+N
+]
+i\in\left[N\right]
+, there is a semigroup of
+𝒳
+\mathcal{X}
+-valued Markov transition kernels
+(
+M
+t
+,
+t
+′
+i
+:
+t
+⩽
+t
+′
+)
+\left(M_{t,t^{\prime}}^{i}:t\leqslant t^{\prime}\right)
+such that
+x
+t
+′
+i
+|
+x
+t
+i
+∼
+M
+t
+,
+t
+′
+i
+​
+(
+x
+t
+i
+,
+⋅
+)
+x_{t^{\prime}}^{i}\mid x_{t}^{i}\sim M_{t,t^{\prime}}^{i}\left(x_{t}^{i},\cdot\right)
+where
+t
+⩽
+t
+′
+t\leqslant t^{\prime}
+represent matchtimes. Again, we will often abuse notation to write
+M
+k
+,
+k
+′
+i
+=
+M
+t
+k
+,
+t
+k
+′
+i
+M_{k,k^{\prime}}^{i}=M_{t_{k},t_{k^{\prime}}}^{i}
+with
+t
+k
+⩽
+t
+k
+′
+t_{k}\leqslant t_{k^{\prime}}
+and the nature of the index clear from context.
+For the
+k
+k
+th match, we write
+h
+⁡
+(
+k
+)
+,
+a
+⁡
+(
+k
+)
+∈
+[
+N
+]
+h(k),a(k)\in\left[N\right]
+for the indices of the home and away players in that match, and write
+y
+k
+∈
+𝒴
+y_{k}\in\mathcal{Y}
+for the outcome of the match. We assume that given the skills of players
+h
+⁡
+(
+k
+)
+h(k)
+and
+a
+⁡
+(
+k
+)
+a(k)
+at time
+t
+k
+t_{k}
+, the match’s outcome
+y
+k
+y_{k}
+is conditionally independent of all other player skills and match outcomes (depicted in Fig.
+1
+), and is drawn according to some probability distribution
+G
+k
+​
+(
+y
+k
+∣
+x
+k
+h
+⁡
+(
+k
+)
+,
+x
+k
+a
+⁡
+(
+k
+)
+)
+G_{k}\left(y_{k}\mid x_{{k}}^{h\left(k\right)},x_{{k}}^{a\left(k\right)}\right)
+. We again emphasise that practitioners are completely free to choose the observation model that suits their application, whether sigmoidal, Poisson, or otherwise. The only structural condition imposed upon
+G
+k
+G_{k}
+is that the observation depends only on the few players that are involved in the match, i.e.
+{
+h
+⁡
+(
+k
+)
+,
+a
+⁡
+(
+k
+)
+}
+\{h(k),a(k)\}
+.
+x
+k
+−
+1
+x_{{k-1}}
+x
+k
+x_{k}
+x
+k
++
+1
+x_{{k+1}}
+y
+k
+−
+1
+y_{k-1}
+y
+k
+y_{k}
+y
+k
++
+1
+y_{k+1}
+x
+k
+−
+1
+1
+x_{{k-1}}^{1}
+x
+k
+1
+x_{k}^{1}
+x
+k
++
+1
+1
+x_{{k+1}}^{1}
+y
+k
+−
+1
+y_{k-1}
+y
+k
+y_{k}
+y
+k
++
+1
+y_{k+1}
+x
+k
+−
+1
+2
+x_{{k-1}}^{2}
+x
+k
+2
+x_{k}^{2}
+x
+k
++
+1
+2
+x_{{k+1}}^{2}
+x
+k
+−
+1
+3
+x_{{k-1}}^{3}
+x
+k
+3
+x_{k}^{3}
+x
+k
++
+1
+3
+x_{{k+1}}^{3}
+x
+k
+−
+1
+4
+x_{{k-1}}^{4}
+x
+k
+4
+x_{k}^{4}
+x
+k
++
+1
+4
+x_{{k+1}}^{4}
+x
+k
++
+1
+4
+x_{{k+1}}^{4}
+Figure 1
+:
+Left: conditional independence structure of an SSM. Right: conditional independence structure of an fSSM (
+1
+), with
+N
+=
+4
+N=4
+and pairwise observation model.
+Assembling these various assumptions, it follows that the joint law of all players’ skills on all matchtimes, and of all match results, is thus given by the following
+𝐏
+(
+x
+0
+:
+K
+[
+N
+]
+,
+y
+1
+:
+K
+)
+=
+∏
+i
+∈
+[
+N
+]
+{
+m
+0
+i
+​
+(
+x
+0
+i
+)
+⋅
+∏
+k
+=
+1
+K
+M
+k
+−
+1
+,
+k
+i
+​
+(
+x
+k
+−
+1
+i
+,
+x
+k
+i
+)
+}
+⋅
+∏
+k
+=
+1
+K
+G
+k
+​
+(
+y
+k
+∣
+x
+k
+h
+⁡
+(
+k
+)
+,
+x
+k
+a
+⁡
+(
+k
+)
+)
+.
+\begin{split}\mathbf{P}\left(x_{0:K}^{\left[N\right]},y_{1:K}\right)=&\prod_{i\in\left[N\right]}\left\{m_{0}^{i}\left(x_{0}^{i}\right)\cdot\prod_{k=1}^{K}M_{{k-1},{k}}^{i}\left(x_{{k-1}}^{i},x_{{k}}^{i}\right)\right\}\\
+&\cdot\prod_{k=1}^{K}G_{k}\left(y_{k}\mid x_{{k}}^{h\left(k\right)},x_{{k}}^{a\left(k\right)}\right).\end{split}
+(1)
+Some simplifications which we will make in all subsequent examples are that i) we will model the initial laws of all players’ skill as being identical across players (i.e.
+m
+0
+i
+m_{0}^{i}
+will not depend on
+i
+i
+), ii) the dynamics of all players’ skills will also be identical across players, i.e. for
+t
+<
+t
+′
+t<t^{\prime}
+, we can write
+M
+t
+,
+t
+′
+i
+​
+(
+x
+,
+x
+′
+)
+=
+M
+t
+,
+t
+′
+​
+(
+x
+,
+x
+′
+)
+M_{t,t^{\prime}}^{i}\left(x,x^{\prime}\right)=M_{t,t^{\prime}}\left(x,x^{\prime}\right)
+, and iii) the observation model
+G
+k
+G_{k}
+will not depend on
+k
+k
+(although we will still use the notation
+G
+k
+G_{k}
+to emphasise dependence on
+y
+k
+y_{k}
+). These simplifications are made for ease of presentation, and deviations from each of these simplifications are typically straightforward to accommodate in the algorithms which we present. Such deviations are often relevant in practice, e.g. different match types (e.g. 3-set vs 5-set tennis).
+There are also a number of model features on which we insist, namely i) we insist on modelling player skills as evolving in continuous time, and ii) we insist on the possibility of observations which occur at irregularly-spaced intervals in time. We do this because these settings are of practical relevance, and because they pose particular computational challenges which deserve proper attention.
+Terminologically, we use the term ‘state-space model’ (SSM) to denote a model, such as (
+1
+), in which there is an unobserved state
+x
+x
+, taking values in a general space, which evolves in time according to a Markovian evolution, and is observed indirectly. We use the term ‘hidden Markov model’ (HMM) to refer to an SSM where the unobserved state
+x
+x
+takes values on a finite state space. The term factorial state-space model (fSSM, or indeed fHMM) refers to a state-space model in which the state
+x
+x
+is naturally partitioned into a collection of sub-states, each of which evolves independently of one another
+(
+Ghahramani and
+Jordan 1995
+)
+, see Fig.
+1
+.
+3
+Inference
+In this section, we discuss the problem of inference in the skill rating problem, which features of the problem one might seek to understand, and how one might go about representing these features.
+3.1
+Inference Objectives
+Broadly speaking, inference in general state-space models tends to involve the solution of three related tasks, presented in (roughly) increasing order of complexity:
+1.
+Filtering: inferring the current latent states, given the observations
+thus far, as well as prediction
+Filter
+k
+(
+x
+k
+)
+:=
+𝐏
+(
+x
+k
+∣
+y
+1
+:
+k
+)
+,
+Predict
+k
++
+1
+|
+k
+(
+x
+k
++
+1
+)
+=
+𝐏
+(
+x
+k
++
+1
+∣
+y
+1
+:
+k
+)
+.
+\displaystyle\mathrm{Filter}_{k}\left(x_{k}\right):=\mathbf{P}\left(x_{k}\mid y_{1:k}\right),\quad\mathrm{Predict}_{k+1\mid k}\left(x_{k+1}\right)=\mathbf{P}\left(x_{k+1}\mid y_{1:k}\right).
+for
+t
+k
+<
+t
+k
++
+1
+t_{k}<t_{k+1}
+.
+2.
+Smoothing: inferring past latent skills, given
+the observations thus far
+Smooth
+0
+:
+K
+|
+K
+(
+x
+0
+:
+K
+)
+=
+𝐏
+(
+x
+0
+:
+K
+∣
+y
+1
+:
+K
+)
+.
+\displaystyle\mathrm{Smooth}_{0:K|K}\left(x_{0:K}\right)=\mathbf{P}\left(x_{0:K}\mid{y}_{1:K}\right).
+with
+Smooth
+k
+,
+k
++
+1
+|
+K
+(
+x
+k
+,
+x
+k
++
+1
+)
+=
+𝐏
+(
+x
+k
+,
+x
+k
++
+1
+∣
+y
+1
+:
+K
+)
+\mathrm{Smooth}_{k,k+1|K}\left(x_{k},x_{k+1}\right)=\mathbf{P}\left(x_{k},x_{k+1}\mid{y}_{1:K}\right)
+and
+Smooth
+k
+|
+K
+(
+x
+k
+)
+=
+𝐏
+(
+x
+k
+∣
+y
+1
+:
+K
+)
+\mathrm{Smooth}_{k|K}\left(x_{k}\right)=\mathbf{P}\left(x_{k}\mid{y}_{1:K}\right)
+.
+3.
+Parameter Estimation: when the dynamical and/or observational structure of the model depends on unknown parameters
+θ
+\theta
+, one can calibrate these models based on the observed data by e.g. maximum likelihood estimation:
+arg
+​
+max
+θ
+∈
+Θ
+𝐏
+(
+y
+1
+:
+K
+∣
+θ
+)
+,
+\displaystyle\argmax_{\theta\in\Theta}\mathbf{P}\left({y}_{1:K}\mid\theta\right),
+where
+𝐏
+(
+y
+1
+:
+K
+∣
+θ
+)
+=
+∫
+𝐏
+(
+x
+0
+:
+K
+[
+N
+]
+,
+y
+1
+:
+K
+∣
+θ
+)
+d
+x
+0
+:
+K
+[
+N
+]
+\mathbf{P}({y}_{1:K}\mid\theta)=\int\mathbf{P}\left(x_{{0:K}}^{\left[N\right]},{y}_{1:K}\mid\theta\right)\,\mathrm{d}x_{0:K}^{\left[N\right]}
+. Note that for filtering and smoothing,
+θ
+\theta
+is treated as constant, hence its omission from the preceding descriptions.
+Depending on the application in question, each of these tasks can be of more or less interest. In our setting, because we are interested in using our model to make real-time decisions, filtering is directly relevant towards informing those decisions. However, this does not mean that we can immediately ignore the other two tasks. Firstly, without an accurate estimate of the parameters
+θ
+\theta
+which govern the dynamical and observation models for our process of interest, our estimate of the filtering distribution can be badly misspecified. As a result, without incorporating some elements of parameter estimation, inference of the latent states can be quite poor. Moreover, obtaining good estimates of these model parameters tends to require developing an understanding of the full trajectory of the latent process; indeed, many algorithms for parameter estimation in SSMs require some form of access to the smoothing distribution, which in turn requires the filtering distributions. As such, the three tasks are deeply interconnected.
+3.2
+Techniques for Filtering
+We first present some generalities on algorithmic approaches to the filtering and smoothing problem, to contextualise the forthcoming developments. For a general SSM on
+𝒳
+\mathcal{X}
+with transitions
+M
+t
+,
+t
+′
+M_{t,t^{\prime}}
+and observations
+G
+k
+G_{k}
+, the following abstract filtering recursions hold
+Predict
+k
++
+1
+|
+k
+​
+(
+x
+k
++
+1
+)
+\displaystyle\mathrm{Predict}_{k+1|k}\left(x_{k+1}\right)
+=
+∫
+Filter
+k
+​
+(
+x
+k
+)
+⋅
+M
+k
+,
+k
++
+1
+​
+(
+x
+k
+,
+x
+k
++
+1
+)
+​
+d
+​
+x
+k
+,
+\displaystyle=\int\mathrm{Filter}_{k}\left(x_{k}\right)\cdot M_{k,k+1}\left(x_{k},x_{k+1}\right)\,\mathrm{d}x_{k},
+Filter
+k
++
+1
+​
+(
+x
+k
++
+1
+)
+\displaystyle\mathrm{Filter}_{k+1}\left(x_{k+1}\right)
+∝
+Predict
+k
++
+1
+|
+k
+​
+(
+x
+k
++
+1
+)
+⋅
+G
+k
++
+1
+​
+(
+x
+k
++
+1
+)
+,
+\displaystyle\propto{\mathrm{Predict}_{k+1|k}\left(x_{k+1}\right)\cdot G_{k+1}\left(x_{k+1}\right)},
+or more suggestively,
+​
+Predict
+k
++
+1
+|
+k
+\displaystyle\text{}\mathrm{Predict}_{k+1|k}
+=
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+⁡
+(
+Filter
+k
+,
+M
+k
+,
+k
++
+1
+)
+,
+\displaystyle=\mathsf{Propagate}\left(\mathrm{Filter}_{k};M_{k,k+1}\right),
+Filter
+k
++
+1
+\displaystyle\mathrm{Filter}_{k+1}
+=
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+⁡
+(
+Predict
+k
++
+1
+|
+k
+,
+G
+k
++
+1
+)
+,
+\displaystyle=\mathsf{Assimilate}\left(\mathrm{Predict}_{k+1|k};G_{k+1}\right),
+where we note that the operators
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+and
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+act on probability measures. Note that the
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+operator can also readily be applied to times which are not associated with matches; this can be useful for forecasting purposes.
+The same recursions also allow for computation of the likelihood of all observations so far, using that
+𝐏
+(
+y
+1
+:
+k
++
+1
+)
+=
+𝐏
+(
+y
+1
+:
+k
+)
+⋅
+𝐏
+(
+y
+k
++
+1
+∣
+y
+1
+:
+k
+)
+\mathbf{P}\left({y}_{1:k+1}\right)=\mathbf{P}\left({y}_{1:k}\right)\cdot\mathbf{P}\left(y_{k+1}\mid{y}_{1:k}\right)
+, the last term carries the interpretation of a predictive likelihood or in the skill-rating setting, match outcome predictions.
+3.3
+Techniques for Smoothing
+Similarly to filtering, there are ‘backward’ recursions which characterise the smoothing laws: if no observations occur in the interval
+(
+t
+k
+,
+t
+k
++
+1
+)
+\left(t_{k},t_{k+1}\right)
+, then
+Smooth
+k
+,
+k
++
+1
+|
+K
+​
+(
+x
+k
+,
+x
+k
++
+1
+)
+\displaystyle\mathrm{Smooth}_{k,k+1|K}\left(x_{k},x_{k+1}\right)
+=
+Filter
+k
+​
+(
+x
+k
+)
+⋅
+M
+k
+,
+k
++
+1
+​
+(
+x
+k
+,
+x
+k
++
+1
+)
+⋅
+Smooth
+k
++
+1
+|
+K
+​
+(
+x
+k
++
+1
+)
+Predict
+k
++
+1
+|
+k
+​
+(
+x
+k
++
+1
+)
+,
+\displaystyle=\frac{\mathrm{Filter}_{k}\left(x_{k}\right)\cdot M_{k,k+1}\left(x_{k},x_{k+1}\right)\cdot\mathrm{Smooth}_{k+1|K}\left(x_{k+1}\right)}{\mathrm{Predict}_{k+1|k}(x_{k+1})},
+Smooth
+k
+|
+K
+​
+(
+x
+k
+)
+\displaystyle\mathrm{Smooth}_{k|K}\left(x_{k}\right)
+=
+∫
+Smooth
+k
+,
+k
++
+1
+|
+K
+​
+(
+x
+k
+,
+x
+k
++
+1
+)
+​
+d
+​
+x
+k
++
+1
+,
+\displaystyle=\int\mathrm{Smooth}_{k,k+1|K}\left(x_{k},x_{k+1}\right)\,\mathrm{d}x_{k+1},
+or
+Smooth
+k
+,
+k
++
+1
+|
+K
+\displaystyle\mathrm{Smooth}_{k,k+1|K}
+=
+𝖡𝗋𝗂𝖽𝗀𝖾
+⁡
+(
+Filter
+k
+,
+Smooth
+k
++
+1
+|
+K
+,
+M
+k
+,
+k
++
+1
+)
+\displaystyle=\mathsf{Bridge}\left(\mathrm{Filter}_{k},\mathrm{Smooth}_{k+1|K};M_{k,k+1}\right)
+Smooth
+k
+|
+K
+\displaystyle\mathrm{Smooth}_{k|K}
+=
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+⁡
+(
+Smooth
+k
+,
+k
++
+1
+|
+K
+,
+k
+)
+.
+\displaystyle=\mathsf{Marginalise}\left(\mathrm{Smooth}_{k,k+1|K};k\right).
+Smoothing between observation times is possible using the same approach, i.e. for
+t
+k
+⩽
+t
+k
+′
+⩽
+t
+k
++
+1
+t_{k}\leqslant t_{k^{\prime}}\leqslant t_{k+1}
+where
+t
+k
+′
+t_{k^{\prime}}
+is not associated with an observation, we have
+Smooth
+k
+′
+,
+k
++
+1
+|
+K
+=
+𝖡𝗋𝗂𝖽𝗀𝖾
+⁡
+(
+Predict
+k
+′
+|
+k
+,
+Smooth
+k
++
+1
+|
+K
+,
+M
+k
+′
+,
+k
++
+1
+)
+.
+\displaystyle\mathrm{Smooth}_{k^{\prime},k+1|K}=\mathsf{Bridge}\left(\mathrm{Predict}_{k^{\prime}|k},\mathrm{Smooth}_{k+1|K};M_{k^{\prime},k+1}\right).
+In general, exact implementation of any of
+{
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+,
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+,
+𝖡𝗋𝗂𝖽𝗀𝖾
+,
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+}
+\left\{\mathsf{Propagate},\mathsf{Assimilate},\mathsf{Bridge},\mathsf{Marginalise}\right\}
+tends to only be possible in models with substantial conjugacy properties, due to the general difficulty of integration and representation of probability measures of even moderate complexity. If one insists on an exact implementation of all of these operations, then one tends to be restricted to working with linear Gaussian SSMs or HMMs of moderate size. As such, practical algorithms must often make approximations which restore some level of tractability to the model.
+Observe also that, given the filtering distributions, the smoothing recursions require no further calls to the likelihood term
+G
+k
+G_{k}
+, which can be noteworthy in the case that the likelihood is computationally expensive or otherwise complex.
+3.4
+Standing Approximations and Reductions
+We are interested in developing procedures for filtering, smoothing, and parameter estimation involving i) many players, i.e.
+N
+→
+∞
+N\to\infty
+, and ii) many matches, i.e.
+K
+→
+∞
+K\to\infty
+. We will therefore focus on procedures for which the computational cost scales at most
+linearly
+in each of
+N
+N
+and
+K
+K
+.
+3.4.1
+Decoupling Approximation
+In seeking procedures with stable behaviour as the number of players grows, there is one approximation which seems to be near-universal in the setting of pairwise comparisons, and beyond, namely that the filtering (and smoothing) distributions over all of the players’ skills are well-approximated by a decoupled representation. Using superscripts to index player-specific distributions (e.g.
+Filter
+k
+i
+\mathrm{Filter}_{k}^{i}
+denoting the filtering distribution for the skill of player
+i
+i
+at time
+t
+k
+t_{k}
+, and so on), this corresponds to the approximation
+Filter
+k
+=
+𝐏
+(
+x
+k
+[
+N
+]
+∣
+y
+1
+:
+k
+)
+\displaystyle\mathrm{Filter}_{k}=\mathbf{P}\left(x_{k}^{\left[N\right]}\mid y_{1:k}\right)
+≈
+∏
+i
+∈
+[
+N
+]
+𝐏
+(
+x
+k
+i
+∣
+y
+1
+:
+k
+)
+=
+∏
+i
+∈
+[
+N
+]
+Filter
+k
+i
+\displaystyle\approx\prod_{i\in\left[N\right]}\mathbf{P}\left(x_{k}^{i}\mid y_{1:k}\right)=\prod_{i\in\left[N\right]}\mathrm{Filter}_{k}^{i}
+Smooth
+∘
+|
+K
+=
+𝐏
+(
+x
+∘
+[
+N
+]
+∣
+y
+1
+:
+K
+)
+\displaystyle\mathrm{Smooth}_{\circ\mid K}=\mathbf{P}\left(x_{\circ}^{\left[N\right]}\mid y_{1:K}\right)
+≈
+∏
+i
+∈
+[
+N
+]
+𝐏
+(
+x
+∘
+i
+∣
+y
+1
+:
+K
+)
+=
+∏
+i
+∈
+[
+N
+]
+Smooth
+∘
+|
+K
+i
+,
+\displaystyle\approx\prod_{i\in\left[N\right]}\mathbf{P}\left(x_{\circ}^{i}\mid y_{1:K}\right)=\prod_{i\in\left[N\right]}\mathrm{Smooth}_{\circ\mid K}^{i},
+where we have
+∘
+=
+{
+k
+}
+,
+{
+k
+,
+k
++
+1
+}
+\circ=\left\{k\right\},\left\{k,k+1\right\}
+or
+{
+0
+:
+K
+}
+\{0:K\}
+for the various marginal and joint smoothing objectives. This approximation is motivated by the practical difficulty of representing large systems of correlated variables and is further supported by the standing assumption that players’ skills evolve independently of one another a priori.
+3.4.2
+Match Sparsity
+Our general formulation of the joint model includes more information than is strictly necessary. Due to the conditional independence structure of the model, one sees that instead of monitoring the skills of all players during all matches, it is sufficient to keep track of only the skills of players at times when they are playing in matches. Reformulating a joint likelihood which reflects this simplicity requires the introduction of some additional notation, but dramatically reduces the cost of working with the model, and is computationally crucial.
+To this end, for
+i
+∈
+[
+N
+]
+i\in\left[N\right]
+, write
+L
+i
+⊆
+{
+0
+,
+…
+,
+K
+}
+L^{i}\subseteq\{0,\dots,K\}
+for the ordered indices of matches in which player
+i
+i
+has played, and for
+ℓ
+i
+∈
+L
+i
+\ell^{i}\in L^{i}
+, write
+ℓ
+i
+,
+−
+\ell^{i,-}
+for the element of
+L
+i
+L^{i}
+immediately before
+ℓ
+i
+\ell^{i}
+, i.e.
+ℓ
+i
+,
+−
+=
+sup
+{
+ℓ
+∈
+L
+i
+:
+ℓ
+<
+ℓ
+i
+}
+\ell^{i,-}=\sup\{\ell\in L^{i}:\ell<\ell^{i}\}
+. It then holds that
+𝐏
+(
+{
+x
+ℓ
+i
+i
+:
+ℓ
+i
+∈
+L
+i
+,
+i
+∈
+[
+N
+]
+}
+,
+y
+1
+:
+K
+)
+\displaystyle\mathbf{P}\left(\left\{x_{\ell^{i}}^{i}:\ell^{i}\in L^{i},i\in{[N]}\right\},{y}_{1:K}\right)
+=
+∏
+i
+∈
+[
+N
+]
+{
+m
+0
+​
+(
+x
+0
+i
+)
+⋅
+∏
+ℓ
+i
+∈
+L
+i
+M
+ℓ
+i
+,
+−
+,
+ℓ
+i
+​
+(
+x
+ℓ
+i
+,
+−
+i
+,
+x
+ℓ
+i
+i
+)
+}
+\displaystyle=\prod_{i\in\left[N\right]}\left\{m_{0}\left({x}_{0}^{i}\right)\cdot\prod_{\ell^{i}\in L^{i}}M_{\ell^{i,-},\ell^{i}}\left({x}_{\ell^{i,-}}^{i},{x}_{\ell^{i}}^{i}\right)\right\}
+⋅
+∏
+k
+=
+1
+K
+G
+k
+​
+(
+y
+k
+∣
+x
+k
+h
+⁡
+(
+k
+)
+,
+x
+k
+a
+⁡
+(
+k
+)
+)
+.
+\displaystyle\qquad\cdot\prod_{k=1}^{K}G_{k}\left(y_{k}\mid x_{{k}}^{h\left(k\right)},x_{{k}}^{a\left(k\right)}\right).
+(2)
+Whilst our original likelihood (
+1
+) contained
+𝒪
+⁡
+(
+N
+⋅
+K
+)
+\bigOh(N\cdot K)
+terms, this new representation involves only
+𝒪
+⁡
+(
+N
++
+K
+)
+\bigOh(N+K)
+terms. Given that the competition consists of
+N
+N
+players and
+K
+K
+matches, we see that this representation is essentially minimal.
+3.4.3
+Pairwise Updates
+A consequence of these two features is that when carrying out filtering and smoothing computations, only sparse access to the skills of players is required. In particular, consider assimilating the result of the
+k
+k
+th match into our beliefs of the players’ skills. Since this match involves the players
+h
+⁡
+(
+k
+)
+{h(k)}
+and
+a
+⁡
+(
+k
+)
+{a(k)}
+, which we refer to as
+h
+h
+and
+a
+a
+, we have
+k
+∈
+L
+h
+∩
+L
+a
+k\in L^{h}\cap L^{a}
+and the filtering update requires only the following steps:
+1.
+Compute the last matchtime indices on which the two players played
+k
+h
+,
+−
+∈
+L
+h
+k^{h,-}\in L^{h}
+and
+k
+a
+,
+−
+∈
+L
+a
+k^{a,-}\in L^{a}
+, and retrieve the filtering distributions of the two players’ skills on these matchtimes, i.e.
+Filter
+k
+h
+,
+−
+h
+\mathrm{Filter}_{k^{h,-}}^{h}
+and
+Filter
+k
+a
+,
+−
+a
+\mathrm{Filter}_{k^{a,-}}^{a}
+respectively.
+2.
+Compute the predictive distributions of the two players’ skills prior to the current matchtime by propagating them through the dynamics, i.e.
+M
+k
+h
+,
+−
+,
+k
+M_{k^{h,-},k}
+for the home player and
+M
+k
+a
+,
+−
+,
+k
+M_{k^{a,-},k}
+for the away player, compute
+(
+Predict
+k
+|
+k
+h
+,
+−
+h
+Predict
+k
+|
+k
+a
+,
+−
+a
+)
+\displaystyle\left(\begin{array}[]{c}\mathrm{Predict}_{k\mid k^{h,-}}^{h}\\
+\mathrm{Predict}_{k\mid k^{a,-}}^{a}\end{array}\right)
+=
+(
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+⁡
+(
+Filter
+k
+h
+,
+−
+h
+,
+M
+k
+h
+,
+−
+,
+k
+)
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+⁡
+(
+Filter
+k
+a
+,
+−
+a
+,
+M
+k
+a
+,
+−
+,
+k
+)
+)
+.
+\displaystyle=\left(\begin{array}[]{c}\mathsf{Propagate}\left(\mathrm{Filter}_{k^{h,-}}^{h};M_{k^{h,-},k}\right)\\
+\mathsf{Propagate}\left(\mathrm{Filter}_{k^{a,-}}^{a};M_{k^{a,-},k}\right)\end{array}\right).
+3.
+Compute the current filtering distributions of the two players’ skills immediately following the current matchtime by assimilating the new result
+Filter
+k
+h
+,
+a
+\displaystyle\mathrm{Filter}_{k}^{h,a}
+=
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+⁡
+(
+(
+Predict
+k
+|
+k
+h
+,
+−
+h
+Predict
+k
+|
+k
+a
+,
+−
+a
+)
+,
+G
+k
+)
+,
+\displaystyle=\mathsf{Assimilate}\left(\left(\begin{array}[]{c}\mathrm{Predict}_{k\mid k^{h,-}}^{h}\\
+\mathrm{Predict}_{k\mid k^{a,-}}^{a}\end{array}\right);G_{k}\right),
+where
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+denotes a Bayesian procedure that converts predictive distributions for a pair of players and a likelihood into a joint filtering distribution.
+4.
+Marginalise to regain the factorial approximation
+(
+Filter
+k
+h
+Filter
+k
+a
+)
+\displaystyle\left(\begin{array}[]{c}\mathrm{Filter}_{k}^{h}\\
+\mathrm{Filter}_{k}^{a}\end{array}\right)
+=
+(
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+⁡
+(
+Filter
+k
+h
+,
+a
+,
+h
+)
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+⁡
+(
+Filter
+k
+h
+,
+a
+,
+a
+)
+)
+,
+\displaystyle=\left(\begin{array}[]{c}\mathsf{Marginalise}\left(\mathrm{Filter}_{k}^{h,a};h\right)\\
+\mathsf{Marginalise}\left(\mathrm{Filter}_{k}^{h,a};a\right)\end{array}\right),
+where
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+\mathsf{Marginalise}
+is used for a marginalisation in space and not in time.
+Note briefly that if at a specific time, multiple matches are being played between a disjoint set of players, then this structure implies that the results of all of these matches can be assimilated independently and in parallel; for high-frequency competitions in which many matches are played simultaneously, this is an important simplification. A key takeaway from this observation is then that the cost of assimilating the result of a single match is independent of both
+N
+N
+and
+K
+K
+.
+Similar benefits are also available for smoothing updates. Indeed, the benefits of sparsity are even more dramatic in this case, since the smoothing recursions (Section
+3.3
+) decouple
+entirely
+across players, implying that all smoothing distributions can be computed independently and in parallel. Given access to sufficient compute parallelism, this implies the possibility of computing these smoothing laws in time
+𝒪
+⁡
+(
+max
+⁡
+{
+𝐜𝐚𝐫𝐝
+⁡
+(
+L
+i
+)
+:
+i
+∈
+[
+N
+]
+}
+)
+\bigOh\left(\max\left\{\mathbf{card}(L^{i}):i\in\left[N\right]\right\}\right)
+, which is potentially much smaller than the serial complexity of
+𝒪
+⁡
+(
+K
+)
+\bigOh\left(K\right)
+. For example, if each player is involved in the same number of matches (
+∼
+K
+/
+N
+\sim K/N
+), then the real-time complexity is reduced by a factor of
+N
+N
+.
+For ease of exposition, in what follows, we will present all considered methods with notation corresponding to the
+𝒪
+⁡
+(
+N
+⋅
+K
+)
+\bigOh(N\cdot K)
+posterior (
+1
+), rather than the memory-efficient
+𝒪
+⁡
+(
+N
++
+K
+)
+\bigOh(N+K)
+posterior (
+3.4.2
+) which should be applied in practice, e.g. we will describe the
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+step as taking us from time
+k
+−
+1
+k-1
+to time
+k
+k
+, and so on.
+3.5
+Techniques for Parameter Estimation
+Recall the goal of parameter estimation is to infer the unknown static (i.e. non-time-varying) parameters
+θ
+\theta
+of the state-space model. A complete discussion of parameter estimation in state-space models would be time-consuming. In this work, we simply focus on estimation following the principle of maximum likelihood, due to its generality and compatibility with typical approximation schemes. Careful discussion of other approaches (e.g. composite likelihoods, Bayesian estimation, etc.; see e.g.
+Varin and
+Vidoni 2008
+;
+Varin
+et al. 2011
+;
+Andrieu
+et al. 2010
+) is omitted for reasons of space. Additionally, we limit our attention to offline parameter estimation, where we have access to historical match outcomes and look to find static parameters
+θ
+\theta
+which model them well, with the goal of subsequently using these parameters in the online setting (i.e. filtering). Techniques for online parameter estimation (with a focus on particle methods) are reviewed in
+Kantas et al. 2015
+.
+A popular and general option for parameter estimation is an expectation-maximisation (EM) strategy for maximising the likelihood
+𝐏
+(
+y
+1
+:
+K
+∣
+θ
+)
+\mathbf{P}\left(y_{1:K}\mid\theta\right)
+; see e.g.
+Neal and
+Hinton 1998
+or Chapter 14 in
+Chopin and
+Papaspiliopoulos 2020
+for overview. EM is an iterative approach, with each iteration consisting of two steps, known as the E-step and M-step respectively. The usual expectation step (‘E-step’) consists of taking the current parameter estimate
+θ
+^
+\hat{\theta}
+, using it to form the smoothing distribution
+𝐏
+(
+x
+0
+:
+K
+[
+N
+]
+∣
+y
+1
+:
+K
+,
+θ
+^
+)
+\mathbf{P}\left(x_{0:K}^{\left[N\right]}\mid y_{1:K},\hat{\theta}\right)
+, and constructing the surrogate objective function
+𝐐
+(
+θ
+∣
+θ
+^
+)
+:=
+∫
+𝐏
+(
+x
+0
+:
+K
+[
+N
+]
+∣
+y
+1
+:
+K
+,
+θ
+^
+)
+⋅
+log
+𝐏
+(
+x
+0
+:
+K
+[
+N
+]
+,
+y
+1
+:
+K
+∣
+θ
+)
+d
+x
+0
+:
+K
+[
+N
+]
+,
+\displaystyle\mathbf{Q}\left(\theta\mid\hat{\theta}\right):=\int\mathbf{P}\left(x_{0:K}^{\left[N\right]}\mid y_{1:K},\hat{\theta}\right)\cdot\log\mathbf{P}\left(x_{0:K}^{\left[N\right]},y_{1:K}\mid\theta\right)\,\mathrm{d}x_{0:K}^{\left[N\right]},
+(3)
+which is a lower bound on
+log
+𝐏
+(
+y
+1
+:
+K
+∣
+θ
+)
+\log\mathbf{P}\left(y_{1:K}\mid\theta\right)
+. The maximization step (‘M-step’) then consists of deriving a new estimate by maximising this surrogate objective. When these steps are carried out exactly, each iteration of the EM algorithm is then guaranteed to ascend the likelihood
+𝐏
+(
+y
+1
+:
+K
+∣
+θ
+)
+\mathbf{P}(y_{1:K}\mid\theta)
+, and will thus typically yield a local maximiser when iterated until convergence.
+Depending on the complexity of the model at hand, it can be the case that either the E-step, the M-step, or both cannot be carried out exactly. For the models considered in this work, the intractability of the smoothing distribution means that the E-step cannot be carried out exactly. As such, we will simply approximate the E-step by treating our approximate smoothing distribution as exact (noting that this compromises EM’s usual guarantee of ascending the likelihood function). Similarly, when the M-step cannot be carried out in closed-form, one can often approximate the maximiser of
+θ
+↦
+𝐐
+⁡
+(
+θ
+∣
+θ
+^
+)
+\theta\mapsto\mathbf{Q}\left(\theta\mid\hat{\theta}\right)
+through the use of numerical optimisation schemes.
+In some cases, constructing the smoothing distribution in a way that provides a tractable M-step may be expensive, and it is cheaper to directly form the log-likelihood gradient. By Fisher’s identity (see e.g.
+Del Moral
+et al. 2010
+), this gradient takes the following form
+∇
+θ
+log
+𝐏
+(
+y
+1
+:
+K
+∣
+θ
+)
+=
+∫
+𝐏
+(
+x
+0
+:
+K
+[
+N
+]
+∣
+y
+1
+:
+K
+,
+θ
+)
+⋅
+∇
+θ
+log
+𝐏
+(
+x
+0
+:
+K
+[
+N
+]
+,
+y
+1
+:
+K
+∣
+θ
+)
+d
+x
+0
+:
+K
+[
+N
+]
+.
+\displaystyle\nabla_{\theta}\log\mathbf{P}\left(y_{1:K}\mid\theta\right)=\int\mathbf{P}\left(x_{0:K}^{\left[N\right]}\mid y_{1:K},\theta\right)\cdot\nabla_{\theta}\log\mathbf{P}\left(x_{0:K}^{\left[N\right]},y_{1:K}\mid\theta\right)\,\mathrm{d}x_{0:K}^{\left[N\right]}.
+(4)
+As such, when the smoothing distribution is directly available, this offers a route to implementing a gradient method for optimising
+log
+𝐏
+(
+y
+1
+:
+K
+∣
+θ
+)
+\log\mathbf{P}\left(y_{1:K}\mid\theta\right)
+. When only approximate smoothing distributions are available, one obtains an inexact gradient method, which may nevertheless be practically useful.
+It is important to note that the logarithmic nature of the expectations in (
+11
+-
+4
+) means that for many models, the components of
+θ
+\theta
+can be treated independently. For example, when the parameters which influence
+m
+0
+m_{0}
+,
+M
+t
+,
+t
+′
+M_{t,t^{\prime}}
+and
+G
+k
+G_{k}
+are disjoint, the intermediate objective
+𝐐
+⁡
+(
+θ
+∣
+θ
+^
+)
+\mathbf{Q}\left(\theta\mid\hat{\theta}\right)
+will be separable with respect to this structure, which can simplify implementations. Moreover, depending on the tractability of solving each sub-problem, one can seamlessly blend the analytic maximisation of some parameters with gradient steps for others, as appropriate.
+Table 1
+:
+Considered approaches and their features. All approaches are linear in the number of players
+𝒪
+⁡
+(
+N
+)
+\bigOh(N)
+and the number of matches
+𝒪
+⁡
+(
+K
+)
+\bigOh(K)
+.
+Method
+Skills
+Filtering
+Smoothing
+Parameter
+Estimation
+Sources of Error
+(Beyond Factorial)
+Elo
+Continuous
+Location ,
+𝒪
+⁡
+(
+1
+)
+\bigOh(1)
+N/A
+N/A
+Not model-based
+Glicko
+Continuous
+Location and Spread,
+𝒪
+⁡
+(
+1
+)
+\bigOh(1)
+Location and Spread,
+𝒪
+⁡
+(
+1
+)
+\bigOh(1)
+N/A
+Not model-based
+Extended Kalman
+Continuous
+Location and Spread,
+𝒪
+⁡
+(
+1
+)
+\bigOh(1)
+Location and Spread,
+𝒪
+⁡
+(
+1
+)
+\bigOh(1)
+EM
+Gaussian Approximation
+TrueSkill2
+Continuous
+Location and Spread,
+𝒪
+⁡
+(
+1
+)
+\bigOh(1)
+Location and Spread,
+𝒪
+⁡
+(
+1
+)
+\bigOh(1)
+EM
+Gaussian
+Approximation
+SMC
+General
+Full Distribution,
+𝒪
+⁡
+(
+J
+)
+\bigOh(J)
+Full Distribution,
+𝒪
+⁡
+(
+J
+)
+\bigOh(J)
+1
+1
+1
+The computational cost of SMC smoothing can be reduced from
+𝒪
+⁡
+(
+J
+2
+)
+\bigOh(J^{2})
+to
+𝒪
+⁡
+(
+J
+)
+\bigOh(J)
+using rejection sampling
+(
+Douc
+et al. 2011
+)
+or MCMC
+(
+Dau and
+Chopin 2023
+)
+strategies.
+EM
+Monte Carlo Variance
+Discrete
+Discrete
+Full Distribution,
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+Full Distribution,
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+2
+2
+2
+Full smoothing for a continuous-time fHMM has complexity
+𝒪
+⁡
+(
+S
+3
+)
+\bigOh(S^{3})
+, however for factorised random walk dynamics, marginal smoothing and gradient EM can be applied at cost
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+, see A.6.3 in the supplementary material.
+(Gradient) EM
+N/A
+4
+Methods
+In this section, we turn to some concrete models for two-player competition as well as natural inference procedures. We here focus on the key components of the approaches, highlighting the probabilistic model used (for model-based methods) and the inference paradigm. For ease of presentation, our initial focus will be on pairwise comparison and sigmoidal observations with match outcomes
+y
+∈
+𝒴
+⊆
+{
+draw
+,
+home win
+,
+away win
+}
+y\in\mathcal{Y}\subseteq\{\text{draw},\text{home win},\text{away win}\}
+, but extensions to a multiplayer scenario and more general observation models are discussed in section
+4.6
+. Detailed recursions for each approach can be found in Section A of the supplementary material. The presented methods alongside notable features are summarised in Table
+1
+.
+Potentially the simplest model for latent skills is a (static) Bradley-Terry model
+3
+3
+3
+Note that Bradley-Terry models are often (and indeed originally) described on an exponential scale i.e. in terms of
+z
+=
+exp
+⁡
+(
+x
+)
+∈
+𝐑
++
+z=\exp(x)\in\real_{+}
+.
+(
+Bradley and
+Terry 1952
+)
+, wherein skills take values in
+𝒳
+=
+𝐑
+\mathcal{X}=\real
+and (binary) match outcomes are modelled with the likelihood
+G
+BT
+​
+(
+y
+∣
+x
+h
+,
+x
+a
+)
+=
+{
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
+)
+if
+​
+y
+=
+h
+,
+1
+−
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
+)
+if
+​
+y
+=
+a
+,
+\displaystyle G^{\text{BT}}\left(y\mid x^{h},x^{a}\right)=\begin{cases}\sigmoid\left({x^{h}-x^{a}}\right)&\text{if }y=\mathrm{h},\\
+1-\sigmoid\left({x^{h}-x^{a}}\right)&\text{if }y=\mathrm{a},\end{cases}
+where
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+:
+𝐑
+→
+[
+0
+,
+1
+]
+\sigmoid:\real\to\left[0,1\right]
+is an increasing function which maps real values to normalised probabilities, such that
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+)
++
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+−
+x
+)
+=
+1
+\sigmoid(x)+\sigmoid(-x)=1
+. The full Bradley-Terry model thus takes the form
+𝐏
+(
+x
+[
+N
+]
+,
+y
+1
+:
+K
+)
+=
+∏
+i
+∈
+[
+N
+]
+m
+0
+i
+(
+x
+i
+)
+⋅
+∏
+k
+=
+1
+K
+G
+BT
+(
+y
+k
+∣
+x
+h
+⁡
+(
+k
+)
+,
+x
+a
+⁡
+(
+k
+)
+)
+,
+\displaystyle\mathbf{P}\left(x^{\left[N\right]},y_{1:K}\right)=\prod_{i\in\left[N\right]}m_{0}^{i}\left(x^{i}\right)\cdot\prod_{k=1}^{K}G^{\text{BT}}\left(y_{k}\mid x^{h(k)},x^{a(k)}\right),
+with prior
+m
+0
+i
+m_{0}^{i}
+. In practice, it is relatively common to neglect the prior and estimate the players’ skills through pure maximum likelihood, see e.g.
+Kiraly and
+Qian 2017
+.
+In contrast to the other models considered in this work, this Bradley-Terry model treats player skills as static in time. Therefore, as the ‘career’ of each player progresses, our uncertainty over their skill level generally collapse to a point mass. We take the viewpoint that in many practical scenarios, this phenomenon is unrealistic, and so we advocate for models which explicitly model skills as varying dynamically in time. This leads naturally to the state-space model framework.
+4.1
+Elo
+The Elo rating system
+(
+Elo 1978
+)
+, is a simple and transparent system for updating a database of player skill ratings as they partake in two player matches. Elo implicitly represents player skills as real-valued i.e.
+𝒳
+=
+𝐑
+\mathcal{X}=\real
+, though typical presentations of Elo tend to eschew an explicit model. Skill estimates are updated incrementally in time according to the rule (for binary match outcomes)
+(
+x
+k
+h
+x
+k
+a
+)
+=
+(
+x
+k
+−
+1
+h
++
+γ
+⋅
+(
+𝕀
+[
+y
+k
+=
+h
+]
+−
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+(
+x
+k
+−
+1
+h
+−
+x
+k
+−
+1
+a
+s
+)
+)
+x
+k
+−
+1
+a
++
+γ
+⋅
+(
+𝕀
+[
+y
+k
+=
+a
+]
+−
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+(
+x
+k
+−
+1
+a
+−
+x
+k
+−
+1
+h
+s
+)
+)
+)
+,
+\displaystyle\begin{pmatrix}x_{k}^{h}\\
+x_{k}^{a}\end{pmatrix}=\begin{pmatrix}x_{k-1}^{h}+\gamma\cdot\left(\mathbb{I}\left[y_{k}=\mathrm{h}\right]-\sigmoid\left(\frac{x_{k-1}^{h}-x_{k-1}^{a}}{s}\right)\right)\\
+x_{k-1}^{a}+\gamma\cdot\left(\mathbb{I}\left[y_{k}=\mathrm{a}\right]-\sigmoid\left(\frac{x_{k-1}^{a}-x_{k-1}^{h}}{s}\right)\right)\end{pmatrix},
+where the sigmoid function is usually taken to be the logistic
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+L
+⁡
+(
+x
+)
+=
+(
+1
++
+exp
+⁡
+(
+−
+x
+)
+)
+−
+1
+\sigmoid_{\mathrm{L}}(x)=\left(1+\exp(-x)\right)^{-1}
+. Here
+s
+s
+is a scaling parameter and
+γ
+\gamma
+is a learning rate parameter; these are typically set empirically for each competition, e.g. for Chess
+(
+FIDE 2023
+)
+, one takes
+s
+=
+400
+/
+log
+⁡
+(
+10
+)
+s=400/\log(10)
+and
+γ
+∈
+{
+10
+,
+20
+,
+40
+}
+\gamma\in\{10,20,40\}
+depending on a player’s level of experience. Note that rescaling
+(
+γ
+,
+s
+)
+\left(\gamma,s\right)
+by a common factor leads to an essentially equivalent algorithm; it is thus mathematically convenient to work with
+s
+=
+1
+s=1
+for purposes of identifiability. In practice, the ratio
+γ
+/
+s
+\gamma/s
+is identifiable and carries an interpretation of the speed at which player skills vary on their intrinsic scale per unit of time. The Elo rating system can be generalised to give valid normalised prediction probabilities in the case of draws (i.e. ternary match outcomes) via the Elo-Davidson system
+(
+Davidson 1970
+;
+Szczecinski and
+Djebbi 2020
+)
+, the recursions for which we outline in A.1 in the supplementary material.
+The popularity of Elo arguably stems from its simplicity, as it can be well understood without a statistical background. Interestingly, it has also been shown to provide surprisingly hard-to-beat predictions in many cases
+(
+Hvattum and
+Arntzen 2010
+;
+Kovalchik 2016
+)
+. However, we emphasise that Elo is not explicitly model-based, and this can make it difficult to extend to more complex scenarios, or to critique the assumptions by which it is underpinned.
+4.2
+Glicko and Extended Kalman
+It was noted in
+Glickman 1999
+that the Elo rating system is reminiscent of a Bradley-Terry model with a dynamic element. This observation led to the development of the Glicko rating system, which explicitly seeks to take into account time-varying uncertainty over each player’s latent skill ratings, i.e. representing
+Filter
+k
+i
+≈
+𝒩
+⁡
+(
+x
+k
+i
+∣
+μ
+k
+i
+,
+σ
+k
+i
+​
+2
+)
+\text{Filter}_{k}^{i}\approx\gauss\left(x_{k}^{i}\mid\mu_{k}^{i},\sigma^{i\,2}_{k}\right)
+. This enriches the Elo approach by tracking both the location and spread of player skills at a given instant. The
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+and
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+steps used in Glicko invite comparison to a (local, marginal) variant of the (Extended) Kalman filter (see e.g. Chapter 7 of
+Särkkä
+and Svensson 2023
+), a connection which was made formal in
+Ingram 2021
+and later
+Szczecinski and
+Tihon 2023
+. Further details on Glicko can be found in
+Glickman 1999
+.
+In Glicko, sports which permit draws are only heuristically permitted by treating them as ‘half-victories’; this implementation does not provide normalised prediction probabilities for sports with draws, which is undesirable. By adopting the Extended Kalman filter perspective, we can readily provide a principled approach to sports with draws by considering the following (non-linear) factorial state-space model (considered in
+Dangauthier et al. 2008
+and
+Minka
+et al. 2018
+)
+m
+0
+​
+(
+x
+0
+i
+)
+=
+𝒩
+\displaystyle m_{0}\left(x_{0}^{i}\right)=\gauss
+(
+x
+0
+i
+∣
+μ
+0
+,
+σ
+0
+2
+)
+,
+M
+t
+,
+t
+′
+​
+(
+x
+t
+i
+,
+x
+t
+′
+i
+)
+=
+𝒩
+⁡
+(
+x
+t
+′
+i
+∣
+x
+t
+i
+,
+τ
+2
+⋅
+(
+t
+′
+−
+t
+)
+)
+,
+\displaystyle\left(x_{0}^{i}\mid\mu_{0},\sigma_{0}^{2}\right),\qquad M_{t,t^{\prime}}\left(x^{i}_{t},x^{i}_{t^{\prime}}\right)=\gauss\left(x^{i}_{t^{\prime}}\mid x^{i}_{t},\tau^{2}\cdot\left(t^{\prime}-t\right)\right),
+(5)
+G
+k
+​
+(
+y
+k
+∣
+x
+h
+,
+x
+a
+)
+\displaystyle G_{k}\left(y_{k}\mid x^{h},x^{a}\right)
+=
+{
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
++
+ϵ
+s
+)
+−
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
+−
+ϵ
+s
+)
+if
+​
+y
+k
+=
+draw
+,
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
+−
+ϵ
+s
+)
+if
+​
+y
+k
+=
+h
+,
+1
+−
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
++
+ϵ
+s
+)
+if
+​
+y
+k
+=
+a
+.
+\displaystyle=\begin{cases}\sigmoid\left(\frac{x^{h}-x^{a}+\epsilon}{s}\right)-\sigmoid\left(\frac{x^{h}-x^{a}-\epsilon}{s}\right)&\text{if }y_{k}=\text{draw},\\
+\sigmoid\left(\frac{x^{h}-x^{a}-\epsilon}{s}\right)&\text{if }y_{k}=\mathrm{h},\\
+1-\sigmoid\left(\frac{x^{h}-x^{a}+\epsilon}{s}\right)&\text{if }y_{k}=\mathrm{a}.\end{cases}
+As with Elo, the logistic sigmoid function is typically used. Similarly, the parameters
+μ
+0
+\mu_{0}
+,
+σ
+0
+\sigma_{0}
+,
+τ
+\tau
+and
+s
+s
+are not jointly identifiable, due to a translation and scaling equivariance. We break this symmetry by setting
+μ
+0
+=
+0
+\mu_{0}=0
+,
+s
+=
+1
+s=1
+; note that in practice, implementations of Glicko will often use alternative numerical values in service of interpretability, comparability with Elo ratings, and so on.
+The state-space model perspective elucidates the interpretation of the parameters
+σ
+0
+\sigma_{0}
+,
+τ
+\tau
+and
+ϵ
+\epsilon
+. The initial variance
+σ
+0
+2
+\sigma_{0}^{2}
+controls the uncertainty over the skill rating of a new player entering the database,
+τ
+\tau
+is a rate parameter that controls how quickly players’ skill vary over time (note that
+τ
+=
+0
+\tau=0
+recovers a static Bradley-Terry model) and
+ϵ
+\epsilon
+is a draw parameter that dictates how common draws are for the given sport (for sports without draws,
+ϵ
+=
+0
+\epsilon=0
+).
+The original presentation of Glicko in
+Glickman 1999
+observed that smoothing can be easily applied using the standard backward Kalman smoother
+(
+Särkkä
+and Svensson 2023
+)
+, which they used in service of ‘pure smoothing’, rather than for parameter estimation. The parameters for Glicko (
+σ
+0
+\sigma_{0}
+and
+τ
+\tau
+) can be inferred by numerically minimising a cross-entropy-type loss function which contrasts predicted and realised match outcomes (see
+Glickman 1999
+, Section 4); this works reasonably in its own context, but does not necessarily scale well to more complex models with a larger parameter set. Adopting the framework described in Section
+3.5
+, we determine maximum-likelihood estimators for the static parameters which scale gracefully to complex models and parameter sets. In particular, for (
+8
+), the convenient Gaussian form of the smoothing approximation means the maximisation step of EM can be carried out analytically for
+σ
+0
+\sigma_{0}
+and
+τ
+\tau
+, and efficiently numerically for
+ϵ
+\epsilon
+(
+Duffield 2024
+)
+.
+4.3
+TrueSkill and Expectation Propagation/Moment-Matching
+It was noted in
+Herbrich
+et al. 2006
+that if we instead choose the sigmoid function for a static Bradley-Terry model to be the inverse probit function
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+IP
+⁡
+(
+x
+)
+=
+Φ
+⁡
+(
+x
+)
+\sigmoid_{\mathrm{IP}}\left(x\right)=\Phi\left(x\right)
+(where
+Φ
+\Phi
+is the CDF of a standard Gaussian), then certain integrals of interest become analytically tractable. In particular, we can use the identity
+∫
+𝒩
+⁡
+(
+z
+∣
+μ
+,
+σ
+2
+)
+⋅
+Φ
+⁡
+(
+z
+)
+​
+dz
+=
+Φ
+⁡
+(
+μ
+/
+1
++
+σ
+2
+)
+\int\gauss(z\mid\mu,\sigma^{2})\cdot\Phi(z)\,\mathrm{d}z=\Phi({\mu}/\penalty{\sqrt{1+\sigma^{2}}})
+to analytically calculate the marginal filtering means and variances of the non-Gaussian joint filtering distribution
+Filter
+k
+h
+,
+a
+\text{Filter}^{h,a}_{k}
+. This naturally motivates the moment-matching approach of
+Herbrich
+et al. 2006
+, wherein an approximate factorial filtering distribution
+Filter
+k
+h
+,
+a
+≈
+Filter
+k
+h
+⋅
+Filter
+k
+a
+\text{Filter}^{h,a}_{k}\approx\text{Filter}^{h}_{k}\cdot\text{Filter}^{a}_{k}
+can be defined by simply extracting the marginal means and variances. This moment-matching strategy can be seen as a specific instance of
+assumed density filtering
+(see e.g. Chapter 1 of
+Minka 2001b
+and references therein) or its more general cousin, Expectation Propagation
+(
+Minka 2001a
+)
+. We provide some details on this connection in Section C in the supplementary material. One can also reasonably consider applying other approximate filtering strategies based on Gaussian principles (e.g. Unscented Kalman Filter
+(
+Julier and
+Uhlmann 2004
+)
+, Ensemble Kalman Filter
+(
+Evensen 2009
+)
+, etc.) to the same model class; we do not explore this further here.
+In the original TrueSkill
+(
+Herbrich
+et al. 2006
+)
+, this procedure was applied as an approximate inference procedure in the static Bradley-Terry model. In the follow-up works TrueSkillThroughTime
+(
+Dangauthier et al. 2008
+)
+and TrueSkill2
+(
+Minka
+et al. 2018
+)
+, the model was extended to allow the latent skills to vary over time. The resulting procedure is a treatment of the state-space model in (
+8
+), where the filtering distributions are formed by i) applying the decoupling approximation, and ii) assimilating observations with predictions through the aforementioned moment-matching procedure. Smoothing is handled analogously to the Glicko and Extended Kalman settings, i.e. by running the Kalman smoother backwards from the terminal time. TrueSkill2
+(
+Minka
+et al. 2018
+)
+applies a gradient-based version of the parameter estimation techniques presented in Section
+3.5
+, although there it is not presented explicitly in the state-space model context.
+We note that the above description is TrueSkill
+(
+Herbrich
+et al. 2006
+;
+Minka
+et al. 2018
+)
+in its most basic form. The TrueSkill approach has been successfully applied in more complex settings, notably for online multiplayer games
+(
+Minka
+et al. 2018
+)
+.
+4.4
+Sequential Monte Carlo
+The preceding strategies all hinge on the availability of a suitable parametric family for approximating the relevant probability distributions, enabling explicit computations and general ease of construction. This is counter-balanced by the limited flexibility of parametric approximations, where even in the presence of an increased computational budget, it is not always clear how to obtain improved estimation performance. This can sometimes be ameliorated by the use of nonparametric approximations, in the form of particle methods like sequential Monte Carlo (SMC). SMC can be applied to any state-space model for which we can i) simulate from both the initial distribution
+m
+0
+m_{0}
+and the Markovian dynamics
+M
+t
+,
+t
+′
+M_{t,t^{\prime}}
+and ii) evaluate the likelihood
+G
+k
+G_{k}
+. Naturally, in this work, it is of particular interest to consider the application of SMC to the (factorial) state-space model in (
+8
+). It is out of the scope of this paper to review available variants of SMC. We instead prioritize conciseness by concentrating on the most widely-used instance of SMC, the bootstrap particle filter.
+SMC filtering maintains a (potentially weighted) particle approximation to the filtering distributions which in our context has an additional factorial approximation, reminiscent of a ‘local’ or ‘blocked’ SMC approach
+(
+Rebeschini and van
+Handel 2015
+)
+,
+Filter
+k
+i
+​
+(
+x
+k
+i
+)
+≈
+∑
+j
+∈
+[
+J
+]
+w
+k
+i
+​
+j
+⋅
+δ
+⁡
+(
+x
+k
+i
+∣
+x
+k
+i
+​
+j
+)
+\mathrm{Filter}_{k}^{i}(x_{k}^{i})\approx\sum_{j\in\left[J\right]}w_{k}^{i\,j}\cdot\delta(x_{k}^{i}\mid x_{k}^{i\,j})
+,
+where
+δ
+⁡
+(
+x
+∣
+y
+)
+\delta(x\mid y)
+is a Dirac measure in
+x
+x
+at point
+y
+y
+and
+j
+∈
+[
+J
+]
+j\in\left[J\right]
+indexes particles.
+The bootstrap particle filter then executes
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+by simply simulating from the dynamics
+M
+k
+,
+k
++
+1
+M_{k,k+1}
+to provide a new particle approximation to
+Predict
+k
++
+1
+|
+k
+i
+\text{Predict}_{k+1|k}^{i}
+. Before applying the
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+step, the distributions
+Predict
+k
++
+1
+|
+k
+h
+\text{Predict}_{k+1|k}^{h}
+and
+Predict
+k
++
+1
+|
+k
+a
+\text{Predict}_{k+1|k}^{a}
+are paired together to form a joint distribution
+Predict
+k
++
+1
+|
+k
+h
+,
+a
+\text{Predict}_{k+1|k}^{h,a}
+. The
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+step then consists of a reweighting step and a resampling step (to carry forward only high-probability particles) resulting in a joint weighted particle approximation to
+Filter
+k
+h
+,
+a
+\text{Filter}_{k}^{h,a}
+. The factorial approximation can then be regained by a simple
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+\mathsf{Marginalise}
+operation which unpairs the joint particles. Note that the factorial approximation is nonstandard in an SMC context, and is adopted here as a natural means of avoiding the curse of dimensionality that affects SMC
+(
+Rebeschini and van
+Handel 2015
+)
+.
+Smoothing can be applied using a similar iterative importance sampling approach
+(
+Godsill
+et al. 2004
+)
+that sweeps backwards for
+k
+=
+K
+−
+1
+,
+…
+,
+0
+k=K{-}1,\dots,0
+recycling the filtering approximations
+Filter
+k
+i
+\text{Filter}_{k}^{i}
+into joint smoothing approximations
+Smooth
+0
+:
+K
+|
+K
+i
+\text{Smooth}_{0:K|K}^{i}
+. This procedure is (embarrassingly) parallel in both the number of players
+N
+N
+and the number of particles
+J
+J
+, given the filtering approximations; see
+Finke and
+Singh 2017
+for a similar scenario. Parameter estimation can also be achieved by applying general-purpose expectation-maximisation or gradient ascent techniques from Section
+3.5
+, where the integrals (
+11
+-
+4
+) are approximated using particle approximations to the smoothing law. Full details can be found in Section A.5 of the supplementary material and
+Chopin and
+Papaspiliopoulos 2020
+provides a thorough review of the field.
+4.5
+Finite State-Space
+From a modelling perspective, it is conceptually simple to consider skills which take values in a finite state-space. Recalling the general model formulated in (
+1
+), by choosing
+𝒳
+=
+[
+S
+]
+\mathcal{X}=\left[S\right]
+for some
+S
+∈
+𝐍
+S\in\nat
+, one obtains a factorial hidden Markov model.
+In this finite state-space, it is natural to model the skills of player
+i
+i
+as evolving according to a continuous time Markov jump process. In the time-homogeneous case, such processes can be specified in terms of their so-called “generator matrix”
+Q
+S
+Q_{S}
+, an
+S
+×
+S
+S\times S
+matrix which encodes the rates at which the player’s skill level moves up and down, and is typically sparse. Given such a matrix, it is typically straightforward to construct the corresponding transition kernels
+M
+t
+,
+t
+′
+M_{t,t^{\prime}}
+at a cost of
+𝒪
+⁡
+(
+S
+3
+)
+\bigOh(S^{3})
+by diagonalisation and matrix exponentiation. In many settings, such as filtering, one is not interested in the transition matrix
+M
+t
+,
+t
+′
+M_{t,t^{\prime}}
+itself but rather its action on probability vectors. In this case, given appropriate pre-computations, the cost can often be controlled at the much lower
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+. We provide further details in Section A.6 of the supplementary material.
+In the context of skill ratings with pairwise comparisons, we can then consider the following fHMM inspired by (
+8
+). Writing
+Q
+S
+Q_{S}
+for the generator matrix of the continuous-time random walk with reflection on
+[
+S
+]
+\left[S\right]
+(see Section B of the supplementary material) and using
+exp
+\exp
+for the matrix exponential, we can define
+m
+0
+\displaystyle m_{0}
+=
+ν
+⋅
+M
+0
+,
+σ
+d
+,
+M
+t
+,
+t
+′
+=
+exp
+(
+τ
+d
+⋅
+(
+t
+′
+−
+t
+)
+⋅
+Q
+S
+)
+,
+\displaystyle=\nu\cdot M_{0,\sigma_{d}},\qquad M_{t,t^{\prime}}=\exp\left(\tau_{d}\cdot\left(t^{{}^{\prime}}-t\right)\cdot Q_{S}\right),
+(6)
+G
+k
+​
+(
+y
+k
+∣
+x
+h
+,
+x
+a
+)
+\displaystyle G_{k}\left(y_{k}\mid x^{h},x^{a}\right)
+=
+{
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
++
+ϵ
+d
+s
+d
+)
+−
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
+−
+ϵ
+d
+s
+d
+)
+if
+​
+y
+k
+=
+draw
+,
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
+−
+ϵ
+d
+s
+d
+)
+if
+​
+y
+k
+=
+h
+,
+1
+−
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
++
+ϵ
+d
+s
+d
+)
+if
+​
+y
+k
+=
+a
+,
+\displaystyle=\begin{cases}\sigmoid\left(\frac{x^{h}-x^{a}+\epsilon_{d}}{s_{d}}\right)-\sigmoid\left(\frac{x^{h}-x^{a}-\epsilon_{d}}{s_{d}}\right)&\text{if }y_{k}=\text{draw},\\
+\sigmoid\left(\frac{x^{h}-x^{a}-\epsilon_{d}}{s_{d}}\right)&\text{if }y_{k}=\mathrm{h},\\
+1-\sigmoid\left(\frac{x^{h}-x^{a}+\epsilon_{d}}{s_{d}}\right)&\text{if }y_{k}=\mathrm{a},\end{cases}
+with subscript
+d
+d
+used to emphasise the connection to the discrete model.
+Here
+ν
+\nu
+is a probability vector whose mass is concentrated on the median state(s)
+{
+⌊
+S
+2
+⌋
+,
+⌈
+S
+2
+⌉
+}
+\left\{\left\lfloor\frac{S}{2}\right\rfloor,\left\lceil\frac{S}{2}\right\rceil\right\}
+, so that
+m
+0
+m_{0}
+resembles a (discrete) centred Gaussian law with standard deviation of order
+σ
+d
+\sigma_{d}
+(for
+σ
+d
+≪
+S
+\sigma_{d}\ll\sqrt{S}
+). As one takes
+σ
+d
+→
+∞
+\sigma_{d}\to\infty
+, this converges towards the uniform distribution on
+[
+S
+]
+\left[S\right]
+. Similarly to (
+8
+), for the dynamical model, we have a rate parameter
+τ
+d
+∈
+𝐑
++
+\tau_{d}\in\real^{+}
+which controls how quickly skill ratings vary over time, and for the observation model, we have a scaling parameter
+s
+d
+∈
+𝐑
++
+s_{d}\in\real^{+}
+and a draw propensity parameter
+ϵ
+d
+∈
+𝐑
++
+\epsilon_{d}\in\real^{+}
+; this can be set as
+ϵ
+d
+=
+0
+\epsilon_{d}=0
+for sports without draws.
+Computationally efficient filtering and smoothing follow from observing that both the filtering distributions and the transition kernel factorise across players, as in
+Rimella and
+Whiteley 2022
+. That is, the equations in Section
+3.3
+can be implemented in closed form via simple linear algebra operations.
+Parameter estimation can be performed through the EM algorithm. For parameters not associated with the dynamical model, the
+𝐐
+\mathbf{Q}
+function can be formed using only the marginal smoothing laws
+Smooth
+k
+|
+K
+i
+\mathrm{Smooth}_{k\mid K}^{i}
+, which are available at a cost of
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+. EM updates for the dynamical parameter
+τ
+d
+\tau_{d}
+instead require joint laws of the form
+Smooth
+k
+,
+k
++
+1
+|
+K
+i
+\mathrm{Smooth}_{k,k+1\mid K}^{i}
+, which are more costly to assemble; we thus opt to instead update
+τ
+d
+\tau_{d}
+by a cheaper gradient ascent step.
+4.6
+Model Extensions
+The generality and flexibility of the state-space approach permits the modelling of more sophisticated data-generating processes with minimal or no alteration to the inference procedures. In simple cases, this might involve simply refining the static parameters. For instance, we could learn distinct
+s
+3-set
+>
+s
+5-set
+s_{\text{3-set}}>s_{\text{5-set}}
+to model the additional randomness associated with the shorter tennis format. Similarly, we could separate
+τ
+off-season
+\tau_{\text{off-season}}
+and
+τ
+in-season
+\tau_{\text{in-season}}
+to consider different levels of skills fluctuation during in- and off-season periods. We could even consider players’ specific parameters, for example, learning player-specific initial distribution parameters or
+τ
+i
+\tau^{i}
+to allow player skills to evolve differently.
+We now describe some more involved model modifications including how popular existing models can be re-framed within the state-space model framework.
+Stationary Dynamics: Ornstein-Uhlenbeck
+A natural modification of the dynamics in (
+8
+) (which we use following the works of Glicko
+(
+Glickman 1999
+)
+and TrueSkill
+(
+Dangauthier et al. 2008
+)
+) would be to replace the Brownian motion skill evolution with that of an Ornstein-Uhlenbeck process
+M
+t
+,
+t
+′
+​
+(
+x
+t
+i
+,
+x
+t
+′
+i
+)
+=
+𝒩
+⁡
+(
+x
+t
+′
+i
+∣
+x
+t
+i
+⋅
+e
+−
+τ
+⁡
+(
+t
+′
+−
+t
+)
++
+μ
+0
+⋅
+(
+1
+−
+e
+−
+τ
+⁡
+(
+t
+′
+−
+t
+)
+)
+,
+σ
+0
+2
+⋅
+(
+1
+−
+e
+−
+2
+​
+τ
+​
+(
+t
+′
+−
+t
+)
+)
+)
+.
+M_{t,t^{\prime}}\left(x^{i}_{t},x^{i}_{t^{\prime}}\right)=\gauss\left(x^{i}_{t^{\prime}}\mid x^{i}_{t}\cdot e^{-\tau(t^{\prime}-t)}+\mu_{0}\cdot(1-e^{-\tau(t^{\prime}-t)}),\sigma_{0}^{2}\cdot(1-e^{-2\tau(t^{\prime}-t)})\right).
+Now each player’s skill is mean reverting towards
+μ
+0
+\mu_{0}
+; this behaviour may be more desirable depending on the sport at hand. Contrarily, we may believe that the average ability of players in a sport has some underlying trend over time which may be better captured by the Brownian dynamics. Note that stationary dynamics are already used in (
+6
+) as the finite-space dynamical process reverts to the uniform distribution.
+Points-based Match Outcomes: Bivariate Poisson
+The popular
+Dixon and
+Coles 1997
+model uses an inflated Poisson likelihood to model the home and away goals scored in a football (or similar points scoring) match, meaning
+y
+k
+=
+(
+y
+k
+h
+,
+y
+k
+a
+)
+∈
+𝐍
+2
+y_{k}=(y_{k}^{h},y_{k}^{a})\in\nat^{2}
+. Each player’s skill is considered as bivariate with
+x
+i
+=
+(
+x
+att
+,
+i
+,
+x
+def
+,
+i
+)
+∈
+𝐑
+2
+x^{i}=(x^{\text{att},i},x^{\text{def},i})\in\real^{2}
+and where
+x
+att
+,
+i
+,
+x
+def
+,
+i
+x^{\text{att},i},x^{\text{def},i}
+model the attack and defence strength of player
+i
+i
+respectively.
+More generally,
+Karlis and
+Ntzoufras 2003
+use a bivariate Poisson likelihood
+G
+k
+​
+(
+y
+k
+∣
+x
+h
+,
+x
+a
+)
+=
+e
+−
+(
+λ
+1
++
+λ
+2
++
+λ
+3
+)
+​
+λ
+1
+y
+k
+h
+y
+k
+h
+!
+​
+λ
+2
+y
+k
+a
+y
+k
+a
+!
+​
+∑
+k
+=
+0
+min
+⁡
+{
+y
+k
+h
+,
+y
+k
+a
+}
+(
+y
+k
+h
+k
+)
+​
+(
+y
+k
+a
+k
+)
+​
+k
+!
+​
+(
+λ
+3
+λ
+1
+​
+λ
+2
+)
+k
+,
+G_{k}(y_{k}\mid x^{h},x^{a})=e^{-(\lambda_{1}+\lambda_{2}+\lambda_{3})}\frac{\lambda_{1}^{y_{k}^{h}}}{y_{k}^{h}!}\frac{\lambda_{2}^{y_{k}^{a}}}{y_{k}^{a}!}\sum_{k=0}^{\min\{y_{k}^{h},y_{k}^{a}\}}\binom{y_{k}^{h}}{k}\binom{y_{k}^{a}}{k}k!\left(\frac{\lambda_{3}}{\lambda_{1}\lambda_{2}}\right)^{k},
+(7)
+where
+λ
+1
+=
+exp
+⁡
+(
+α
+h
++
+x
+att
+,
+h
+−
+x
+def
+,
+a
+)
+\lambda_{1}=\exp(\upalpha^{h}+{x^{\text{att},h}-x^{\text{def},a}})
+,
+λ
+2
+=
+exp
+⁡
+(
+α
+a
++
+x
+att
+,
+a
+−
+x
+def
+,
+h
+)
+\lambda_{2}=\exp(\upalpha^{a}+{x^{\text{att},a}-x^{\text{def},h}})
+,
+λ
+3
+=
+exp
+⁡
+(
+β
+)
+\lambda_{3}=\exp(\beta)
+and
+α
+h
+,
+α
+a
+,
+β
+∈
+𝐑
+\upalpha^{h},\upalpha^{a},\beta\in\real
+are all static parameters (to accompany the static parameters for the initialisation and dynamics).
+These likelihoods can be easily integrated within a state-space model to infer how different teams’ attacking and defensive strengths vary over time. The factorial assumption remains and the players’ multivariate skills evolve independently preserving the form of
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+. On the other hand,
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+should be modified to update jointly
+x
+att
+,
+h
+,
+x
+def
+,
+h
+,
+x
+att
+,
+a
+,
+x
+def
+,
+a
+x^{\text{att},h},x^{\text{def},h},x^{\text{att},a},x^{\text{def},a}
+, which is then followed by
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+\mathsf{Marginalise}
+to regain the factorial approximation.
+Such model extensions can lead to new inferences of interest where one might want to query the existence of covariates representing external factors
+(
+Karlis and
+Ntzoufras 2003
+)
+. As a concrete example, one could examine the presence of a ‘home advantage’ factor in football by testing the hypothesis
+α
+h
+>
+α
+a
+\upalpha^{h}>\upalpha^{a}
+against
+α
+h
+=
+α
+a
+\upalpha^{h}=\upalpha^{a}
+.
+Multiplayer Extension: Plackett-Luce
+We have thus far focused on pairwise comparisons, where matches are assumed to be between two players. We can extend our formulation to a collection of players which can be of broad use e.g. in multiplayer games
+Joshy 2024
+, movie rankings
+Guiver and
+Snelson 2009
+and consumer behaviour
+Luce 1959
+. All steps in Section
+3.4.3
+remain conceptually the same, with the
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+and
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+\mathsf{Marginalise}
+steps now acting on an enlarged intermediate joint distribution.
+Specifically, we can consider the model of
+Plackett 1975
+;
+Luce 1959
+, where a
+judge
+ranks
+M
+players competing in match
+k
+k
+. The observed data is
+y
+k
+=
+(
+y
+k
+1
+,
+…
+,
+y
+k
+M
+)
+y_{k}=(y^{1}_{k},\dots,y_{k}^{\textsf{M}})
+where each
+y
+k
+m
+y_{k}^{\textsf{m}}
+uniquely indexes one of the
+M
+player indices, e.g.
+y
+k
+3
+=
+26
+y_{k}^{\textsf{3}}=26
+indicates the judge ranked player 26 in 3rd place. The likelihood
+(
+Guiver and
+Snelson 2009
+)
+is
+G
+k
+(
+y
+k
+1
+:
+𝖬
+∣
+x
+[
+𝖬
+]
+)
+=
+∏
+𝗆
+=
+1
+𝖬
+exp
+⁡
+(
+x
+y
+k
+𝗆
+)
+exp
+⁡
+(
+x
+y
+k
+𝗆
+)
++
+⋯
++
+exp
+⁡
+(
+x
+y
+k
+𝖬
+)
+.
+\displaystyle G_{k}\left(y_{k}^{1:\mathsf{M}}\mid x^{[\mathsf{M}]}\right)=\prod_{\mathsf{m}=1}^{\mathsf{M}}\frac{\exp({x^{y_{k}^{\mathsf{m}}}})}{\exp({x^{y_{k}^{\mathsf{m}}}})+\dots+\exp({x^{y_{k}^{\mathsf{M}}}})}.
+As this likelihood applies to
+M
+players simultaneously (as opposed to just two previously) care must be taken with the dimensionality of the assimilation for SMC and discrete inference. In principle, the extended Kalman approach does not suffer in the same way, although the accuracy of the Taylor approximation may need to be validated.
+5
+Experiments
+We now turn to the task of accurately quantifying sporting skills with some real-life data sets. We consider three sports; Women’s Tennis Association (WTA) results (noting that all matches have the same 3-set format), football data for the English Premier League (EPL) (plus international data for Fig.
+2
+) and professional (classical format) chess matches. In all cases, the research question is to use the results of the matches (and potentially additional data, e.g. the margin of victory) to infer time-varying skill levels of all competitors alongside uncertainties in these skill estimates. We then use these skill levels to provide match predictions, whose accuracy we assess.
+This section is structured to replicate a realistic workflow. We start with an exploratory analysis with some trial static parameters, testing against basic coherence checks on how we expect the latent skills to behave. We then turn to parameter estimation and learn the static parameters from historical data. Finally, we describe and analyse how filtering and smoothing can be utilised for online decision-making and historical evaluation respectively. At each stage of the workflow, we compare and highlight similarities or differences across sports and modelling or inference approaches as appropriate (but not exhaustively).
+Specific details and parameter specifications for the experiments can be found in Section D in the supplementary material. A
+python
+package permitting easy application of the discussed techniques, and code to replicate all of the following simulations, can be found at
+github.com/SamDuffield/abile
+.
+5.1
+Exploratory Analysis
+The first step in any statistical procedure is to explore the model with some preliminary (perhaps arbitrarily chosen) static parameters. The goal here is not a thorough evaluation of skill ratings, but rather to assess our prior intuitions.
+Figure 2
+:
+Visualisation of the different skill representations for Argentina’s 2023 FIFA World Cup triumph. Each y-axis represents the skill-rating scale for the different approaches.
+In Fig.
+2
+, we depict Argentina’s 2023 football World Cup in terms of the evolution of their skill rating distribution with arbitrarily chosen static parameters (we run on international matches in 2020-2022, with only Argentina’s post-match 2022 World Cup ratings displayed). We also take this opportunity to highlight the different approaches to encoding a probability distribution over skill ratings. We first see that Elo stores skill ratings as a point estimate without any uncertainty quantification and that it is a purely forward-based approach without any ability to update skill ratings based on future match results (i.e. smoothing). In contrast, the three model-based SSM approaches encode a (more informative) distribution over skill ratings. In the case of TrueSkill2 (Glicko and Extended Kalman would appear similar and are therefore omitted) a simple location and spread (Gaussian) distribution is used, whereas SMC and the discrete model can encode more complex distributions.
+In terms of verifying our intuitions, we can see that Argentine victories increase their skill ratings, draws have little influence and defeats decrease the ratings. Particularly poignant is Argentina’s defeat to Saudi Arabia (a low-ranked side according to both FIFA’s official rankings and our computed filters) which in all approaches resulted in a sharp decrease in Argentina’s estimated skill rating.
+We can also draw insights from the smoothing distributions. We first note that at the final match in the dataset, the filtering and smoothing distributions match exactly, by definition. We also see that the smoothing distributions show less uncertainty than the filtering distributions; this matches our intuition since smoothing
+𝐏
+(
+x
+k
+∣
+y
+1
+:
+K
+)
+\mathbf{P}(x_{k}\mid y_{1:K})
+has access to more data than filtering
+𝐏
+(
+x
+k
+∣
+y
+1
+:
+k
+)
+\mathbf{P}(x_{k}\mid y_{1:k})
+. We finally observe that the smoothing distributions are much less reactive to individual results and instead track a
+smooth
+trajectory of the team’s skill rating over time.
+5.2
+Parameter Estimation
+Having verified informally that the algorithms are behaving sensibly, we turn to apply the techniques discussed in Section
+3.5
+to learn the static parameters from historical data in an offline setting. Our goal is to maximise the log-likelihood
+log
+𝐏
+(
+y
+1
+:
+K
+∣
+θ
+)
+\log\mathbf{P}(y_{1:K}\mid\theta)
+.
+We initially consider the WTA tennis dataset, which we train on the years 2019-2021 and leave 2022 as a test set for later. Draws do not occur in tennis, and therefore we can set
+ϵ
+=
+ϵ
+d
+=
+0
+\epsilon=\epsilon_{d}=0
+, leaving only two parameters to tune for each approach. This two-dimensional optimisation landscape of the log-likelihood can readily be visualised, as in Fig.
+3
+. Indeed, as the static parameter is only two-dimensional the optimisation could be applied using a grid search (as is indeed the most natural option for Elo and Glicko). Furthermore, a filtering sweep provides an estimate of the optimisation objective
+log
+𝐏
+(
+y
+1
+:
+K
+∣
+θ
+)
+\log\mathbf{P}(y_{1:K}\mid\theta)
+, and therefore the grid search can be applied directly without running a smoothing routine. For more complex models and datasets, higher dimensional static parameters are inevitable, and a grid search will quickly become prohibitive. We therefore apply iterative expectation-maximisation to the tennis data in Fig.
+3
+to investigate some of the properties and differences between approaches, indicative of parameter estimation in more complex situations.
+For the three approaches considered (we again omit the Extended Kalman approach due to its similarity with TrueSkill2 in all steps beyond filtering), we display 1000 expectation-maximisation iterations starting from three different initialisations.
+The TrueSkill2 and SMC approaches share the same model and differ only through their respective Gaussian and particle-based approximations of the skill distributions. The Gaussian approximation induces a significant bias, whereas the particle approximation is asymptotically unbiased, but induces Monte Carlo variance. We can see that the bias from the Gaussian approximation contorts the optimisation landscape for TrueSkill2 relative to SMC, whose fuzzy landscape is due to the stochastic nature of the algorithm. We see that the additional bias from the TrueSkill2 approach results in the EM trajectory evading the global optimum; by contrast, this optimum is successfully identified by both the SMC and discrete approaches, which do not exhibit any systematic bias beyond the factorial approximation.
+Figure 3
+:
+Log-likelihood grid and parameter estimation for WTA tennis data.
+5.3
+Filtering (for online decision-making)
+Now that we have a principled choice for our static parameters, we can apply the methods to online data. In Table
+2
+, we use static parameters (trained using grid search for Elo and Glicko, and EM for the remaining, model-based approaches). Recall that in the case of sports with draws, Glicko does not provide the normalised outcome predictions required for log-likelihood-based assessment.
+Table 2
+:
+Average negative log-likelihood (low is good) for match outcomes across a variety of sports. In each case, the training period was 3 years and the test period was the subsequent year. Note the draw percentages were 0% for tennis, 22% for football and 65% for chess. Note that although the bivariate Poisson likelihood models home and away goals, we here report the statistics for predicting draw, home win or away win, which are accessible as a byproduct of the bivariate likelihood.
+Method
+Tennis (WTA)
+Football (EPL)
+Chess
+Train
+Test
+Train
+Test
+Train
+Test
+Elo-Davidson
+0.640
+0.636
+1.000
+0.973
+0.802
+1.001
+Glicko
+0.640
+0.636
+-
+-
+-
+-
+Extended Kalman
+0.640
+0.635
+0.988
+0.965
+0.801
+0.972
+TrueSkill2
+0.650
+0.668
+1.006
+0.961
+0.802
+0.978
+SMC
+0.640
+0.639
+0.988
+0.962
+0.801
+0.974
+Discrete
+0.639
+0.636
+0.987
+0.961
+0.801
+0.976
+Bivariate Poisson - Extended Kalman
+0.975
+0.954
+Bivariate Poisson - SMC
+0.978
+0.950
+Bivariate Poisson - Discrete
+0.984
+0.954
+For the tennis data, we notice that all models broadly perform quite similarly, with the exception of TrueSkill2; we suspect that this stems from the parameter estimation optimisation issues discussed above. The tennis task without draws represents a simpler binary prediction problem, and it is therefore not surprising that (with principled parameter estimation) predictive performance saturates. For the more difficult tasks of Football and Chess (where draws do occur), we see that the model-based approaches equipped with uncertainty quantification significantly outperform Elo. Overall we can safely say that model-based approaches significantly outperform simple methods like Elo and Glicko and are preferable for the considered sports.
+Here we have assessed the accuracy of the approaches in predicting match outcomes, as this is a natural task in the context of online decision-making, and can be useful for a variety of purposes including seeding, scheduling and indeed betting. Predictive distributions can also be used for more sophisticated decision-making such as those based on multiple future matches (competition outcomes, promotion/relegation results, etc.).
+5.4
+Smoothing (for historical evaluation)
+Smoothing represents an integral subroutine for parameter estimation, though can also be of interest in its own right
+(
+Glickman 1999
+;
+Duffield and
+Singh 2022
+)
+. In particular, when analysing the historical evolution of a player’s skill over time, it is more appropriate to consider the smoothing distributions, rather than the filtering distributions which do not update in light of recent match results.
+On the left of Fig.
+4
+, we display the historical evolution of Tottenham’s EPL skill rating over time according to (
+8
+) and extended Kalman inference. When comparing filtering and smoothing, we immediately see that the smoothing distributions are less reactive, and provide a more realistic trajectory of how a team’s underlying skill is expected to evolve over time. Noting that the model permits a certain amount of randomness to occur in each match which can result in surprise results, we observe that the smoothing distributions do a much better job of handling this noise or uncertainty. Fig.
+4
+only displays the extended Kalman method, but similar takeaways hold for all of the aforementioned model-based methods (as is highlighted in Fig.
+2
+).
+Figure 4
+:
+Extended Kalman filtering and smoothing with for Tottenham’s EPL matches from 2011-2023. Top: filtering. Bottom: smoothing. Left: sigmoidal likelihood (
+8
+). Right: bivariate Poisson likelihood (
+7
+). Error bars represent one standard deviation with the other teams’ mean skills in faded grey. Black dashed lines represent a change in Tottenham manager with long-serving ones named.
+Historical evaluation of skills can be particularly useful to analyse the impacts of various factors and how they impact the team’s underlying skill level, relative to its competitors. In Fig.
+4
+, we highlight the different managers or head coaches that have served Tottenham during the time period, depicting their competitors’ mean skills in the background. This can be particularly useful in evaluating the ability of the managers and their impact on the team. We observe from the smoothing output that Tottenham’s skill rating was in ascendance under Villas-Boas and early Pochettino, before descending towards the end of the Pochettino era (although perhaps not as sharply as the filtering output would suggest). We note that there are likely many further factors influencing the underlying skill that are not highlighted in Fig.
+4
+, and also that (
+8
+) is relatively simple; it may of course be desirable to build a more complex model which can direct account for such additional factors or data.
+In practice, one may want to update full smoothing trajectories in an online fashion so that historical evaluation is possible without having to run full
+𝒪
+⁡
+(
+K
+)
+\bigOh(K)
+backward sweeps. Here, a fixed-lag approximation is a natural option
+(
+Duffield and
+Singh 2022
+)
+.
+5.5
+Model Refinement
+Focusing on the case of football, simply modelling match outcomes as draw, home win or away win ignores valuable information recorded in the margin of victory and the number of goals scored.
+As described in
+4.6
+, we can intuitively model the number of goals scored in a match via a bivariate Poisson model
+(
+Karlis and
+Ntzoufras 2003
+)
+, where attack and defence strengths represent the underlying latent player skills. At the bottom of Table
+2
+we can see that our refined model provides better predictions for the match winner than the sigmoidal SSM (
+8
+), despite not being directly optimised for the purpose.
+On the right of Fig.
+4
+, we visualise the extension of our model for attack and defensive skills, again for both filtering and smoothing. The more expressive model allows us to conclude that the key driver of Tottenham’s decrease in overall skill in 2022 was due to a weakening of their defence, whilst their attack remained relatively proficient.
+6
+Discussion
+In this work, we have advocated for a model-based approach to the skill rating problem. By taking this perspective, we can separate the tasks of modelling and inference. We have detailed several SSMs which are suitable for tackling the problem and are highly interpretable and extensible to suit more sophisticated data pipelines. We have also detailed different approximate inference schemes for analysing such models and discussed their relative strengths and shortcomings. We have conducted thorough case studies on how such methods apply to real data, highlighting a simple workflow, and the different roles of filtering, smoothing, and parameter estimation.
+As we have demonstrated, a principled Bayesian approach offers both interpretable and predictive advantages over baseline methods such as Elo and Glicko. These advantages also apply to alternative algorithms that ignore the quality of the opposition, failing to provide predictions for the match outcomes and difficult to extend to more complex data settings or inferential questions. For example, it might be tempting to compare Fig
+4
+to a plot of a moving average of Tottenham’s points-per-game over the considered period.
+On the other hand, one might obtain good predictive performance via sophisticated machine learning or black-box methods
+(
+Menke and
+Martinez 2008
+)
+. However, one would sacrifice the interpretability provided by the state-space model approach, resulting in a model that exhibits difficult-to-challenge assumptions that may fail in subtle ways (such as underfitting or overfitting). The state-space model framework is transparent and through Bayesian marginalisation offers a principled route to uncertainty quantification and a broad range of predictive functionalities (such as the match result via the number of home and away goals in the bivariate Poisson model).
+There is of course ample further potential to apply the same procedures to more complex models. Our techniques could even be easily applied point-by-point. For example, one could develop a model for cricket (or baseball) skills where the bowler and batter are the two ‘players’ with an asymmetric likelihood based on
+𝒴
+=
+{
+wicket
+,
+extras
+,
+0
+,
+1
+,
+2
+,
+3
+,
+4
+,
+6
+}
+\mathcal{Y}=\left\{\text{wicket},\text{extras},0,1,2,3,4,6\right\}
+.
+We further remark that point-by-point style state-space models have been considered in the ‘hot-hand effect’ literature
+(
+Wetzels et al. 2016
+;
+Ötting et al. 2020
+;
+Mews and
+Ötting 2023
+)
+. Here, players may enter a ‘hot’ state where they display exceptional performance and significantly affect the match outcome. However, the hot-hand literature primarily focuses on identifying the performance levels of individual players, neglecting cross-player interactions and their combined impact on the match (which may be a suitable assumption for sports such as darts). This focus leads to state-space models that are completely decoupled across players, resulting in a simplified scenario. In contrast, we consider state-space models for which the player skills jointly affect the observations, leading to additional inferential and computational challenges.
+An appealing aspect of our framework is that the user can devote their time to carefully designing their model, and describing their data-generating process in state-space language. Having done this, the general-purpose inference schemes will typically apply directly, enabling the user to easily explore different model and parameter configurations, with the ability to refine the model in an iterative manner
+(
+Gelman
+et al. 2020
+)
+. The SSM framework also provides the tools (marginal likelihoods) required for model selection in a principled way via Bayesian model selection
+(
+Wasserman 2000
+)
+.
+As a result of our specific interests in this problem, we tend to emphasise the role of filtering as a tool for online decision-making, and of smoothing for retrospective evaluation of policies (e.g. assessing coach efficacy, changes in conditions, etc.). For simplicity, we have given a comparatively lightweight treatment of parameter estimation; there are various extensions of our work in this direction which would be worthwhile to examine carefully, e.g. online parameter estimation
+(
+Cappé 2011
+;
+Kantas et al. 2015
+)
+, Bayesian approaches
+(
+Andrieu
+et al. 2010
+)
+, and beyond.
+With regard to practical recommendations, at a coarse resolution, we can offer that i) when speed and scalability are of primary interest, Extended Kalman inference offers a good default, whereas ii) when robustness and flexibility are a greater priority, the fHMM model with graph-based inference has many nice properties. We note that the task of evaluating the relative suitability of { Extended Kalman, SMC, HMM, … } approaches is not limited to the skill rating setting, and is relevant across many fields and applications wherein state-space models are fundamental.
+Data availability
+All data used is freely available online. Tennis data from
+tennis-data.co.uk
+. Football data from
+football-data.co.uk
+and
+github.com/martj42/international_results
+. Chess data from
+github.com/huffyhenry/forecasting-candidates
+. Reproducible code can be found at
+github.com/SamDuffield/abile
+.
+Funding
+S. Power and L. Rimella were supported by EPSRC grant EP/R018561/1 (Bayes4Health).
+References
+Andrieu
+et al. (2010)
+Andrieu, C., A. Doucet, and R. Holenstein (2010).
+Particle Markov chain Monte Carlo methods.
+Journal of the Royal Statistical Society Series B: Statistical
+Methodology
+72
+(3), 269–342.
+Bradley and
+Terry (1952)
+Bradley, R. A. and M. E. Terry (1952).
+Rank Analysis of Incomplete Block Designs: I. The Method
+of Paired Comparisons.
+Biometrika
+39
+(3/4), 324–345.
+Cappé (2011)
+Cappé, O. (2011).
+Online EM algorithm for hidden Markov models.
+Journal of Computational and Graphical Statistics
+20
+(3), 728–749.
+Chopin and
+Papaspiliopoulos (2020)
+Chopin, N. and O. Papaspiliopoulos (2020).
+Introduction to Sequential Monte Carlo
+.
+Springer International Publishing.
+Dangauthier et al. (2008)
+Dangauthier, P., R. Herbrich, T. Minka, and T. Graepel (2008).
+TrueSkill Through Time: Revisiting the History of Chess.
+In J. Platt, D. Koller, Y. Singer, and S. Roweis (Eds.),
+Advances in Neural Information Processing Systems
+, Volume 20. Curran
+Associates, Inc.
+Dau and
+Chopin (2023)
+Dau, H.-D. and N. Chopin (2023).
+On backward smoothing algorithms.
+The Annals of Statistics
+51
+(5), 2145 – 2169.
+Davidson (1970)
+Davidson, R. R. (1970).
+On Extending the Bradley-Terry model to Accommodate Ties in
+Paired Comparison Experiments.
+Journal of the American Statistical Association
+65
+(329), 317–328.
+Del Moral
+et al. (2010)
+Del Moral, P., A. Doucet, and S. Singh (2010).
+Forward smoothing using sequential Monte Carlo.
+Dixon and
+Coles (1997)
+Dixon, M. J. and S. G. Coles (1997).
+Modelling association football scores and inefficiencies in the
+football betting market.
+Journal of the Royal Statistical Society: Series C (Applied
+Statistics)
+46
+(2), 265–280.
+Douc and
+Cappé (2005)
+Douc, R. and O. Cappé (2005).
+Comparison of resampling schemes for particle filtering.
+In
+ISPA 2005. Proceedings of the 4th International Symposium on
+Image and Signal Processing and Analysis, 2005.
+, pp.  64–69. IEEE.
+Douc
+et al. (2011)
+Douc, R., A. Garivier, E. Moulines, and J. Olsson (2011).
+Sequential Monte Carlo smoothing for general state space hidden
+Markov models.
+The Annals of Applied Probability
+21
+(6), 2109 –
+2145.
+Doucet
+et al. (2000)
+Doucet, A., S. Godsill, and C. Andrieu (2000).
+On sequential Monte Carlo sampling methods for Bayesian
+filtering.
+Statistics and computing
+10
+, 197–208.
+Duffield (2024)
+Duffield, S. (2024).
+ghq: Gauss-Hermite quadrature in JAX.
+Duffield and
+Singh (2022)
+Duffield, S. and S. S. Singh (2022).
+Online Particle Smoothing With Application to
+Map-Matching.
+IEEE Transactions on Signal Processing
+70
+, 497–508.
+Elo (1978)
+Elo, A. (1978).
+The Rating of Chessplayers, Past and Present
+.
+Ishi Press.
+Evensen (2009)
+Evensen, G. (2009).
+Data assimilation: the ensemble Kalman filter
+, Volume 2.
+Springer.
+FIDE (2023)
+FIDE (2023).
+International chess federation.
+Finke and
+Singh (2017)
+Finke, A. and S. S. Singh (2017).
+Approximate smoothing and parameter estimation in high-dimensional
+state-space models.
+IEEE Transactions on Signal Processing
+65
+(22),
+5982–5994.
+Gelman
+et al. (2020)
+Gelman, A., A. Vehtari, D. Simpson, C. C. Margossian, B. Carpenter, Y. Yao,
+L. Kennedy, J. Gabry, P.-C. Bürkner, and M. Modrák (2020).
+Bayesian workflow.
+Ghahramani and
+Jordan (1995)
+Ghahramani, Z. and M. Jordan (1995).
+Factorial hidden Markov models.
+In D. Touretzky, M. Mozer, and M. Hasselmo (Eds.),
+Advances in
+Neural Information Processing Systems
+, Volume 8. MIT Press.
+Glickman (1999)
+Glickman, M. E. (1999).
+Parameter Estimation in Large Dynamic Paired Comparison
+Experiments.
+Journal of the Royal Statistical Society: Series C (Applied
+Statistics)
+48
+(3), 377–394.
+Godsill
+et al. (2004)
+Godsill, S. J., A. Doucet, and M. West (2004).
+Monte Carlo smoothing for nonlinear time series.
+Journal of the American statistical association
+99
+(465), 156–168.
+Gorgi
+et al. (2019)
+Gorgi, P., S. J. Koopman, and R. Lit (2019).
+The analysis and forecasting of tennis matches by using a high
+dimensional dynamic model.
+Journal of the Royal Statistical Society Series A: Statistics in
+Society
+182
+(4), 1393–1409.
+Guiver and
+Snelson (2009)
+Guiver, J. and E. Snelson (2009).
+Bayesian inference for plackett-luce ranking models.
+In
+proceedings of the 26th annual international conference on
+machine learning
+, pp.  377–384.
+Herbrich
+et al. (2006)
+Herbrich, R., T. Minka, and T. Graepel (2006).
+TrueSkill™: A Bayesian Skill Rating System.
+In B. Schölkopf, J. Platt, and T. Hoffman (Eds.),
+Advances
+in Neural Information Processing Systems
+, Volume 19. MIT Press.
+Hvattum and
+Arntzen (2010)
+Hvattum, L. M. and H. Arntzen (2010).
+Using Elo ratings for match result prediction in association
+football.
+International Journal of Forecasting
+26
+(3), 460–470.
+Sports Forecasting.
+Ingram (2021)
+Ingram, M. (2021).
+How to extend Elo: a Bayesian perspective.
+Journal of Quantitative Analysis in Sports
+17
+(3),
+203–219.
+Joshy (2024)
+Joshy, V. (2024).
+OpenSkill: A faster asymmetric multi-team, multiplayer rating
+system.
+Journal of Open Source Software
+9
+(93), 5901.
+Julier and
+Uhlmann (2004)
+Julier, S. J. and J. K. Uhlmann (2004).
+Unscented filtering and nonlinear estimation.
+Proceedings of the IEEE
+92
+(3), 401–422.
+Kantas et al. (2015)
+Kantas, N., A. Doucet, S. S. Singh, J. Maciejowski, and N. Chopin (2015).
+On Particle Methods for Parameter Estimation in State-Space Models.
+Statistical Science
+30
+(3), 328 – 351.
+Karlis and
+Ntzoufras (2003)
+Karlis, D. and I. Ntzoufras (2003).
+Analysis of sports data by using bivariate Poisson models.
+Journal of the Royal Statistical Society: Series D (The
+Statistician)
+52
+(3), 381–393.
+Kiraly and
+Qian (2017)
+Kiraly, F. J. and Z. Qian (2017).
+Modelling Competitive Sports: Bradley-Terry-Elo Models for
+Supervised and On-Line Learning of Paired Competition Outcomes.
+Kovalchik (2016)
+Kovalchik, S. A. (2016).
+Searching for the GOAT of tennis win prediction.
+Journal of Quantitative Analysis in Sports
+12
+(3),
+127–138.
+Kuss
+et al. (2005)
+Kuss, M., C. E. Rasmussen, and R. Herbrich (2005).
+Assessing Approximate Inference for Binary Gaussian Process
+Classification.
+Journal of machine learning research
+6
+(10).
+Luce (1959)
+Luce, R. D. (1959).
+Individual choice behavior: A theoretical analysis.
+Menke and
+Martinez (2008)
+Menke, J. E. and T. R. Martinez (2008).
+A Bradley–Terry artificial neural network model for individual
+ratings in group competitions.
+Neural computing and Applications
+17
+, 175–186.
+Mews and
+Ötting (2023)
+Mews, S. and M. Ötting (2023).
+Continuous-time state-space modelling of the hot hand in basketball.
+AStA Advances in Statistical Analysis
+107
+(1-2),
+313–326.
+Minka
+et al. (2018)
+Minka, T., R. Cleven, and Y. Zaykov (2018, March).
+TrueSkill 2: An improved Bayesian skill rating system.
+Technical Report MSR-TR-2018-8, Microsoft.
+Minka (2001a)
+Minka, T. P. (2001a).
+Expectation propagation for approximate Bayesian inference.
+In J. S. Breese and D. Koller (Eds.),
+UAI ’01: Proceedings of
+the 17th Conference in Uncertainty in Artificial Intelligence, University of
+Washington, Seattle, Washington, USA, August 2-5, 2001
+, pp.  362–369.
+Morgan Kaufmann.
+Minka (2001b)
+Minka, T. P. (2001b).
+A family of algorithms for approximate Bayesian inference
+.
+Ph. D. thesis, Massachusetts Institute of Technology.
+Neal and
+Hinton (1998)
+Neal, R. M. and G. E. Hinton (1998).
+A view of the EM algorithm that justifies incremental, sparse, and
+other variants.
+In
+Learning in graphical models
+, pp.  355–368. Springer.
+Ollivier (2018)
+Ollivier, Y. (2018).
+Online natural gradient as a kalman filter.
+Ötting et al. (2020)
+Ötting, M., R. Langrock, C. Deutscher, and V. Leos-Barajas (2020).
+The hot hand in professional darts.
+Journal of the Royal Statistical Society Series A: Statistics in
+Society
+183
+(2), 565–580.
+Pelánek (2016)
+Pelánek, R. (2016).
+Applications of the Elo rating system in adaptive educational
+systems.
+Computers and Education
+98
+, 169–179.
+Plackett (1975)
+Plackett, R. L. (1975).
+The analysis of permutations.
+Journal of the Royal Statistical Society Series C: Applied
+Statistics
+24
+(2), 193–202.
+Rebeschini and van
+Handel (2015)
+Rebeschini, P. and R. van Handel (2015).
+Can local particle filters beat the curse of dimensionality?
+The Annals of Applied Probability
+25
+(5), 2809 –
+2866.
+Rimella and
+Whiteley (2022)
+Rimella, L. and N. Whiteley (2022).
+Exploiting locality in high-dimensional Factorial hidden Markov
+models.
+Journal of Machine Learning Research
+23
+(4), 1–34.
+Särkkä
+and Svensson (2023)
+Särkkä, S. and L. Svensson (2023).
+Bayesian filtering and smoothing
+, Volume 17.
+Cambridge university press.
+Stefani (2011)
+Stefani, R. (2011).
+The methodology of officially recognized international sports rating
+systems.
+Journal of Quantitative Analysis in Sports
+7
+(4).
+Szczecinski and
+Djebbi (2020)
+Szczecinski, L. and A. Djebbi (2020).
+Understanding draws in Elo rating algorithm.
+Journal of Quantitative Analysis in Sports
+16
+(3),
+211–220.
+Szczecinski and
+Tihon (2023)
+Szczecinski, L. and R. Tihon (2023).
+Simplified Kalman filter for on-line rating: one-fits-all approach.
+Journal of Quantitative Analysis in Sports
+.
+Varin
+et al. (2011)
+Varin, C., N. Reid, and D. Firth (2011).
+An overview of composite likelihood methods.
+Statistica Sinica
+, 5–42.
+Varin and
+Vidoni (2008)
+Varin, C. and P. Vidoni (2008).
+Pairwise likelihood inference for general state space models.
+Econometric Reviews
+28
+(1-3), 170–185.
+Wasserman (2000)
+Wasserman, L. (2000).
+Bayesian model selection and model averaging.
+Journal of mathematical psychology
+44
+(1), 92–107.
+Wetzels et al. (2016)
+Wetzels, R., D. Tutschkow, C. Dolan, S. Van der Sluis, G. Dutilh, and E.-J.
+Wagenmakers (2016).
+A Bayesian test for the hot hand phenomenon.
+Journal of Mathematical Psychology
+72
+, 200–209.
+Wheatcroft (2021)
+Wheatcroft, E. (2021).
+Forecasting football matches by predicting match statistics.
+Journal of Sports Analytics
+7
+(2), 77–97.
+Štrumbelj and
+Vračar (2012)
+Štrumbelj, E. and P. Vračar (2012).
+Simulating a basketball match with a homogeneous Markov model and
+forecasting the outcome.
+International Journal of Forecasting
+28
+(2), 532–542.
+Appendix A
+Algorithm Recursions
+We here detail the mathematical recursions underlying the methods in the main text. For brevity, we discuss the recursions in the context of the
+𝒪
+⁡
+(
+N
+⋅
+K
+)
+\bigOh(N\cdot K)
+posterior - (1) in the main text. However, any practical implementation should utilise the memory efficient
+𝒪
+⁡
+(
+N
++
+K
+)
+\bigOh(N+K)
+match-sparsity posterior - (2) in the main text. Also note that by the factorial approximation, smoothing can be applied independently across players and we therefore omit the player index superscript for the smoothing recursions. A python package with code implementing all of the below can be found at
+github.com/SamDuffield/abile
+.
+A.1
+Elo-Davidson
+The Elo-Davidson rating system generalises the original Elo
+(
+Elo 1978
+)
+to provide normalised outcome predictions for sports that admit draws
+(
+Davidson 1970
+)
+. The static parameters are a learning rate
+K
+K
+, a draw propensity parameter
+κ
+\kappa
+and a scaling parameter
+s
+s
+which we set
+s
+=
+1
+s=1
+.
+A.1.1
+Filtering
+x
+k
+h
+=
+x
+k
+−
+1
+h
++
+K
+⋅
+(
+𝕀
+[
+y
+k
+=
+h
+]
++
+1
+2
+𝕀
+[
+y
+k
+=
+draw
+]
+−
+g
+(
+x
+k
+−
+1
+h
+−
+x
+k
+−
+1
+a
+s
+;
+κ
+)
+)
+,
+\displaystyle x^{h}_{k}=x_{k-1}^{h}+K\cdot\left(\mathbb{I}[y_{k}=h]+\frac{1}{2}\mathbb{I}[y_{k}=\text{draw}]-g\left(\frac{x_{k-1}^{h}-x_{k-1}^{a}}{s};\kappa\right)\right),
+x
+k
+a
+=
+x
+k
+−
+1
+a
++
+K
+⋅
+(
+𝕀
+[
+y
+k
+=
+a
+]
++
+1
+2
+𝕀
+[
+y
+k
+=
+draw
+]
+−
+g
+(
+x
+k
+−
+1
+a
+−
+x
+k
+−
+1
+h
+s
+;
+κ
+)
+)
+,
+\displaystyle x^{a}_{k}=x_{k-1}^{a}+K\cdot\left(\mathbb{I}[y_{k}=a]+\frac{1}{2}\mathbb{I}[y_{k}=\text{draw}]-g\left(\frac{x_{k-1}^{a}-x_{k-1}^{h}}{s};\kappa\right)\right),
+where
+g
+⁡
+(
+z
+,
+κ
+)
+=
+10
+z
++
+κ
+/
+2
+10
+−
+z
++
+10
+z
++
+κ
+g(z;\kappa)=\frac{10^{z}+\kappa/2}{10^{-z}+10^{z}+\kappa}
+and the outcome predictions are given by
+𝐏
+⁡
+(
+y
+k
+=
+h
+)
+\displaystyle\mathbf{P}(y_{k}=h)
+∝
+10
+x
+k
+−
+1
+h
+−
+x
+k
+−
+1
+a
+s
+\displaystyle\propto 10^{\frac{x_{k-1}^{h}-x_{k-1}^{a}}{s}}
+𝐏
+⁡
+(
+y
+k
+=
+a
+)
+\displaystyle\mathbf{P}(y_{k}=a)
+∝
+10
+x
+k
+−
+1
+a
+−
+x
+k
+−
+1
+h
+s
+\displaystyle\propto 10^{\frac{x_{k-1}^{a}-x_{k-1}^{h}}{s}}
+𝐏
+⁡
+(
+y
+k
+=
+draw
+)
+\displaystyle\mathbf{P}(y_{k}=\text{draw})
+∝
+κ
+.
+\displaystyle\propto\kappa.
+A.1.2
+Smoothing and Parameter Estimation
+The Elo-Davidson recursions are not explicitly model-based and therefore are not accompanied by smoothing recursions or parameter estimation (beyond optimising the predictive performance objective via grid search on
+K
+K
+and
+κ
+\kappa
+, as described in the main paper).
+A.2
+Glicko
+The Glicko rating system
+(
+Glickman 1999
+)
+extends Elo to include a time-varying spread variable for each skill rating, i.e.
+𝒩
+⁡
+(
+x
+k
+i
+∣
+μ
+k
+i
+,
+σ
+k
+i
+​
+2
+)
+\gauss(x^{i}_{k}\mid\mu^{i}_{k},\sigma^{i\,2}_{k})
+.
+The static parameters are an initialisation mean
+μ
+0
+\mu_{0}
+(which we fix as
+μ
+0
+=
+0
+\mu_{0}=0
+), an initialisation spread
+σ
+0
+\sigma_{0}
+, a rate parameter
+τ
+\tau
+, a maximum spread parameter
+σ
+max
+\sigma_{\text{max}}
+(which we fix to
+σ
+max
+=
+σ
+0
+\sigma_{\text{max}}=\sigma_{0}
+) and a scaling parameter
+s
+s
+(which we fix as
+s
+=
+1
+s=1
+).
+Glicko does not provide normalised outcome predictions for sports with draws; in the next section, we detail how this can be naturally achieved by adopting a state-space model perspective, and conducting approximate inference by means of the Extended Kalman filter
+(
+Ingram 2021
+)
+.
+A.2.1
+Filtering
+The Glicko recursions can be thought of as an approximate filtering step (see the main paper for more details on the filtering algorithm)
+Filter
+k
+−
+1
+i
+\displaystyle\text{Filter}_{k-1}^{i}
+=
+𝒩
+⁡
+(
+x
+k
+−
+1
+i
+∣
+μ
+k
+−
+1
+i
+,
+σ
+k
+−
+1
+i
+​
+2
+)
+,
+\displaystyle=\gauss(x_{k-1}^{i}\mid\mu_{k-1}^{i},\sigma_{k-1}^{i\,2}),
+Predict
+k
+i
+\displaystyle\text{Predict}^{i}_{k}
+=
+𝒩
+⁡
+(
+x
+k
+i
+∣
+μ
+k
+−
+1
+i
+,
+min
+⁡
+(
+σ
+k
+−
+1
+i
+​
+2
++
+τ
+2
+⋅
+(
+t
+k
+−
+t
+k
+−
+1
+)
+,
+σ
+max
+2
+)
+)
+,
+\displaystyle=\gauss\left(x_{k}^{i}\mid\mu_{k-1}^{i},\min\left(\sigma_{k-1}^{i\,2}+\tau^{2}\cdot(t_{k}-t_{k-1}),\sigma_{\text{max}}^{2}\right)\right),
+(
+Filter
+k
+h
+Filter
+k
+a
+)
+\displaystyle\begin{pmatrix}\text{Filter}_{k}^{h}\\
+\text{Filter}_{k}^{a}\end{pmatrix}
+=
+(
+𝒩
+⁡
+(
+x
+k
+i
+∣
+μ
+k
+h
+,
+σ
+k
+h
+​
+2
+)
+𝒩
+⁡
+(
+x
+k
+i
+∣
+μ
+k
+a
+,
+σ
+k
+a
+​
+2
+)
+)
+=
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+⁡
+(
+(
+Predict
+k
+h
+Predict
+k
+a
+)
+,
+y
+k
+)
+\displaystyle=\begin{pmatrix}\gauss(x_{k}^{i}\mid\mu_{k}^{h},\sigma_{k}^{h\,2})\\
+\gauss(x_{k}^{i}\mid\mu_{k}^{a},\sigma_{k}^{a\,2})\end{pmatrix}=\mathsf{Assimilate}\left(\begin{pmatrix}\text{Predict}_{k}^{h}\\
+\text{Predict}_{k}^{a}\end{pmatrix},y_{k}\right)
+where the exact form of the
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+equations in the last line, as well as normalised outcome predictions (only for sports without draws), can be found in Section 3.3 of
+Glickman 1999
+.
+A.2.2
+Smoothing and Parameter Estimation
+In
+Glickman 1999
+, smoothing was conducted by means of the Kalman smoother (which we detail in the next section), and model parameters were specified by numerically minimising the cross-entropy loss between predicted and observed match outcomes.
+A.3
+Extended Kalman
+The Extended Kalman approach allows for the inference procedure of Glicko to be generalised to arbitrary state-space models. Note that for generic SSMs which are either non-linear, non-Gaussian, or both, inference by Extended Kalman methods incurs a systematic bias: the true (non-Gaussian) filtering and smoothing distributions are recursively approximated by Gaussian distributions. This bias is separate to the bias which is incurred throughout by the factorial approximation.
+To extend Glicko, we can thus re-use the natural state-space model for pairwise comparisons, (5) in the main text and repeated here
+m
+0
+​
+(
+x
+0
+i
+)
+=
+𝒩
+\displaystyle m_{0}\left(x_{0}^{i}\right)=\gauss
+(
+x
+0
+i
+∣
+μ
+0
+,
+σ
+0
+2
+)
+,
+M
+t
+,
+t
+′
+​
+(
+x
+t
+i
+,
+x
+t
+′
+i
+)
+=
+𝒩
+⁡
+(
+x
+t
+′
+i
+∣
+x
+t
+i
+,
+τ
+2
+⋅
+(
+t
+′
+−
+t
+)
+)
+,
+\displaystyle\left(x_{0}^{i}\mid\mu_{0},\sigma_{0}^{2}\right),\quad M_{t,t^{\prime}}\left(x^{i}_{t},x^{i}_{t^{\prime}}\right)=\gauss\left(x^{i}_{t^{\prime}}\mid x^{i}_{t},\tau^{2}\cdot\left(t^{\prime}-t\right)\right),
+(8)
+G
+k
+​
+(
+y
+k
+∣
+x
+h
+,
+x
+a
+)
+\displaystyle G_{k}\left(y_{k}\mid x^{h},x^{a}\right)
+=
+{
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
++
+ϵ
+s
+)
+−
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
+−
+ϵ
+s
+)
+if
+​
+y
+k
+=
+draw
+,
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
+−
+ϵ
+s
+)
+if
+​
+y
+k
+=
+h
+,
+1
+−
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+x
+h
+−
+x
+a
++
+ϵ
+s
+)
+if
+​
+y
+k
+=
+a
+.
+\displaystyle=\begin{cases}\sigmoid\left(\frac{x^{h}-x^{a}+\epsilon}{s}\right)-\sigmoid\left(\frac{x^{h}-x^{a}-\epsilon}{s}\right)&\text{if }y_{k}=\text{draw},\\
+\sigmoid\left(\frac{x^{h}-x^{a}-\epsilon}{s}\right)&\text{if }y_{k}=\mathrm{h},\\
+1-\sigmoid\left(\frac{x^{h}-x^{a}+\epsilon}{s}\right)&\text{if }y_{k}=\mathrm{a}.\end{cases}
+with static parameters
+θ
+=
+(
+σ
+0
+,
+τ
+,
+ϵ
+)
+\theta=(\sigma_{0},\tau,\epsilon)
+and fixed
+μ
+0
+=
+0
+\mu_{0}=0
+and
+s
+=
+1
+s=1
+.
+A.3.1
+Filtering
+As with Glicko, we have an analytical
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+step
+Filter
+k
+−
+1
+i
+\displaystyle\text{Filter}_{k-1}^{i}
+=
+𝒩
+⁡
+(
+x
+k
+−
+1
+i
+∣
+μ
+k
+−
+1
+i
+,
+σ
+k
+−
+1
+i
+​
+2
+)
+,
+\displaystyle=\gauss(x_{k-1}^{i}\mid\mu_{k-1}^{i},\sigma_{k-1}^{i\,2}),
+Predict
+k
+i
+\displaystyle\text{Predict}^{i}_{k}
+=
+𝒩
+⁡
+(
+x
+k
+i
+∣
+μ
+k
+−
+1
+i
+,
+σ
+k
+−
+1
+i
+​
+2
++
+τ
+2
+⋅
+(
+t
+k
+−
+t
+k
+−
+1
+)
+)
+,
+\displaystyle=\gauss\left(x_{k}^{i}\mid\mu_{k-1}^{i},\sigma_{k-1}^{i\,2}+\tau^{2}\cdot(t_{k}-t_{k-1})\right),
+noting that we do not synthetically constrain the skill variances as they do.
+Due to the non-Gaussian observation model, we cannot conduct the
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+step exactly. Following the Extended Kalman paradigm, we thus proceed by i) computing a second-order Taylor expansion of the log-likelihood
+log
+⁡
+G
+k
+\log G_{k}
+around the predictive means of
+x
+k
+h
+x_{k}^{h}
+and
+x
+k
+a
+x_{k}^{a}
+, ii) converting this into a linear-Gaussian approximate likelihood
+G
+^
+k
+\hat{G}_{k}
+, i.e.
+log
+⁡
+G
+^
+k
+​
+(
+y
+∣
+x
+h
+,
+x
+a
+)
+\displaystyle\log\hat{G}_{k}(y\mid x^{h},x^{a})
+:
+=
+log
+⁡
+G
+k
+​
+(
+y
+∣
+μ
+h
+,
+μ
+a
+)
+\displaystyle:=\log G_{k}(y\mid\mu^{h},\mu^{a})
++
+(
+x
+h
+−
+μ
+h
+,
+x
+a
+−
+μ
+a
+)
+⋅
+g
+k
+\displaystyle\quad+(x^{h}-\mu^{h},x^{a}-\mu^{a})\cdot\mathrm{g}_{k}
++
+1
+2
+⋅
+(
+x
+h
+−
+μ
+h
+,
+x
+a
+−
+μ
+a
+)
+⋅
+H
+k
+⋅
+(
+x
+h
+−
+μ
+h
+x
+a
+−
+μ
+a
+)
+\displaystyle\qquad+\frac{1}{2}\cdot(x^{h}-\mu^{h},x^{a}-\mu^{a})\cdot\mathrm{H}_{k}\cdot\begin{pmatrix}x^{h}-\mu^{h}\\
+x^{a}-\mu^{a}\end{pmatrix}
+∈
+𝐑
+,
+\displaystyle\in\real,
+g
+k
+\displaystyle\mathrm{g}_{k}
+=
+∇
+x
+h
+,
+x
+a
+​
+log
+​
+G
+k
+​
+(
+y
+∣
+x
+h
+,
+x
+a
+)
+|
+(
+x
+h
+,
+x
+a
+)
+=
+(
+μ
+h
+,
+μ
+a
+)
+\displaystyle=\nabla_{x^{h},x^{a}}\log G_{k}(y\mid x^{h},x^{a})|_{(x^{h},x^{a})=(\mu^{h},\mu^{a})}
+∈
+𝐑
+2
+,
+\displaystyle\in\real^{2},
+H
+k
+\displaystyle\mathrm{H}_{k}
+=
+∇
+x
+h
+,
+x
+a
+2
+​
+log
+⁡
+G
+k
+​
+(
+y
+∣
+x
+h
+,
+x
+a
+)
+|
+(
+x
+h
+,
+x
+a
+)
+=
+(
+μ
+h
+,
+μ
+a
+)
+\displaystyle=\nabla_{x^{h},x^{a}}^{2}\log G_{k}(y\mid x^{h},x^{a})|_{(x^{h},x^{a})=(\mu^{h},\mu^{a})}
+∈
+𝐑
+2
+×
+2
+,
+\displaystyle\in\real^{2\times 2},
+and then finally iii) exactly assimilating this approximate likelihood, i.e.
+Filter
+k
+h
+,
+a
+​
+(
+x
+k
+h
+,
+x
+k
+a
+)
+\displaystyle\text{Filter}^{h,a}_{k}(x^{h}_{k},x^{a}_{k})
+∝
+Predict
+k
+h
+​
+(
+x
+k
+h
+)
+⋅
+Predict
+k
+a
+​
+(
+x
+k
+a
+)
+⋅
+G
+k
+​
+(
+y
+k
+∣
+x
+k
+h
+,
+x
+k
+a
+)
+\displaystyle\propto\text{Predict}^{h}_{k}(x^{h}_{k})\cdot\text{Predict}^{a}_{k}(x^{a}_{k})\cdot G_{k}(y_{k}\mid x^{h}_{k},x^{a}_{k})
+(9)
+≈
+Predict
+k
+h
+​
+(
+x
+k
+h
+)
+⋅
+Predict
+k
+a
+​
+(
+x
+k
+a
+)
+⋅
+G
+^
+k
+​
+(
+y
+k
+∣
+x
+k
+h
+,
+x
+k
+a
+)
+,
+\displaystyle\approx\text{Predict}^{h}_{k}(x^{h}_{k})\cdot\text{Predict}^{a}_{k}(x^{a}_{k})\cdot\hat{G}_{k}(y_{k}\mid x^{h}_{k},x^{a}_{k}),
+(10)
+∝
+𝒩
+⁡
+(
+(
+x
+k
+h
+x
+k
+a
+)
+∣
+(
+μ
+k
+h
+μ
+k
+a
+)
+,
+(
+σ
+k
+h
+​
+2
+ρ
+k
+h
+,
+a
+ρ
+k
+h
+,
+a
+σ
+k
+a
+​
+2
+)
+)
+,
+\displaystyle\propto\gauss\left(\begin{pmatrix}x^{h}_{k}\\
+x_{k}^{a}\end{pmatrix}\mid\begin{pmatrix}\mu^{h}_{k}\\
+\mu_{k}^{a}\end{pmatrix},\begin{pmatrix}\sigma^{h\,2}_{k}&\rho^{h,a}_{k}\\
+\rho^{h,a}_{k}&\sigma^{a\,2}_{k}\end{pmatrix}\right),
+where the final Gaussian distribution is computed by standard linear-Gaussian conjugacy relations; see Chapter 7 in
+Särkkä
+and Svensson 2023
+. This is a slightly non-standard version of the extended Kalman filter which linearised the log likelihood directly following
+Ollivier 2018
+as opposed to alternative variants that linearise via Jacobians on forward function to obtain an approximate linear Gaussian state-space model
+Särkkä
+and Svensson 2023
+which requires the undesirable additional specification of an observation noise parameter.
+Note that it would also be possible to make a first-order Taylor approximation if required for higher-dimensional factorial states (i.e. with
+H
+k
+=
+0
+\mathrm{H}_{k}=0
+). The factorial approximation can then be regained through a
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+\mathsf{Marginalise}
+step which simply consists of reading off
+μ
+k
+h
+,
+σ
+k
+h
+\mu^{h}_{k},\sigma^{h}_{k}
+and
+μ
+k
+a
+,
+σ
+k
+a
+\mu^{a}_{k},\sigma^{a}_{k}
+and discarding the covariance
+ρ
+k
+h
+,
+a
+\rho^{h,a}_{k}
+.
+By using the approximate likelihood
+G
+^
+k
+\hat{G}_{k}
+, this approach can provide normalised outcome predictions, i.e.
+𝐏
+^
+(
+y
+k
+∣
+y
+1
+:
+k
+−
+1
+)
+=
+∫
+G
+^
+k
+(
+y
+k
+∣
+x
+k
+h
+,
+x
+k
+a
+)
+⋅
+Predict
+k
+h
+(
+x
+k
+h
+)
+⋅
+Predict
+k
+a
+(
+x
+k
+a
+)
+d
+x
+k
+h
+d
+x
+k
+a
+.
+\displaystyle\hat{\mathbf{P}}(y_{k}\mid y_{1:k-1})=\int\hat{G}_{k}(y_{k}\mid x_{k}^{h},x_{k}^{a})\cdot\text{Predict}^{h}_{k}(x_{k}^{h})\cdot\text{Predict}^{a}_{k}(x^{a}_{k})\;\mathrm{d}x_{k}^{h}\;\mathrm{d}x_{k}^{a}.
+A.3.2
+Smoothing
+Given Gaussian filtering approximations and Gaussian dynamics,
+M
+k
+,
+k
++
+1
+​
+(
+x
+k
+,
+x
+k
++
+1
+)
+=
+𝒩
+⁡
+(
+x
+k
++
+1
+∣
+x
+k
+,
+τ
+2
+⋅
+(
+t
+k
++
+1
+−
+t
+k
+)
+)
+,
+\displaystyle M_{k,k+1}(x_{k},x_{k+1})=\gauss(x_{k+1}\mid x_{k},\tau^{2}\cdot(t_{k+1}-t_{k})),
+smoothing can carried out analytically using the Kalman smoother; see e.g. Section 7.2 in
+Chopin and
+Papaspiliopoulos 2020
+. That is, given
+Filter
+k
+​
+(
+x
+k
+)
+=
+𝒩
+⁡
+(
+x
+k
+∣
+μ
+k
+,
+σ
+k
+2
+)
+\text{Filter}_{k}(x_{k})=\gauss(x_{k}\mid\mu_{k},\sigma_{k}^{2})
+and
+Smooth
+k
++
+1
+​
+(
+x
+k
++
+1
+)
+=
+𝒩
+⁡
+(
+x
+k
++
+1
+∣
+μ
+k
++
+1
+|
+K
+,
+σ
+k
++
+1
+|
+K
+2
+)
+\text{Smooth}_{k+1}(x_{k+1})=\gauss(x_{k+1}\mid\mu_{k+1|K},\sigma_{k+1|K}^{2})
+, we have the recursions
+Smooth
+k
+|
+K
+​
+(
+x
+k
+)
+\displaystyle\text{Smooth}_{k|K}(x_{k})
+=
+𝒩
+⁡
+(
+x
+k
+∣
+μ
+k
+|
+K
+,
+σ
+k
+|
+K
+2
+)
+,
+\displaystyle=\gauss(x_{k}\mid\mu_{k|K},\sigma_{k|K}^{2}),
+D
+k
+\displaystyle\mathrm{D}_{k}
+=
+σ
+k
+2
+⋅
+(
+σ
+k
+2
++
+τ
+2
+⋅
+(
+t
+k
++
+1
+−
+t
+k
+)
+)
+−
+1
+,
+\displaystyle=\sigma_{k}^{2}\cdot(\sigma_{k}^{2}+\tau^{2}\cdot(t_{k+1}-t_{k}))^{-1},
+μ
+k
+|
+K
+\displaystyle\mu_{k|K}
+=
+μ
+k
++
+D
+k
+⋅
+(
+μ
+k
++
+1
+|
+K
+−
+μ
+k
+)
+,
+\displaystyle=\mu_{k}+\mathrm{D}_{k}\cdot(\mu_{k+1|K}-\mu_{k}),
+σ
+k
+|
+K
+2
+\displaystyle\sigma^{2}_{k|K}
+=
+σ
+k
+2
++
+D
+k
+2
+⋅
+(
+σ
+k
++
+1
+|
+K
+2
+−
+σ
+k
+2
+−
+τ
+2
+⋅
+(
+t
+k
++
+1
+−
+t
+k
+)
+)
+,
+\displaystyle=\sigma^{2}_{k}+\mathrm{D}^{2}_{k}\cdot(\sigma^{2}_{k+1|K}-\sigma^{2}_{k}-\tau^{2}\cdot(t_{k+1}-t_{k})),
+Additionally, for parameter estimation by expectation-maximisation, it is necessary to compute lag-one autocovariances (i.e.
+𝐄
+Smooth
+k
+,
+k
++
+1
+|
+K
+​
+[
+x
+k
+⋅
+x
+k
++
+1
+]
+\mathbf{E}_{\text{Smooth}_{k,k+1|K}}[x_{k}\cdot x_{k+1}]
+); these can be recovered from the same output as
+μ
+k
+,
+k
++
+1
+|
+K
+:=
+μ
+k
+|
+K
+⋅
+μ
+k
++
+1
+|
+K
++
+D
+k
+⋅
+σ
+k
++
+1
+|
+K
+2
+.
+\displaystyle\mu_{k,k+1|K}:=\mu_{k|K}\cdot\mu_{k+1|K}+\mathrm{D}_{k}\cdot\sigma^{2}_{k+1|K}.
+The above iterations can then be repeated backwards in time for
+k
+=
+K
+−
+1
+,
+…
+,
+0
+k=K-1,\dots,0
+, as well as across the
+N
+N
+players (independently, according to the factorial approximation).
+A.3.3
+Parameter Estimation
+We can apply an iterative expectation-maximisation algorithm seeking
+arg
+​
+max
+θ
+∈
+Θ
+𝐏
+(
+y
+1
+:
+K
+∣
+θ
+)
+.
+\displaystyle\argmax_{\theta\in\Theta}\mathbf{P}(y_{1:K}\mid\theta).
+Given a value of the static parameters
+θ
+r
+\theta_{r}
+, we can run our filtering (storing the filtering statistics) and smoothing algorithms to obtain the smoothing statistics
+{
+μ
+0
+|
+K
+i
+,
+σ
+0
+|
+K
+i
+,
+μ
+0
+,
+1
+|
+K
+i
+,
+…
+,
+μ
+K
+−
+1
+,
+K
+|
+K
+i
+,
+μ
+K
+|
+K
+i
+,
+σ
+K
+|
+K
+i
+}
+i
+=
+1
+N
+.
+\displaystyle\left\{\mu_{0|K}^{i},\sigma_{0|K}^{i},\mu_{0,1|K}^{i},\dots,\mu_{K-1,K|K}^{i},\mu_{K|K}^{i},\sigma_{K|K}^{i}\right\}_{i=1}^{N}.
+In reality, we only need to obtain
+𝒪
+⁡
+(
+N
++
+K
+)
+\bigOh(N+K)
+smoothing statistics (i.e. for players at the matchtimes of matches they were involved in), as described in the section of the main paper on match sparsity. For significant ease of notation, we continue here with the
+𝒪
+⁡
+(
+N
+⋅
+K
+)
+\bigOh(N\cdot K)
+description.
+We then look to maximise the surrogate objective - (3) in the main text,
+𝐐
+(
+θ
+∣
+θ
+^
+)
+:=
+∫
+𝐏
+(
+x
+0
+:
+K
+[
+N
+]
+∣
+y
+1
+:
+K
+,
+θ
+^
+)
+⋅
+log
+𝐏
+(
+x
+0
+:
+K
+[
+N
+]
+,
+y
+1
+:
+K
+∣
+θ
+)
+d
+x
+0
+:
+K
+[
+N
+]
+,
+\displaystyle\mathbf{Q}\left(\theta\mid\hat{\theta}\right):=\int\mathbf{P}\left(x_{0:K}^{\left[N\right]}\mid y_{1:K},\hat{\theta}\right)\cdot\log\mathbf{P}\left(x_{0:K}^{\left[N\right]},y_{1:K}\mid\theta\right)\,\mathrm{d}x_{0:K}^{\left[N\right]},
+(11)
+Using our recursive Gaussian approximation to the smoothing distribution, we can then extract an approximation to the necessary smoothing statistics, yielding a simple approximation to
+𝐐
+⁡
+(
+θ
+∣
+θ
+^
+)
+\mathbf{Q}(\theta\mid\hat{\theta})
+. In particular, in the context of our SSM (
+8
+) and Gaussian smoothing statistics, we obtain analytically that
+σ
+^
+0
+2
+\displaystyle\hat{\sigma}_{0}^{2}
+=
+1
+N
+​
+∑
+i
+=
+1
+N
+σ
+0
+|
+K
+i
+​
+2
++
+μ
+0
+|
+K
+i
+​
+2
+,
+\displaystyle=\frac{1}{N}\sum_{i=1}^{N}\sigma_{0|K}^{i\,2}+\mu_{0|K}^{i\,2},
+τ
+^
+2
+\displaystyle\hat{\tau}^{2}
+=
+1
+N
+​
+K
+​
+∑
+i
+=
+1
+N
+∑
+k
+=
+1
+K
+1
+t
+k
+−
+t
+k
+−
+1
+​
+[
+σ
+k
+−
+1
+|
+K
+i
+​
+2
++
+μ
+k
+−
+1
+|
+K
+i
+​
+2
+−
+2
+​
+μ
+k
+−
+1
+,
+k
+|
+K
+i
++
+σ
+k
+|
+K
+i
+​
+2
++
+μ
+k
+|
+K
+i
+​
+2
+]
+.
+\displaystyle=\frac{1}{NK}\sum_{i=1}^{N}\sum_{k=1}^{K}\frac{1}{t_{k}-t_{k-1}}\left[\sigma_{k-1|K}^{i\,2}+\mu_{k-1|K}^{i\,2}-2\mu_{k-1,k|K}^{i}+\sigma_{k|K}^{i\,2}+\mu_{k|K}^{i\,2}\right].
+For parameters corresponding to the observation density and
+ϵ
+\epsilon
+parameter, we are required to evaluate integrals of the form
+∫
+𝒩
+⁡
+(
+z
+∣
+μ
+,
+σ
+2
+)
+⋅
+log
+⁡
+(
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+z
++
+ϵ
+)
+−
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+⁡
+(
+z
+−
+ϵ
+)
+)
+​
+dz
+,
+\displaystyle\int\gauss(z\mid\mu,\sigma^{2})\cdot\log\left(\sigmoid(z+\epsilon)-\sigmoid(z-\epsilon)\right)\,dz,
+which cannot be evaluated analytically. However, these can be approximated efficiently using e.g. Gauss-Hermite quadrature
+(
+Duffield 2024
+)
+, and then
+ϵ
+^
+\hat{\epsilon}
+can be found using fast univariate numerical optimisation routines.
+We then set
+θ
+^
+←
+(
+σ
+^
+0
+,
+τ
+^
+,
+ϵ
+^
+)
+\hat{\theta}\leftarrow(\hat{\sigma}_{0},\hat{\tau},\hat{\epsilon})
+and iterate the above filtering, smoothing, and maximisation steps until convergence.
+A.4
+TrueSkill2
+The TrueSkill2 approach uses the same SSM (
+8
+) as the Extended Kalman approach above, but instead using the inverse probit sigmoid function
+𝐬𝐢𝐠𝐦𝐨𝐢𝐝
+IP
+⁡
+(
+x
+)
+=
+Φ
+⁡
+(
+x
+)
+\sigmoid_{\text{IP}}(x)=\Phi(x)
+as (inverse) link function.
+A.4.1
+Filtering
+The
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+step is again analytically tractable, as in Glicko and the Extended Kalman approach. However, the
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+step is handled differently: instead of Taylor expansion of the log-likelihood, we adopt a moment-matching strategy. In particular, we can use the inverse probit sigmoid and Equation (6) in the main text, repeated here
+∫
+𝒩
+⁡
+(
+z
+∣
+μ
+,
+σ
+2
+)
+​
+Φ
+​
+(
+z
+)
+​
+dz
+=
+Φ
+⁡
+(
+μ
+1
++
+σ
+2
+)
+.
+\displaystyle\int\gauss(z\mid\mu,\sigma^{2})\Phi(z)\,\mathrm{d}z=\Phi\left(\frac{\mu}{\sqrt{1+\sigma^{2}}}\right).
+(12)
+This allows us to calculate analytically the marginal means and variances of the non-Gaussian joint filtering distribution (
+10
+)
+μ
+k
+h
+=
+𝐄
+Filter
+k
+h
+,
+a
+​
+[
+x
+k
+h
+]
+,
+σ
+k
+h
+​
+2
+=
+𝐕𝐚𝐫
+Filter
+k
+h
+,
+a
+​
+[
+x
+k
+h
+]
+=
+𝐄
+Filter
+k
+h
+,
+a
+​
+[
+(
+x
+k
+h
+−
+μ
+k
+h
+)
+2
+]
+,
+\displaystyle\mu_{k}^{h}=\mathbf{E}_{\text{Filter}^{h,a}_{k}}\left[x_{k}^{h}\right],\qquad\sigma_{k}^{h\,2}=\mathbf{Var}_{\text{Filter}^{h,a}_{k}}\left[x_{k}^{h}\right]=\mathbf{E}_{\text{Filter}^{h,a}_{k}}\left[\left(x_{k}^{h}-\mu_{k}^{h}\right)^{2}\right],
+and similarly for
+x
+k
+a
+x^{a}_{k}
+. That is, the above integrals are analytically tractable. As such, we simply represent our approximate filtering distribution by the Gaussian distribution with this mean and variance, still using the factorial approach to decouple approximations across players. This approach is connected to Assumed Density Filtering (ADF) and Expectation Propagation (EP) methods; see later in this supplement for more details.
+The identity in (
+12
+) also allows exact computation of the normalised match outcome predictions
+𝐏
+(
+y
+k
+∣
+y
+1
+:
+k
+−
+1
+)
+=
+∫
+G
+k
+(
+y
+k
+∣
+x
+k
+h
+,
+x
+k
+a
+)
+⋅
+Predict
+k
+h
+(
+x
+k
+h
+)
+⋅
+Predict
+k
+a
+(
+x
+k
+a
+)
+d
+x
+k
+h
+d
+x
+k
+a
+,
+\displaystyle\mathbf{P}(y_{k}\mid y_{1:k-1})=\int G_{k}(y_{k}\mid x_{k}^{h},x_{k}^{a})\cdot\text{Predict}^{h}_{k}(x_{k}^{h})\cdot\text{Predict}^{a}_{k}(x^{a}_{k})\;\mathrm{d}x_{k}^{h}\;\mathrm{d}x_{k}^{a},
+(13)
+for
+y
+k
+∈
+{
+draw
+,
+home win
+,
+away win
+}
+y_{k}\in\{\text{draw},\text{home win},\text{away win}\}
+.
+A.4.2
+Smoothing and Parameter Estimation
+These steps can be implemented similarly to the Extended Kalman approach above. Note that in
+Minka
+et al. 2018
+, they instead use a gradient step (as opposed to analytical maximisation) within the iterative parameter estimation procedure.
+A.5
+Sequential Monte Carlo
+Sequential Monte Carlo (SMC)
+(
+Chopin and
+Papaspiliopoulos 2020
+)
+takes an importance sampling approach to inference, where a weighted collection of particles is used to approximate otherwise intractable distributions, i.e.
+p
+⁡
+(
+x
+)
+≈
+∑
+j
+=
+1
+J
+w
+j
+⋅
+δ
+⁡
+(
+x
+∣
+x
+j
+)
+\displaystyle p(x)\approx\sum_{j=1}^{J}w^{j}\cdot\delta(x\mid x^{j})
+for a normalised collection of weights
+∑
+j
+=
+1
+J
+w
+j
+=
+1
+\sum_{j=1}^{J}w^{j}=1
+. SMC is applicable to general SSMs, although in our context of pairwise comparisons, we again focus on (
+8
+).
+A.5.1
+Filtering
+For the
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+step, we can assume we have a (weighted) particle approximation to the previous filtering distribution
+Filter
+k
+−
+1
+i
+=
+∑
+j
+=
+1
+J
+w
+k
+−
+1
+i
+​
+j
+⋅
+δ
+⁡
+(
+x
+k
+−
+1
+i
+∣
+x
+k
+−
+1
+i
+​
+j
+)
+.
+\displaystyle\text{Filter}^{i}_{k-1}=\sum_{j=1}^{J}w^{i\,j}_{k-1}\cdot\delta(x_{k-1}^{i}\mid x_{k-1}^{i\,j}).
+The
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+step can then be implemented by simulations, i.e. sampling from the transition kernel
+x
+^
+k
+i
+​
+j
+∼
+M
+k
+−
+1
+,
+k
+​
+(
+x
+k
+−
+1
+i
+​
+j
+,
+⋅
+)
+\hat{x}_{k}^{i\,j}\sim M_{k-1,k}\left(x_{k-1}^{i\,j},\cdot\right)
+for
+j
+=
+1
+,
+…
+​
+J
+j=1,\dots J
+to give
+Predict
+k
+|
+k
+−
+1
+i
+=
+∑
+j
+=
+1
+J
+w
+k
+−
+1
+i
+​
+j
+⋅
+δ
+⁡
+(
+x
+k
+i
+∣
+x
+^
+k
+i
+​
+j
+)
+.
+\displaystyle\text{Predict}^{i}_{k|k-1}=\sum_{j=1}^{J}w^{i\,j}_{k-1}\cdot\delta(x_{k}^{i}\mid\hat{x}_{k}^{i\,j}).
+In certain situations, it can be valuable to instead
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+using alternative dynamics, and correct for this discrepancy using importance weighting; we do not pursue this here, but see
+Doucet
+et al. 2000
+for details.
+The
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+step is implemented by i) arbitrarily pairing together particles for the two competing players ii) adjusting the importance weights based on the observation likelihood, iii) normalising and then iv) (optionally) conducting a resampling step. The reweighting (and normalising) gives an approximation to the joint filtering distribution
+Filter
+k
+h
+,
+a
+\displaystyle\text{Filter}^{h,a}_{k}
+=
+∑
+j
+=
+1
+J
+w
+^
+k
+j
+⋅
+δ
+(
+x
+k
+h
+,
+x
+k
+a
+∣
+x
+^
+k
+h
+​
+j
+,
+x
+^
+k
+a
+​
+j
+)
+,
+\displaystyle=\sum_{j=1}^{J}\hat{w}_{k}^{j}\cdot\delta\left(x^{h}_{k},x^{a}_{k}\mid\hat{x}^{h\,j}_{k},\hat{x}^{a\,j}_{k}\right),
+w
+^
+k
+j
+\displaystyle\hat{w}_{k}^{j}
+∝
+w
+k
+−
+1
+h
+​
+j
+⋅
+w
+k
+−
+1
+a
+​
+j
+⋅
+G
+k
+​
+(
+y
+k
+∣
+x
+^
+k
+h
+​
+j
+,
+x
+^
+k
+a
+​
+j
+)
+.
+\displaystyle\propto w^{h\,j}_{k-1}\cdot w^{a\,j}_{k-1}\cdot G_{k}\left(y_{k}\mid\hat{x}^{h\,j}_{k},\hat{x}^{a\,j}_{k}\right).
+This can then be followed by a resampling step, giving
+Filter
+k
+h
+,
+a
+\displaystyle\text{Filter}^{h,a}_{k}
+≈
+∑
+j
+=
+1
+J
+w
+k
+j
+⋅
+δ
+(
+x
+k
+h
+,
+x
+k
+a
+∣
+x
+k
+h
+​
+j
+,
+x
+k
+a
+​
+j
+)
+,
+\displaystyle\approx\sum_{j=1}^{J}w_{k}^{j}\cdot\delta\left(x^{h}_{k},x^{a}_{k}\mid x^{h\,j}_{k},x^{a\,j}_{k}\right),
+where
+w
+k
+j
+≡
+1
+J
+w_{k}^{j}\equiv\frac{1}{J}
+and
+x
+k
+h
+,
+x
+k
+a
+∼
+Filter
+k
+h
+,
+a
+x^{h}_{k},x^{a}_{k}\sim\text{Filter}^{h,a}_{k}
+if resampling is applied; otherwise
+w
+k
+j
+=
+w
+^
+k
+j
+w_{k}^{j}=\hat{w}_{k}^{j}
+and
+x
+k
+h
+,
+x
+k
+a
+=
+x
+^
+k
+h
+,
+x
+^
+k
+a
+x^{h}_{k},x^{a}_{k}=\hat{x}^{h}_{k},\hat{x}^{a}_{k}
+. The resampling operation ensures that low-probability particles are not carried through to the next iteration and stabilises the weights, thereby ensuring a suitably diverse particle approximation and good long-time stability properties. The simplest resampling approach is to apply multinomial resampling at every
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+step (as used in our experiments); more sophisticated resampling methods including stratified resampling and adaptive approaches are also common in practice
+(
+Douc and
+Cappé 2005
+)
+.
+The
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+\mathsf{Marginalise}
+step can then be applied be simply unpairing the joint
+Filter
+k
+h
+,
+a
+\text{Filter}^{h,a}_{k}
+in line with the factorial approximation, i.e.
+Filter
+k
+h
+=
+∑
+j
+=
+1
+J
+w
+k
+j
+⋅
+δ
+⁡
+(
+x
+k
+h
+∣
+x
+k
+h
+​
+j
+)
+,
+Filter
+k
+a
+=
+∑
+j
+=
+1
+J
+w
+k
+j
+⋅
+δ
+⁡
+(
+x
+k
+a
+∣
+x
+k
+a
+​
+j
+)
+.
+\displaystyle\text{Filter}^{h}_{k}=\sum_{j=1}^{J}w_{k}^{j}\cdot\delta\left(x^{h}_{k}\mid x^{h\,j}_{k}\right),\qquad\text{Filter}^{a}_{k}=\sum_{j=1}^{J}w_{k}^{j}\cdot\delta\left(x^{a}_{k}\mid x^{a\,j}_{k}\right).
+Note that the
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+step could be made more robust by considering all possible
+J
+2
+J^{2}
+pairings (as opposed to the arbitrary
+J
+J
+pairings of skills) between the two players.
+Normalised match outcome predictions can be obtained by direct particle approximation to (
+13
+).
+A.5.2
+Smoothing
+Smoothing can be applied by use of
+backward simulation
+(
+Godsill
+et al. 2004
+)
+, which re-uses the filtering particle approximations to provide an approximation to full smoothing trajectories
+Smooth
+0
+:
+K
+|
+K
+≈
+1
+J
+∑
+j
+=
+1
+J
+δ
+(
+x
+0
+:
+K
+∣
+x
+0
+:
+K
+|
+K
+j
+)
+\text{Smooth}_{0:K|K}\approx\frac{1}{J}\sum_{j=1}^{J}\delta\left(x_{0:K}\mid x^{j}_{0:K|K}\right)
+. Assuming that we have an unweighted particle approximation to
+Smooth
+k
++
+1
+|
+K
+≈
+1
+J
+​
+∑
+j
+=
+1
+J
+δ
+⁡
+(
+x
+k
++
+1
+∣
+x
+k
++
+1
+|
+K
+j
+)
+\text{Smooth}_{k+1|K}\approx\frac{1}{J}\sum_{j=1}^{J}\delta\left(x_{k+1}\mid x^{j}_{k+1|K}\right)
+and a weighted particle approximation to
+Filter
+k
+≈
+∑
+j
+=
+1
+J
+w
+k
+j
+⋅
+δ
+⁡
+(
+x
+k
+∣
+x
+k
+j
+)
+\text{Filter}_{k}\approx\sum_{j=1}^{J}w_{k}^{j}\cdot\delta\left(x_{k}\mid x^{j}_{k}\right)
+, we can then sample to form an approximation to
+Smooth
+k
+,
+k
++
+1
+|
+K
+\text{Smooth}_{k,k+1|K}
+x
+k
+|
+K
+j
+\displaystyle x_{k|K}^{j}
+∼
+∑
+j
+′
+=
+1
+J
+w
+k
+j
+′
+←
+j
+⋅
+δ
+⁡
+(
+x
+k
+∣
+x
+k
+j
+′
+)
+,
+\displaystyle\sim\sum_{j^{\prime}=1}^{J}w_{k}^{j^{\prime}\leftarrow j}\cdot\delta\left(x_{k}\mid x^{j^{\prime}}_{k}\right),
+where
+w
+k
+j
+′
+←
+j
+\displaystyle\text{where}\quad w_{k}^{j^{\prime}\leftarrow j}
+∝
+w
+k
+j
+′
+⋅
+M
+k
+,
+k
++
+1
+​
+(
+x
+k
+j
+′
+,
+x
+k
++
+1
+|
+K
+j
+)
+.
+\displaystyle\propto w_{k}^{j^{\prime}}\cdot M_{k,k+1}\left(x^{j^{\prime}}_{k},x^{j}_{k+1|K}\right).
+This procedure can then be iterated for
+k
+=
+K
+−
+1
+,
+…
+,
+0
+k=K-1,\dots,0
+to provide an approximation to
+Smooth
+0
+:
+K
+|
+K
+\text{Smooth}_{0:K|K}
+. The standard backward simulation detailed above has complexity
+𝒪
+⁡
+(
+J
+2
+)
+\bigOh(J^{2})
+; note however that methods based on rejection sampling
+(
+Douc
+et al. 2011
+)
+and MCMC
+(
+Dau and
+Chopin 2023
+)
+have been developed in order to reduce the complexity to
+𝒪
+⁡
+(
+J
+)
+\bigOh(J)
+.
+A.5.3
+Parameter Estimation
+For a particle approximation to
+Smooth
+0
+:
+K
+|
+K
+≈
+1
+J
+∑
+j
+=
+1
+J
+δ
+(
+x
+0
+:
+K
+∣
+x
+0
+:
+K
+|
+K
+j
+)
+\text{Smooth}_{0:K|K}\approx\frac{1}{J}\sum_{j=1}^{J}\delta\left(x_{0:K}\mid x^{j}_{0:K|K}\right)
+, maximisation of the surrogate objective (
+11
+) is tractable for
+σ
+0
+\sigma_{0}
+and
+τ
+\tau
+(as in the Gaussian approximation case). This yields the updates
+σ
+^
+0
+2
+\displaystyle\hat{\sigma}_{0}^{2}
+=
+1
+N
+​
+J
+​
+∑
+i
+=
+1
+N
+∑
+j
+=
+1
+J
+x
+0
+|
+K
+i
+​
+j
+​
+2
+,
+\displaystyle=\frac{1}{NJ}\sum_{i=1}^{N}\sum_{j=1}^{J}x_{0|K}^{i\,j\,2},
+τ
+^
+2
+\displaystyle\hat{\tau}^{2}
+=
+1
+N
+​
+T
+​
+J
+​
+∑
+i
+=
+1
+N
+∑
+k
+=
+1
+K
+∑
+j
+=
+1
+J
+1
+t
+k
+−
+t
+k
+−
+1
+​
+(
+x
+k
+|
+K
+i
+​
+j
+−
+x
+k
+−
+1
+|
+K
+i
+​
+j
+)
+2
+.
+\displaystyle=\frac{1}{NTJ}\sum_{i=1}^{N}\sum_{k=1}^{K}\sum_{j=1}^{J}\frac{1}{t_{k}-t_{k-1}}\left(x^{i\,j}_{k|K}-x^{i\,j}_{k-1|K}\right)^{2}.
+Similarly to before, we update
+ϵ
+\epsilon
+by univariate numerical maximisation methods.
+A.6
+Factorial Hidden Markov Model
+In an HMM approach, the player skill ratings take values in a discrete set
+𝒳
+=
+[
+S
+]
+\mathcal{X}=\left[S\right]
+for some
+S
+∈
+𝐍
+S\in\mathbf{N}
+, which leads to a closed form for the operations
+{
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+,
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+,
+𝖡𝗋𝗂𝖽𝗀𝖾
+}
+\left\{\mathsf{Propagate},\mathsf{Assimilate},\mathsf{Bridge}\right\}
+. However, as mentioned in the main text, the cost of these operations might be exponentially large in the dimension of the state space, and so computationally unfeasible. We can then adopt the decoupling approximation and exploit the factorial structure in the dynamics of the fHMM
+(
+Rimella and
+Whiteley 2022
+)
+. For the decoupling approximation, the only thing we have to define is the form of
+{
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+,
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+,
+𝖡𝗋𝗂𝖽𝗀𝖾
+,
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+}
+\left\{\mathsf{Propagate},\mathsf{Assimilate},\mathsf{Bridge},\mathsf{Marginalise}\right\}
+, which will then lead to the recursive algorithm. Note also that the flexibility of the fHMM means that we are not limited to specific choices of the transition kernel
+M
+k
+−
+1
+,
+k
+M_{k-1,k}
+and emission distribution
+G
+k
+G_{k}
+, and so we keep them general in the following sections. That is, we assume only that
+M
+k
+−
+1
+,
+k
+M_{k-1,k}
+is an
+S
+×
+S
+S\times S
+stochastic matrix and that for any
+y
+∈
+𝒴
+y\in\mathcal{Y}
+,
+G
+k
+(
+y
+∣
+⋅
+,
+⋅
+)
+G_{k}(y\mid\cdot,\cdot)
+is an
+S
+×
+S
+S\times S
+matrix.
+A.6.1
+Assembling the kernel
+Before starting, it is important to briefly explain why explicitly assembling the transition kernel
+M
+t
+,
+t
+′
+M_{t,t^{\prime}}
+is inadvisable unless strictly necessary. Recall that we define the dynamics in terms of the generator matrix
+Q
+S
+Q_{S}
+, and as such
+M
+t
+,
+t
+′
+M_{t,t^{\prime}}
+is expressible as matrix exponential, i.e.
+M
+t
+,
+t
+′
+=
+exp
+⁡
+(
+τ
+d
+⋅
+(
+t
+′
+−
+t
+)
+⋅
+Q
+S
+)
+.
+\displaystyle M_{t,t^{\prime}}=\exp\left(\tau_{d}\cdot(t^{\prime}-t)\cdot Q_{S}\right).
+In principle, computing this matrix for each
+t
+,
+t
+′
+t,t^{\prime}
+incurs a cost of
+𝒪
+⁡
+(
+S
+3
+)
+\bigOh(S^{3})
+. However, this is wasteful: for filtering purposes, we only need to access
+M
+t
+,
+t
+′
+M_{t,t^{\prime}}
+through its action on probability vectors, which costs only
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+once the matrix is available. We will thus try to describe these matrices in a way which enables these rapid computations.
+In particular, when possible, it is worthwhile to instead pre-compute a diagonalisation of
+Q
+S
+Q_{S}
+, i.e. identify an invertible matrix
+Ψ
+S
+\Psi_{S}
+and diagonal matrix
+Λ
+S
+\Lambda_{S}
+such that
+Q
+S
+=
+Ψ
+S
+−
+1
+⋅
+Λ
+S
+⋅
+Ψ
+S
+,
+\displaystyle Q_{S}=\Psi_{S}^{-1}\cdot\Lambda_{S}\cdot\Psi_{S},
+noting that for self-adjoint
+Q
+S
+Q_{S}
+,
+Ψ
+S
+\Psi_{S}
+will be orthogonal. For the example considered in the main text, we detail this decomposition in Appendix
+B
+.
+Given such a decomposition, the transition kernel then takes the form
+M
+t
+,
+t
+′
+\displaystyle M_{t,t^{\prime}}
+=
+Ψ
+S
+−
+1
+⋅
+exp
+(
+−
+τ
+d
+⋅
+(
+t
+′
+−
+t
+)
+⋅
+Λ
+S
+)
+⋅
+Ψ
+S
+.
+\displaystyle=\Psi_{S}^{-1}\cdot\exp\left(-\tau_{d}\cdot(t^{\prime}-t)\cdot\Lambda_{S}\right)\cdot\Psi_{S}.
+We can thus compute expressions like
+π
+​
+M
+t
+,
+t
+′
+\pi M_{t,t^{\prime}}
+by
+π
+0
+\displaystyle\pi_{0}
+=
+π
+\displaystyle=\pi
+(14)
+π
+1
+\displaystyle\pi_{1}
+=
+π
+0
+⋅
+Ψ
+S
+−
+1
+\displaystyle=\pi_{0}\cdot\Psi_{S}^{-1}
+(15)
+π
+2
+\displaystyle\pi_{2}
+=
+π
+1
+⋅
+exp
+(
+−
+τ
+d
+⋅
+(
+t
+′
+−
+t
+)
+⋅
+Λ
+S
+)
+\displaystyle=\pi_{1}\cdot\exp\left(-\tau_{d}\cdot(t^{\prime}-t)\cdot\Lambda_{S}\right)
+(16)
+π
+3
+\displaystyle\pi_{3}
+=
+π
+2
+⋅
+Ψ
+S
+.
+\displaystyle=\pi_{2}\cdot\Psi_{S}.
+(17)
+The first and third steps are standard matrix-vector products, costing
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+, whereas the second step is a diagonal matrix-vector product, costing only
+𝒪
+⁡
+(
+S
+)
+\bigOh(S)
+. We thus see that a judicious one-off matrix decomposition costing
+𝒪
+⁡
+(
+S
+3
+)
+\bigOh(S^{3})
+allows us to reduce the cost of all future filtering updates to
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+.
+Note that in this framework assembling
+M
+t
+,
+t
+′
+M_{t,t^{\prime}}
+has a computational cost of
+𝒪
+⁡
+(
+S
+3
+)
+\bigOh(S^{3})
+, while vector matrix multiplication with
+M
+t
+,
+t
+′
+M_{t,t^{\prime}}
+remains
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+.
+In the next sections, we will see that filtering is not an issue as it requires vector-matrix multiplication with the kernel, while vanilla smoothing requires elementwise products with the transition kernel and so does not simplify in a straightforward vector-matrix operation. However, we can modify the smoothing recursions to require vector-matrix operations only.
+A.6.2
+Filtering
+Here we explain the general step
+k
+k
+in the filtering recursion in the context of the
+𝒪
+⁡
+(
+N
+⋅
+K
+)
+\bigOh(N\cdot K)
+representation. This requires performing a
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+step and
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+on players
+h
+,
+a
+h,a
+.
+The
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+step at time
+k
+k
+consists of propagating the filtering distribution through the transition kernel. In finite state spaces, this is a straightforward matrix-vector operation. In particular, for
+i
+∈
+[
+N
+]
+i\in[N]
+, we do
+Predict
+k
+|
+k
+−
+1
+i
+\displaystyle\mathrm{Predict}_{k\mid k-1}^{i}
+=
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+⁡
+(
+Filter
+k
+−
+1
+i
+,
+M
+k
+−
+1
+,
+k
+)
+\displaystyle=\mathsf{Propagate}\left(\mathrm{Filter}_{k-1}^{i};M_{{k-1},k}\right)
+=
+Filter
+k
+−
+1
+i
+⋅
+M
+k
+−
+1
+,
+k
+,
+\displaystyle=\mathrm{Filter}_{k-1}^{i}\cdot M_{{k-1},k},
+noting that we represent probability vectors as row vectors.
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+requires a joint update on both players
+h
+h
+and
+a
+a
+, and so outputs the joint distribution
+Filter
+k
+h
+,
+a
+\mathrm{Filter}^{h,a}_{k}
+in the form of a
+S
+×
+S
+{S\times S}
+matrix with elements summing to
+1
+1
+. Precisely, given the current match outcome
+y
+k
+y_{k}
+, the joint filter takes the form
+Filter
+k
+h
+,
+a
+\displaystyle\mathrm{Filter}^{h,a}_{k}
+=
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+⁡
+(
+(
+Predict
+k
+|
+k
+−
+1
+h
+Predict
+k
+|
+k
+−
+1
+a
+)
+,
+G
+k
+)
+\displaystyle=\mathsf{Assimilate}\left(\left(\begin{array}[]{c}\mathrm{Predict}^{h}_{k|k-1}\\
+\mathrm{Predict}^{a}_{k|k-1}\end{array}\right);G_{k}\right)
+∝
+(
+(
+Predict
+k
+|
+k
+−
+1
+h
+)
+T
+⋅
+Predict
+k
+|
+k
+−
+1
+a
+)
+⊙
+G
+k
+(
+y
+k
+∣
+⋅
+,
+⋅
+)
+,
+\displaystyle\propto\left(\left(\mathrm{Predict}_{k\mid k-1}^{h}\right)^{\mathrm{T}}\cdot\mathrm{Predict}_{k\mid k-1}^{a}\right)\odot G_{k}(y_{k}\mid\cdot,\cdot),
+where the operation
+⊙
+\odot
+denotes elementwise product between matrices. Observe that on the left hand side of
+⊙
+\odot
+we have the joint prediction on the skill level of
+h
+h
+and
+a
+a
+, while on the right hand side we have the emission score from the match result. It is also important to notice that we have a proportional sign, meaning that we need to normalize our computation to a joint distribution on
+S
+×
+S
+{S\times S}
+.
+Noting that our
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+operator acts on player-wise filtering distribution, it remains to convert
+Filter
+k
+h
+,
+a
+\mathrm{Filter}^{h,a}_{k}
+into a product of marginals. To do so, we simply compute the marginals along
+h
+h
+and
+a
+a
+, i.e. sum over the columns and sum over the rows
+(
+Filter
+k
+h
+Filter
+k
+a
+)
+=
+(
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+⁡
+(
+Filter
+k
+h
+,
+a
+,
+h
+)
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+⁡
+(
+Filter
+k
+h
+,
+a
+,
+a
+)
+)
+=
+(
+(
+Filter
+k
+h
+,
+a
+⋅
+1
+S
+⊤
+)
+⊤
+1
+S
+⋅
+Filter
+k
+h
+,
+a
+)
+,
+\displaystyle\left(\begin{array}[]{c}\mathrm{Filter}^{h}_{k}\\
+\mathrm{Filter}^{a}_{k}\end{array}\right)=\left(\begin{array}[]{c}\mathsf{Marginalise}\left(\mathrm{Filter}^{h,a}_{k};h\right)\\
+\mathsf{Marginalise}\left(\mathrm{Filter}^{h,a}_{k};a\right)\end{array}\right)=\left(\begin{array}[]{c}\left(\mathrm{Filter}^{h,a}_{k}\cdot 1_{S}^{\top}\right)^{\top}\\
+1_{S}\cdot\mathrm{Filter}^{h,a}_{k}\end{array}\right),
+where
+1
+S
+1_{S}
+is the
+S
+S
+-dimensional row vector of ones.
+Overall, the computational cost of a filtering step is
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+per each player, as it requires linear algebra operation on
+S
+S
+-dimensional vectors and
+S
+×
+S
+S\times S
+-dimensional matrices. Note that the we are omitting the
+𝒪
+⁡
+(
+S
+3
+)
+\bigOh(S^{3})
+cost of the initial matrix decomposition (as it has a complexity independent of both
+N
+N
+and
+K
+K
+), as well as the
+𝒪
+⁡
+(
+S
+3
+)
+\bigOh(S^{3})
+cost of assembling the matrices
+M
+t
+,
+t
+′
+M_{t,t^{\prime}}
+, which (as described above) is not necessary for either filtering or prediction.
+Normalised match outcome predictions can be obtained by evaluating the integral (
+13
+) exactly via linear algebra.
+A.6.3
+Smoothing
+This section details a general step of the smoothing algorithm. Recall that by our decoupling approximation, smoothing can carried out independently across players. As such, we temporarily drop the player indices from our notation.
+To run the
+k
+k
+th backward step of the smoothing algorithm, we require the row vectors
+Filter
+k
+\mathrm{Filter}_{k}
+and
+Smooth
+k
++
+1
+|
+K
+\mathrm{Smooth}_{k+1\mid K}
+, representing the filtering distribution of the skills of a player at time
+k
+k
+, and the smoothing distribution of the skills of the same player at time
+k
++
+1
+k+1
+. For a general smoothing step we need the operations
+{
+𝖡𝗋𝗂𝖽𝗀𝖾
+,
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+}
+\left\{\mathsf{Bridge},\mathsf{Marginalise}\right\}
+, where
+𝖡𝗋𝗂𝖽𝗀𝖾
+\mathsf{Bridge}
+generates a joint distribution on the skills of the players on time steps
+k
+,
+k
++
+1
+k,k+1
+and
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+\mathsf{Marginalise}
+converts this joint distribution in a marginal over earlier time step
+k
+k
+. As for the filtering step, all operations rely only on basic linear algebra routines:
+Smooth
+k
+,
+k
++
+1
+|
+K
+=
+𝖡𝗋𝗂𝖽𝗀𝖾
+⁡
+(
+Filter
+k
+,
+Smooth
+k
++
+1
+|
+K
+,
+M
+k
+,
+k
++
+1
+)
+=
+[
+Filter
+k
+⊤
+⋅
+(
+Smooth
+k
++
+1
+|
+K
+\fatslash
+Predict
+k
++
+1
+|
+k
+)
+]
+⊙
+M
+k
+,
+k
++
+1
+Smooth
+k
+|
+K
+=
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+⁡
+(
+Smooth
+k
+,
+k
++
+1
+|
+K
+,
+k
+)
+=
+(
+Smooth
+k
+,
+k
++
+1
+|
+K
+⋅
+1
+S
+⊤
+)
+⊤
+,
+\displaystyle\begin{split}\mathrm{Smooth}_{k,k+1\mid K}&=\mathsf{Bridge}\left(\mathrm{Filter}_{k},\mathrm{Smooth}_{k+1\mid K};M_{k,{k+1}}\right)\\
+&=\left[\mathrm{Filter}_{k}^{\top}\cdot\left(\mathrm{Smooth}_{k+1\mid K}\fatslash\mathrm{Predict}_{k+1\mid k}\right)\right]\odot M_{k,k+1}\\
+\mathrm{Smooth}_{k\mid K}&=\mathsf{Marginalise}\left(\mathrm{Smooth}_{k,k+1\mid K};k\right)=\left(\mathrm{Smooth}_{k,k+1\mid K}\cdot 1_{S}^{\top}\right)^{\top},\end{split}
+where
+\fatslash
+\fatslash
+denotes elementwise division.
+Given access to the transition matrix
+M
+k
+,
+k
++
+1
+M_{k,k+1}
+, one sees that the smoothing step has a computational cost of
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+; it thus remains to assemble this matrix, at a cost of
+𝒪
+⁡
+(
+S
+3
+)
+\bigOh(S^{3})
+.
+However, there is an alternative formulation of the smoothing step which avoids assembling the joint distribution by merging the
+𝖬𝖺𝗋𝗀𝗂𝗇𝖺𝗅𝗂𝗌𝖾
+\mathsf{Marginalise}
+and
+𝖡𝗋𝗂𝖽𝗀𝖾
+\mathsf{Bridge}
+steps:
+Predict
+k
++
+1
+|
+k
+=
+Filter
+k
+⋅
+M
+k
+,
+k
++
+1
+,
+Smooth
+k
+|
+K
+=
+Filter
+k
+⊙
+[
+(
+Smooth
+k
++
+1
+|
+K
+\fatslash
+Predict
+k
++
+1
+|
+k
+)
+⋅
+M
+k
+,
+k
++
+1
+⊤
+]
+.
+\displaystyle\begin{split}\mathrm{Predict}_{k+1\mid k}&=\mathrm{Filter}_{k}\cdot M_{k,k+1},\\
+\mathrm{Smooth}_{k\mid K}&=\mathrm{Filter}_{k}\odot\left[\left(\mathrm{Smooth}_{k+1\mid K}\fatslash\mathrm{Predict}_{k+1\mid k}\right)\cdot M_{k,k+1}^{\top}\right].\end{split}
+The derivation comes from carefully reordering the operations in such a way that we perform the marginalisation on
+k
++
+1
+k+1
+first, indeed
+[
+Filter
+k
+⊤
+⋅
+(
+Smooth
+k
++
+1
+|
+K
+\fatslash
+Predict
+k
++
+1
+|
+k
+)
+]
+⊙
+M
+k
+,
+k
++
+1
+=
+(
+Filter
+k
+⊤
+⋅
+1
+S
+)
+⊙
+M
+k
+,
+k
++
+1
+⊙
+[
+1
+S
+⊤
+⋅
+(
+Smooth
+k
++
+1
+|
+K
+\fatslash
+Predict
+k
++
+1
+|
+k
+)
+]
+\begin{split}&\left[\mathrm{Filter}_{k}^{\top}\cdot\left(\mathrm{Smooth}_{k+1\mid K}\fatslash\mathrm{Predict}_{k+1\mid k}\right)\right]\odot M_{k,k+1}\\
+&=\left(\mathrm{Filter}_{k}^{\top}\cdot 1_{S}\right)\odot M_{k,k+1}\odot\left[1_{S}^{\top}\cdot\left(\mathrm{Smooth}_{k+1\mid K}\fatslash\mathrm{Predict}_{k+1\mid k}\right)\right]\end{split}
+(18)
+and
+{
+(
+Filter
+k
+⊤
+⋅
+1
+S
+)
+⊙
+M
+k
+,
+k
++
+1
+⊙
+[
+1
+S
+⊤
+⋅
+(
+Smooth
+k
++
+1
+|
+K
+\fatslash
+Predict
+k
++
+1
+|
+k
+)
+]
+}
+⋅
+1
+S
+⊤
+=
+Filter
+k
+⊤
+⊙
+(
+{
+M
+k
+,
+k
++
+1
+⊙
+[
+1
+S
+⊤
+⋅
+(
+Smooth
+k
++
+1
+|
+K
+\fatslash
+Predict
+k
++
+1
+|
+k
+)
+]
+}
+⋅
+1
+S
+⊤
+)
+=
+Filter
+k
+⊤
+⊙
+[
+M
+k
+,
+k
++
+1
+⋅
+(
+Smooth
+k
++
+1
+|
+K
+\fatslash
+Predict
+k
++
+1
+|
+k
+)
+⊤
+]
+\begin{split}&\left\{\left(\mathrm{Filter}_{k}^{\top}\cdot 1_{S}\right)\odot M_{k,k+1}\odot\left[1_{S}^{\top}\cdot\left(\mathrm{Smooth}_{k+1\mid K}\fatslash\mathrm{Predict}_{k+1\mid k}\right)\right]\right\}\cdot 1_{S}^{\top}\\
+&=\mathrm{Filter}_{k}^{\top}\odot\left(\left\{M_{k,k+1}\odot\left[1_{S}^{\top}\cdot\left(\mathrm{Smooth}_{k+1\mid K}\fatslash\mathrm{Predict}_{k+1\mid k}\right)\right]\right\}\cdot 1_{S}^{\top}\right)\\
+&=\mathrm{Filter}_{k}^{\top}\odot\left[M_{k,k+1}\cdot\left(\mathrm{Smooth}_{k+1\mid K}\fatslash\mathrm{Predict}_{k+1\mid k}\right)^{\top}\right]\end{split}
+(19)
+where the first equality follows from noting that
+(
+Filter
+k
+⊤
+⋅
+1
+S
+)
+\left(\mathrm{Filter}_{k}^{\top}\cdot 1_{S}\right)
+is constant within rows, and the second from noting that
+1
+S
+⊤
+⋅
+(
+Smooth
+k
++
+1
+|
+K
+\fatslash
+Predict
+k
++
+1
+|
+k
+)
+1_{S}^{\top}\cdot\left(\mathrm{Smooth}_{k+1\mid K}\fatslash\mathrm{Predict}_{k+1\mid k}\right)
+is constant within columns. This alternative perspective on the smoothing step is crucial, as by avoiding the assembly of the transition kernel, we are able to control the cost of smoothing iterations at the much lower
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+.
+A.6.4
+Parameter Estimation
+In this section we make explicit the dependence of the model on the parameters
+θ
+\theta
+. In our setting, the parameters are also decoupled, with respect to their impact initial distribution, transition kernel and emission distribution. That is, with
+θ
+=
+(
+σ
+d
+,
+τ
+d
+,
+ϵ
+d
+)
+\theta=(\sigma_{d},\tau_{d},\epsilon_{d})
+, only
+σ
+d
+\sigma_{d}
+influences the initial distribution, only
+τ
+d
+\tau_{d}
+the transition kernel, and only
+ϵ
+d
+\epsilon_{d}
+the emission distribution, with .
+Towards implementing the EM algorithm, we recall the definition of
+𝐐
+⁡
+(
+θ
+|
+θ
+^
+)
+\mathbf{Q}(\theta|\hat{\theta})
+and simply substitute the true smoothing distribution with our decoupled approximation. The resulting
+𝐐
+\mathbf{Q}
+function which we seek to maximise may then be expressed as
+𝐐
+⁡
+(
+θ
+|
+θ
+^
+)
+\displaystyle\mathbf{Q}(\theta|\hat{\theta})
+=
+∫
+𝐏
+(
+x
+0
+:
+K
+[
+N
+]
+∣
+y
+1
+:
+K
+,
+θ
+^
+)
+⋅
+log
+𝐏
+(
+x
+0
+:
+K
+[
+N
+]
+,
+y
+1
+:
+K
+∣
+θ
+)
+d
+x
+0
+:
+K
+[
+N
+]
+\displaystyle=\int\mathbf{P}\left(x_{0:K}^{[N]}\mid{y}_{1:K},\hat{\theta}\right)\cdot\log\mathbf{P}\left(x_{0:K}^{[N]},{y}_{1:K}\mid{\theta}\right)\,\mathrm{d}x_{0:K}^{[N]}
+=
+𝐐
+1
+​
+(
+σ
+d
+|
+θ
+^
+)
++
+𝐐
+2
+​
+(
+τ
+d
+|
+θ
+^
+)
++
+𝐐
+3
+​
+(
+ϵ
+d
+|
+θ
+^
+)
+,
+\displaystyle=\mathbf{Q}_{1}(\sigma_{d}|\hat{\theta})+\mathbf{Q}_{2}(\tau_{d}|\hat{\theta})+\mathbf{Q}_{3}(\epsilon_{d}|\hat{\theta}),
+where
+𝐐
+1
+​
+(
+σ
+d
+|
+θ
+^
+)
+\displaystyle\mathbf{Q}_{1}(\sigma_{d}|\hat{\theta})
+=
+∑
+i
+∈
+[
+N
+]
+∫
+𝐏
+(
+x
+0
+i
+∣
+y
+1
+:
+K
+,
+θ
+^
+)
+⋅
+log
+m
+0
+(
+x
+0
+i
+∣
+σ
+d
+)
+d
+x
+0
+i
+\displaystyle=\sum_{i\in[N]}\int\mathbf{P}\left(x_{0}^{i}\mid{y}_{1:K},\hat{\theta}\right)\cdot\log m_{0}\left({x}_{0}^{i}\mid\sigma_{d}\right)\,\mathrm{d}x_{0}^{i}
+𝐐
+2
+​
+(
+τ
+d
+|
+θ
+^
+)
+\displaystyle\mathbf{Q}_{2}(\tau_{d}|\hat{\theta})
+=
+∑
+i
+∈
+[
+N
+]
+∑
+k
+=
+1
+K
+∫
+𝐏
+(
+x
+k
+−
+1
+i
+,
+x
+k
+i
+∣
+y
+1
+:
+K
+,
+θ
+^
+)
+⋅
+log
+M
+k
+−
+1
+,
+k
+(
+x
+k
+−
+1
+i
+,
+x
+k
+i
+∣
+τ
+d
+)
+d
+x
+k
+−
+1
+i
+d
+x
+k
+i
+\displaystyle=\sum_{i\in[N]}\sum_{k=1}^{K}\int\mathbf{P}\left(x_{k-1}^{i},x_{k}^{i}\mid{y}_{1:K},\hat{\theta}\right)\cdot\log M_{k-1,k}\left(x^{i}_{k-1},x^{i}_{k}\mid\tau_{d}\right)\,\mathrm{d}x^{i}_{k-1}\,\mathrm{d}x^{i}_{k}
+𝐐
+3
+​
+(
+ϵ
+d
+|
+θ
+^
+)
+\displaystyle\mathbf{Q}_{3}(\epsilon_{d}|\hat{\theta})
+=
+∑
+k
+=
+1
+K
+∫
+𝐏
+(
+x
+k
+h
+⁡
+(
+k
+)
+,
+x
+k
+a
+⁡
+(
+k
+)
+∣
+y
+1
+:
+K
+,
+θ
+^
+)
+⋅
+log
+G
+k
+(
+y
+k
+∣
+x
+k
+h
+⁡
+(
+k
+)
+,
+x
+k
+a
+⁡
+(
+k
+)
+∣
+ϵ
+d
+)
+d
+x
+k
+h
+⁡
+(
+k
+)
+d
+x
+k
+a
+⁡
+(
+k
+)
+.
+\displaystyle=\sum_{k=1}^{K}\int\mathbf{P}\left(x_{k}^{h(k)},x_{k}^{a(k)}\mid{y}_{1:K},\hat{\theta}\right)\cdot\log G_{k}\left(y_{k}\mid x_{k}^{h(k)},x_{k}^{a(k)}\mid\epsilon_{d}\right)\,\mathrm{d}{x}_{k}^{h(k)}\mathrm{d}{x}_{k}^{a(k)}.
+We can then minimise each of these objective functions separately.
+One practical difficulty is that in order to construct
+𝐐
+2
+\mathbf{Q}_{2}
+, we require access to the two-step joint smoothing distributions, i.e.
+Smooth
+k
+−
+1
+,
+k
+|
+K
+\mathrm{Smooth}_{k-1,k\mid K}
+. Assembling this distribution incurs an undesirable cost of
+𝒪
+⁡
+(
+S
+3
+)
+\bigOh(S^{3})
+, which we prefer to avoid. As such, we proceed with the following hybrid method:
+1.
+Compute the single-step smoothing laws using the
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+algorithm.
+2.
+Use the single-step smoothing laws to update the parameters of the initial distribution and emission distribution in closed form.
+3.
+Compute the gradient of
+𝐐
+2
+​
+(
+τ
+d
+∣
+θ
+^
+)
+\mathbf{Q}_{2}(\tau_{d}\mid\hat{\theta})
+with respect to
+τ
+d
+\tau_{d}
+, and
+4.
+Update
+τ
+d
+\tau_{d}
+by applying a gradient step.
+We now detail how this gradient is computed. Focusing on
+𝐐
+2
+\mathbf{Q}_{2}
+, we expand the joint smoothing distribution to write
+∂
+𝐐
+2
+​
+(
+τ
+d
+|
+θ
+^
+)
+∂
+τ
+d
+=
+∑
+i
+∈
+[
+N
+]
+∑
+k
+=
+1
+K
+∑
+a
+,
+b
+∈
+[
+S
+]
+∂
+∂
+τ
+d
+​
+M
+k
+−
+1
+,
+k
+​
+(
+a
+,
+b
+∣
+τ
+d
+)
+M
+k
+−
+1
+,
+k
+​
+(
+a
+,
+b
+∣
+τ
+d
+)
+⋅
+Smooth
+k
+−
+1
+,
+k
+|
+K
+i
+​
+(
+a
+,
+b
+∣
+θ
+^
+)
+=
+∑
+i
+∈
+[
+N
+]
+∑
+k
+=
+1
+K
+∑
+a
+,
+b
+∈
+[
+S
+]
+∂
+∂
+τ
+d
+​
+M
+k
+−
+1
+,
+k
+​
+(
+a
+,
+b
+∣
+τ
+d
+)
+M
+k
+−
+1
+,
+k
+​
+(
+a
+,
+b
+∣
+τ
+d
+)
+⋅
+Filter
+k
+−
+1
+i
+​
+(
+a
+∣
+θ
+^
+)
+⋅
+Smooth
+k
+|
+K
+i
+​
+(
+b
+∣
+θ
+^
+)
+⋅
+M
+k
+−
+1
+,
+k
+​
+(
+a
+,
+b
+∣
+τ
+^
+d
+)
+∑
+a
+¯
+,
+b
+¯
+∈
+[
+S
+]
+Filter
+k
+−
+1
+i
+​
+(
+a
+¯
+∣
+θ
+^
+)
+⋅
+Smooth
+k
+|
+K
+i
+​
+(
+b
+¯
+∣
+θ
+^
+)
+⋅
+M
+k
+−
+1
+,
+k
+​
+(
+a
+¯
+,
+b
+¯
+∣
+τ
+^
+d
+)
+.
+\displaystyle\begin{split}\frac{\partial\mathbf{Q}_{2}\left(\tau_{d}|\hat{\theta}\right)}{\partial\tau_{d}}&=\sum_{i\in\left[N\right]}\sum_{k=1}^{K}\sum_{a,b\in\left[S\right]}\frac{\frac{\partial}{\partial\tau_{d}}M_{k-1,k}\left(a,b\mid\tau_{d}\right)}{M_{k-1,k}\left(a,b\mid\tau_{d}\right)}\cdot\mathrm{Smooth}_{k-1,k\mid K}^{i}\left(a,b\mid\hat{\theta}\right)\\
+&=\sum_{i\in\left[N\right]}\sum_{k=1}^{K}\sum_{a,b\in\left[S\right]}\frac{\frac{\partial}{\partial\tau_{d}}M_{k-1,k}\left(a,b\mid\tau_{d}\right)}{M_{k-1,k}\left(a,b\mid\tau_{d}\right)}\\
+&\cdot\frac{\mathrm{Filter}_{k-1}^{i}\left(a\mid\hat{\theta}\right)\cdot\mathrm{Smooth}_{k\mid K}^{i}\left(b\mid\hat{\theta}\right)\cdot M_{k-1,k}\left(a,b\mid\hat{\tau}_{d}\right)}{\sum_{\bar{a},\bar{b}\in\left[S\right]}\mathrm{Filter}_{k-1}^{i}\left(\bar{a}\mid\hat{\theta}\right)\cdot\mathrm{Smooth}_{k\mid K}^{i}\left(\bar{b}\mid\hat{\theta}\right)\cdot M_{k-1,k}\left(\bar{a},\bar{b}\mid\hat{\tau}_{d}\right)}.\end{split}
+This expression can be simplified further if we consider its value at
+τ
+d
+=
+τ
+^
+d
+\tau_{d}=\hat{\tau}_{d}
+. We obtain
+∂
+𝐐
+2
+​
+(
+τ
+d
+|
+θ
+^
+)
+∂
+τ
+d
+=
+∑
+i
+∈
+[
+N
+]
+∑
+k
+=
+1
+K
+∑
+a
+,
+b
+∈
+[
+S
+]
+[
+∂
+∂
+τ
+d
+​
+M
+k
+−
+1
+,
+k
+​
+(
+a
+,
+b
+∣
+τ
+^
+d
+)
+]
+⋅
+Filter
+k
+−
+1
+i
+​
+(
+a
+∣
+θ
+^
+)
+⋅
+Smooth
+k
+|
+K
+i
+​
+(
+b
+∣
+θ
+^
+)
+∑
+a
+¯
+,
+b
+¯
+∈
+[
+S
+]
+Filter
+k
+−
+1
+i
+​
+(
+a
+¯
+∣
+θ
+^
+)
+⋅
+Smooth
+k
+|
+K
+i
+​
+(
+b
+¯
+∣
+θ
+^
+)
+⋅
+M
+k
+−
+1
+,
+k
+​
+(
+a
+¯
+,
+b
+¯
+∣
+τ
+^
+d
+)
+.
+\begin{split}&\frac{\partial\mathbf{Q}_{2}\left(\tau_{d}|\hat{\theta}\right)}{\partial\tau_{d}}=\sum_{i\in\left[N\right]}\sum_{k=1}^{K}\sum_{a,b\in\left[S\right]}\left[\frac{\partial}{\partial\tau_{d}}M_{k-1,k}\left(a,b\mid\hat{\tau}_{d}\right)\right]\\
+&\cdot\frac{\mathrm{Filter}_{k-1}^{i}\left(a\mid\hat{\theta}\right)\cdot\mathrm{Smooth}_{k\mid K}^{i}\left(b\mid\hat{\theta}\right)}{\sum_{\bar{a},\bar{b}\in\left[S\right]}\mathrm{Filter}_{k-1}^{i}\left(\bar{a}\mid\hat{\theta}\right)\cdot\mathrm{Smooth}_{k\mid K}^{i}\left(\bar{b}\mid\hat{\theta}\right)\cdot M_{k-1,k}\left(\bar{a},\bar{b}\mid\hat{\tau}_{d}\right)}.\end{split}
+(20)
+Now, suppose that
+Q
+S
+=
+Ψ
+S
+−
+1
+⋅
+Λ
+S
+⋅
+Ψ
+S
+Q_{S}=\Psi_{S}^{-1}\cdot\Lambda_{S}\cdot\Psi_{S}
+, and that
+τ
+d
+=
+τ
+^
+d
+\tau_{d}=\hat{\tau}_{d}
+is a rate parameter, i.e.
+M
+t
+,
+t
+′
+(
+⋅
+∣
+τ
+d
+)
+=
+exp
+(
+τ
+d
+⋅
+(
+t
+′
+−
+t
+)
+⋅
+Q
+S
+)
+.
+\displaystyle M_{t,t^{\prime}}\left(\cdot\mid\tau_{d}\right)=\exp\left(\tau_{d}\cdot\left(t^{\prime}-t\right)\cdot Q_{S}\right).
+It then holds that
+∂
+∂
+τ
+d
+​
+M
+k
+−
+1
+,
+k
+​
+(
+a
+,
+b
+∣
+τ
+^
+d
+)
+\displaystyle\frac{\partial}{\partial\tau_{d}}M_{k-1,k}\left(a,b\mid\hat{\tau}_{d}\right)
+=
+∂
+∂
+τ
+d
+​
+exp
+⁡
+(
+τ
+d
+⋅
+(
+t
+k
+−
+t
+k
+−
+1
+)
+⋅
+Q
+S
+)
+\displaystyle=\frac{\partial}{\partial\tau_{d}}\exp\left(\tau_{d}\cdot\left(t_{k}-t_{k-1}\right)\cdot Q_{S}\right)
+=
+exp
+⁡
+(
+τ
+d
+⋅
+(
+t
+k
+−
+t
+k
+−
+1
+)
+⋅
+Q
+S
+)
+⋅
+(
+t
+k
+−
+t
+k
+−
+1
+)
+⋅
+Q
+S
+\displaystyle=\exp\left(\tau_{d}\cdot\left(t_{k}-t_{k-1}\right)\cdot Q_{S}\right)\cdot\left(t_{k}-t_{k-1}\right)\cdot Q_{S}
+=
+Ψ
+S
+−
+1
+⋅
+[
+(
+t
+k
+−
+t
+k
+−
+1
+)
+⋅
+Λ
+S
+⋅
+exp
+⁡
+(
+τ
+d
+⋅
+(
+t
+k
+−
+t
+k
+−
+1
+)
+​
+Λ
+S
+)
+]
+⋅
+Ψ
+S
+,
+\displaystyle=\Psi_{S}^{-1}\cdot\left[\left(t_{k}-t_{k-1}\right)\cdot\Lambda_{S}\cdot\exp\left(\tau_{d}\cdot\left(t_{k}-t_{k-1}\right)\Lambda_{S}\right)\right]\cdot\Psi_{S},
+where the term in brackets is again a diagonal matrix. The gradient can then be assembled as follows
+F
+k
+−
+1
+i
+\displaystyle\mathrm{F}_{k-1}^{i}
+←
+(
+Filter
+k
+−
+1
+i
+)
+⋅
+Ψ
+S
+−
+1
+\displaystyle\leftarrow\left(\mathrm{Filter}_{k-1}^{i}\right)\cdot\Psi_{S}^{-1}
+S
+k
+i
+\displaystyle\mathrm{S}_{k}^{i}
+←
+(
+Smooth
+k
+|
+K
+i
+)
+⋅
+Ψ
+S
+−
+1
+\displaystyle\leftarrow\left(\mathrm{Smooth}_{k\mid K}^{i}\right)\cdot\Psi_{S}^{-1}
+Λ
+~
+S
+k
+\displaystyle\tilde{\Lambda}_{S}^{k}
+←
+(
+t
+k
+−
+t
+k
+−
+1
+)
+⋅
+Λ
+S
+⋅
+exp
+⁡
+(
+τ
+d
+⋅
+(
+t
+k
+−
+t
+k
+−
+1
+)
+​
+Λ
+S
+)
+\displaystyle\leftarrow\left(t_{k}-t_{k-1}\right)\cdot\Lambda_{S}\cdot\exp\left(\tau_{d}\cdot\left(t_{k}-t_{k-1}\right)\Lambda_{S}\right)
+N
+k
+−
+1
+,
+k
+i
+\displaystyle\mathrm{N}_{k-1,k}^{i}
+=
+F
+k
+−
+1
+i
+⋅
+Λ
+~
+S
+k
+⋅
+(
+S
+k
+i
+)
+⊤
+\displaystyle=\mathrm{F}_{k-1}^{i}\cdot\tilde{\Lambda}_{S}^{k}\cdot\left(\mathrm{S}_{k}^{i}\right)^{\top}
+D
+k
+−
+1
+,
+k
+i
+\displaystyle\mathrm{D}_{k-1,k}^{i}
+=
+F
+k
+−
+1
+i
+⋅
+Λ
+S
+⋅
+(
+S
+k
+i
+)
+⊤
+\displaystyle=\mathrm{F}_{k-1}^{i}\cdot\Lambda_{S}\cdot\left(\mathrm{S}_{k}^{i}\right)^{\top}
+∂
+𝐐
+2
+​
+(
+τ
+d
+|
+θ
+^
+)
+∂
+τ
+d
+\displaystyle\frac{\partial\mathbf{Q}_{2}\left(\tau_{d}|\hat{\theta}\right)}{\partial\tau_{d}}
+=
+∑
+i
+∈
+[
+N
+]
+∑
+k
+=
+1
+K
+N
+k
+−
+1
+,
+k
+i
+D
+k
+−
+1
+,
+k
+i
+,
+\displaystyle=\sum_{i\in\left[N\right]}\sum_{k=1}^{K}\frac{\mathrm{N}_{k-1,k}^{i}}{\mathrm{D}_{k-1,k}^{i}},
+wherein the first two terms can be constructed in time
+𝒪
+⁡
+(
+S
+2
+)
+\bigOh(S^{2})
+, and the subsequent three terms in time
+𝒪
+⁡
+(
+S
+)
+\bigOh(S)
+. For generator matrices with more elaborate dependence on parameters, we expect that more specialised routines may be necessary. This is largely a by-product of the non-commutativity of matrices, which complicates the computation of expressions like
+∇
+θ
+​
+exp
+​
+(
+Q
+⁡
+(
+θ
+)
+)
+\nabla_{\theta}\exp\left(Q\left(\theta\right)\right)
+.
+Appendix B
+Continuous time Random Walk for Finite State Spaces
+For the fHMM model used in Section 4.5 of the main text, we take our dynamics to be the Continuous-Time Reflected Random Walk on
+[
+S
+]
+\left[S\right]
+, which we construct as follows. Let
+P
+S
+P_{S}
+denote the transition matrix for the Discrete-Time Reflected Random Walk on
+[
+S
+]
+\left[S\right]
+, i.e.
+(
+P
+S
+)
+i
+,
+j
+=
+{
+1
+2
+1
+<
+i
+,
+j
+<
+S
+,
+|
+i
+−
+j
+|
+=
+1
+1
+2
+(
+i
+,
+j
+)
+∈
+{
+(
+1
+,
+2
+)
+,
+(
+S
+,
+S
+−
+1
+)
+}
+0
+otherwise
+,
+\displaystyle\left(P_{S}\right)_{i,j}=\begin{cases}\frac{1}{2}&1<i,j<S,\left|i-j\right|=1\\
+\frac{1}{2}&\left(i,j\right)\in\left\{\left(1,2\right),\left(S,S-1\right)\right\}\\
+0&\text{otherwise},\end{cases}
+noting that this process admits the normalised uniform measure on
+[
+S
+]
+\left[S\right]
+as its unique invariant probability measure, and is even reversible with respect to it. As such, we know that
+P
+S
+P_{S}
+admits an eigenvalue decomposition of the form
+P
+S
+=
+Ψ
+S
+⊤
+⋅
+Λ
+~
+S
+⋅
+Ψ
+S
+P_{S}=\Psi_{S}^{\top}\cdot\tilde{\Lambda}_{S}\cdot\Psi_{S}
+, where
+Ψ
+S
+\Psi_{S}
+is orthogonal, and
+Λ
+~
+S
+\tilde{\Lambda}_{S}
+is diagonal. In fact,
+(
+Ψ
+S
+,
+Λ
+~
+S
+)
+\left(\Psi_{S},\tilde{\Lambda}_{S}\right)
+can be computed analytically as
+(
+Λ
+~
+S
+)
+i
+,
+i
+\displaystyle\left(\tilde{\Lambda}_{S}\right)_{i,i}
+=
+cos
+⁡
+(
+2
+⋅
+π
+⋅
+(
+i
+−
+1
+)
+S
+)
+\displaystyle=\cos\left(\frac{2\cdot\pi\cdot\left(i-1\right)}{S}\right)
+(
+Ψ
+S
+)
+i
+,
+j
+\displaystyle\left(\Psi_{S}\right)_{i,j}
+=
+{
+S
+−
+1
+/
+2
+i
+=
+1
+(
+S
+/
+2
+)
+−
+1
+/
+2
+⋅
+cos
+(
+π
+⋅
+(
+i
+−
+1
+)
+⋅
+(
+2
+⋅
+j
+−
+1
+)
+S
+)
+1
+<
+i
+⩽
+S
+.
+\displaystyle=\begin{cases}S^{-1/2}&i=1\\
+\left(S/2\right)^{-1/2}\cdot\cos\left(\frac{\pi\cdot\left(i-1\right)\cdot\left(2\cdot j-1\right)}{S}\right)&1<i\leqslant S.\end{cases}
+We now define the continuous-time process as the Poissonisation of the discrete-time process with transition matrix
+P
+S
+P_{S}
+, whose generator matrix is obtained as
+Q
+S
+=
+P
+S
+−
+I
+S
+Q_{S}=P_{S}-I_{S}
+. One then sees that
+Q
+S
+Q_{S}
+admits the eigenvalue decomposition
+Q
+S
+=
+Ψ
+S
+⊤
+⋅
+Λ
+S
+⋅
+Ψ
+S
+Q_{S}=\Psi_{S}^{\top}\cdot\Lambda_{S}\cdot\Psi_{S}
+, with
+Λ
+S
+=
+Λ
+~
+S
+−
+I
+S
+\Lambda_{S}=\tilde{\Lambda}_{S}-I_{S}
+, which is again fully explicit.
+Appendix C
+Expectation-Propagation and Assumed Density Filtering
+Assumed Density Filtering (ADF) is a general tool for approximate filtering; see Chapter 1 of
+Minka 2001b
+for some overview and many references. In a particularly narrow form, ADF applies to state-space models for which i) there exists a parametric family
+ℱ
+\mathcal{F}
+of distributions which is preserved by the dynamics, but ii) the observation model is not necessarily conjugate to this family. Approximating the filtering and predictive distributions by elements of
+ℱ
+\mathcal{F}
+, ADF then proceeds by implementing the
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}
+step exactly, and approximating the
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}
+step. When the parametric family
+ℱ
+\mathcal{F}
+is an exponential family of distributions, this approximation is typically implemented by a moment-matching step based on the sufficient statistics of the exponential family, i.e.
+ExactFilter
+\displaystyle\mathrm{ExactFilter}
+=
+𝖤𝗑𝖺𝖼𝗍𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+⁡
+(
+Predict
+,
+G
+)
+\displaystyle=\mathsf{ExactAssimilate}\left(\mathrm{Predict},G\right)
+Filter
+\displaystyle\mathrm{Filter}
+=
+𝖬𝗈𝗆𝖾𝗇𝗍𝖬𝖺𝗍𝖼𝗁
+ℱ
+​
+(
+ExactFilter
+)
+,
+\displaystyle=\mathsf{MomentMatch}_{\mathcal{F}}\left(\mathrm{ExactFilter}\right),
+so that one might write
+𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+=
+𝖬𝗈𝗆𝖾𝗇𝗍𝖬𝖺𝗍𝖼𝗁
+ℱ
+∘
+𝖤𝗑𝖺𝖼𝗍𝖠𝗌𝗌𝗂𝗆𝗂𝗅𝖺𝗍𝖾
+\mathsf{Assimilate}=\mathsf{MomentMatch}_{\mathcal{F}}\circ\mathsf{ExactAssimilate}
+.
+A broader interpretation of ADF would allow for non-conjugate dynamics which are then projected back onto the parametric family, implemented by e.g.
+𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+=
+𝖬𝗈𝗆𝖾𝗇𝗍𝖬𝖺𝗍𝖼𝗁
+ℱ
+∘
+𝖤𝗑𝖺𝖼𝗍𝖯𝗋𝗈𝗉𝖺𝗀𝖺𝗍𝖾
+\mathsf{Propagate}=\mathsf{MomentMatch}_{\mathcal{F}}\circ\mathsf{ExactPropagate}
+. In general, the feasibility of ADF for any specific model is constrained only by the availability of a suitable parametric family of distributions, and the user’s ability to compute the relevant measure projections (by e.g. computing moments).
+Expectation Propagation (EP) is an extension of ADF to graphical models which do not necessarily admit a temporal (or even tree-based) structure; see e.g.
+Minka 2001a
+.
+For the specific case of inference in the dynamic Bradley-Terry model, ADF-type strategies offer an alternative to the mode-centred linearisation strategy of the Extended Kalman filter. This is potentially appealing, as such linearisation strategies are observed to be problematic for skewed likelihoods, which are commonplace in models with binary observations, as we have. In such settings, moment-matching approaches like ADF are observed to have improved robustness properties. See
+Kuss
+et al. 2005
+for extensive discussion.
+Appendix D
+Experimental Setup
+We here detail some global parameter choices for our experiments in Section 5. Experiments of the main text.
+For the sigmoidal models, we run SMC with
+J
+=
+1000
+J=1000
+particles and the fHMM with
+S
+=
+500
+S=500
+states. Naturally, increasing these resolution parameters can only increase accuracy at the cost of computational speed, whose complexities are laid out in Table 1. As mentioned previously, for the model (
+8
+), the parameters
+μ
+0
+\mu_{0}
+and
+s
+s
+are not identifiable given
+σ
+0
+,
+τ
+\sigma_{0},\tau
+and
+ϵ
+\epsilon
+; we therefore set
+μ
+0
+=
+0
+\mu_{0}=0
+and
+s
+=
+1
+s=1
+. For the fHMM case, we note that the boundary conditions of the dynamics result in the scaling parameter
+s
+d
+s_{d}
+being identifiable, and requires scaling with
+S
+S
+. It would be possible to tune
+s
+d
+s_{d}
+with parameter estimation techniques, but for ease of comparison with the continuous state-space approaches, we here fix it to
+s
+d
+=
+S
+/
+5
+s_{d}=S/5
+, which was found to work well in practice. This leaves the following parameters to be learnt from data:
+K
+K
+for Elo,
+(
+σ
+0
+,
+τ
+,
+ϵ
+)
+(\sigma_{0},\tau,\epsilon)
+for Extended Kalman, TrueSkill2 and SMC, and
+(
+σ
+d
+,
+τ
+d
+,
+ϵ
+d
+)
+(\sigma_{d},\tau_{d},\epsilon_{d})
+for fHMM. For the Extended Kalman approach, we use the state-space model (
+8
+) with the logistic sigmoid function to match the Elo and Glicko approaches. TrueSkill2 requires the inverse probit sigmoid function which we also use for the SMC and fHMM approaches.
+For the bivariate Poisson model with increased dimension, we again use SMC with
+J
+=
+1000
+J=1000
+however are forced to decrease to
+S
+=
+40
+S=40
+states for the discrete model which has exponential scaling in the dimension of the single-player latent skill.
+All code for replication can be found at
+github.com/SamDuffield/abile
+.
+D.1
+Data
+The data used for this article comprises of match results for professional tennis, football and chess, home and away goals scored for football and all accompanying match timestamps. Due to their broad utility, all data is available from a variety of public sources. For our simulations we use
+•
+tennis-data.co.uk
+for WTA tennis results and timestamps.
+•
+football-data.co.uk
+for Premier League football results and timestamps.
+•
+github.com/martj42/international_results
+for international football results and timestamps.
+•
+github.com/huffyhenry/forecasting-candidates
+for chess results and timestamps.
+All of the data can be downloaded easily from the above sources, with helper functions found in
+github.com/SamDuffield/abile/datasets
+.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

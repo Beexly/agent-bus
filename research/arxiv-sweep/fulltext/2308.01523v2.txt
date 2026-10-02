@@ -1,0 +1,2014 @@
+Miss It Like Messi:
+Extracting Value from Off-Target Shots in Soccer
+Ethan Baron
+Affiliation:
+University of Toronto, Toronto, Canada
+Nathan Sandholtz
+Affiliation:
+Brigham Young University, Provo, Utah, United States
+Devin Pleuler
+Affiliation:
+Maple Leaf Sports & Entertainment, Toronto, Canada
+Timothy C. Y. Chan
+Affiliation:
+University of Toronto, Toronto, Canada
+Abstract
+Measuring soccer shooting skill is a challenging analytics problem due to the
+scarcity
+and highly contextual nature of scoring events.
+The introduction of more advanced data surrounding soccer shots has given rise to model-based metrics which better cope with these challenges. Specifically, metrics such as expected goals added, goals above expectation, and post-shot expected goals all use advanced data to offer an improvement over the classical conversion rate.
+However, all metrics developed to date assign a value of zero to off-target shots, which account for almost two-thirds of all shots, since these shots have no probability of scoring. We posit that there is non-negligible shooting skill signal contained in the trajectories of off-target shots and propose two shooting skill metrics that incorporate the signal contained in off-target shots. Specifically, we develop a player-specific generative model for shot trajectories based on a mixture of truncated bivariate Gaussian distributions. We use this generative model to compute metrics that allow us to attach non-zero value to off-target shots. We demonstrate that
+our proposed
+metrics are more stable than current state-of-the-art metrics and have
+increased
+predictive power.
+Keywords:
+generative model; mixture model; shot trajectories; player valuation; Bayesian hierarchical model; spatial data
+1
+Introduction
+Effectively evaluating shooting skill is a key challenge in soccer analytics. Historically, the finishing skill of players has been compared using classical statistics such as goals and shots on target,
+or more advanced models derived from these statistics (e.g.,
+[
+15
+]
+)
+. These statistics are easily obtainable but suffer from small sample sizes and a lack of comparability across players, since the probability of scoring a goal or landing a shot on-target depends heavily on the situation in which the shot was taken. Thus, a large focus in soccer analytics is the development of advanced shooting metrics that are both stable over time and comparable across players.
+Much research to date has focused on the issue of comparability. For example, expected goals models address the issue of comparability by measuring a shot’s value within the context of a game situation. The
+pre-shot expected goals
+(PreXg) metric estimates the probability of a shot scoring given contextual variables at the time of the shot, such as the shot location, the proximity of other players, and the body part used (i.e., head or foot)
+[
+18
+,
+4
+,
+13
+,
+20
+,
+3
+]
+. Subtracting a player’s expected goals scored from their actual goals scored results in
+goals above expectation
+(GAX), which provides a measure of shooting skill that is comparable across players. Unfortunately, this metric offers limited empirical stability, as defined by
+[
+7
+]
+; a player’s GAX in one season is poorly predictive of their GAX in the next season
+[
+17
+,
+1
+]
+.
+An improvement over GAX relies on
+post-shot expected goals
+(PostXg), which considers the probability of a shot scoring conditional on its spatial trajectory after being struck
+[
+8
+]
+.
+Note that PostXg models assign a value of zero to all off-target shots
+. Subtracting a shot’s post-shot expected goals value from its pre-shot expectation results in a metric known as
+expected goals added
+(EGA). While the additional information utilized by PostXg models has led to a more stable shooting skill metric in EGA
+[
+17
+]
+, overall stability remains poor because the issue of limited sample size remains.
+The shooting metrics currently available ignore the trajectories of off-target shots and would only be able to distinguish two different players based on their on-target shots. Since
+off-target shots make up between 57%
+and
+65% of all shots
+in soccer
+[
+18
+,
+24
+,
+14
+]
+,
+these
+current approaches essentially ignore most of the available data. In a sport that already suffers from limited sample sizes, uncovering a signal from off-target shots has the potential to significantly improve shooting metrics.
+In basketball,
+[
+6
+]
+showed that using the trajectories of all shots, not just on-target shots, leads to an improved estimate of player field goal percentage. In soccer,
+[
+16
+]
+shows that including the trajectory information of all of a player’s free kicks, including off-target shots, yields more stable estimates of shooter skill. We hypothesize that there is a non-negligible shooting skill signal contained in the trajectories of off-target shots. Intuitively, a player with many shots that narrowly miss an upper corner of the goal is likely a better shooter than one who consistently misses wildly.
+Therefore, identifying players who have many near misses as opposed to wild misses can help determine shooting skill.
+In this paper, we develop a hierarchical generative model for the trajectories of soccer shots. We use this generative model to propose
+two
+novel shooting skill metrics that extract signal from the trajectories of all shots, including off-target shots. We show that our proposed metrics are more stable over time, helping to address the issue of small sample sizes. We also verify that our metrics carry predictive value of future player performance and therefore contain a valuable signal about player shooting skill.
+The paper is structured as follows. In Section
+2
+, we describe our data. In Section
+3
+, we develop our generative model for shots. In Section
+4
+, we explain how we use this generative model to develop our novel shooting skill metrics. In Section
+5
+, we validate our proposed metrics and demonstrate their improved stability over existing metrics. We conclude in Section
+6
+.
+2
+Data
+We use data on
+77,315
+shots from StatsBomb Services Ltd, obtained via an academic partnership with Toronto FC. The data format is event data from six international leagues, comprising 15 total seasons. The available leagues range in ranking from 7 to 31,
+and therefore represent a comparable level of competition, as none of these are elite leagues but all of them are home to high-level professional players. As a concrete example, the mean pre-shot expected goals value for each league and season has a standard deviation of about 0.0015
+. See Table
+1
+for a summary.
+League
+Countries
+Ranking
+Season
+# Shots
+Eredivisie
+Netherlands
+7
+2018-19
+5586
+2019-20
+4102
+2020-21
+5060
+Major League Soccer (MLS)
+United States, Canada
+14
+2018
+7056
+2019
+7435
+2020
+5297
+Argentine Primera División
+Argentina
+18
+2019-20
+4425
+2. Bundesliga
+Germany
+20
+2018-19
+5123
+2019-20
+5213
+2020-21
+4934
+Ligue 2
+France
+26
+2018-19
+5534
+2019-20
+4190
+2020-21
+5457
+United Soccer League (USL)
+United States, Canada
+31
+2019
+3273
+2020
+4630
+Table 1
+:
+Leagues and seasons included in our dataset. Rankings are per
+[
+2
+]
+on January 23, 2022.
+We use the following features of each shot in our analysis:
+•
+player who attempted the shot
+•
+shot outcome (Saved, Goal, Off Target, Blocked, or Post)
+•
+coordinates of the shot start
+(
+x
+,
+y
+)
+(x,y)
+and end
+(
+x
+,
+y
+,
+z
+)
+(x,y,z)
+locations
+•
+body part used for the shot (Right Foot, Left Foot, Header, or Other)
+•
+estimated PreXg and PostXg for the shot, based on StatsBomb-developed models
+Figure 1
+:
+Adjusted shot end coordinates from 2018 MLS data,
+coloured by outcome
+. Note that each point may represent multiple shots, as the data are collected on a discrete grid.
+Figure
+1
+shows the shot end coordinates for 2018 MLS data. We perform several preprocessing steps with the data. First, we made a correction to fix a bias in the data collection process affecting shot end coordinates near the goal frame (see Appendix
+A.1
+for details). Second, for saved and blocked shots, we project forward the shot trajectories to estimate where they would have crossed the goal line had they not been obstructed. We describe this imputation process below.
+Third, we exclude shots taken from closer than 6 yards to the goal, since such shots often demand force and luck rather than accuracy. Finally, to exploit symmetry in the data, we reflect the
+y
+y
+coordinates of left-footed shots about the middle of the goal.
+2.1
+Imputing Shot Trajectories
+For most our data, the reported shot end coordinates for saved
+or blocked
+shots are the coordinates where the shot was
+obstructed
+, rather than the coordinates where the shot would have crossed the goal line had it not been
+obstructed
+.
+We project the trajectories of these shots forward to determine the
+(
+y
+,
+z
+)
+(y,z)
+coordinates where they
+would have crossed the goal line had they continued in their
+paths
+.
+For the end
+y
+y
+coordinate, we project the horizontal path of the ball linearly and compute the
+y
+y
+coordinate where the trajectory intersects with the goal line. For the
+z
+z
+coordinate, a physics-based model can be used to project the flight path and determine the height at which the shot would cross the goal line. However, such a model would rely on reliable shot timestamps for the shot start and end and a model for the shot bouncing. We found that the shot durations in the data had higher-than-expected variance, leading to noisy estimates of the shot end
+z
+z
+coordinates. We therefore chose to simply use the provided
+z
+z
+coordinate of the save as a proxy for the projected end
+z
+z
+coordinate.
+(a)
+(b)
+Figure 2
+:
+Comparison of original and projected shot end coordinates for saved shots from 2020 USL data.
+Figure
+2
+shows a comparison of the original and projected shot end coordinates for saved shots in the 2020 USL data. Note that the projected coordinates effectively distinguish between on-target and off-target saved shots
+as labelled by StatsBomb
+, with only a few exceptions.
+2.2
+Experimental Execution Error
+[
+11
+]
+performed an experiment to record the accuracy of penalty shots taken by semi-professional soccer players aimed at either a high (1.75 yards above the ground) or a low (0.14 yards above the ground) target location. They collected data on the two-dimensional accuracy of 8466 shots from 21 players. Subjects were asked to attempt shots with both left and right feet, using different shot techniques, and with slower or faster intended speeds. We utilize this data to inform the covariance specification of
+the
+generative shot model in the next section. While the execution error patterns observed in
+[
+11
+]
+may be different than those of professional
+players in real match situations, using this experimental data allows us to make informed assumptions about the shape of the execution errors of soccer shots from real matches.
+3
+Generative Model for Shots
+The metrics we propose rely on a generative model for soccer shots. Specifically, we model the shot end coordinates, denoted
+(
+y
+,
+z
+)
+(y,z)
+, corresponding to the location where the ball crosses the plane of the goal line. We model
+(
+y
+,
+z
+)
+(y,z)
+using a mixture of bivariate Gaussian distributions, truncated so that the
+z
+z
+-coordinates are non-negative. The choice of bivariate Gaussians is informed by empirical observations of variability in soccer shots
+[
+11
+]
+. Bivariate Gaussian distributions have also been used in similar models in other sports, including darts
+[
+22
+,
+10
+]
+and tennis
+[
+5
+]
+.
+To share information across players, we include a hierarchical component whereby each player’s mixture model parameters are shrunk towards a global prior.
+For shot
+i
+i
+from player
+p
+p
+, we model the probability density function for the shot’s end
+(
+y
+,
+z
+)
+(y,z)
+coordinates with the following hierarchical mixture model:
+f
+⁡
+(
+y
+i
+(
+p
+)
+,
+z
+i
+(
+p
+)
+)
+\displaystyle f(y_{i}^{(p)},z_{i}^{(p)})
+=
+∑
+k
+=
+1
+K
+θ
+k
+(
+p
+)
+⋅
+TruncNorm
+(
+y
+i
+(
+p
+)
+,
+z
+i
+(
+p
+)
+|
+𝝁
+k
+,
+𝚺
+k
+)
+\displaystyle=\sum_{k=1}^{K}\theta^{(p)}_{k}\cdot\textrm{TruncNorm}(y_{i}^{(p)},z_{i}^{(p)}|\boldsymbol{\mu}_{k},\boldsymbol{\Sigma}_{k})
+(1)
+𝜽
+(
+p
+)
+\displaystyle\boldsymbol{\theta}^{(p)}
+∼
+Dirichlet
+K
+​
+(
+α
+⋅
+𝜷
+)
+\displaystyle\sim\text{Dirichlet}_{K}(\alpha\cdot\boldsymbol{\beta})
+(2)
+Here,
+𝝁
+k
+\boldsymbol{\mu}_{k}
+and
+𝚺
+k
+\boldsymbol{\Sigma}_{k}
+are the mean vector and covariance matrix respectively of the
+k
+k
+th mixture component,
+K
+K
+is the number of mixture components,
+θ
+k
+(
+p
+)
+\theta^{(p)}_{k}
+is the
+k
+k
+th mixture weight for player
+p
+p
+, and
+𝜷
+=
+{
+𝜷
+1
+,
+…
+,
+𝜷
+K
+\boldsymbol{\beta}=\{\boldsymbol{\beta}_{1},\ldots,\boldsymbol{\beta}_{K}
+} is the vector of global component weights (i.e., average across all players). The parameter
+α
+\alpha
+is a hyperprior that governs the amount of player shrinkage toward the global component weights. Note that
+∑
+k
+=
+1
+K
+𝜷
+k
+=
+1
+\sum_{k=1}^{K}\boldsymbol{\beta}_{k}=1
+and
+∑
+k
+=
+1
+K
+θ
+k
+(
+p
+)
+=
+1
+​
+for all
+​
+p
+\sum_{k=1}^{K}\theta^{(p)}_{k}=1\text{ for all }p
+.
+Ideally, we would specify priors for the component parameters
+𝝁
+k
+\boldsymbol{\mu}_{k}
+and
+𝚺
+k
+\boldsymbol{\Sigma}_{k}
+and fit the mixture via a Bayesian inference framework. For example, we might use a uniform distribution over the goal mouth as a prior for the component means. Unfortunately, directly estimating a mixture of truncated bivariate Gaussians is computationally challenging, as acceptance rates for the components must be repeatedly recomputed using sampling for each new mean and covariance
+[
+23
+]
+.
+[
+12
+]
+provide an expectation-maximization (EM) algorithm to estimate mixtures of truncated multivariate Gaussians in MATLAB, but such estimation within a Bayesian hierarchical framework has not been implemented. In our case, the number of components is also unknown
+a priori
+, introducing additional complexity.
+To cope with these computational challenges, we fit
+the generative
+model in two stages. First, we create a dense set of fixed mixture components and focus our inference on the
+global
+component weights. This allows us to then use a pruning heuristic over the components
+by removing low-weight components, yielding
+a more parsimonious representation. In the second stage, we estimate player-specific weights over the resulting components via a Bayesian hierarchical model. We describe these two stages
+in more detail
+below.
+3.1
+Global Mixture Model Components
+Following
+[
+9
+]
+, we first saturate the mixture model with a large number of fixed components and then prune components with low weights. Intuitively, this large set of fixed components represents a coarse parameter space over which we will make inference on the components.
+To do this, we first create a dense set
+ℳ
+=
+{
+𝐦
+1
+,
+…
+,
+𝐦
+J
+}
+\mathcal{M}=\{\mathbf{m}_{1},\ldots,\mathbf{m}_{J}\}
+of evenly spaced points within the goal frame representing the set of component means. Intuitively, these points correspond to possible intended shot locations. Further, we want the saturated set of components to span a range of execution error scales (i.e., covariance matrices) around the specified locations. We therefore enumerate multiple Gaussians with different covariance matrices at each location
+𝐦
+j
+∈
+ℳ
+\mathbf{m}_{j}\in\mathcal{M}
+. We associate each location with a nominal covariance matrix
+𝐒
+j
+\mathbf{S}_{j}
+, but we multiply
+𝐒
+j
+\mathbf{S}_{j}
+by a varying scaling factor
+λ
+ℓ
+\lambda_{\ell}
+,
+ℓ
+=
+1
+,
+…
+,
+L
+\ell=1,\ldots,L
+, yielding
+L
+L
+unique covariance matrices for each component mean. In essence, this yields a set of
+J
+×
+L
+J\times L
+components that define the inference space on the mixture components
+𝝁
+k
+\boldsymbol{\mu}_{k}
+and
+𝚺
+k
+\boldsymbol{\Sigma}_{k}
+.
+Our model calls for the specification of the hyperparameters
+M
+M
+,
+𝐒
+j
+\mathbf{S}_{j}
+, and the
+λ
+ℓ
+\lambda_{\ell}
+.
+To construct
+ℳ
+\mathcal{M}
+, we experimented with two parameters,
+n
+y
+n_{y}
+and
+n
+z
+n_{z}
+, denoting the number of components in the
+y
+y
+and
+z
+z
+direction, respectively. Given
+n
+y
+n_{y}
+and
+n
+z
+n_{z}
+, the component locations were placed equidistantly between the edges of the goal frame. We tested values for
+n
+y
+∈
+[
+4
+,
+11
+]
+n_{y}\in[4,11]
+and
+n
+z
+∈
+[
+3
+,
+8
+]
+n_{z}\in[3,8]
+. We use empirical observations of execution error in soccer from
+[
+11
+]
+to inform the shape of our covariance matrices
+𝐒
+j
+\mathbf{S}_{j}
+for each location
+𝐦
+j
+\mathbf{m}_{j}
+. See Appendix
+A.2
+for a description of how the
+𝐒
+j
+\mathbf{S}_{j}
+were obtained. Finally, for the
+λ
+ℓ
+\lambda_{\ell}
+, we performed a random search, using weakly informative normal distributions to generate candidate
+λ
+ℓ
+\lambda_{\ell}
+for each
+L
+∈
+{
+2
+,
+3
+}
+L\in\{2,3\}
+.
+After comparing the performance from 30 combinations of hyperparameter settings, we observed that the specific choice of hyperparameters had a relatively small impact on our results. The most notable exception is that the performance seemed to improve with larger
+n
+y
+n_{y}
+and larger
+n
+z
+n_{z}
+up until
+n
+z
+=
+6
+n_{z}=6
+. Our final selected hyperparameters were
+n
+y
+=
+11
+n_{y}=11
+,
+n
+z
+=
+6
+n_{z}=6
+,
+L
+=
+2
+L=2
+,
+λ
+1
+=
+1.0
+\lambda_{1}=1.0
+, and
+λ
+2
+=
+3.8
+\lambda_{2}=3.8
+. Therefore, our saturated mixture model includes
+11
+×
+6
+×
+2
+=
+132
+11\times 6\times 2=132
+components layered onto
+11
+×
+6
+=
+66
+11\times 6=66
+distinct mean locations
+𝐦
+𝐣
+\mathbf{m_{j}}
+.
+Having created this dense set of components, we fit the following saturated model to all shot end coordinates via Bayesian inference.
+f
+⁡
+(
+y
+i
+(
+p
+)
+,
+z
+i
+(
+p
+)
+)
+\displaystyle f(y_{i}^{(p)},z_{i}^{(p)})
+=
+∑
+j
+∈
+J
+∑
+ℓ
+∈
+L
+𝜷
+j
+​
+ℓ
+⋅
+TruncNorm
+​
+(
+𝐦
+j
+,
+λ
+ℓ
+​
+𝐒
+j
+)
+.
+\displaystyle=\sum_{j\in J}\sum_{\ell\in L}\boldsymbol{\beta}_{j\ell}\cdot\textrm{TruncNorm}(\mathbf{m}_{j},\lambda_{\ell}\mathbf{S}_{j}).
+(3)
+𝜷
+\displaystyle\boldsymbol{\beta}
+∼
+Symmetric-Dirichlet
+(
+J
+×
+L
+)
+​
+(
+α
+=
+1
+/
+2
+)
+\displaystyle\sim\text{Symmetric-Dirichlet}_{(J\times L)}(\alpha=1/2)
+(4)
+Following
+[
+19
+]
+, we place a symmetric Dirichlet prior on the global mixture model component weights
+𝜷
+i
+​
+j
+\boldsymbol{\beta}_{ij}
+. This choice of prior is neutral in that no component is favored over the others. Additionally, setting
+α
+=
+1
+/
+2
+\alpha=1/2
+for the symmetric Dirichlet parameter corresponds to the Jeffreys prior associated with this problem
+[
+9
+]
+, and is therefore uninformative. This choice of
+α
+=
+1
+/
+2
+\alpha=1/2
+encourages the posterior to be conservative in the number of components, driving the weights of superfluous components towards zero
+[
+19
+]
+, and allowing us to identify a subset of the components that drive the model.
+Due to the computational burden of fitting the full hierarchical model on the saturated set of components, the only parameters we estimate at this stage are the global component weights,
+𝜷
+\boldsymbol{\beta}
+. Upon estimating the posteriors for the global component weights using this symmetric Dirichlet prior, we then prune components that have estimated weights below a small threshold, as suggested by
+[
+19
+]
+. Specifically, we eliminate from the model all components with
+𝜷
+^
+j
+​
+ℓ
+<
+0.01
+\hat{\boldsymbol{\beta}}_{j\ell}<0.01
+, where
+𝜷
+^
+j
+​
+ℓ
+\hat{\boldsymbol{\beta}}_{j\ell}
+is the mean of the
+(
+j
+,
+ℓ
+)
+(j,\ell)
+mixture weight posterior. This yields a small subset of the components in the saturated regime that drive the model, which we denote as
+C
+C
+. We then re-estimate
+𝜷
+\boldsymbol{\beta}
+after selecting the trimmed set of mixture components. The
+selected subset of
+components, along with their relative weights, are illustrated in Figure
+3
+.
+Figure 3
+:
+Means and covariances of components used in trimmed shot generative model. The size of the circles
+corresponds to the value of
+λ
+\lambda
+associated with the component, while the opacity reflects the weight associated with the component
+.
+3.2
+Hierarchical Mixture Model
+Having estimated the mixture components, we can re-express the likelihood from (
+1
+) as:
+f
+⁡
+(
+y
+i
+(
+p
+)
+,
+z
+i
+(
+p
+)
+)
+\displaystyle f(y_{i}^{(p)},z_{i}^{(p)})
+=
+∑
+k
+=
+1
+K
+θ
+k
+(
+p
+)
+⋅
+TruncNorm
+(
+y
+i
+(
+p
+)
+,
+z
+i
+(
+p
+)
+|
+𝐦
+k
+,
+𝐒
+k
+)
+\displaystyle=\sum_{k=1}^{K}\theta^{(p)}_{k}\cdot\textrm{TruncNorm}(y_{i}^{(p)},z_{i}^{(p)}|\mathbf{m}_{k},\mathbf{S}_{k})
+(5)
+where
+(
+𝐦
+k
+,
+𝐒
+k
+)
+(\mathbf{m}_{k},\mathbf{S}_{k})
+is the
+k
+k
+th element of
+C
+C
+and
+K
+=
+|
+C
+|
+K=|C|
+.
+We now seek to estimate player-specific weights over these components via the hierarchical framework in (
+2
+).
+We use
+α
+=
+30
+\alpha=30
+after comparing the mean log-likelihood per shot for several values of
+α
+\alpha
+. We fit the models using variational inference in RStan
+[
+21
+]
+, as
+MCMC
+sampling resulted in prohibitively long computation times.
+4
+Proposed Shooting Metrics
+In this section, we present our two proposed shooting metrics. The first, which we call RBPostXg, reflects a player’s theoretical probability of scoring based on the generative model described above. The second, which we call GenPostXg, is a more flexible shot-specific alternative to RBPostXg.
+4.1
+RBPostXg: Rao-Blackwellized PostXg
+The naming of this metric follows the precedent set in basketball by
+[
+6
+]
+. They propose RB-FG%, an estimate of a player’s field goal percentage based on shot trajectory information beyond whether the shot was made or missed. Using regression, they estimate each shot’s make-probability given this additional information. They then condition on these estimated probabilities in their proposed metric. We apply a similar process in our work by conditioning our metric on player-specific parameter estimates underlying the generative model for their shot trajectories.
+Our first proposed shooting metric is simply the probability of a given player’s shot resulting in a goal, conditioned on the parameter estimates underlying that player’s generative model.
+Let
+{
+x
+1
+(
+p
+)
+,
+…
+,
+x
+N
+p
+(
+p
+)
+}
+\{x^{(p)}_{1},\ldots,x^{(p)}_{N_{p}}\}
+be the observed shots from player
+p
+p
+, with
+x
+i
+(
+p
+)
+x^{(p)}_{i}
+equaling 1 if shot
+i
+i
+resulted in a goal and 0 otherwise. Let
+{
+(
+y
+1
+(
+p
+)
+,
+z
+1
+(
+p
+)
+)
+,
+…
+,
+(
+y
+N
+p
+(
+p
+)
+,
+z
+N
+p
+(
+p
+)
+)
+}
+\{(y^{(p)}_{1},z^{(p)}_{1}),\ldots,(y^{(p)}_{N_{p}},z^{(p)}_{N_{p}})\}
+represent the end coordinates of these shots.
+We assume that the trajectories of a player’s shots are i.i.d. draws from the shot-generating process described above. For player
+p
+p
+, the probability of a shot being sampled from component
+(
+𝐦
+k
+,
+𝐒
+k
+)
+∈
+C
+(\mathbf{m}_{k},\mathbf{S}_{k})\in C
+is given by
+θ
+k
+(
+p
+)
+\theta^{(p)}_{k}
+. We also assume that the probability of a shot resulting in a goal given its end coordinates is
+PostXg
+​
+(
+y
+,
+z
+)
+\textrm{PostXg{}{}}(y,z)
+, essentially a simple post-shot expected goals model which we develop and describe below. Therefore, given
+(
+y
+i
+(
+p
+)
+,
+z
+i
+(
+p
+)
+)
+(y^{(p)}_{i},z^{(p)}_{i})
+, we can represent the unobserved shot outcome as a Bernoulli random variable:
+𝐗
+(
+p
+)
+|
+(
+y
+i
+(
+p
+)
+,
+z
+i
+(
+p
+)
+)
+\displaystyle\mathbf{X}^{(p)}\,|\,(y^{(p)}_{i},z^{(p)}_{i})
+∼
+Bernoulli
+​
+(
+PostXg
+​
+(
+y
+i
+(
+p
+)
+,
+z
+i
+(
+p
+)
+)
+)
+.
+\displaystyle\sim\textrm{Bernoulli}(\textrm{PostXg{}}(y^{(p)}_{i},z^{(p)}_{i})).
+(6)
+We wish to estimate
+𝔼
+⁡
+[
+𝐗
+(
+p
+)
+|
+𝜽
+(
+𝐩
+)
+]
+\mathbb{E}[\mathbf{X}^{(p)}|\mathbf{\boldsymbol{\theta}^{(p)}}]
+, the probability that an arbitrary shot from player
+p
+p
+results in a goal. We have:
+𝔼
+⁡
+[
+𝐗
+(
+p
+)
+|
+𝜽
+(
+𝐩
+)
+]
+\displaystyle\mathbb{E}[\mathbf{X}^{(p)}|\mathbf{\boldsymbol{\theta}^{(p)}}]
+=
+∫
+y
+∫
+z
+PostXg
+​
+(
+y
+,
+z
+)
+⋅
+∑
+k
+=
+1
+K
+θ
+k
+(
+p
+)
+⋅
+TruncNorm
+​
+(
+𝐦
+k
+,
+𝐒
+k
+)
+​
+𝑑
+y
+​
+𝑑
+z
+\displaystyle=\int_{y}\int_{z}\textrm{PostXg{}}(y,z)\cdot\sum_{k=1}^{K}\theta^{(p)}_{k}\cdot\textrm{TruncNorm}(\mathbf{m}_{k},\mathbf{S}_{k})\,dy\,dz
+(7)
+=
+∑
+k
+=
+1
+K
+θ
+k
+(
+p
+)
+​
+∫
+y
+∫
+z
+PostXg
+​
+(
+y
+,
+z
+)
+⋅
+TruncNorm
+​
+(
+𝐦
+k
+,
+𝐒
+k
+)
+​
+𝑑
+y
+​
+𝑑
+z
+\displaystyle=\sum_{k=1}^{K}\theta^{(p)}_{k}\int_{y}\int_{z}\textrm{PostXg{}}(y,z)\cdot\textrm{TruncNorm}(\mathbf{m}_{k},\mathbf{S}_{k})\,dy\,dz
+(8)
+=
+∑
+k
+=
+1
+K
+θ
+k
+(
+p
+)
+⋅
+v
+k
+\displaystyle=\sum_{k=1}^{K}\theta^{(p)}_{k}\cdot v_{k}
+(9)
+where
+v
+k
+:=
+∫
+y
+∫
+z
+PostXg
+​
+(
+y
+,
+z
+)
+⋅
+TruncNorm
+​
+(
+𝐦
+k
+,
+𝐒
+k
+)
+​
+𝑑
+y
+​
+𝑑
+z
+v_{k}:=\int_{y}\int_{z}\textrm{PostXg{}}(y,z)\cdot\textrm{TruncNorm}(\mathbf{m}_{k},\mathbf{S}_{k})\,dy\,dz
+(10)
+and all other terms are as defined in Section
+3.2
+.
+These
+v
+k
+v_{k}
+represent the mean expected goals value for a shot sampled from the
+k
+k
+th component of the mixture model. We
+estimate
+these numerically using Monte Carlo integration and rejection sampling from untruncated bivariate Gaussian distributions.
+We define
+Rao-Blackwellized PostXg
+as
+RBPostXg
+​
+(
+p
+)
+:=
+∑
+k
+=
+1
+K
+θ
+^
+k
+(
+p
+)
+⋅
+v
+^
+k
+\textrm{RBPostXg{}}(p):=\sum_{k=1}^{K}\hat{\theta}^{(p)}_{k}\cdot\hat{v}_{k}
+(11)
+which is the predicted probability that an arbitrary shot from player
+p
+p
+results in a goal.
+4.2
+GenPostXg: Shot-Specific Generalization of RBPostXg
+In the previous section, our metric leverages off-target shot information indirectly by its dependence on
+𝜽
+(
+p
+)
+\boldsymbol{\theta}^{(p)}
+, but it does not explicitly attach value to individual shots. In this section, we create a metric that actually assigns non-zero value to every shot in the dataset, including off-target shots. In the context of our framework, since we treat each shot trajectory as a random draw from a generative model, if the shot were taken again in the exact same situation, the outcome could be different. In our second metric, we attach value to shots by marginalizing over all the potential shots that could have been observed, which will invariably include some on-target shots.
+Specifically, for a shot with end coordinates
+(
+y
+,
+z
+)
+(y,z)
+, we compute the probability
+p
+k
+​
+(
+y
+,
+z
+)
+p_{k}(y,z)
+that the shot was generated by the
+k
+k
+th mixture component as:
+p
+^
+k
+​
+(
+y
+,
+z
+)
+=
+β
+^
+k
+⋅
+TruncNorm
+(
+y
+,
+z
+|
+𝐦
+k
+,
+𝐒
+k
+)
+∑
+k
+=
+1
+K
+𝜷
+^
+k
+⋅
+TruncNorm
+(
+y
+,
+z
+|
+𝐦
+k
+,
+𝐒
+k
+)
+\hat{p}_{k}(y,z)=\frac{\hat{\beta}_{k}\cdot\textrm{TruncNorm}(y,z|\mathbf{m}_{k},\mathbf{S}_{k})}{\sum_{k=1}^{K}\hat{\boldsymbol{\beta}}_{k}\cdot\textrm{TruncNorm}(y,z|\mathbf{m}_{k},\mathbf{S}_{k})}
+(12)
+Note that here we use the
+estimated
+global component weights
+𝜷
+^
+\hat{\boldsymbol{\beta}}
+for all shots. We then define
+Generalized PostXg
+as:
+GenPostXg
+​
+(
+y
+,
+z
+)
+=
+∑
+k
+=
+1
+K
+v
+^
+k
+⋅
+p
+^
+k
+​
+(
+y
+,
+z
+)
+.
+\textrm{GenPostXg}(y,z)=\sum_{k=1}^{K}\hat{v}_{k}\cdot\hat{p}_{k}(y,z).
+(13)
+A player’s GenPostXg for a given time period is defined as the mean GenPostXg value of their individual shots.
+4.3
+Coordinates-based PostXg Model
+Both our proposed metrics
+rely on the function
+PostXg
+​
+(
+y
+,
+z
+)
+\textrm{PostXg{}}(y,z)
+, a PostXg contour over the frame of the goal mouth. Although StatsBomb provides estimates for the PostXg value of individual shots, these estimates are based on a proprietary model that includes many attributes beyond the shot end coordinates. Therefore, we develop a PostXg model relying only on shot end
+(
+y
+,
+z
+)
+(y,z)
+coordinates. Specifically, we model the log-odds of scoring as a polynomial function of the shot end
+(
+y
+,
+z
+)
+(y,z)
+coordinates using a logistic regression formulated as follows:
+1
+1
+1
+The
+β
+\beta
+s in this equation represent different parameters than those defined earlier. We felt this abuse of notation was warranted as regression models usually use this notation for the coefficients.
+log
+⁡
+PostXg
+​
+(
+y
+,
+z
+)
+1
+−
+PostXg
+​
+(
+y
+,
+z
+)
+=
+β
+0
++
+β
+1
+​
+y
++
+β
+2
+​
+y
+2
++
+β
+3
+​
+y
+3
++
+β
+4
+​
+z
++
+β
+5
+​
+z
+2
++
+β
+6
+​
+z
+3
+.
+\log{\frac{\textrm{PostXg{}}(y,z)}{1-\textrm{PostXg{}}(y,z)}}=\beta_{0}+\beta_{1}y+\beta_{2}y^{2}+\beta_{3}y^{3}+\beta_{4}z+\beta_{5}z^{2}+\beta_{6}z^{3}.
+(14)
+Figure 4
+:
+Contour of PostXg(y, z) model.
+Regions where a shot is more likely to score are shown in brighter colours, whereas regions where a shot is less likely to score are shown in darker colours. Note that all shot end coordinates outside the goal frame have a PostXg value of zero.
+Our model results in the intuitive PostXg contour for on-target shots shown in Figure
+4
+. The area under the receiver-operator curve for our model is
+0.70, compared to 0.86 for the StatsBomb-provided PostXg model
+, which considers additional attributes such as the shot speed and goalkeeper location.
+5
+Results
+In this section, we demonstrate some key results that emerge from our proposed metrics and demonstrate how our approach can be used in practice to analyze player shooting patterns.
+Although our data cannot be shared publicly, the code used to implement our methods and generate these results is made open-source at
+https://github.com/baronet2/shotmissr
+.
+5.1
+Stability and Predictive Value
+In order for our proposed metrics to offer value to teams, they should be predictive of future player value. Due to the limited number of consecutive seasons available to us in the data, we measure this by considering the correlation between a player’s performance on our metrics in the first and second halves of a given season.
+Table
+2
+reports the correlation in the values of metrics from the first half-seasons to the second half-seasons, comparing our proposed metrics to existing metrics. The correlation between player performances using the same metric in both half seasons provides a measure of the stability of that metric. For the benchmark metrics, the stability is very low, reaching at most 0.056. Both of our proposed metrics offer an increase in stability, up to 0.136 for RBPostXg and 0.162 for GenPostXg. Furthermore, our proposed metrics, and especially GenPostXg, are better predictors of future performance on the benchmark metrics than these benchmark metrics themselves, confirming that our proposed metrics are indeed capturing a signal in player skill.
+Second half-season
+First half-season
+GAX
+EGA
+RBPostXg
+GenPostXg
+GAX
+0.035
+0.026
+0.006
+0.024
+EGA
+0.025
+0.056
+0.003
+0.010
+RBPostXg
+0.032
+0.042
+0.136
+0.141
+GenPostXg
+0.074
+0.072
+0.132
+0.162
+Table 2
+:
+Inter-season correlation of metrics from first to second half-season. For example, the correlation between players’ GAX in the first half of a season to their EGA in the second half of a season is 0.026. The italicized metric names are our proposed new metrics. The best predictor of each metric in the second half of the season is bolded.
+Table
+2
+includes the metrics for all players, including those with only a few shots in the database, which make up a large component of the data. To account for the potential
+bias
+introduced by including low sample-size players, Table
+3
+reports similar values but including only the player-seasons with at least 40 shots.
+Here, the stability of the
+benchmark metrics remains low, even dipping below zero. On the other hand
+, our proposed metrics all offer significantly higher stability, up to
+0.232
+in the case of GenPostXg. This is an indication that our metrics are capturing a consistent signal from players’ shot end coordinates.
+Again, our proposed metrics offer the highest predictive power for future performance on the benchmark metrics, demonstrating that our metrics contain a true predictive signal for player shooting skill.
+Second half-season
+First half-season
+GAX
+EGA
+RBPostXg
+GenPostXg
+GAX
+-0.025
+-0.065
+-0.040
+-0.023
+EGA
+-0.025
+-0.033
+-0.053
+-0.076
+RBPostXg
+0.028
+0.035
+0.219
+0.226
+GenPostXg
+0.037
+0.020
+0.219
+0.232
+Table 3
+:
+Inter-season correlation of metrics from first to second half-season for player-seasons with 40 or more shots. This table presents the same information as Table
+2
+after filtering to player-seasons with at least 40 shots. The italicized metric names are our proposed new metrics. The best predictor of each metric in the second half of the season is bolded.
+Figure 5
+:
+Inter-season correlation of metrics as function of player sample size threshold. The sleeves show 90% confidence intervals estimated via bootstrapping.
+Figure
+5
+plots these inter-season correlations
+of each
+metric for the first and second half-seasons as a function of the sample size threshold for shots in a player-season (e.g.,
+40
+for Table
+3
+). We see that
+our proposed metrics outperform
+GAX and EGA for all sample size thresholds.
+Our metrics reach
+an inter-season correlation of almost
+0.3 for a sample size threshold of 40 shots or more, whereas GAX and EGA continue to have almost no inter-season stability even for higher sample size thresholds
+. This figure demonstrates that
+our proposed metrics identify
+reliable estimates of player shooting skill faster than previous metrics. In other words, by including information extracted from the trajectories of off-target shots,
+RBPostXg and GenPostXg are
+able to identify signal of shooting skill even
+with small
+sample sizes.
+The result shown in Figure
+5
+is particularly important if one considers how soccer analysts would use a metric like GenPostXg to evaluate talent. If
+a team can reliably identify skilled shooters earlier than their opposition, that team would be able to recruit higher-quality players more cheaply, leading to greater success on the pitch and higher profitability in the transfer market.
+Recall that in our data processing, we filtered the shots in our dataset according to the shot distance, and reflected the coordinates of left-footed shots. A sensitivity analysis with respect to these choices is presented in Appendix
+A.3
+. The sensitivity analysis confirms that our results are robust to the exact data preprocessing steps.
+5.2
+Player Analysis
+By examining the mixture model component weights of individual players, analysts can exploit information about the shooting habits of certain players.
+Figure
+6
+shows the component weights fit to the first half-season of data for selected player-seasons alongside the global weights estimated on the entire data. Note that although the player component weights generally follow the patterns in the global weights, there are significant fluctuations between the different players.
+Figure 6
+:
+Component weights for selected player-seasons. The x-axis indexes the components of the mixture model, and the order is arbitrary. The global mixture model weights are shown in the leftmost bar of each group, in purple.
+Examining the component weights for a player of interest can reveal useful information about their shooting habits. For example, in 2018, Sebastian Giovinco had an unusually high weight of around 0.24 for the fifth component. This component corresponds to the component nearest to the top-left corner of the goal. An opposing team’s coach could inform their team of this information, enabling the defenders and goalkeeper to better anticipate the direction of Giovinco’s shots.
+Additionally, the first and third components correspond to the two components located near the bottom-left corner of the goal with the smaller and larger values of
+λ
+\lambda
+respectively. Due to the smaller variance, the first component offers a 28% higher value compared to the third component. When considering his 2019 performance, Zlatan Ibrahimovic had a higher-than-average weight for the third component and lower-than average weight for the first component. This implies that he was less accurate than the average player when aiming at the bottom-left corner of the goal. A coach could use this information to prescribe training for Ibrahimovic to improve his accuracy when aiming for the bottom-left corner.
+6
+Conclusion
+In this paper, we develop a
+hierarchical generative model
+for soccer
+shot coordinates
+based on a mixture of truncated bivariate Gaussian distributions.
+The player parameters from our hierarchical generative model allow teams to analyze specific players’ shooting habits and diagnose potential areas for improvement or prepare for an upcoming opponent. Furthermore, we
+use this shot-generating process to develop
+two
+novel metrics that extract value from off-target shot trajectories. We
+show
+that our proposed metrics are significantly more stable than previous state-of-the-art metrics, and exhibit improved predictive value of a player’s performance in the second half of a season given their shots in the first half of the season. Our
+proposed metrics are valuable in recruitment and player valuation settings as they allow
+analysts to obtain more reliable estimates of shooting skill in players, even given limited sample sizes.
+References
+[1]
+11tegen11
+“How to scout a striker?”
+In
+11tegen11
+, 2014
+URL:
+https://web.archive.org/web/20140707121313/http://11tegen11.net/2014/02/15/how-to-scout-a-striker/
+[2]
+Ken Ackerson
+“Football League Rankings”, 2022
+URL:
+https://www.globalfootballrankings.com/
+[3]
+Gabriel Anzer and Pascal Bauer
+“A Goal Scoring Probability Model for Shots Based on Synchronized Positional and Event Data in Football (Soccer)”
+In
+Frontiers in Sports and Active Living
+3.624475
+, 2021
+DOI:
+10.3389/fspor.2021.624475
+[4]
+Marc Brechot and Raphael Flepp
+“Dealing With Randomness in Match Outcomes: How to Rethink Performance Evaluation in European Club Football Using Expected Goals”
+In
+Journal of Sports Economics
+21.4
+, 2018, pp. 335–362
+DOI:
+10.1177/1527002519897962
+[5]
+Timothy.. Chan, Douglas. Fearing, Craig Fernandes and Stephanie Kovalchik
+“A Markov Process Approach to Untangling Intention Versus Execution in Tennis”
+In
+Journal of Quantitative Analysis in Sports
+18.2
+, 2022, pp. 127–145
+DOI:
+10.1515/jqas-2021-0077
+[6]
+Daniel Daly-Grafstein and Luke Bornn
+“Rao-Blackwellizing Field Goal Percentage”
+In
+Journal of Quantitative Analysis in Sports
+15.2
+, 2019, pp. 85–95
+DOI:
+10.1515/jqas-2018-0064
+[7]
+Alexander Franks, Alexander D’Amour, Daniel Cervone and Luke Bornn
+“Meta-Analytics: Tools for Understanding the Statistical Properties of Sports Metrics”
+In
+Journal of Quantitative Analysis in Sports
+12.4
+, 2016, pp. 151–165
+DOI:
+10.1515/jqas-2016-0098
+[8]
+Mike Goodman
+“A New Way to Measure Keepers’ Shot Stopping: Post-Shot Expected Goals”
+In
+StatsBomb
+StatsBomb Services Ltd, 2018
+URL:
+https://statsbomb.com/2018/11/a-new-way-to-measure-keepers-shot-stopping-post-shot-expected-goals/
+[9]
+Clara Grazian and Christian. Robert
+“Jeffreys Priors for Mixture Estimation: Properties and Alternatives”
+In
+Computational Statistics and Data Analysis
+121
+, 2018, pp. 149–163
+DOI:
+10.1016/j.csda.2017.12.005
+[10]
+Martin. Haugh and Chun Wang
+“Play Like the Pros? Solving the Game of Darts as a Dynamic Zero-Sum Game”
+In
+INFORMS Journal on Computing
+34.5
+, 2022, pp. 2540–2551
+DOI:
+10.1287/ijoc.2022.1197
+[11]
+Andrew. Hunter et al.
+“Modeling the Two-dimensional Accuracy of Soccer Kicks”
+In
+Journal of Biomechanics
+72
+, 2018, pp. 159–166
+DOI:
+10.1016/j.jbiomech.2018.03.003
+[12]
+Gyemin Lee and Clayton Scott
+“EM Algorithms for Multivariate Gaussian Mixture Models with Truncated and Censored Data”
+In
+Computational Statistics and Data Analysis
+56.9
+, 2012, pp. 2816–2829
+DOI:
+10.1016/j.csda.2012.03.003
+[13]
+Patrick Lucey et al.
+“Quality vs Quantity: Improved Shot Prediction in Soccer using Strategic Features from Spatiotemporal Data”
+In
+9th Annual MIT Sloan Sports Analytics Conference
+, 2015
+URL:
+https://global-uploads.webflow.com/5f1af76ed86d6771ad48324b/5fee09c092fcdb0989d51ecf
+[14]
+Lijuan Mao, Zhaofang Peng, Hongyou Liu and Miguel-Angel Gómez
+“Identifying Keys to Win in the Chinese Professional Soccer League”
+In
+International Journal of Performance Analysis in Sport
+16.3
+Routledge, 2016, pp. 935–947
+DOI:
+10.1080/24748668.2016.11868940
+[15]
+Ian. McHale and Łukasz Szczepański
+“A Mixed Effects Model for Identifying Goal Scoring Ability of Footballers”
+In
+Journal of the Royal Statistical Society. Series A (Statistics in Society)
+177.2
+, 2014, pp. 397–417
+DOI:
+10.1111/rssa.12015
+[16]
+Devin Pleuler
+“Augmenting Free-kick Data for More Meaningful Results”
+In
+OptaPro
+Opta, 2014
+URL:
+https://web.archive.org/web/20140326074435/http://www.optasportspro.com/en/about/optapro-blog/posts/2013/augmenting-free-kick-data-for-more-meaningful-results.aspx
+[17]
+Devin Pleuler
+“On the Topic of Expected Goals and the Repeatability of Finishing Skill”
+In
+OptaPro
+Opta, 2014
+URL:
+https://web.archive.org/web/20140706142343/http://www.optasportspro.com/en/about/optapro-blog/posts/2014/on-the-topic-of-expected-goals-and-the-repeatability-of-finishing-skill.aspx
+[18]
+Alex.. Rathke
+“An Examination of Expected Goals and Shot Efficiency in Soccer”
+In
+Journal of Human Sport and Exercise
+12.2proc
+, 2017, pp. 514–529
+DOI:
+10.14198/jhse.2017.12.Proc2.05
+[19]
+Judith Rousseau and Kerrie Mengersen
+“Asymptotic Behaviour of the Posterior Distribution in Overfitted Mixture Models”
+In
+Journal of the Royal Statistical Society: Series B (Statistical Methodology)
+73.5
+, 2011, pp. 689–710
+DOI:
+10.1111/j.1467-9868.2011.00781.x
+[20]
+Andrew Rowlinson
+“Football Shot Quality: Visualizing the Quality of Soccer/ Football Shots”, 2020
+URL:
+http://urn.fi/URN:NBN:fi:aalto-202008234885
+[21]
+Stan Development Team
+“RStan: The R interface to Stan” R package version 2.21.3, 2021
+URL:
+https://mc-stan.org/
+[22]
+Ryan. Tibshirani, Andrew Price and Jonathan Taylor
+“A Statistician Plays Darts”
+In
+Journal of the Royal Statistical Society. Series A (Statistics in Society)
+174.1
+[Wiley, Royal Statistical Society], 2011, pp. 213–226
+DOI:
+10.1111/j.1467-985X.2010.00651.x
+[23]
+Stefan Wilhelm and G. Manjunath B.
+“tmvtnorm: A Package for the Truncated Multivariate Normal Distribution”
+In
+The R Journal
+2.1
+, 2010, pp. 25–29
+DOI:
+10.32614/RJ-2010-005
+[24]
+Changjing Zhou, Shaoliang Zhang, Alberto Calvo and Yixiong Cui
+“Chinese Soccer Association Super League, 2012–2017: Key Performance Indicators in Balance Games”
+In
+International Journal of Performance Analysis in Sport
+18.4
+Routledge, 2018, pp. 645–656
+DOI:
+10.1080/24748668.2018.1509254
+Appendix A
+Appendix
+A.1
+Adjusting Shot End Coordinates
+In our data pre-processing, we first applied a small correction to fix an apparent bias in the data collection process affecting shot end coordinates near the goal frame. For a few seasons of data (MLS 2018, Ligue 2 2018-19, 2. Bundesliga 2018-19, Eredivisie 2018-19), the density of shots with end coordinates just outside the posts was low relative to the surrounding regions (see Figure
+7
+). We hypothesize that this effect was caused by StatsBomb’s data collection system, which amplifies the size of the posts so that data collectors are can click on them more easily. To correct for this effect, shot end coordinates were shifted to preserve the actual width of the posts, thereby resulting in a more continuous density of shot end locations. Figure
+1
+shows the distribution of shot end coordinates for the 2018 MLS season after this correction.
+Figure 7
+:
+Original shot end coordinates for 2018 MLS data.
+Shots are coloured by their outcome. Note the significantly lower density of shots in the regions just outside the goal frame shown in red.
+A.2
+Estimating Execution Error
+We fix the component covariances in our saturated mixture model for computational tractability purposes. To inform our choice of
+𝐒
+j
+\mathbf{S}_{j}
+for each location
+𝐦
+j
+\mathbf{m}_{j}
+, we fit two bivariate Gaussian distributions to the empirical data in
+[
+11
+]
+, one for shots aimed 1.75 yards above the ground and another for shows aimed 0.14 yards above the ground. The end
+y
+y
+-coordinates of left-footed shots were reflected prior to fitting, since left-footed shots display a symmetric pattern to right-footed shots with respect to the orientation of the principal axis. The fitted covariance matrices for these two intended shot locations are:
+𝐒
+(
+0.14
+​
+yd
+)
+\displaystyle\mathbf{S}_{(0.14\textrm{yd})}
+=
+[
+0.704
+0.157
+0.157
+0.297
+]
+\displaystyle=\begin{bmatrix}0.704&0.157\\
+0.157&0.297\end{bmatrix}
+𝐒
+(
+1.75
+​
+yd
+)
+\displaystyle\mathbf{S}_{(1.75\textrm{yd})}
+=
+[
+0.782
+0.442
+0.442
+0.742
+]
+\displaystyle=\begin{bmatrix}0.782&0.442\\
+0.442&0.742\end{bmatrix}
+Figure
+8
+shows the resulting bivariate Gaussian distributions.
+(a)
+(b)
+Figure 8
+:
+Bivariate Gaussian fits for shots aimed at the high (top) and low (bottom) red intentions, based on data from
+[
+11
+]
+. The cut-off at 0.2 for the end z-coordinates is a result of the computer vision process used by
+[
+11
+]
+to compute shot end coordinates.
+We assume that the shape of the execution error
+𝐒
+\mathbf{S}
+changes linearly with respect to the intended shot height, but is unchanged as the intended location moves laterally.
+A.3
+Sensitivity Analysis with Respect to Data Preprocessing Choices
+In our data pre-processing, we filter the data to only include shots taken from a distance of at least 6 yards. Additionally, we reflect the end
+y
+y
+coordinates of left-footed shots in an attempt to exploit symmetry in shooting patterns.
+To show that our results are robust to the choice of filtering thresholds and choice to reflect left-footed shots, we repeat our analysis under various data processing settings. Specifically, we generate simplified versions of Figure
+5
+for nine combinations of filtering thresholds, with or without reflecting left-footed shots. The results are presented in Figure
+9
+.
+(a)
+(b)
+Figure 9
+:
+Comparison of results under various data processing settings.
+Based on these results, we see that our proposed metrics outperform the benchmark metrics for nearly all thresholds and conditions. Additionally, we see that our metrics tend to outperform the benchmark metrics more significantly when a larger set of shots is included in the analysis. This figure confirms that our findings are generally robust to the data processing choices made in our analysis.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►
