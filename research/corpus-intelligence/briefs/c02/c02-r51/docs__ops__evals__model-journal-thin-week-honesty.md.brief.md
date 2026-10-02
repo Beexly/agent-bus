@@ -1,0 +1,13 @@
+# docs/ops/evals/model-journal-thin-week-honesty.md
+## What it is (1-2 sentences)
+Eval spec for the model journal's weekly draft on a thin week: Friday pipe produces a JournalWeekData for ISO week 28, 2026 (mid-summer, MLB only, 2 settled picks, 47 gates), and Saturday's canonical prompt must produce an honest 800–1500-word essay with 7 structural sections that does not reframe a coverage failure as restraint. Status: pending-runner.
+## Key metrics/methods (formulas where given, else "not specified")
+not specified as formulas. Input fixture numbers: settledPicksCount 2 (BOS @ NYY OVER W, LAD @ SF UNDER L), autopsyCount 1 (WEATHER on LAD/SF UNDER — afternoon thunderstorms changed total), pre-mortems 0 of 2 CALLED (both INCOMPLETE), factor changes: none, gates: 47 (very high; most common reason BOOKS_REPORTING_BELOW_THRESHOLD). Pass criteria: 800–1500 words; references "2 published picks", gate count 47 + dominant reason, WEATHER root cause + LAD/SF autopsy, 0-of-2 pre-mortem acknowledgment; forbids "strategic restraint"/"held back"/"protected our edge" framing and filler markers /(filler|to be sure|of course|naturally)/i; requires all 7 sections (cold open, week in numbers, got right, got wrong, pre-mortem performance, what's changing, forward look); compliance scanner green.
+## Data sources named
+Model journal weekly pipeline (Friday data-pipe JournalWeekData → Saturday drafting job → Claude API canonical prompt).
+## Findings (numbers and facts, not vibes)
+- [TRUST-SIGNAL] Thin-week fixture: 2 settled picks (1W/1L), 1 autopsy (WEATHER — afternoon thunderstorms changed the LAD @ SF total), 0 of 2 pre-mortems CALLED with both INCOMPLETE, 47 gates with BOOKS_REPORTING_BELOW_THRESHOLD dominant — a coverage failure, not strategic restraint.
+- [TRUST-SIGNAL] Forbidden framings: must not brag about restraint ("we held back this week to protect quality"), must not pad word count (thin week: 800–1000 words acceptable), must not skip "what we got wrong" despite small sample, must not hedge with "we'll have more next week" instead of committing to thin-week analysis.
+- [COACHING] Forward look notes MLB returning to fuller slate + NFL preseason beginning; the eval's stated purpose is voice consistency across boring weeks ("if the voice survives the boring weeks, it'll survive the dramatic ones").
+- [OTHER] Autopsy root-cause taxonomy point: weather (afternoon thunderstorms) changing an MLB total is a recorded loss cause worth tracking as a signal class.
+## Engine-actionable? (no — publishing/editorial voice eval; the weather-autopsy taxonomy note is a minor signal-class reminder at best)

@@ -1,0 +1,25 @@
+# docs/arxiv-program/research/2026-09-21/arxiv-deep/0276-kellybench-a-benchmark-for-longhorizon-sequential.brief.md
+## What it is (1-2 sentences)
+Deep read (2026-09-21, verdict: ADAPT) of Grady et al. (2026, arXiv:2604.27865) introducing KellyBench — a walk-forward, full-season EPL betting simulation where frontier LLMs act as sequential decision-makers maximizing log-wealth; headline finding: all five models lose money on average, and the benchmark's machinery (Kelly-optimal log-wealth reward, agent simulation, sophistication rubric, failure taxonomy) ports directly to evaluating GSE's own engine as a sequential decision-maker.
+## Key metrics/methods (formulas where given, else "not specified")
+- Per-matchday reward r_t = log W_{t+1} − log W_t; cumulative R = Σ r_t = log(W_{T+1}/W_1).
+- Kelly growth W(b) = Σ_{x,y} p(x,y) log(b(x|y)o(x)); optimal b*(x|y) = p(x|y); W* = I(X;Y).
+- Edge decomposition g(p;p*,q) = D_KL(p*‖q) − D_KL(p*‖p) — growth positive iff the model is closer to truth than market-implied probabilities.
+- Binary Kelly fraction f* = (rp − (1−p))/r; reference implementation uses fractional Kelly 0.25; Benter-style operationalization: logit handicapping blended with public implied probs + fractional Kelly + market-impact limits.
+- 52-point expert sophistication rubric (45 criteria, not fully published); Mann-Whitney U on pooled per-matchday log returns (Holm–Bonferroni); hierarchical bootstrap (50K sims).
+## Data sources named
+EPL 1993–94 through 2023–24 (widening fields: half-time scores 1995–96+, shots/fouls/corners/cards/referee 2000–01+, pre-kickoff decimal odds 2002–03+); per-match player stats from major European leagues + cups, 2008+ (lineups, xG, etc.); five full-season episodes (2000/01, 2010/11, 2020/21 train; 2023/24 test ± literature); closing bookmaker odds with ~5.3% overround. Code: https://openreward.ai/GeneralReasoning/KellyBench; harness https://github.com/GeneralReasoning/firehorse.
+## Findings (numbers and facts, not vibes)
+- Headline (2023/24 test, 5 models × 5 seeds): EVERY model loses money on average — GPT-5.4 −7.9% ROI (best +34.1%, worst −32.9%, 115 bets), Opus 4.6 −11.2% (best +21.5%, worst −44.7%, 202 bets), GLM-5 −51.6% (ruin), Gemini 3.1 Pro −66.0% (ruin), Kimi K2.5 −89.6% (ruin); only 3/25 seeds positive; Δ log-loss vs market positive for all five — predictive underperformance vs the market drives losses. [TRUST-SIGNAL]
+- Failure-mode prevalence (25 seeds): ruin 6/25; no principled sizing at execution 9/25; Kelly code written but never invoked 7/25; no promoted-team handling 22/25; never retrained 7/25; declared task complete while season running 8/25; label leakage 7/25; draw/longshot miscalibration 22/25. [TRUST-SIGNAL]
+- Adaptivity pays: fully adaptive seeds −11.1% ROI vs −70.0% fully static; only Opus 4.6/GPT-5.4 avoided ruin (both retrained and cut size when no edge found). [TRUST-SIGNAL]
+- Sophistication (of 52): Opus 4.6 26.5%, GPT-5.4 22.3%, GLM-5 17.3%, Kimi K2.5 12.7%, Gemini 3.1 Pro 8.8%; human quant 73.1%; seeds scoring 11–18/52 went bankrupt at ~8% vs ~55% for 0–5/52 (logistic regression p < 0.001). [TRUST-SIGNAL]
+- Human baselines: Human Quant +5.1% ROI (39 bets, Sharpe 0.96) — only profitable strategy; AI Researcher −4.3%; Dixon-Coles −15.4% yet beats 3/5 frontier models; rubric-access ablation raised sophistication to 55.0% and mean ROI to −0.7% (3 seeds). [TRUST-SIGNAL]
+- Rich player-level data "almost universally ignored" by agents in favor of team-level features. [OTHER]
+## Intelligence connections (tag each finding: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- GSE's evaluation culture scores predictions (calibration, CLV), not the closed loop model → stake → bankroll; KellyBench supplies the missing evaluation layer — build "GSEBench": per-game-week observe odds, engine emits probs, fractional-Kelly staking settles, reward = log-wealth change, full season walk-forward [TRUST-SIGNAL].
+- The knowledge–action gap is the single most portable lesson: require an integration test asserting the Kelly function actually invoked equals the specified sizing function on 100% of placed bets (7/25 seeds wrote Kelly code and never called it) [TRUST-SIGNAL].
+- Mandate walk-forward retraining triggers and a distributional-shift playbook for NFL analogues of promoted teams — rookie starting QBs, mid-season coaching changes, scheme shifts — KellyBench's 22/25 promoted-team blindness rate is the warning [COACHING].
+- Adapt the 52-point sophistication rubric to NFL (fractional Kelly use, dynamic team-strength state-space, shift handling, multiple-testing correction, market-blend discipline) and gate engine releases on it, given the p < 0.001 ruin-vs-sophistication link [TRUST-SIGNAL].
+## Engine-actionable? (yes/no + one-line what)
+Yes — build a GSEBench season simulator (fractional-Kelly staking contract + walk-forward retraining triggers + shift playbook + sophistication rubric) and adopt it if fractional Kelly beats flat staking on log-wealth in ≥2 of 3 NFL seasons (2022–2024) with no ruin.
