@@ -1,0 +1,19 @@
+# docs/arxiv-program/research/2026-09-21/arxiv-deep/1157-selective-prediction-from-agreement.md
+## What it is (1-2 sentences)
+Deep-read of Khosravani (2026), arXiv:2605.02611: in fixed-pool (transductive) selective classification, define the version space of Lipschitz-consistent heads in embedding space and post only when *every* consistent head agrees — two-sided margin envelopes make the check computable, giving a per-prediction stability certificate. Verdict ADAPT — the certified version of 1153's disagreement idea, stronger claim (per-pick certificate) but conservative by design.
+## Key metrics/methods (formulas where given, else "not specified")
+- Margin: M_c(z) = f_c(z) − max_{k≠c} f_k(z); Lipschitz: M_c(z) − M_c(z′) ≤ L_{M,c}‖z−z′‖ (linear heads: L_{M,c} = max_{k≠c} ‖w_c−w_k‖_2).
+- Lower envelope: LB_c(u) = sup_{i∈S:y_i=c}(m_i − L_{M,c}‖z_u−z_i‖); upper envelope: UB_c(u) = inf_{i∈S:y_i≠c}(−m_i + L_{M,c}‖z_u−z_i‖).
+- Forcing rules: (i) singleton — feasible set Γ(u) = {c: UB_c(u) ≥ 0} is a singleton (τ-relaxed: Γ_τ(u) = {c: UB_c(u) ≥ −τ}); (ii) gap forcing — LB_{c*}(u) ≥ κ and LB_{c*}(u) > max_{c≠c*}UB_c(u) + τ.
+- Certified radius: ρ_cert = γ/L_max under margin floor m_i ≥ γ. Coverage: Cov(π) = (1/N)Σ1{π(u)≠⊥}; Risk(π) = selective misclassification rate on posted set.
+## Data sources named
+Transductive CIFAR-10 (N=10,000 test pool) and SVHN (N=26,032 test pool), 10 classes; ResNet-18 encoder, ℓ2-normalized penultimate-layer features (d=512); label budgets b ∈ {0.5%, 1%, 2%, 5%}; acquisition: greedy ball-coverage, farthest-first k-center, uniform random. Baselines: softmax thresholding, margin thresholding, APS conformal singletons, selectivenet_gate. No code stated.
+## Findings (numbers and facts, not vibes)
+- Max certified coverage (Table 1): CIFAR-10 greedy — 0.8042 (0.5%), 0.8250 (1%), 0.8079 (2%), 0.8527 (5%); random — 0.5145/0.6922/0.7490/0.8534; k-center — 0.1385/0.2130/0.2968/0.4213. SVHN greedy — 0.7787/0.7207/0.6818/0.6076; random — 0.6820/0.6263/0.7792/0.8437.
+- cert_full competitive with or better than post-hoc baselines *on the certified domain*; certified coverage strongly acquisition-sensitive (greedy ≫ k-center); conservative by design — saturates below heuristic coverage. Non-monotone in budget.
+- Limitations flagged: **certifies agreement, not correctness** (explicit in the paper); certificates live in the embedding space and must be recomputed if the representation changes; Lipschitz spectral-norm bounds can be loose, shrinking the certified region; single author, vision-only evaluation, no tabular-data validation.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- TRUST-SIGNAL (adjacent): the mechanism produces a per-pick stability certificate — "this pick is robust to head choice across the entire Lipschitz ball, not just a committee vote" — a certified trust signal for which picks survive to the public card.
+- OTHER: formalizes 1153's empirical disagreement rule (committee vote) as a certified version-space rule. GSE mapping: the week's slate is the fixed transductive pool; train K post/don't-post heads with spectral normalization on historically graded games; compute LB/UB per slate game and post only forced games; iteratively add forced games as pseudo-labeled anchors (Theorem 5 closure). The submodular acquisition machinery is rejected for GSE (no label-budget problem).
+## Engine-actionable? (yes/no + one-line what)
+Yes — build the forcing-rule pipeline (spectral-norm-constrained post/don't-post heads + LB/UB envelopes + singleton/gap forcing) on the graded-picks DB, evaluate slate-by-slate against the 1153 empirical-disagreement baseline at matched coverage: ADOPT the forcing rule iff forced picks beat it by ≥1 selective-ROI point; REJECT if certified coverage collapses below 20% of a slate (the paper's conservativeness warning).
