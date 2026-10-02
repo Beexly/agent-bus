@@ -1,0 +1,18 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0479-a-twopoint-method-for-ptz-camera.md
+## What it is (1-2 sentences)
+Deep-read ledger of arXiv:1801.09005v1 (Chen, Zhu, Little 2018), proposing a two-point annotation algorithm and a "pan-tilt forest" (random forest regressing pan/tilt angles from SIFT descriptors) for calibrating pan-tilt-zoom broadcast cameras in soccer video when fewer than four field-marking correspondences are visible. Verdict: REJECT — pure computer-vision broadcast-camera calibration with no transfer path to NFL pick/spread/total modeling.
+## Key metrics/methods (formulas where given, else "not specified")
+Camera model: P = KQ_φQ_θ · S[I|−C] (PTZ part · fixed-base prior); pixel from ray: p = [f·tan(θ_p − θ) + u, f·tan(φ_p − φ) + v]ᵀ; focal length from two points via image-of-absolute-conic quadratic cos α = x₁ᵀωx₂/(√(x₁ᵀωx₁)√(x₂ᵀωx₂)), ω = K⁻ᵀK⁻¹; initial pan/tilt from one point via closed-form quadratic in tan(pan): a·t_p² + b·t_p + c = 0 (a = (V²+1)Z² − U²(X²+Y²), b = −2XZ(U²+V²+1), c = (V²+1)X² − U²(Y²+Z²)); Levenberg-Marquardt reprojection refinement; pan-tilt forest = random forest (5 trees, max depth 20, info-gain on angular variance) regressing SIFT descriptors → pan/tilt ray labels; pose optimization min Σ‖p_i − P(r̂_i)‖² with RANSAC (2-point minimal set → 16 iterations at 99% success, 50% outliers, vs 71 for 4-point). Assumptions: fixed known camera base; square pixels, principal point at image center; focal length the only intrinsic unknown; no lens distortion.
+## Data sources named
+Highlights dataset (public soccer highlights, 4 sequences/2 games, 1280×720 ~6 FPS, 116 frames); World Cup 2014 dataset (Homayounfar et al., 2 games: BRA–MEX 42 images, BRA–NED 33 images); synthetic dataset (100 cameras × 100 repeats, pan ∈ [15°,75°], tilt ∈ [−14°,−5°], focal ∈ [1500,5000], ~90% rays off-field, Gaussian feature noise). Code: github.com/lood339/two_point_calib.
+## Findings (numbers and facts, not vibes)
+- Highlights (mean IoU ± std): ours 0.83±0.16 vs CalibMe 0.68±0.30; per sequence 0.88±0.06 / 0.81±0.21 / 0.69±0.36 / 0.94±0.04 vs CalibMe 0.75±0.22 / 0.73±0.27 / 0.61±0.37 / 0.62±0.33. Speed: 0.3 s/frame (0.2 SIFT + 0.1 prediction/optimization) vs 3.0 s/frame.
+- World Cup: 0.99±0.01 (BRA–MEX) and 0.98±0.01 (BRA–NED) vs CalibMe 0.84±0.24 and 0.69±0.37.
+- Synthetic at σ=3.0 px feature noise: mean rotation error <0.02°, mean focal error <2.5 px; robust to base-location uncertainty, sensitive to base-rotation uncertainty; 100-px focal error ≈ 3.2% of ground truth. >85% of real images have rotation error <1°.
+- Feature-distance thresholding: inlier rate (angular error <0.5°) 0.33 vs 0.09 without; mean IoU 0.83 vs 0.53. SURF instead of SIFT drops IoU 0.83→0.74. ~5 trees suffice.
+- Narrow FOV (<~25°) still fails (IoU <0.6); FOV >~40° has zero failures in these datasets.
+- No camera-calibration lane exists in Garrett's corpus; the method needs PTZ-base priors and field-marking correspondences — a broadcast-tracking engineering trick, not a probability-modeling method; no prediction-task use is claimed.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- Only prospective: if a GSE broadcast-video lane ever opens (automated camera registration for telestration overlays on real game footage), this is the starting reference (~2–3 weeks prototype) — but GSE's video rule requires real-footage edits, not camera estimation, and no such lane is active — OTHER
+## Engine-actionable? (yes/no + one-line what)
+No — REJECTED at triage-of-purpose: pure CV broadcast-camera calibration, zero transfer to win/spread/total probability modeling; gate closed with no further testing.

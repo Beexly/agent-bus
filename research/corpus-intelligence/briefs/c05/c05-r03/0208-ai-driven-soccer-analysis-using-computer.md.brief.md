@@ -1,0 +1,14 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0208-ai-driven-soccer-analysis-using-computer.md
+## What it is (1-2 sentences)
+An undergraduate systems-integration paper (MSOE, 2025) assembling an off-the-shelf soccer video pipeline — pretrained object detection + SAM2 tracking + a small custom keypoint CNN + DLT homography — to produce 2D pitch positions from raw game footage. Verdict in file: REJECT for adoption; no novel method, tiny labeled data, no end-to-end per-player tracking results.
+## Key metrics/methods (formulas where given, else "not specified")
+Detection: F1, IoU, recall, precision (authors' priority F1 > recall > precision > IoU). Keypoint loss = MAE over visible keypoints (weight 10) + binary cross-entropy on visibility (weight 1); masked MAE; visibility accuracy; projection MAE in meters. Method: YOLO (init only) → SAM2 streaming-memory segmentation/tracking; K-means (k=2) on 5x5 RGB patch for team classification; multitask CNN for 12 keypoints; DLT (SVD) homography from Google Maps API + NCAA field dimensions.
+## Data sources named
+10 home games of the 2024 MSOE men's soccer season (BePro elevated camera, day/night/rain); 390 consecutive frames pseudo-labeled via SAM2 prompted by YOLO; 146 frames manually labeled with 12 keypoints (92 glare, 54 overcast). No dataset or code released. Follow-up primaries cited in file: Chu et al. 2022 (keypoint-aware registration), PnLCalib (2024), TVCalib (2022).
+## Findings (numbers and facts, not vibes)
+YOLOv5x selected: IoU 0.7934? no — Table 1: YOLOv5x IoU 0.7644 / recall 0.7995 / precision 0.8963 / F1 0.8451 (best balance); all YOLOs beat Faster R-CNN (F1 0.7194) on every metric. 17/22 players identified with no fine-tuning. Keypoint CNN: visibility accuracy 99.89% train / 97.18% test; masked MAE 0.0107 train / 0.0138 test (normalized), 5.96px/7.65px. System: keypoint MAE 0.225m (ground truth) / 0.26m (predicted); average projection error 0.499m. Author-admitted failures: ballboy/referee false positives; K-means team flips under glare/shadows; no re-ID, no ball detection, no jersey numbers, no tracking metrics (MOTA/IDF1 absent). Source paper's "Zhang et al. 2024" 95.62% keypoint claim is a citation mismatch (bibliography maps to an underwater-image paper) — REMOVED per file.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: broadcast-to-field coordinate registration pipeline pattern (keypoint + DLT homography) relevant to any video-to-tracks lane.
+- OTHER: negative evidence — K-means on jersey-color patches is brittle under glare; supervised jersey-number OCR + appearance embeddings needed.
+## Engine-actionable? (yes/no + one-line what)
+No — REJECT per file; nothing novel beyond paper 0201 (Selective Mask Propagation) which already covers the tracking lane.
