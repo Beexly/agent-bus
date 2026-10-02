@@ -1,0 +1,4414 @@
+AURORA: Auditing PageRank on Large Graphs
+Jian Kang
+Affiliation:
+Arizona State University
+jkang51@asu.edu
+Yinglong Xia
+Affiliation:
+Huawei Research America
+yinglong.xia@huawei.com
+Meijia Wang
+Affiliation:
+Arizona State University
+mwang164@asu.edu
+Wei Fan
+Affiliation:
+Tencent
+wei.fan@gmail.com
+Nan Cao
+Affiliation:
+Tongji University
+nan.cao@gmail.com
+Hanghang Tong
+Affiliation:
+Arizona State University
+hanghang.tong@asu.edu
+Abstract
+Ranking on large-scale graphs plays a fundamental role in many high-impact application domains, ranging from information retrieval, recommender systems, sports team management, biology to neuroscience and many more. PageRank, together with many of its random walk based variants, has become one of the most well-known and widely used algorithms, due to its mathematical elegance and the superior performance across a variety of application domains. Important as it might be, state-of-the-art lacks an intuitive way to
+explain
+the ranking results by PageRank (or its variants), e.g.,
+why
+it thinks the returned top-
+k
+webpages are the most important ones in the entire graph;
+why
+it gives a higher rank to actor
+John
+than actor
+Smith
+in terms of their relevance w.r.t. a particular movie?
+In order to answer these questions, this paper proposes a paradigm shift for PageRank, from identifying
+which
+nodes are most important to understanding
+why
+the ranking algorithm gives a particular ranking result. We formally define the PageRank auditing problem, whose central idea is to identify a set of key graph elements (e.g., edges, nodes, subgraphs) with the highest influence on the ranking results. We formulate it as an optimization problem and propose a family of effective and scalable algorithms (
+Aurora
+) to solve it. Our algorithms measure the influence of graph elements and incrementally select influential elements w.r.t. their gradients over the ranking results. We perform extensive empirical evaluations on real-world datasets, which demonstrate that the proposed methods (
+Aurora
+) provide intuitive explanations with a linear scalability.
+Index Terms:
+Graph mining, PageRank, explainability
+I
+Introduction
+Ranking on graph data is a way to measure node importance and plays a fundamental role in many real-world applications, ranging from information retrieval
+[
+1
+]
+, recommender systems
+[
+2
+]
+, social networks
+[
+3
+]
+, sports team management
+[
+4
+]
+to biology
+[
+5
+]
+and neuroscience
+[
+6
+]
+. Among others, PageRank
+[
+1
+]
+, together with many of its random walk based variants, is one of the most well-known and widely used ones. Its mathematical elegance lies in that it only requires the topological structure and the associated edge weights as the input. Such a generality makes it applicable to networks
+1
+1
+1
+In this paper, we use ‘graph’ and ‘network’ interchangably.
+from many different application domains.
+PageRank has a strong ability answering questions like
+what
+is the most important page in the World Wide Web;
+who
+is the most influential person in a collaboration network. Despite its superior performance on graph ranking, PageRank lacks intuitive ways to give answers to questions like
+why
+the top-
+k
+k
+returned webpages are the most important ones;
+why
+actor
+John
+ranks higher than actor
+Smith
+in terms of their relevance w.r.t. a particular movie.
+How
+the ranking results are derived from the underlying graph structure has largely remained opaque to the end users, who are often not experts in data mining and mathematics.
+(a)
+Potential influential edges.
+(b)
+Potential influential node.
+Fig. 1
+:
+Example of potential influential edges and node.
+To address this challenge, we aim to explain PageRank by finding the influential graph elements (e.g., edges, nodes and subgraphs), which we formulate as
+PageRank auditing
+problem. The key idea is to quantitatively understand how the ranking results would change if we perturb a specific graph element. To be specific, we measure the influence of each graph element by the rate of change in a certain loss function (e.g.,
+L
+p
+L_{p}
+norm, etc.) defined over the ranking vector. We believe that auditing graph ranking can benefit many real-world applications. First, it can render the crucial explainability of such ranking algorithms, by identifying valuable information of influential graph elements. Thus, it can help answer questions like why a given node ranks on the top of the ranking list, which link leads to the ranking vector in a certain way. Furthermore, users can use the auditing results to optimize the network topology. In addition, it may help identify the vulnerabilities in the network (e.g. links between two clusters, cutpoints of clusters as shown in Figure
+1(a)
+and Figure
+1(b)
+). With the auditing result, users may find several links or nodes that have the greatest influence on the ranking results. It can help users identify if there exist suspicious individuals that manipulate the ranking results by linking heavily with unrelated, off-query topics. Finally, with the knowledge of graph ranking auditing, we may design a more robust ranking algorithm that is hard to be manipulated by users with strategies like linking heavily
+[
+7
+]
+.
+The main contributions of the paper are summarized as follows.
+•
+Problem Definition
+. We formally define PageRank auditing problem, and formulate it as an optimization problem, whose key idea is to measure the influence of different graph elements as the rate of change in the PageRank results.
+•
+Algorithms and Analysis
+. We propose fast approximation algorithms to solve the PageRank auditing problem.
+The algorithms achieve a
+(
+1
+−
+1
+/
+e
+)
+(1-1/e)
+approximation ratio with a linear complexity.
+•
+Empirical Evaluations
+. We perform extensive experiments on diverse, real-world datasets. The experimental results demonstrate that our proposed methods (a) provide reasonable and intuitive information to find influential graph elements, and (b) scale linearly w.r.t. the graph size.
+The rest of the paper is organized as follows. Section
+II
+formally defines the PageRank auditing problem. Section
+III
+introduces our proposed algorithms. Then we provide experimental evaluations in Section
+IV
+. After reviewing related work in Section
+V
+, we conclude the paper in Section
+VI
+.
+II
+Problem Definition
+In this section, we first present a table of symbols (Table 1) that contains the main notations used throughout the paper, and then review PageRank for ranking nodes on graphs, and finally give a formal definition of the PageRank auditing problem.
+TABLE I
+:
+Table of Symbols
+Symbols
+Definitions
+𝐆
+=
+(
+𝒱
+,
+ℰ
+)
+{\mathbf{G}}=({\mathcal{V}},{\mathcal{E}})
+the input network
+(
+i
+,
+j
+)
+(i,j)
+edge from node
+i
+i
+to node
+j
+j
+𝐀
+{\mathbf{A}}
+adjacency matrix of the input network
+𝐀
+⁡
+(
+i
+,
+j
+)
+{\mathbf{A}}(i,j)
+the element at
+i
+th
+i^{\rm th}
+row and
+j
+th
+j^{\rm th}
+column
+𝐀
+(
+i
+,
+:
+)
+{\mathbf{A}}(i,:)
+i
+th
+i^{\rm th}
+row of matrix
+𝐀
+{\mathbf{A}}
+𝐀
+(
+:
+,
+j
+)
+{\mathbf{A}}(:,j)
+j
+th
+j^{\rm th}
+column of matrix
+𝐀
+{\mathbf{A}}
+𝐀
+′
+{\mathbf{A}}^{\prime}
+transpose of the matrix
+𝐀
+{\mathbf{A}}
+𝐀
+−
+1
+{\mathbf{A}}^{-1}
+inverse of the matrix
+𝐀
+{\mathbf{A}}
+𝐞
+{\mathbf{e}}
+the teleportation vector in PageRank
+𝐫
+{\mathbf{r}}
+PageRank of the input network
+𝐫
+⁡
+(
+i
+)
+{\mathbf{r}}\left(i\right)
+ranking score of
+i
+i
+Tr
+​
+(
+𝐀
+)
+\textrm{Tr}\left({\mathbf{A}}\right)
+Trace of the matrix
+𝐀
+{\mathbf{A}}
+f
+​
+(
+𝐫
+)
+\textit{f}\left({\mathbf{r}}\right)
+a loss function over ranking vector
+𝐫
+{\mathbf{r}}
+n
+n
+number of nodes in the input network
+m
+m
+number of edges in the input network
+c
+c
+damping factor in PageRank
+We use bold upper-case letters for matrices (e.g.,
+𝐀
+{\mathbf{A}}
+), bold lower-case letters for vectors (e.g.,
+𝐚
+{\mathbf{a}}
+), calligraphic fonts for sets (e.g.,
+𝒮
+\mathcal{S}
+), and lower-case letters for scalars (e.g.,
+c
+c
+). For matrix indexing conventions, we use the rules similar to Matlab that are shown as follows. We use
+𝐀
+⁡
+(
+i
+,
+j
+)
+{\mathbf{A}}(i,j)
+to denote the entry of matrix
+𝐀
+{\mathbf{A}}
+at
+i
+th
+i^{\rm th}
+row and
+j
+th
+j^{\rm th}
+column,
+𝐀
+(
+i
+,
+:
+)
+{\mathbf{A}}(i,:)
+to denote the
+i
+th
+i^{\rm th}
+row of matrix
+𝐀
+{\mathbf{A}}
+, and
+𝐀
+(
+:
+,
+j
+)
+{\mathbf{A}}(:,j)
+to denote the
+j
+th
+j^{\rm th}
+column of matrix
+𝐀
+{\mathbf{A}}
+. We use prime to denote the transpose of matrix (i.e.,
+𝐀
+′
+{\mathbf{A}}^{\prime}
+is the transpose of matrix
+𝐀
+{\mathbf{A}}
+).
+Given a graph
+𝐆
+{\mathbf{G}}
+with
+n
+n
+nodes and
+m
+m
+edges, PageRank essentially solves the following linear system,
+𝐫
+=
+c
+​
+𝐀𝐫
++
+(
+1
+−
+c
+)
+​
+𝐞
+{\mathbf{r}}=c{\mathbf{A}}{\mathbf{r}}+(1-c){\mathbf{e}}\vskip-5.69054pt
+(1)
+where
+𝐞
+{\mathbf{e}}
+is the teleportation vector with length
+n
+n
+and
+𝐀
+{\mathbf{A}}
+is the normalized adjacency matrix of the input graph. In PageRank,
+𝐞
+{\mathbf{e}}
+is chosen as the uniform distribution
+1
+n
+​
+𝟏
+\frac{1}{n}{\mathbf{1}}
+; in personalized PageRank,
+𝐞
+{\mathbf{e}}
+is a biased vector which reflects user’s preference (i.e., ‘personalization’)
+[
+8
+]
+; in random walk with restart
+[
+9
+]
+, all the probabilities are concentrated on a single node. A default choice for the normalized adjacency matrix
+𝐀
+{\mathbf{A}}
+is the column-normalized matrix (i.e., the stochastic matrix). A popular alternative choice is the normalized graph Laplacian matrix. In fact, as long as the largest eigenvalue of
+𝐀
+{\mathbf{A}}
+is less than
+1
+/
+c
+1/c
+, a fix-point solution of the above linear system will converge to
+𝐫
+=
+(
+1
+−
+c
+)
+​
+(
+𝐈
+−
+c
+​
+𝐀
+)
+−
+1
+​
+𝐞
+{\mathbf{r}}=(1-c)({\mathbf{I}}-c{\mathbf{A}})^{-1}{\mathbf{e}}
+[
+10
+]
+. In this paper, we use this general form for the adjacency matrix
+𝐀
+{\mathbf{A}}
+. For the ease of description, we also define
+𝐐
+=
+(
+𝐈
+−
+c
+​
+𝐀
+)
+−
+1
+{\mathbf{Q}}=({\mathbf{I}}-c{\mathbf{A}})^{-1}
+, and
+𝐫
+=
+pg
+​
+(
+𝐀
+,
+𝐞
+,
+c
+)
+{\mathbf{r}}=\textrm{pg}({\mathbf{A}},{\mathbf{e}},c)
+as the resulting PageRank vector with
+𝐀
+{\mathbf{A}}
+,
+𝐞
+{\mathbf{e}}
+, and
+c
+c
+as the corresponding inputs.
+Regarding explainable learning and mining techniques, Pang et al.
+[
+11
+]
+propose a novel notation of influence functions to quantify the impact of each training example on the underlying learning system (e.g., a classifier). The key idea is to trace the model’s prediction back to its training data, where the model parameters were derived. In this way, it learns how a perturbation of a single training data will affect the resulting model parameters, and then identifies the training examples that are most responsible for model’s predictions.
+Our proposed method to explain the PageRank results is built upon the principle outlined in
+[
+11
+]
+. To be specific, we aim to find a set of graph elements (e.g., edges, nodes, a subgraph) such that, when we perturb/remove them, the ranking vector will have the greatest change. Formally, we define PageRank auditing problem as follows:
+Problem 1
+PageRank Auditing Problem.
+Given
+: a graph with adjacency matrix
+𝐀
+{\mathbf{A}}
+, PageRank vector
+𝐫
+{\mathbf{r}}
+, a loss function
+f
+f
+over its PageRank vector, user-specific element type (e.g. edges vs. nodes vs. subgraphs), and an integer budget
+k
+k
+;
+Find
+: a set of
+k
+k
+influential graph elements that has the largest impact on the loss function over its PageRank vector
+f
+⁡
+(
+𝐫
+)
+f\left({\mathbf{r}}\right)
+.
+III
+Proposed Algorithm
+In this section, we propose a family of algorithms (
+Aurora
+), to solve PageRank auditing problem (Problem
+1
+), together with some analysis in terms of effectiveness as well as efficiency.
+III-A
+Formulation
+The intuition behind the proposed methods is to find a set of key graph elements (e.g., edges, nodes, subgraphs) whose perturbation/removal from the graph would affect the PageRank results most. To be specific, let
+𝐫
+=
+pg
+​
+(
+𝐀
+,
+𝐞
+,
+c
+)
+\mathbf{r}=\textrm{pg}(\mathbf{A},\mathbf{e},c)
+be the PageRank vector of the input graph
+𝐀
+\mathbf{A}
+, and
+𝐫
+𝒮
+=
+pg
+​
+(
+𝐀
+𝒮
+,
+𝐞
+,
+c
+)
+\mathbf{r}_{\mathcal{S}}=\textrm{pg}(\mathbf{A}_{\mathcal{S}},\mathbf{e},c)
+be the new PageRank vector after removing the graph elements in set
+𝒮
+\mathcal{S}
+. We formulate the PageRank auditing problem as the following optimization problem.
+max
+𝒮
+\displaystyle\underset{{\mathcal{S}}}{\text{max}}
+Δ
+​
+f
+=
+(
+f
+⁡
+(
+𝐫
+)
+−
+f
+⁡
+(
+𝐫
+𝒮
+)
+)
+2
+\displaystyle\Delta{f}=(f({\mathbf{r}})-f({\mathbf{r}}_{{\mathcal{S}}}))^{2}
+(2)
+s.t.
+\displaystyle\text{s.t.}
+|
+𝒮
+|
+=
+k
+\displaystyle|{\mathcal{S}}|=k
+In order to solve the above optimization problem, we need to answer two key questions including (Q1) how to quantitatively measure the influence of an individual graph element w.r.t. the objective function; and (Q2) how to collectively find a set of
+k
+k
+graph elements with the maximal influence. We first present our proposed solution for Q1 in Subsection
+III-B
+, and then propose three different algorithms for Q2 in Subsections
+III-C
+,
+III-D
+and
+III-E
+, depending on the specific type of graph elements (i.e., edges vs. nodes vs. subgraphs).
+III-B
+Measuring Graph Element Influence
+To measure how
+f
+⁡
+(
+𝐫
+)
+f({\mathbf{r}})
+will change if we perturb/remove a specific graph element, we define its influence as the rate of change in
+f
+⁡
+(
+𝐫
+)
+f({\mathbf{r}})
+.
+Definition 1
+(Graph Element Influence).
+The influence of an edge
+(
+i
+,
+j
+)
+(i,j)
+is defined as the derivative of the loss function
+f
+⁡
+(
+𝐫
+)
+f({\mathbf{r}})
+with respect to the edge, i.e.,
+𝕀
+⁡
+(
+i
+,
+j
+)
+=
+d
+​
+f
+​
+(
+𝐫
+)
+d
+​
+𝐀
+​
+(
+i
+,
+j
+)
+\mathbb{I}(i,j)=\frac{df({\mathbf{r}})}{d{\mathbf{A}}(i,j)}
+. The influence of a node is defined as the aggregation of all inbound and outbound edges that connect to the node., i.e.,
+𝕀
+⁡
+(
+i
+)
+=
+∑
+j
+=
+1
+,
+j
+≠
+i
+n
+[
+𝕀
+⁡
+(
+i
+,
+j
+)
++
+𝕀
+⁡
+(
+j
+,
+i
+)
+]
++
+∑
+j
+=
+1
+,
+j
+=
+i
+n
+𝕀
+⁡
+(
+i
+,
+j
+)
+{\mathbb{I}}(i)=\sum\limits_{j=1,j\neq i}^{n}[{\mathbb{I}}(i,j)+{\mathbb{I}}(j,i)]+\sum\limits_{j=1,j=i}^{n}{\mathbb{I}}(i,j)
+. And the influence of a subgraph is defined as the aggregation of all edges in the subgraph
+S
+S
+,
+𝕀
+⁡
+(
+S
+)
+=
+∑
+i
+,
+j
+∈
+S
+𝕀
+⁡
+(
+i
+,
+j
+)
+{\mathbb{I}}({S})=\sum\limits_{i,j\in S}{\mathbb{I}}(i,j)
+.
+We can see that the influence for both nodes and subgraphs can be naturally computed based on the edge influence. Therefore, we will focus on how to measure the edge influence. By the property of the derivative of matrices, we first rewrite the influence
+d
+​
+f
+​
+(
+𝐫
+)
+d
+​
+𝐀
+​
+(
+i
+,
+j
+)
+\frac{df({\mathbf{r}})}{d{\mathbf{A}}(i,j)}
+as
+d
+​
+f
+​
+(
+𝐫
+)
+d
+​
+𝐀
+=
+{
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
++
+(
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+)
+′
+−
+diag
+​
+(
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+)
+,
+i
+​
+f
+​
+u
+​
+n
+​
+d
+​
+i
+​
+r
+​
+e
+​
+c
+​
+t
+​
+e
+​
+d
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+,
+i
+​
+f
+​
+d
+​
+i
+​
+r
+​
+e
+​
+c
+​
+t
+​
+e
+​
+d
+\frac{df({\mathbf{r}})}{d{\mathbf{A}}}=\begin{cases}\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}+(\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}})^{\prime}-\textrm{diag}(\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}),&if\ undirected\\
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}},&if\ directed\end{cases}
+(3)
+Directly calculating
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}(i,j)}
+is hard, and we resort to the chain rule:
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+=
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐫
+​
+∂
+𝐫
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}(i,j)}=\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{r}}}\frac{\partial{\mathbf{r}}}{\partial{\mathbf{A}}(i,j)}
+(4)
+Next, we present the details on how to solve each partial derivative in Eq. (
+4
+) one by one.
+Computing
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐫
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{r}}}
+Here we discuss the choices of
+f
+⁡
+(
+⋅
+)
+f(\cdot)
+function. In this paper, we choose
+f
+⁡
+(
+⋅
+)
+f(\cdot)
+to be squared
+L
+2
+L_{2}
+norm for simplicity. However, it is worth mentioning that the proposed methods are applicable to a variety of other loss functions as well. We list some alternative choices and their corresponding derivatives in Table
+II
+. In the table,
+L
+p
+L_{p}
+norm
+is the most commonly-used vector norm that measures the overall sizes of the vector. Some commonly-used
+L
+p
+L_{p}
+norm includes
+L
+1
+L_{1}
+norm and
+L
+2
+L_{2}
+norm (also known as the Euclidean norm);
+soft maximum
+is used to approximate the maximum value of elements in the vector;
+energy norm
+is a measurement often used in system and control theory to measure the internal energy of vector.
+TABLE II
+:
+Choices of
+f
+⁡
+(
+⋅
+)
+f(\cdot)
+functions and their derivatives
+Descriptions
+Functions
+Derivatives
+L
+p
+L_{p}
+norm
+f
+⁡
+(
+𝐫
+)
+=
+‖
+𝐫
+‖
+p
+f({\mathbf{r}})=||{\mathbf{r}}||_{p}
+∂
+f
+∂
+𝐫
+=
+𝐫
+∘
+|
+𝐫
+|
+p
+−
+2
+‖
+𝐫
+‖
+p
+p
+−
+1
+\frac{\partial f}{\partial{\mathbf{r}}}=\frac{{\mathbf{r}}\circ|{\mathbf{r}}|^{p-2}}{||{\mathbf{r}}||_{p}^{p-1}}
+Soft maximum
+f
+⁡
+(
+𝐫
+)
+=
+l
+​
+o
+​
+g
+​
+(
+∑
+i
+=
+1
+n
+e
+​
+x
+​
+p
+​
+(
+𝐫
+⁡
+(
+i
+)
+)
+)
+f({\mathbf{r}})=log(\sum\limits_{i=1}^{n}exp({\mathbf{r}}(i)))
+∂
+f
+∂
+𝐫
+=
+[
+e
+​
+x
+​
+p
+​
+(
+𝐫
+⁡
+(
+i
+)
+)
+∑
+i
+=
+1
+n
+e
+​
+x
+​
+p
+​
+(
+𝐫
+⁡
+(
+i
+)
+CLOSE
+]
+\frac{\partial f}{\partial{\mathbf{r}}}=[\frac{exp({\mathbf{r}}(i))}{\sum\limits_{i=1}^{n}exp({\mathbf{r}}(i)}]
+Energy norm
+f
+⁡
+(
+𝐫
+)
+=
+𝐫
+′
+​
+𝐌𝐫
+f({\mathbf{r}})={\mathbf{r}}^{\prime}{\mathbf{M}}{\mathbf{r}}
+∂
+f
+∂
+𝐫
+=
+(
+𝐌
++
+𝐌
+′
+)
+​
+𝐫
+\frac{\partial f}{\partial{\mathbf{r}}}=({\mathbf{M}}+{\mathbf{M}}^{\prime}){\mathbf{r}}
+(
+𝐌
+{\mathbf{M}}
+in Energy Norm is a Hermitian positive definite matrix.)
+2. Computing
+∂
+𝐫
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+\frac{\partial{\mathbf{r}}}{\partial{\mathbf{A}}(i,j)}
+Recall that
+𝐀
+{\mathbf{A}}
+is the adjacency matrix of the input graph, and the PageRank solution can be written as solving the linear system in Eq. (
+1
+). Then we have that
+∂
+𝐫
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+=
+c
+​
+∂
+𝐀
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+​
+𝐫
++
+c
+​
+𝐀
+​
+∂
+𝐫
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+\frac{\partial{\mathbf{r}}}{\partial{\mathbf{A}}(i,j)}=c\frac{\partial\mathbf{A}}{\partial{\mathbf{A}}(i,j)}{\mathbf{r}}+c\mathbf{A}\frac{\partial{\mathbf{r}}}{\partial{\mathbf{A}}(i,j)}
+(5)
+Move the second term in Eq. (
+5
+) to the left, we have that
+(
+𝐈
+−
+c
+​
+𝐀
+)
+​
+∂
+𝐫
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+=
+c
+​
+∂
+𝐀
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+​
+𝐫
+({\mathbf{I}}-c{\mathbf{A}})\frac{\partial{\mathbf{r}}}{\partial{\mathbf{A}}(i,j)}=c\frac{\partial\mathbf{A}}{\partial{\mathbf{A}}(i,j)}{\mathbf{r}}
+(6)
+∂
+𝐫
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+=
+c
+​
+(
+𝐈
+−
+c
+​
+𝐀
+)
+−
+1
+​
+∂
+𝐀
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+​
+𝐫
+\frac{\partial{\mathbf{r}}}{\partial{\mathbf{A}}(i,j)}=c({\mathbf{I}}-c{\mathbf{A}})^{-1}\frac{\partial{\mathbf{A}}}{\partial{\mathbf{A}}(i,j)}{\mathbf{r}}
+(7)
+By the property of the first order derivative of matrix, we have that
+∂
+𝐀
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+=
+{
+𝐒
+i
+​
+j
++
+𝐒
+j
+​
+i
+,
+i
+​
+f
+​
+u
+​
+n
+​
+d
+​
+i
+​
+r
+​
+e
+​
+c
+​
+t
+​
+e
+​
+d
+𝐒
+i
+​
+j
+,
+i
+​
+f
+​
+d
+​
+i
+​
+r
+​
+e
+​
+c
+​
+t
+​
+e
+​
+d
+\frac{\partial{\mathbf{A}}}{\partial{\mathbf{A}}(i,j)}=\begin{cases}{\mathbf{S}}^{ij}+{\mathbf{S}}^{ji},&if\ undirected\\
+{\mathbf{S}}^{ij},&if\ directed\end{cases}
+(8)
+where
+𝐒
+i
+​
+j
+{\mathbf{S}}^{ij}
+is the single-entry matrix with
+1
+1
+at
+i
+th
+i^{\rm th}
+row and
+j
+th
+j^{\rm th}
+column and
+0
+0
+elsewhere. Recall that
+𝐐
+=
+(
+𝐈
+−
+c
+​
+𝐀
+)
+−
+1
+{\mathbf{Q}}=({\mathbf{I}}-c{\mathbf{A}})^{-1}
+, we can re-write Eq. (
+7
+) as the following equation.
+∂
+𝐫
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+=
+c
+𝐫
+(
+j
+)
+𝐐
+(
+:
+,
+i
+)
+\frac{\partial{\mathbf{r}}}{\partial{\mathbf{A}}(i,j)}=c{\mathbf{r}}(j)\mathbf{Q}(:,i)
+(9)
+Combine everything together, we get the closed-form solution for calculating the influence of an edge
+(
+i
+,
+j
+)
+(i,j)
+as follows:
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+⁡
+(
+i
+,
+j
+)
+=
+2
+c
+𝐫
+(
+j
+)
+Tr
+(
+𝐫
+′
+𝐐
+(
+:
+,
+i
+)
+)
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}(i,j)}=2c{\mathbf{r}}(j)\textrm{Tr}({\mathbf{r}}^{\prime}{\mathbf{Q}}(:,i))
+(10)
+Following Eq. (
+10
+), we get the matrix of gradients for all edges as
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+=
+2
+​
+c
+​
+(
+1
+−
+c
+)
+​
+𝐐
+′
+​
+𝐫𝐞
+′
+​
+𝐐
+′
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}=2c(1-c){\mathbf{Q}}^{\prime}{\mathbf{r}}{\mathbf{e}}^{\prime}{\mathbf{Q}}^{\prime}
+(11)
+Two major computational challenges in calculating
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}
+lie in (1) calculating
+𝐐
+{\mathbf{Q}}
+with
+O
+⁡
+(
+n
+3
+)
+O(n^{3})
+time complexity and (2)
+O
+⁡
+(
+n
+2
+)
+O(n^{2})
+space complexity to save the matrix of gradients. We address both challenges by exploring the low-rank structure of
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}
+. From Eq. (
+11
+), we can show that it can be re-written as the following low-rank form
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+=
+2
+​
+c
+​
+(
+1
+−
+c
+)
+​
+𝐐
+′
+​
+𝐫𝐞
+′
+​
+𝐐
+′
+=
+2
+​
+c
+​
+(
+𝐐
+′
+​
+𝐫
+)
+​
+𝐫
+′
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}=2c(1-c){\mathbf{Q}}^{\prime}{\mathbf{r}}{\mathbf{e}}^{\prime}{\mathbf{Q}}^{\prime}=2c({\mathbf{Q}}^{\prime}{\mathbf{r}}){\mathbf{r}}^{\prime}
+(12)
+where
+𝐐
+′
+​
+𝐫
+{\mathbf{Q}}^{\prime}{\mathbf{r}}
+is an
+n
+×
+1
+n\times 1
+vector and
+𝐫
+{\mathbf{r}}
+is an
+n
+×
+1
+n\times 1
+PageRank vector. Since
+𝐫
+=
+(
+1
+−
+c
+)
+​
+𝐐𝐞
+{\mathbf{r}}=(1-c){\mathbf{Q}}{\mathbf{e}}
+, we have that
+𝐐
+′
+​
+𝐫
+{\mathbf{Q}}^{\prime}{\mathbf{r}}
+is a personalized PageRank on the reverse of the input graph with
+𝐫
+{\mathbf{r}}
+as teleportation vector with a constant scaling. With this in mind, we do not need to calculate
+𝐐
+{\mathbf{Q}}
+explicitly, or to save the entire matrix directly. Instead, we can use power method to calculate
+𝐫
+{\mathbf{r}}
+and
+𝐐
+′
+​
+𝐫
+{\mathbf{Q}}^{\prime}{\mathbf{r}}
+, each with
+O
+⁡
+(
+m
+)
+O(m)
+time and save these two vectors with
+O
+⁡
+(
+n
+)
+O(n)
+space. To extract the element of
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}
+at the
+i
+th
+i^{\textrm{th}}
+row and the
+j
+th
+j^{\textrm{th}}
+column, we simply calculate the product of the
+i
+th
+i^{\textrm{th}}
+element in
+𝐐
+′
+​
+𝐫
+{\mathbf{Q}}^{\prime}{\mathbf{r}}
+and the
+j
+th
+j^{\textrm{th}}
+element in
+𝐫
+{\mathbf{r}}
+, and scale it by
+2
+​
+c
+2c
+, which takes
+O
+⁡
+(
+1
+)
+O(1)
+time.
+III-C
+Auditing by Edges:
+Aurora
+-E
+Due to its combinatorial nature, straight-forward methods for solving the optimization problem in Eq. (
+2
+) are not feasible. The key behind the proposed family of algorithms is due to the diminishing returns property of Problem
+1
+, which is summarized in Theorem
+1
+Theorem 1
+(Diminishing Returns Property of Problem 1). For any loss function listed in Table 2, and for any set of graph elements
+𝒮
+{\mathcal{S}}
+, which could be either a set of edges, nodes or subgraphs, in the given graph, its influence measure
+𝕀
+⁡
+(
+𝒮
+)
+{\mathbb{I}({\mathcal{S}})}
+defined in Definition 1 is (a) normalized; (b) monotonically non-decreasing; (c) submodular, where
+𝒮
+⊆
+ℰ
+{\mathcal{S}}\subseteq{\mathcal{E}}
+.
+Proof:
+We only prove the diminishing returns property in the edge case. The proofs for nodes and subgraphs are similar and thus is omitted due to the space limitation.
+Let
+𝕀
+⁡
+(
+𝒮
+)
+=
+∑
+(
+i
+,
+j
+)
+∈
+𝒮
+𝕀
+⁡
+(
+i
+,
+j
+)
+{\mathbb{I}}({\mathcal{S}})=\sum\limits_{(i,j)\in{\mathcal{S}}}{\mathbb{I}}(i,j)
+. It is trivial that if there is no edge selected, the influence is 0. Thus it is normalized.
+Let
+ℐ
+,
+𝒥
+,
+𝒦
+{\mathcal{I}},{\mathcal{J}},{\mathcal{K}}
+be three sets and
+ℐ
+⊆
+𝒥
+{\mathcal{I}}\subseteq{\mathcal{J}}
+. We further define three sets
+𝒮
+,
+𝒯
+,
+𝒦
+{\mathcal{S}},{\mathcal{T}},{\mathcal{K}}
+as follows:
+𝒮
+=
+ℐ
+∪
+𝒦
+{\mathcal{S}}={\mathcal{I}}\cup{\mathcal{K}}
+,
+𝒯
+=
+𝒥
+∪
+𝒦
+{\mathcal{T}}={\mathcal{J}}\cup{\mathcal{K}}
+and
+ℛ
+=
+𝒥
+∖
+ℐ
+{\mathcal{R}}={\mathcal{J}}\setminus{\mathcal{I}}
+, then we have
+𝕀
+⁡
+(
+𝒥
+)
+−
+𝕀
+⁡
+(
+ℐ
+)
+=
+∑
+(
+i
+,
+j
+)
+∈
+𝒥
+𝕀
+⁡
+(
+i
+,
+j
+)
+−
+∑
+(
+i
+,
+j
+)
+∈
+ℐ
+𝕀
+⁡
+(
+i
+,
+j
+)
+=
+∑
+(
+i
+,
+j
+)
+∈
+𝒥
+∖
+ℐ
+𝕀
+⁡
+(
+i
+,
+j
+)
+=
+∑
+(
+i
+,
+j
+)
+∈
+ℛ
+𝕀
+⁡
+(
+i
+,
+j
+)
+≥
+0
+\begin{split}{\mathbb{I}}({\mathcal{J}})-{\mathbb{I}}({\mathcal{I}})&=\sum\limits_{(i,j)\in{\mathcal{J}}}{\mathbb{I}}(i,j)-\sum\limits_{(i,j)\in{\mathcal{I}}}{\mathbb{I}}(i,j)\\
+&=\sum\limits_{(i,j)\in{\mathcal{J}}\setminus{\mathcal{I}}}{\mathbb{I}}(i,j)\\
+&=\sum\limits_{(i,j)\in{\mathcal{R}}}{\mathbb{I}}(i,j)\\
+&\geq 0\end{split}
+which proves that
+𝕀
+⁡
+(
+𝒮
+)
+{\mathbb{I}}({\mathcal{S}})
+is monotonically non-decreasing.
+Finally, we prove that it is submodular. Define
+𝒫
+=
+𝒯
+∖
+𝒮
+{\mathcal{P}}={\mathcal{T}}\setminus{\mathcal{S}}
+. We have that
+𝒫
+=
+(
+𝒥
+∪
+𝒦
+)
+∖
+(
+ℐ
+∪
+𝒦
+)
+=
+ℛ
+∖
+(
+ℛ
+∩
+𝒦
+)
+⊆
+ℛ
+=
+𝒥
+∖
+ℐ
+{\mathcal{P}}=({\mathcal{J}}\cup{\mathcal{K}})\setminus({\mathcal{I}}\cup{\mathcal{K}})={\mathcal{R}}\setminus({\mathcal{R}}\cap{\mathcal{K}})\subseteq{\mathcal{R}}={\mathcal{J}}\setminus{\mathcal{I}}
+. Then we have
+𝕀
+⁡
+(
+𝒯
+)
+−
+𝕀
+⁡
+(
+𝒮
+)
+=
+∑
+(
+i
+,
+j
+)
+∈
+𝒫
+𝕀
+⁡
+(
+i
+,
+j
+)
+≤
+𝕀
+⁡
+(
+𝒥
+)
+−
+𝕀
+⁡
+(
+ℐ
+)
+{\mathbb{I}}({\mathcal{T}})-{\mathbb{I}}({\mathcal{S}})=\sum\limits_{(i,j)\in{\mathcal{P}}}{\mathbb{I}}(i,j)\leq{\mathbb{I}}({\mathcal{J}})-{\mathbb{I}}({\mathcal{I}})
+which proves the submodularity of the edge influence.
+∎
+The diminishing returns property naturally leads to a greedy algorithm to obtain a near-optimal solution for solving Problem
+1
+. We first present the algorithm for auditing by edges in this subsection. The algorithms for auditing by nodes and by subgraphs will be presented in Subsections
+III-D
+and
+III-E
+, respectively.
+With the diminishing returns property, we propose
+Aurora
+-E (Algorithm
+1
+) algorithm to find top-
+k
+influential edges. The key idea of
+Aurora
+-E is to select one edge and update the gradient matrix at each of the
+k
+k
+iterations.
+Input :
+The adjacency matrix
+𝐀
+{\mathbf{A}}
+, integer budget
+k
+k
+Output :
+A set of
+k
+k
+edges
+𝒮
+\mathcal{S}
+with the highest influence
+initialize
+𝒮
+=
+∅
+\mathcal{S}=\emptyset
+;
+1
+initialize
+c
+c
+(e.g.,
+c
+=
+1
+/
+2
+​
+max
+⁡
+eigenvalue
+​
+(
+𝐀
+)
+c=1/{2\max\textrm{eigenvalue}({\mathbf{A}})}
+);
+2
+calculate PageRank
+𝐫
+=
+pg
+​
+(
+𝐀
+,
+𝐞
+,
+c
+)
+{\mathbf{r}}=\textrm{pg}({\mathbf{A}},{\mathbf{e}},c)
+;
+3
+calculate partial gradients
+∂
+f
+⁡
+(
+r
+)
+∂
+A
+\frac{\partial f(\textbf{r})}{\partial\textbf{A}}
+by Eq. (
+12
+);
+4
+calculate gradients
+d
+​
+f
+​
+(
+r
+)
+d
+​
+A
+\frac{df(\textbf{r})}{d\textbf{A}}
+by Eq. (
+3
+);
+5
+while
+|
+𝒮
+|
+≠
+k
+|\mathcal{S}|\neq k
+do
+6
+find
+(
+i
+,
+j
+)
+=
+argmax
+(
+i
+,
+j
+)
+​
+𝕀
+​
+(
+i
+,
+j
+)
+(i,j)=\underset{(i,j)}{\argmax}\ {\mathbb{I}}(i,j)
+with Eq. (
+3
+);
+7
+add edge
+(
+i
+,
+j
+)
+(i,j)
+to
+𝒮
+\mathcal{S}
+;
+8
+remove
+(
+i
+,
+j
+)
+(i,j)
+, and remove
+(
+j
+,
+i
+)
+(j,i)
+if undirected;
+9
+re-calculate
+𝐫
+{\mathbf{r}}
+,
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}
+by Eq. (
+12
+), and
+d
+​
+f
+​
+(
+𝐫
+)
+d
+​
+𝐀
+\frac{df({\mathbf{r}})}{d{\mathbf{A}}}
+by Eq. (
+3
+);
+10
+return
+𝒮
+\mathcal{S}
+;
+11
+Algorithm 1
+Aurora
+-E
+The effectiveness and efficiency of the proposed
+Aurora
+-E are summarized in Lemma
+1
+and Lemma
+2
+, respectively. We can see that
+Aurora
+-E finds a
+(
+1
+−
+1
+/
+e
+)
+(1-1/e)
+near-optimal solution with a linear complexity.
+Lemma 1
+(Approximation Ratio of
+Aurora
+-E).
+Let
+𝒮
+k
+=
+{
+s
+1
+,
+s
+2
+,
+…
+,
+s
+k
+}
+{\mathcal{S}}_{k}=\newline
+\{s_{1},s_{2},...,s_{k}\}
+represents the set formed by
+Aurora
+-E,
+𝒪
+\mathcal{O}
+is the optimal solution of Problem
+1
+,
+𝕀
+⁡
+(
+𝒮
+)
+{\mathbb{I}}({\mathcal{S}})
+is the influence defined in Definition
+1
+.
+𝕀
+⁡
+(
+𝒮
+k
+)
+≥
+(
+1
+−
+1
+/
+e
+)
+​
+𝕀
+​
+(
+𝒪
+)
+{\mathbb{I}}({\mathcal{S}}_{k})\geq(1-1/e){\mathbb{I}}({\mathcal{O}})\vskip-5.69054pt
+Proof:
+Omitted for space.
+
+∎
+Lemma 2
+(Time and Space Complexities of
+Aurora
+-E). Algorithm 1 is
+O
+⁡
+(
+m
+​
+k
+)
+O(mk)
+in time and
+O
+⁡
+(
+m
++
+n
+)
+O(m+n)
+in space, where
+m
+m
+and
+n
+n
+are the numbers of edges and nodes in the input graph; and
+k
+k
+is the budget.
+Proof:
+It takes
+O
+⁡
+(
+m
+)
+O(m)
+time complexity to calculate
+r
+and
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}
+by applying power iterations. In the while-loop, we find the edge with the greatest influence by traversing all edges, which takes
+O
+⁡
+(
+m
+)
+O(m)
+time. Time spent to re-calculate
+𝐫
+{\mathbf{r}}
+and
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}
+remains the same as
+O
+⁡
+(
+m
+)
+O(m)
+. Since the body inside the loop will run
+k
+k
+times, the overall time complexity is
+O
+⁡
+(
+m
+​
+k
+)
+O(mk)
+. In Algorithm 1, it takes
+O
+⁡
+(
+m
+)
+O(m)
+space to save the sparse adjacency matrix
+𝐀
+{\mathbf{A}}
+and
+O
+⁡
+(
+n
+)
+O(n)
+space to save the PageRank vector
+𝐫
+{\mathbf{r}}
+and column vector
+𝐐
+′
+​
+𝐫
+\mathbf{Q}^{\prime}\mathbf{r}
+in Eq. (
+12
+). Therefore it has
+O
+⁡
+(
+m
++
+n
+)
+O(m+n)
+space complexity.
+∎
+III-D
+Auditing by Nodes:
+Aurora
+-N
+By Theorem
+1
+, the influence of nodes also enjoys the diminishing returns property. Following this, we propose a greedy algorithm
+Aurora
+-N (Algorithm
+2
+) to find a set of
+k
+k
+influential nodes with
+(
+1
+−
+1
+/
+e
+)
+(1-1/e)
+approximation ratio with a linear complexity. The efficiency of the proposed
+Aurora
+-N is summarized in Lemma
+3
+.
+Input :
+The adjacency matrix
+A
+, integer budget
+k
+k
+Output :
+A set of
+k
+k
+nodes
+𝒮
+\mathcal{S}
+with highest influence
+initialize
+𝒮
+=
+∅
+\mathcal{S}=\emptyset
+;
+1
+initialize
+c
+c
+(e.g.,
+c
+=
+1
+/
+2
+​
+max
+⁡
+eigenvalue
+​
+(
+𝐀
+)
+c=1/{2\max\textrm{eigenvalue}({\mathbf{A}})}
+);
+2
+calculate PageRank
+𝐫
+=
+pg
+​
+(
+𝐀
+,
+𝐞
+,
+c
+)
+{\mathbf{r}}=\textrm{pg}({\mathbf{A}},{\mathbf{e}},c)
+;
+3
+calculate partial gradients
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}
+by Eq. (
+12
+);
+4
+calculate gradients
+d
+​
+f
+​
+(
+𝐫
+)
+d
+​
+𝐀
+\frac{df({\mathbf{r}})}{d{\mathbf{A}}}
+by Eq. (
+3
+);
+5
+while
+|
+𝒮
+|
+≠
+k
+|\mathcal{S}|\neq k
+do
+6
+find
+v
+i
+=
+argmax
+𝑖
+​
+𝕀
+​
+(
+i
+)
+v_{i}=\underset{i}{\argmax}\ {\mathbb{I}}(i)
+;
+7
+add
+v
+i
+v_{i}
+to
+𝒮
+\mathcal{S}
+;
+8
+remove all inbound and outbound edges of
+v
+i
+v_{i}
+;
+9
+re-calculate
+𝐫
+{\mathbf{r}}
+,
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}
+by Eq. (
+12
+), and
+d
+​
+f
+​
+(
+𝐫
+)
+d
+​
+𝐀
+\frac{df({\mathbf{r}})}{d{\mathbf{A}}}
+by Eq. (
+3
+);
+10
+return
+𝒮
+\mathcal{S}
+;
+11
+Algorithm 2
+Aurora
+-N
+Lemma 3
+(Time and Space Complexities of
+Aurora
+-N). Algorithm 2 is
+O
+⁡
+(
+m
+​
+k
+)
+O(mk)
+in time and
+O
+⁡
+(
+m
++
+n
+)
+O(m+n)
+in space, where
+m
+m
+and
+n
+n
+are the numbers of edges and nodes in the input graph; and
+k
+k
+is the budget.
+Proof:
+Omitted for space.
+∎
+III-E
+Auditing by Subgraphs:
+Aurora
+-S
+Here, we discuss how to select an influential subgraph with
+k
+k
+nodes and we focus on the vertex-induced subgraph. With the diminishing returns property (Theorem
+1
+) in mind, we propose
+Aurora
+-S (Algorithm
+3
+) to greedily identify the influential subgraph with
+(
+1
+−
+1
+/
+e
+)
+(1-1/e)
+approximation ratio with a linear complexity. The efficiency of the proposed
+Aurora
+-S is summarized in Lemma
+4
+.
+Input :
+The adjacency matrix
+𝐀
+{\mathbf{A}}
+, output size
+k
+k
+Output :
+A vertex-induced subgraph of
+k
+k
+nodes
+𝒮
+\mathcal{S}
+with highest influence
+initialize
+𝒮
+=
+∅
+\mathcal{S}=\emptyset
+;
+1
+initialize
+c
+c
+(e.g.,
+c
+=
+1
+/
+2
+​
+max
+⁡
+eigenvalue
+​
+(
+𝐀
+)
+c=1/{2\max\textrm{eigenvalue}({\mathbf{A}})}
+);
+2
+calculate PageRank
+𝐫
+=
+pg
+​
+(
+𝐀
+,
+𝐞
+,
+c
+)
+{\mathbf{r}}=\textrm{pg}({\mathbf{A}},{\mathbf{e}},c)
+;
+3
+calculate partial gradients
+∂
+f
+⁡
+(
+r
+)
+∂
+A
+\frac{\partial f(\textbf{r})}{\partial\textbf{A}}
+by Eq. (
+12
+);
+4
+calculate gradients
+d
+​
+f
+​
+(
+r
+)
+d
+​
+A
+\frac{df(\textbf{r})}{d\textbf{A}}
+by Eq. (
+3
+);
+5
+while
+|
+𝒮
+|
+≠
+k
+|\mathcal{S}|\neq k
+do
+6
+find
+(
+i
+,
+j
+)
+=
+argmax
+(
+i
+,
+j
+)
+​
+𝕀
+​
+(
+i
+,
+j
+)
+(i,j)=\underset{(i,j)}{\argmax}\ {\mathbb{I}}(i,j)
+;
+7
+if
+|
+𝒮
+|
++
+2
+≤
+k
+|\mathcal{S}|+2\leq k
+then
+8
+add
+v
+i
+v_{i}
+and
+v
+j
+v_{j}
+to
+𝒮
+\mathcal{S}
+;
+9
+else
+10
+find the endpoint
+v
+v
+with higher gradient;
+11
+if
+v
+∉
+𝒮
+v\not\in\mathcal{S}
+then
+12
+add
+v
+v
+to
+𝒮
+\mathcal{S}
+;
+13
+else
+14
+add the other endpoint to
+𝒮
+\mathcal{S}
+;
+15
+remove all edges in
+𝒮
+\mathcal{S}
+;
+16
+re-calculate
+𝐫
+{\mathbf{r}}
+,
+∂
+f
+⁡
+(
+𝐫
+)
+∂
+𝐀
+\frac{\partial f({\mathbf{r}})}{\partial{\mathbf{A}}}
+by Eq. (
+12
+), and
+d
+​
+f
+​
+(
+𝐫
+)
+d
+​
+𝐀
+\frac{df({\mathbf{r}})}{d{\mathbf{A}}}
+by Eq. (
+3
+);
+17
+return
+𝒮
+\mathcal{S}
+;
+18
+Algorithm 3
+Aurora
+-S
+Lemma 4
+(Time and Space Complexities of
+Aurora
+-S). Algorithm 3 is
+O
+⁡
+(
+m
+​
+k
+)
+O(mk)
+in time and
+O
+⁡
+(
+m
++
+n
+)
+O(m+n)
+in space, where
+m
+m
+and
+n
+n
+are the numbers of edges and nodes in the input graph; and
+k
+k
+is the budget.
+Proof:
+Omitted for space.
+∎
+III-F
+Generalization and Variants
+The proposed family of
+Aurora
+algorithms assume the input graph is a plain network. However, it is worth pointing out that
+Aurora
+algorithms also work on different types of networks and other random walk-based techniques.
+Aurora
+on Normalized PageRank
+Recall that in Section
+II
+, we remove the constraint of
+𝐀
+{\mathbf{A}}
+being a normalized adjacency matrix and use the general form instead. The effect of removing that constraint will cause the
+L
+1
+L_{1}
+norm of PageRank to be not equal to 1. We show that
+Aurora
+is also able to work on
+L
+1
+L_{1}
+normalized PageRank. Let
+S
+⁡
+(
+𝐫
+)
+=
+∑
+i
+𝐫
+⁡
+(
+i
+)
+S({\mathbf{r}})=\sum_{i}{\mathbf{r}}(i)
+, we have
+∂
+f
+⁡
+(
+r
+)
+∂
+𝐀
+=
+c
+​
+𝐐
+′
+​
+(
+−
+2
+​
+f
+​
+(
+𝐫
+)
+S
+⁡
+(
+𝐫
+)
+​
+𝟏
++
+2
+S
+⁡
+(
+𝐫
+)
+​
+𝐫
+)
+​
+𝐫
+′
+\frac{\partial f(r)}{\partial\mathbf{A}}=c\mathbf{Q}^{\prime}(-\frac{2f({\mathbf{r}})}{S({\mathbf{r}})}{\mathbf{1}}+\frac{2}{S({\mathbf{r}})}{\mathbf{r}}){\mathbf{r}}^{\prime}
+(13)
+Then we can apply
+Aurora
+algorithms by replacing Eq. (
+12
+) with Eq. (
+13
+)
+Aurora
+on Network of Networks
+Network of Networks (NoN) is a type of networks first introduced in
+[
+12
+]
+with the ability to leverage the within-network smoothness in the domain-specific network and the cross-network consistency through the main network. An NoN is usually defined as the triplet
+ℛ
+=
+<
+𝐆
+,
+𝒜
+,
+θ
+>
+{\mathcal{R}}=<{\mathbf{G}},{\mathcal{A}},\theta>
+, where
+𝐆
+{\mathbf{G}}
+is the main network,
+𝒜
+{\mathcal{A}}
+is a set of domain-specific network and
+θ
+\theta
+is a mapping function to map the main node to the corresponding domain-specific network. In
+[
+12
+]
+,
+CrossRank
+and
+CrossQuery
+are two ranking algorithms proposed to solve ranking on NoN. The authors have proved that they are actually equivalent to the well-known PageRank and random walk with restart on the integrated graph. Thus,
+Aurora
+algorithms also have the ability to audit
+CrossRank
+and
+CrossQuery
+on Network of Networks.
+Aurora
+on Attributed Networks
+Given a large attributed network, it is important to learn the most influential node-attribute or edge-attribute w.r.t. a query node. We show that
+Aurora
+algorithms have the ability to find top-
+k
+k
+influential edge-attributes and node-attributes on attributed networks. The central idea is to treat attributes as
+attribute nodes
+and form an augmented graph with those attribute nodes. To support node attributes, let
+𝐀
+{\mathbf{A}}
+be the
+a
+×
+a
+a\times a
+node-to-node adjacency matrix, and
+𝐖
+{\mathbf{W}}
+be the
+w
+×
+a
+w\times a
+node-to-attribute matrix, then we can form an augmented graph
+𝐆
+=
+(
+𝐀
+𝟎
+𝐖
+𝟎
+)
+{\mathbf{G}}=\bigl(\begin{smallmatrix}{\mathbf{A}}&{\mathbf{0}}\\
+{\mathbf{W}}&{\mathbf{0}}\end{smallmatrix}\bigr)
+. To support edge attributes, similar to
+[
+13
+]
+, we embed an edge-node for each edge in the input graph and define a mapping function
+ψ
+\psi
+that maps each edge-node to edge attribute in the original graph. We assume
+𝐀
+{\mathbf{A}}
+is the
+a
+×
+a
+a\times a
+node-to-node adjacency matrix, and
+b
+b
+is the number of different edge attribute values. By embedding edge-node, it creates a
+(
+a
++
+b
+)
+×
+(
+a
++
+b
+)
+(a+b)\times(a+b)
+augmented graph
+𝐘
+{\mathbf{Y}}
+. Then to find the top-
+k
+k
+influential node-attributes and edge-attributes, we can easily run
+Aurora
+-N on the augmented attributed graphs
+𝐆
+{\mathbf{G}}
+and
+𝐘
+{\mathbf{Y}}
+, respectively.
+IV
+Experimental Evaluation
+In this section, we evaluate the proposed
+Aurora
+algorithms. All experiments are designed to answer the following two questions:
+•
+Effectiveness.
+How effective are the proposed
+Aurora
+algorithms in identifying key graph elements w.r.t. the PageRank results?
+•
+Efficiency.
+How efficient and scalable are the proposed
+Aurora
+algorithms?
+IV-A
+Setup
+Datasets.
+We test our algorithms on a diverse set of real-world network datasets. All datasets are publicly available. The statistics of these datasets are listed in Table
+III
+.
+TABLE III
+:
+Statistics of the datasets
+Category
+Network
+Type
+Nodes
+Edges
+Social
+Karate
+U
+34
+78
+Dolphins
+U
+62
+159
+WikiVote
+D
+7,115
+103,689
+Pokec
+D
+1,632,803
+30,622,564
+Collaboration
+GrQc
+U
+5,242
+14,496
+DBLP
+U
+42,252
+420,640
+NBA
+U
+3,923
+127,034
+cit-DBLP
+D
+12,591
+49,743
+cit-HepTh
+D
+27,770
+352,807
+cit-HepPh
+D
+34,546
+421,578
+Physical
+Airport
+D
+1,128
+18,736
+Others
+Lesmis
+U
+77
+254
+Amazon
+D
+262,111
+1,234,877
+(In Type, U means undirected graph; D means directed graph.)
+•
+Social Networks
+. Here, nodes are users and edges indicate social relationships. Among them,
+Karate
+[
+14
+]
+is a well-known network dataset of a university karate club collected by Wayne Zachary in 1977.
+Dolphins
+[
+15
+]
+is an undirected social network of frequent associations between dolphins in a community living off Doubtful Sound, New Zealand.
+WikiVote
+[
+16
+]
+is generated by Wikipedia voting data from the inception of Wikipedia till January 2008.
+Pokec
+[
+17
+]
+is a popular online social network in Slovakia.
+•
+Collaboration Networks
+. Here, nodes are individuals and two people are connected if they have collaborated together.
+We use the collaboration network in the field of General Relativity and Quantum Cosmology (
+GrQc
+) in Physics from arXiv preprint archive
+2
+2
+2
+https://arxiv.org/
+.
+DBLP
+3
+3
+3
+http://dblp.uni-trier.de/
+is a co-authorship network from DBLP computer science bibliography.
+And
+NBA
+[
+18
+]
+is a collaboration network of NBA players from 1946 to 2009.
+cit-DBLP
+[
+19
+]
+is the citation network of DBLP, a database of scientific publications such as papers and books. Each node in the network is a publication, and each edge represents a citation of a publication by another publication.
+cit-HepTh
+[
+20
+]
+is an ArXiv HEP-TH (High Energy Physics - Theory) citation network. The data covers papers from January 1993 to April 2003. If a paper
+i
+i
+cites paper
+j
+j
+, there is a directed edge from
+i
+i
+to
+j
+j
+.
+cit-HepPh
+[
+20
+]
+is an ArXiv HEP-PH (High Energy Physics - Phenomenology) citation network. The data covers papers from January 1993 to April 2003. If a paper
+i
+i
+cites paper
+j
+j
+, there is a directed edge from
+i
+i
+to
+j
+j
+.
+•
+Physical Infrastructure Networks
+. This category refers to the networks of physical infrastructure entities. Nodes in them correspond to physical infrastructure, and edges are connections.
+Airport
+4
+4
+4
+https://www.transtats.bts.gov/
+is a dataset of airline traffic. Each node represents an airport in the United States, an edge
+(
+i
+,
+j
+)
+(i,j)
+represents the airline from
+i
+i
+to
+j
+j
+while the edge weight stands for the normalized number of passengers.
+•
+Others
+. This category contains networks that do not fit into the above categories.
+Lesmis
+[
+21
+]
+is a network of co-appearances of characters in Victor Hugo’s novel
+”Les Miserables”
+. A node represents a character and an edge connects a pair of characters if they both appear in the same chapter of the book.
+Amazon
+[
+22
+]
+is a co-purchasing network collected by crawling Amazon website. It is based on the
+Customers Who Bought This Item Also Bought
+feature.
+Baseline Methods.
+We compare our proposed methods with several baseline methods, which are summarized as follows.
+•
+Brute force (brute force)
+. Calculate the changes by iterating all possible combinations of graph elements.
+•
+Random Selection (random)
+. Randomly select
+k
+k
+elements and calculate the change by removing them.
+•
+Top-
+k
+k
+Degrees (degree)
+. We first define the degree of an edge
+(
+u
+,
+v
+)
+(u,v)
+as follows,
+d
+⁡
+(
+u
+,
+v
+)
+=
+{
+(
+d
+⁡
+(
+u
+)
++
+d
+⁡
+(
+v
+)
+)
+×
+max
+i
+∈
+{
+u
+,
+v
+}
+​
+d
+​
+(
+i
+)
+,
+i
+​
+f
+​
+u
+​
+n
+​
+d
+​
+i
+​
+r
+​
+e
+​
+c
+​
+t
+​
+e
+​
+d
+(
+d
+⁡
+(
+u
+)
++
+d
+⁡
+(
+v
+)
+)
+×
+d
+⁡
+(
+u
+)
+,
+i
+​
+f
+​
+d
+​
+i
+​
+r
+​
+e
+​
+c
+​
+t
+​
+e
+​
+d
+d(u,v)=\begin{cases}(d(u)+d(v))\times\underset{i\in\{u,v\}}{\max}d(i),&if\ undirected\\
+(d(u)+d(v))\times d(u),&if\ directed\end{cases}
+where
+d
+⁡
+(
+u
+)
+d(u)
+represents the degree of node
+u
+u
+.
+To audit by graph elements, we select
+k
+k
+elements with the highest degrees. For edges, we select
+k
+k
+edges with the highest edge degrees defined above; for nodes, we select
+k
+k
+nodes with the highest node degrees; for subgraphs, we form a vertex-induced subgraph from
+k
+k
+nodes with the highest degrees.
+•
+PageRank
+. We first define the PageRank score of an edge
+(
+u
+,
+v
+)
+(u,v)
+as follows,
+𝐫
+⁡
+(
+u
+,
+v
+)
+=
+{
+(
+𝐫
+⁡
+(
+u
+)
++
+𝐫
+⁡
+(
+v
+)
+)
+×
+max
+i
+∈
+{
+u
+,
+v
+}
+​
+𝐫
+​
+(
+i
+)
+,
+i
+​
+f
+​
+u
+​
+n
+​
+d
+​
+i
+​
+r
+​
+e
+​
+c
+​
+t
+​
+e
+​
+d
+(
+𝐫
+⁡
+(
+u
+)
++
+𝐫
+⁡
+(
+v
+)
+)
+×
+𝐫
+⁡
+(
+u
+)
+,
+i
+​
+f
+​
+d
+​
+i
+​
+r
+​
+e
+​
+c
+​
+t
+​
+e
+​
+d
+{\mathbf{r}}(u,v)=\begin{cases}({\mathbf{r}}(u)+{\mathbf{r}}(v))\times\underset{i\in\{u,v\}}{\max}{\mathbf{r}}(i),&if\ undirected\\
+({\mathbf{r}}(u)+{\mathbf{r}}(v))\times{\mathbf{r}}(u),&if\ directed\end{cases}
+where
+r
+⁡
+(
+u
+)
+r(u)
+is the PageRank score of node
+u
+u
+.
+To audit by graph elements, we select
+k
+k
+elements with the highest PageRank scores. That is, for edges, we select
+k
+k
+edges with the highest PageRank scores defined above; for nodes, we select
+k
+k
+nodes with highest PageRank scores; for subgraphs, we form a vertex-induced subgraph from
+k
+k
+nodes with the highest PageRank scores.
+•
+HITS
+. We first define HITS score of an edge
+(
+u
+,
+v
+)
+(u,v)
+and node
+u
+u
+as follows,
+H
+​
+I
+​
+T
+​
+S
+​
+(
+u
+,
+v
+)
+=
+h
+​
+u
+​
+b
+​
+(
+u
+)
+×
+h
+​
+u
+​
+b
+​
+(
+v
+)
++
+a
+​
+u
+​
+t
+​
+h
+​
+(
+u
+)
+×
+a
+​
+u
+​
+t
+​
+h
+​
+(
+v
+)
+\vskip-5.69054ptHITS(u,v)=hub(u)\times hub(v)+auth(u)\times auth(v)
+H
+​
+I
+​
+T
+​
+S
+​
+(
+u
+)
+=
+h
+​
+u
+​
+b
+​
+(
+u
+)
++
+a
+​
+u
+​
+t
+​
+h
+​
+(
+u
+)
+\vskip-5.69054ptHITS(u)=hub(u)+auth(u)
+where
+h
+​
+u
+​
+b
+​
+(
+u
+)
+hub(u)
+and
+a
+​
+u
+​
+t
+​
+h
+​
+(
+u
+)
+auth(u)
+represent the hub score and authority score of node
+u
+u
+, respectively.
+To audit by graph elements, we select
+k
+k
+elements with the highest HITS scores. That is, for edges, we select
+k
+k
+edges with the highest HITS scores defined above; for nodes, we select
+k
+k
+nodes with the highest HITS scores; for subgraphs, we form a vertex-induced subgraph from
+k
+k
+nodes with the highest HITS scores.
+Metrics
+. Here, we choose the loss function to be squared
+L
+2
+L_{2}
+norm. We quantify the performance of auditing by the goodness score
+Δ
+​
+f
+\Delta{f}
+(defined in Eq. (
+2
+)) of the graph elements
+𝒮
+\mathcal{S}
+found by the corresponding algorithms.
+Repeatability and Machine Configuration
+. All datasets are publicly available. We will release the code of our proposed algorithms upon the publication of the paper. All experiments are performed on a virtual machine with 4 Intel i7-8700 CPU cores at 3.4GHz and 32GB RAM. The operating system is Windows 10. All codes are written in Python 3.6.
+Fig. 2
+:
+Auditing results by edges. Budget
+k
+=
+10
+k=10
+. Higher is better. Best viewed in color.
+Fig. 3
+:
+Auditing results by nodes. Budget
+k
+=
+10
+k=10
+. Higher is better. Best viewed in color.
+Fig. 4
+:
+Auditing results by subgraphs. Budget
+k
+=
+10
+k=10
+. Higher is better. Best viewed in color.
+(a)
+Auditing by Edges
+(b)
+Auditing by Nodes
+(c)
+Auditing by Subgraphs
+Fig. 5
+:
+Effect of
+k
+k
+on auditing results (cit-HepPh Dataset). Higher is better. Best viewed in color.
+(a)
+Auditing by Edges
+(b)
+Auditing by Nodes
+(c)
+Auditing by Subgraphs
+Fig. 6
+:
+Effect of
+k
+k
+on auditing results (cit-HepTh Dataset). Higher is better. Best viewed in color.
+IV-B
+Effectiveness Results
+Quantitative Comparison
+We perform effectiveness experiments with the baseline methods. We set
+k
+k
+from
+1
+1
+to
+10
+10
+and find
+k
+k
+influential edges and nodes, respectively. We set
+k
+k
+only from
+2
+2
+to
+10
+10
+to find an influential subgraph of size-
+k
+, respectively. This is because a vertex-induced subgraph with only
+1
+1
+node does not contain any edge and therefore is meaningless for the purpose of PageRank auditing. We conduct the experiments with
+brute force
+on relatively small datasets to obtain the ground-truth of Eq. (
+2
+), including
+Karate
+,
+Dolphins
+and
+Lesmis
+. On other larger datasets, searching a ground-truth with
+k
+k
+most influential elements is prohibitively expensive due to its combinatorial nature. For example, even if we use the small
+Lesmis
+dataset, it will take over a day to find ground-truth with
+k
+=
+5
+k=5
+. Therefore, the results by
+brute force
+are absent on the remaining larger datasets.
+The results of quantitative comparison across 9 different datasets are shown from Figure
+2
+to Figure
+4
+. From those figures, we have the following observations: (1) our family of
+Aurora
+algorithms consistently outperform other baseline methods (except for brute force) on all datasets; (2) on the three small datasets with ground-truth
+brute force
+, the performance of the proposed
+Aurora
+algorithms is very close to the ground-truth. Figure
+5
+and Figure
+6
+shows the effect of k on auditing results. We can observe the following findings from those figures: (1) our family of
+Aurora
+algorithms incrementally find influential graph elements w.r.t. the budget
+k
+k
+; (2) the proposed
+Aurora
+algorithms consistently outperform baseline methods on different budgets.
+Case Studies on
+Airport
+Dataset
+A natural use case of our
+Aurora
+algorithms is to find influential edges and nodes in a given graph. To demonstrate that our algorithms are indeed able to provide intuitive information, we test our algorithms on the
+Airport
+dataset. This dataset was manually created from commercial airline traffic data in 2017, which is provided by United States Department of Transportation. More detailed description and statistics of this dataset can be found in Subsection
+IV-A
+. We perform
+Aurora
+-E and
+Aurora
+-N to find the most influential airlines (edges in the graph) and airports (nodes in the graph) across United States with
+k
+=
+7
+k=7
+.
+Edges selected by
+Aurora
+-E are
+ATL-LAX
+,
+LAX-ATL
+,
+ATL-ORD
+,
+ORD-ATL
+,
+ATL-DEN
+,
+DEN-ATL
+and
+LAX-ORD
+. In contrast, PageRank selects
+ATL-LAS
+instead of
+DEN-ATL
+and
+ATL-DFW
+instead of
+LAX-ORD
+.
+DEN-ATL
+plays a more important role in determining the centrality (e.g., PageRank) of other airports. This is because
+DEN
+serves as one of the busiest hub airports that connects West coast and East coast; while
+ATL-LAS
+is less important in that regard, considering the existence of
+ATL-LAX
+and
+ATL-PHX
+. Comparing
+LAX-ORD
+and
+ATL-DFW
+,
+LAX-ORD
+directly connects Los Angeles and Chicago, both of them are largest cities in the United States.
+In the scenario of node-auditing,
+Aurora
+-N selects
+ATL
+,
+LAX
+,
+ORD
+,
+DFW
+,
+DEN
+,
+LAS
+and
+CLT
+. In contrast, PageRank selects
+SFO
+instead of
+CLT
+.
+CLT
+seems to be a more reasonable choice because it serves as a major hub airport, the
+6
+th
+6^{\textrm{th}}
+busiest airport by FAA statistics, to connect many regional airports around States like North Carolina, South Carolina, Virginia, West Virginia, etc. Compared with
+CLT
+,
+SFO
+is less influential in that regard, mainly due to the following two reasons: (1) it ranks after
+CLT
+(
+7
+th
+7^{\textrm{th}}
+vs.
+6
+th
+6^{\textrm{th}}
+) in the list of busiest airports by FAA statistics; (2) due to the location proximity of
+SFO
+to
+LAX
+and
+SJC
+, even if this node is perturbed (i.e., absent), many surrounding airports (especially regional airports in California) could still be connected via
+LAX
+and
+SJC
+.
+Case Studies on
+DBLP
+Dataset
+Another interesting use case of
+Aurora
+algorithms is sense-making in graph proximity. We construct a co-authorship network from DBLP computer science bibliography to test our algorithms. We perform
+Aurora
+-N and PageRank with
+k
+=
+6
+k=6
+. Different from the previous case study, here we use a personalized PageRank with the query node is
+Christos Faloutsos
+. In this case, the top-ranked scholars in the resulting ranking vector
+𝐫
+\mathbf{r}
+form the proximity (i.e., ‘neighborhood’) of the query node (i.e., who are most relevant to
+Christos Faloutsos
+). Consequently, the nodes selected by an auditing algorithm indicate those important nodes in terms of making/maintaining the neighborhood of the query node. Comparing the results by
+Aurora
+-N and PageRank, 6 of them are the same while
+Aurora
+-N selects
+Jure Leskovec
+instead of
+Yannis Ioannidis
+. This result is consistent with the intuition, since
+Jure Leskovec
+, as the former student of
+Christos Faloutsos
+with lots of joint publications, plays a more prominent role in the neighborhood of
+Christos Faloutsos
+by sharing more common collaborators.
+Case Studies on
+NBA
+Dataset
+In a collaboration network, a subgraph can be naturally viewed as a team (e.g. sports team). From this perspective,
+Aurora
+-S has the potential to find teammates of a player. We set the query node as
+Allen Iverson
+. Since there are
+5
+5
+players for each team on the court, we set
+k
+=
+5
+k=5
+. The subgraph selected by
+Aurora
+-S consists of
+Allen Iverson
+,
+Larry Hughes
+,
+Theo Ratliff
+,
+Joe Smith
+and
+Tim Thomas
+. In contrast, in the resulting subgraph by PageRank,
+Tim Thomas
+is replaced by
+Drew Gooden
+. Though
+Drew Gooden
+and
+Allen Iverson
+shares many common neighbors in the network, which might cause its ranking in PageRank to be higher, they have never played in the same team together. Compared with the subgraph by PageRank, all players in the subgraph by
+Aurora
+-S have played with
+Iverson
+in Philadelphia Sixers during the time period from 1997 to 1999.
+Fig. 7
+:
+running time vs. the number of edges on Pokec dataset
+Fig. 8
+:
+running time vs. number of
+k
+k
+on Pokec dataset
+IV-C
+Efficiency Results
+We show the running time vs. number of edges
+m
+m
+and budget size
+k
+k
+on
+Pokec
+dataset in Figure
+8
+and Figure
+8
+. We can see that the proposed
+Aurora
+algorithms scale linearly with respect to
+m
+m
+and
+k
+k
+, respectively. This is consistent with our complexity analysis that the family of
+Aurora
+algorithms are linear with respect to the number of edges and the budget.
+Fig. 9
+:
+Visualization of toy graph on the visualization system. Best viewed in color.
+IV-D
+Visualization
+To better understand the auditing results, we developed a prototype system with D3.js to represent the influence of graph elements visually. In the system, we use the strength of line to represent the gradient of an edge and use the size and color for the gradient of nodes. An example of visualizing hand-crafted toy graph is shown in Figure
+9
+. It is easy to see in the figure that Node
+5
+5
+is the most influential node, and edges around Node
+5
+5
+is more influential than other edges, both of which are consistent with our intuition.
+V
+Related Work
+In this section, we briefly review the related work, from the following two perspectives, including (1) graph ranking and (2) explainability.
+Graph ranking
+. Regarding graph ranking, PageRank
+[
+1
+]
+and HITS
+[
+23
+]
+are probably the most well-known and widely used algorithms. PageRank measures the importance of nodes as a stationary distribution of random walks. HITS assumes that each node has two scores:
+hub
+and
+authority
+. A node has a high hub score if it links to many nodes with high authority scores, and a node has a high authority score if it links to many nodes with high hub scores. Many variants of PageRank and HITS have been developed in the literature. To name a few, in
+[
+24
+]
+, the author studies the stability of PageRank and HITS, based on which they propose two new algorithms (Randomized HITS and Subspace HITS). Ding et al.
+[
+25
+]
+provide a unified ranking method for HITS and PageRank. In
+[
+8
+]
+, Haveliwala et al. propose the well known
+personalized PageRank
+by replacing the uniform teleportation vector with a biased personalized topic-specific vector; while random walk with restart
+[
+9
+]
+concentrates all teleportation probabilities to a single node. Other random walk based graph ranking methods include
+[
+26
+]
+and many more.
+Explainability
+. How to enhance interpretability of machine learning and data mining models has been attracting a lot of research interests in recent years. Two representative ways to explain such black-box predictions consist of (a) using other interpretable models to provide interpretable representation of model’s predictions
+[
+27
+,
+28
+,
+29
+]
+, and (b) quantifying the influence by perturbing either features or training data
+[
+30
+,
+31
+,
+32
+,
+33
+,
+11
+]
+. The proposed
+Aurora
+algorithms follow the generic principle in
+[
+11
+]
+in the context of graph ranking, and has been integrated into a prototype system
+[
+34
+]
+. Finding influential nodes on graphs is a very active research area. The central theme of these research is to find nodes to maximize the spread of influence in social networks (i.e., influence maximization)
+[
+35
+,
+36
+,
+37
+]
+. The seminal work in influence maximization problem is attributed to Kempe et al.
+[
+38
+,
+39
+]
+, in which they have discovered its diminishing returns property. The focus of this paper is fundamentally different from the classic influence maximization problem, in the sense that we want to find most influential nodes, edges or subgraphs w.r.t. the graph ranking results, as opposed to the size of ‘infected’ nodes during the influence propagation process.
+VI
+Conclusion
+In this paper, we study the problem of auditing PageRank, where we aim to find the most influential graph elements (e.g., edges, nodes, subgraphs) w.r.t. graph ranking results. We formally define the PageRank auditing problem by measuring influence of each graph element as the rate of change in a certain loss function defined over the ranking vector, and formulate it as an optimization problem. We further propose a family of fast approximation algorithms, named
+Aurora
+, with
+(
+1
+−
+1
+/
+e
+)
+(1-1/e)
+approximation ratio and a linear complexity in both time and space. The extensive experimental evaluations on more than 10 datasets demonstrate that the proposed
+Aurora
+algorithms are able to identify influential graph elements, consistently outperform baseline methods, and scale linearly to large graphs. In the future, we would like to generalize this auditing paradigm to other graph ranking methods (e.g., HITS) as well as dynamic networks.
+Acknowledgment
+This work is supported by NSF (IIS-1651203, IIS-1715385 and IIS-1743040), DTRA (HDTRA1-16-0017), ARO (W911NF-16-1-0168), DHS (2017-ST-061-QA0001), NSFC (61602306, Fundamental Research Funds for the Central Universities), and gifts from Huawei and Baidu.
+References
+[1]
+L. Page, S. Brin, R. Motwani, and T. Winograd, “The pagerank citation ranking:
+Bringing order to the web.” Stanford InfoLab, Technical Report 1999-66,
+November 1999.
+[2]
+M. Gori and A. Pucci, “Itemrank: A random-walk based scoring algorithm for
+recommender engines,” in
+Proceedings of the 20th International Joint
+Conference on Artifical Intelligence
+, San Francisco, CA, USA, 2007, pp.
+2766–2771.
+[3]
+J. Weng, E.-P. Lim, J. Jiang, and Q. He, “Twitterrank: Finding topic-sensitive
+influential twitterers,” in
+Proceedings of the Third ACM International
+Conference on Web Search and Data Mining
+. New York, NY, USA: ACM, 2010, pp. 261–270.
+[4]
+F. Radicchi, “Who is the best player ever? a complex network analysis of the
+history of professional tennis,”
+PloS one
+, vol. 6, no. 2, p. e17249,
+2011.
+[5]
+R. Singh, J. Xu, and B. Berger, “Pairwise global alignment of protein
+interaction networks by matching neighborhood topology,” in
+Research
+in computational molecular biology
+. Springer, 2007, pp. 16–31.
+[6]
+J. J. Crofts and D. J. Higham, “Googling the brain: Discovering hierarchical
+and asymmetric network structures, with applications in neuroscience,”
+Internet Mathematics
+, vol. 7, no. 4, pp. 233–254, 2011.
+[7]
+D. F. Gleich and M. W. Mahoney, “Using local spectral methods to robustify
+graph-based learning algorithms,” in
+Proceedings of the 21th ACM
+SIGKDD International Conference on Knowledge Discovery and Data Mining
+, New
+York, NY, USA, 2015, pp. 359–368.
+[8]
+T. H. Haveliwala, “Topic-sensitive pagerank,” in
+Proceedings of the
+11th international conference on World Wide Web
+. ACM, 2002, pp. 517–526.
+[9]
+H. Tong, C. Faloutsos, and J.-y. Pan, “Fast random walk with restart and its
+applications,” in
+ICDM
+. IEEE,
+2006, pp. 613–622.
+[10]
+L. Li, Y. Yao, J. Tang, W. Fan, and H. Tong, “Quint: On query-specific optimal
+networks,” in
+KDD
+. ACM, 2016,
+pp. 985–994.
+[11]
+P. W. Koh and P. Liang, “Understanding black-box predictions via influence
+functions,” in
+Proceedings of the 34th International Conference on
+Machine Learning
+, International Convention Centre, Sydney, Australia, 2017,
+pp. 1885–1894.
+[12]
+J. Ni, H. Tong, W. Fan, and X. Zhang, “Inside the atoms: Ranking on a network
+of networks,” in
+KDD
+, New York, NY, USA, 2014, pp. 1356–1365.
+[13]
+R. Pienta, A. Tamersoy, H. Tong, and D. H. Chau, “Mage: Matching approximate
+patterns in richly-attributed graphs,” in
+Big Data (Big Data), 2014
+IEEE International Conference on
+. IEEE, 2014, pp. 585–590.
+[14]
+W. W. Zachary, “An information flow model for conflict and fission in small
+groups,”
+Journal of anthropological research
+, vol. 33, no. 4, pp.
+452–473, 1977.
+[15]
+D. Lusseau, K. Schneider, O. J. Boisseau, P. Haase, E. Slooten, and S. M.
+Dawson, “The bottlenose dolphin community of doubtful sound features a large
+proportion of long-lasting associations,”
+Behavioral Ecology and
+Sociobiology
+, vol. 54, no. 4, pp. 396–405, 2003.
+[16]
+J. Leskovec, D. Huttenlocher, and J. Kleinberg, “Signed networks in social
+media,” in
+Proceedings of the SIGCHI Conference on Human Factors in
+Computing Systems
+, New York, NY, USA, 2010, pp. 1361–1370.
+[17]
+L. Takac and M. Zabovsky, “Data analysis in public social networks.”
+[18]
+L. Li, H. Tong, N. Cao, K. Ehrlich, Y.-R. Lin, and N. Buchler, “Replacing the
+irreplaceable: Fast algorithms for team member recommendation,” in
+WWW
+, 2015, pp. 636–646.
+[19]
+M. Ley, “The dblp computer science bibliography: Evolution, research issues,
+perspectives,” in
+Proceedings of the 9th International Symposium on
+String Processing and Information Retrieval
+, London, UK, 2002, pp. 1–10.
+[20]
+J. Leskovec, J. Kleinberg, and C. Faloutsos, “Graphs over time: densification
+laws, shrinking diameters and possible explanations,” in
+KDD
+. ACM, 2005, pp. 177–187.
+[21]
+D. E. Knuth,
+The Stanford GraphBase: a platform for combinatorial
+computing
+. Addison-Wesley Reading,
+1993, vol. 37.
+[22]
+J. Leskovec, J. Kleinberg, and C. Faloutsos, “Graph evolution: Densification
+and shrinking diameters,”
+ACM Transactions on Knowledge Discovery from
+Data (TKDD)
+, vol. 1, no. 1, p. 2, 2007.
+[23]
+J. M. Kleinberg, “Authoritative sources in a hyperlinked environment,”
+Journal of the ACM (JACM)
+, vol. 46, no. 5, pp. 604–632, 1999.
+[24]
+A. Y. Ng, A. X. Zheng, and M. I. Jordan, “Stable algorithms for link
+analysis,” in
+Proceedings of the 24th annual international ACM SIGIR
+conference on Research and development in information retrieval
+. ACM, 2001, pp. 258–266.
+[25]
+C. Ding, X. He, P. Husbands, H. Zha, and H. Simon, “Pagerank, hits and a
+unified framework for link analysis,” in
+Proceedings of the 2003 SIAM
+International Conference on Data Mining
+. SIAM, 2003, pp. 249–253.
+[26]
+G. Jeh and J. Widom, “Simrank: a measure of structural-context similarity,”
+in
+Proceedings of the 8th ACM SIGKDD international conference on
+Knowledge discovery and data mining
+, 2002, pp. 538–543.
+[27]
+R. Caruana, Y. Lou, J. Gehrke, P. Koch, M. Sturm, and N. Elhadad,
+“Intelligible models for healthcare: Predicting pneumonia risk and hospital
+30-day readmission,” in
+Proceedings of the 21th ACM SIGKDD
+International Conference on Knowledge Discovery and Data Mining
+. ACM, 2015, pp. 1721–1730.
+[28]
+M. T. Ribeiro, S. Singh, and C. Guestrin, “Why should i trust you?: Explaining
+the predictions of any classifier,” in
+Proceedings of the 22nd ACM
+SIGKDD International Conference on Knowledge Discovery and Data
+Mining
+. ACM, 2016, pp. 1135–1144.
+[29]
+O. Bastani, C. Kim, and H. Bastani, “Interpreting blackbox models via model
+extraction,”
+arXiv preprint arXiv:1705.08504
+, 2017.
+[30]
+M. Feldman, S. A. Friedler, J. Moeller, C. Scheidegger, and
+S. Venkatasubramanian, “Certifying and removing disparate impact,” in
+Proceedings of the 21th ACM SIGKDD International Conference on
+Knowledge Discovery and Data Mining
+. ACM, 2015, pp. 259–268.
+[31]
+P. Adler, C. Falk, S. A. Friedler, G. Rybeck, C. Scheidegger, B. Smith, and
+S. Venkatasubramanian, “Auditing black-box models for indirect influence,”
+in
+Data Mining (ICDM), 2016 IEEE 16th International Conference
+on
+. IEEE, 2016, pp. 1–10.
+[32]
+A. Datta, S. Sen, and Y. Zick, “Algorithmic transparency via quantitative
+input influence: Theory and experiments with learning systems,” in
+Security and Privacy (SP), 2016 IEEE Symposium on
+. IEEE, 2016, pp. 598–617.
+[33]
+J. Li, W. Monroe, and D. Jurafsky, “Understanding neural networks through
+representation erasure,”
+arXiv preprint arXiv:1612.08220
+, 2016.
+[34]
+J. Kang, S. Freitas, H. Yu, Y. Xia, N. Cao, and H. Tong, “X-rank: Explainable
+ranking in complex multi-layered networks,” in
+CIKM
+. New York, NY, USA: ACM, 2018, pp. 1959–1962.
+[35]
+D. Gruhl, R. Guha, D. Liben-Nowell, and A. Tomkins, “Information diffusion
+through blogspace,” in
+WWW
+. ACM, 2004, pp. 491–501.
+[36]
+W. Chen, Y. Wang, and S. Yang, “Efficient influence maximization in social
+networks,” in
+KDD
+. ACM, 2009,
+pp. 199–208.
+[37]
+M. Gomez Rodriguez, J. Leskovec, and A. Krause, “Inferring networks of
+diffusion and influence,” in
+KDD
+. ACM, 2010, pp. 1019–1028.
+[38]
+D. Kempe, J. Kleinberg, and É. Tardos, “Maximizing the spread of influence
+through a social network,” in
+Proceedings of the ninth ACM SIGKDD
+international conference on Knowledge discovery and data mining
+. ACM, 2003, pp. 137–146.
+[39]
+D. Kempe, J. M. Kleinberg, and É. Tardos, “Influential nodes in a
+diffusion model for social networks.” Springer.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►
