@@ -1,0 +1,26 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0294-trainingfree-longterm-multiobject-tracking-for-sports.md
+## What it is (1-2 sentences)
+A research-deep brief of arXiv:2608.15688v1 (Stanczyk, Yoon & Bremond, Inria/Université Côte d'Azur 2026): McByte++, a training-free tracking-by-detection pipeline for long-term player identity in sports video — regulated mask-guided association (EdgeTAM), selective online re-ID at tracklet initialization, conditional camera-motion compensation — achieving SOTA association metrics with ~10× speedups. Verdict: ADOPT — the deployable path to player tracks from broadcast/All-22 video for telestrated content and trajectory analytics.
+## Key metrics/methods (formulas where given, else "not specified")
+- Base: ByteTrack (high/low-confidence detection staging, IoU association, Kalman filter, Hungarian matching). YOLOX detections, fixed confidence threshold 0.6, no retraining.
+- (1) Regulated mask-guided association: EdgeTAM propagates per-tracklet masks; mask cues enter cost matrix only in ambiguity (similar IoU scores across row/column) or isolation (all IoU costs above threshold), only when mask visible, fill ratio mf ≥ 0.05, bbox coverage mc ≥ 0.90. cost^{i,j} = costs_IoU^{i,j} − mf^{i,j} if conditions met, else costs_IoU^{i,j}. mc = |mask(tracklet_i) ∩ bbox_j| / |mask(tracklet_i)|; mf = |mask(tracklet_i) ∩ bbox_j| / |bbox_j|.
+- (2) Selective online re-ID: OSNet appearance features (no fine-tuning), ℓ2-normalized f̃_t = f_t/‖f_t‖₂, temporally aggregated f_avg = (1/N)Σ f̃_i, f̃_avg = f_avg/‖f_avg‖₂; invoked only at new-tracklet initialization; cosine similarity sim = f̃^{(p)}·f̃^{(m)} vs long-term identity memory; identity transfer only on mutual best-match with similarity ≥ 0.8.
+- (3) Conditional CMC: affine camera motion from ORB feature matching on frames downscaled ×4 (ds=4; original ×2), applied only when physically plausible; applied after Kalman prediction, before association; most recent reliable estimate retained.
+- Metrics: HOTA (detection+localization+association), IDF1 (identity preservation), MOTA (detection accuracy), FPS.
+## Data sources named
+SportsMOT (basketball/volleyball/soccer), SoccerNet-tracking 2022 (broadcast video, oracle detections, 25 FPS), SoccerNet-tracking Challenge 2023 (no detections; authors' YOLOX trained on SportsMOT; eval server unavailable). No NFL/American-football data. Code (forthcoming): https://github.com/tstanczyk95/McBytePlusPlus — link unverified live in the brief.
+## Findings (numbers and facts, not vibes)
+- SoccerNet 2022: McByte 85.0 HOTA / 79.9 IDF1 / 96.8 MOTA @ 1.04 FPS; McByte++ no re-ID (cond CMC, ds=4): 84.1 / 78.9 / 97.1 @ 10.71 FPS; + online re-ID (sim 0.8): 87.5 / 84.5 / 97.1 @ 8.69 FPS; + offline GTA: 88.6 / 87.2 / 97.1 @ 7.46 FPS.
+- SportsMOT: McByte 76.9 / 77.5 / 97.2 @ 3.60 FPS; McByte++ re-ID 0.8: 79.9 / 83.6 / 96.9 @ 14.57 FPS (+4.1 HOTA, +7.6 IDF1 over no-re-ID 75.8/76.0); GTA offline 81.5 / 86.0.
+- Challenge 2023 (YOLOX SportsMOT detections): McByte 64.1 / 76.5 @ 1.46 FPS; McByte++ re-ID: 64.3 / 78.6 @ 11.13 FPS (~7.6× speedup).
+- SOTA under identical detections: SoccerNet 87.5/84.5 vs OC-SORT 82.0/76.3, ByteTrack 72.1/75.3; SportsMOT 79.9/83.6 vs Deep-EIoU 77.2/79.8, SportMamba 77.3/77.7.
+- Mask-based comparison (SportsMOT val): McByte++ 85.5/87.6 vs Grounded SAM 2 w/ YOLOX 66.1/70.2, MASA 73.6/71.2.
+- Threshold ablations: re-ID sim=0.8 dominates 0.6/0.7/0.9 on HOTA+IDF1 both datasets; ds=4 is accuracy–speed sweet spot; re-ID gains leave MOTA unchanged (association-only effect); sim=0.6 caused false merges of similar-looking teammates.
+- Limitations: no football data (NFL has tighter LOS bunching, more occlusion); challenge-2023 has no external validation (eval server down); runtime 8.7–14.6 FPS on unspecified benchmark hardware — near-real-time, not live 60fps; still depends on a pre-trained detector per sport.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: content pipeline — per-play tracklets feed player-trajectory overlays for telestrated clips (seconds-long, per the standing video rule); deployable because training-free with no per-league tuning.
+- OTHER: analytics — tracklets as trajectory sources for the STRAIN pressure model (2305.10262) and SAIL-for-NFL embeddings where NGS tracking is unavailable; in-house alternative to licensed NGS tracking (kept internal per NGS doctrine).
+- OL: INFERENCE — play-level trajectory extraction enables OL-adjacent measures (pocket shape over time, rush-path geometry) from broadcast video, but the paper provides no OL metrics; strictly an input enabler, not evidence.
+- SCHEME: INFERENCE — consistent long-term player IDs across camera cuts could support formation/personnel extraction from All-22, but the paper does not do this; potential, not finding.
+## Engine-actionable? (yes/no + one-line what)
+Yes — verify the McBytePlusPlus repo link live, run the default config (cond CMC ds=4, re-ID sim 0.8, det conf 0.6) on 50 annotated NFL plays, and ADOPT into the content/analytics pipeline if it cuts ID switches vs ByteTrack by ≥40% at ≥8 FPS; add a jersey-number-OCR hard constraint to the re-ID stage as the paper-derived improvement (addresses teammate false-merge failure mode, acute in football).

@@ -1,0 +1,29 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0566-fivb-ranking-misstep-in-the-right.md
+## What it is (1-2 sentences)
+arXiv:2408.01603 — an audit of the FIVB volleyball ranking: reverse-engineers the stochastic-gradient update's implicit loss, then analytically/numerically optimizes its thresholds, numerical scores, match-importance weights, and home-field advantage against leave-one-out log-loss. Verdict in the file: ADAPT — three empirical verdicts (hand-set numerical scores are suboptimal; importance weights hurt; HFA is ~free +1%) transfer directly to GSE's Elo/SG updates, plus an ordinal margin-of-victory extension worth testing on NFL margins.
+## Key metrics/methods (formulas where given, else "not specified")
+- Cumulative-link ordinal probit: Pr{Y_t=y|θ,x_t} = P_y(z_t), z_t = x_tᵀθ (+η h_t for home team). Symmetric thresholds c^FIVB = (−1.06, −0.394, 0, 0.394, 1.06).
+- Official FIVB update: θ_{t+1} = θ_t − μsξ_{v_t} x_t g^FIVB_{y_t}(z_t/s), μ=0.01, s=125; g^FIVB_y(z) = ř(z) − r^FIVB_y; ř(z) = E_{Y|z}[r^FIVB_Y].
+- Implicit loss via integration: ℓ^FIVB_y(z) = ∫_{−∞}^z g^FIVB_y(u)du = Σ_{l}(r^FIVB_l−r^FIVB_{l+1})ψ(z+c^FIVB_l) + (r^FIVB_{L−1}−r^FIVB_y)z + Const; ψ(z)=Φ(z)z+𝒩(z). Lemma 1: implicit loss convex in z.
+- Analytical scores (match implicit-loss slope to log-loss at z_0=0): r̃_y(c) = r̃_0·Φ(c_0)(𝒩(c_y)−𝒩(c_{y−1}))/[𝒩(c_0)(Φ(c_y)−Φ(c_{y−1}))]; with c^FIVB and r̃_0=2.0: r̃ = (2.0, 0.89, 0.25, −0.25, −0.89, −2.0).
+- HFA as additive home-team skill boost: ℓ^loss_{y_t,h_t}(z_t) = ℓ^loss_{y_t}(z_t + h_tη). Match-importance weighting: ℓ^loss_{y_t,v_t}(z_t) = ξ_{v_t}ℓ^loss_{y_t}(z_t), ξ_0≡1.
+- Validation metrics: LOO cross-validation with ALO approximation ẑ_{t,\t} = ẑ_t + ℓ̇a_t/(1−ℓ̈a_t), a_t = x_tᵀĤ⁻¹x_t; log-loss metrics U (all), U^ntr (neutral), U^hfa (home); V(p)=e^{−U(p)} = geometric mean of predicted outcome probabilities; real-time SG online metrics Ū, Ū^ntr, Ū^hfa; average Spearman ρ̄ vs official ranking.
+## Data sources named
+Men's national-team volleyball, 2021-01-01 through 2023-12: M=102 teams, T=1151 matches (761 neutral, 390 home-venue). Excluded: 67 matches with unexplained tiny increments {0,0.01}, 33 with 0.0 increments, forfeits (Denmark Jan 2021; Uzbekistan/Pakistan Jul 2023; Mongolia Aug 2023). Outcome counts (neutral): 3-0:203.5 / 3-1:117.5 / 3-2:59.5 / 2-3:59.5 / 1-3:117.5 / 0-3:203.5; (home): 135 / 64 / 29 / 33 / 45 / 84. Code + data: https://github.com/brbalab/FIVB. FIVB end-of-year rule (−50 points for idle teams) not modeled.
+## Findings (numbers and facts, not vibes)
+- Thresholds c^FIVB fit well; re-optimized thresholds + HFA η≈0.2 improve home-match validation V from ≈25.8% to ≈26.8% (~1 percentage point); neutral matches unaffected.
+- FIVB numerical scores r^FIVB = {2.0,1.5,1.0,−1.0,−1.5,−2.0} are inadequate: numerically optimized r̂ is non-monotonic (2.0, ≈0.9, ≈−0.1, ≈0.1, ≈−0.9, −2.0) — an artifact of implicit-loss fitting, per the paper; the analytical r̃ is monotonic and performs identically to r̂; both negligibly worse than the true log-score. Suggested rounded values: r̃_1=1.0, r̃_2=0.25.
+- Match-importance weights ξ^FIVB are detrimental to prediction; optimized weights end up near-equal (ξ̂_v ∈ (0.9,1.5) for γ<0.5).
+- Real-time SG (Table 4, Ū/Ū^ntr/Ū^hfa/ρ̄): A official (μ=0.01): 1.52/1.51/1.53/0.94 → with μ̂=0.03: 1.49/1.49/1.49/0.89. B (η=0.2): 1.48/1.49/1.47/0.89. C (r̃, μ̂=0.04): 1.47/1.48/1.45/0.88. D (ξ≡1, μ̂=0.10): 1.48/1.49/1.45/0.87. E (r̃, ξ≡1, η=0.2, μ̂=0.10): 1.47/1.48/1.44/0.88. F (true log-score, ξ≡1, η=0.2, μ̂=0.20): 1.46/1.48/1.43/0.85.
+- FIVB's μ=0.01 is 3–4× too small; removing weights requires explicitly larger steps (weighting acts as a variable step size).
+- Interpretation of V(p): U=1.4 → V≈24.7% vs uniform 16.7% (U=1.79) over 6 outcomes; V≈1−U for small U.
+- Top-7 reorder (Table 5): POL/USA/JPN stay top-3 across A/E/F; positions 4–7 shuffle.
+- Limitations noted in file: ~1% HFA gain is home-only and may explain why FIVB skipped it; no temporal holdout reported (same 2021–2023 pool used for optimization + evaluation via CV); exact log-score numerically complex; no time-varying skills modeled; volleyball-specific parameter values don't transfer.
+- GSE implementation spec in file: (1) reverse-engineer GSE's Elo/SG update into its implicit loss; (a) fit HFA η on 2015–2025 NFL; (b) test playoff/prestige game weights vs equal weights on held-out log-loss (paper predicts equal wins); (c) check if GSE's K is too small via argmin-Ū(μ). (2) Ordinal MOV extension: cumulative-link ordinal model over margin buckets (win ≥14, 7–13, 1–6, tie, loss 1–6, 7–13, ≥14), numerical scores fitted analytically via Eq. (46). Effort: ~1 week audit; ~2 weeks ordinal-MOV prototype.
+- Reproducible test: NFL 2015–2025 (nflverse): season-blocked CV log-loss of win probability for (a) equal vs current weights, (b) ordinal MOV vs binary Elo; Spearman ρ̄ vs GSE ranking for disruption.
+- Acceptance gate: drop/dampen weights if equal weights win on log-loss; ADOPT ordinal-MOV if it beats binary Elo by ≥0.005 log-loss on season-blocked CV; reject ordinal extension if it only matches binary Elo.
+- Improvement experiment: score-driven dynamic CL ordinal model — fuse Holý-style AR(1) strength dynamics (paper 0565) with the ordinal MOV likelihood; test dynamic-ordinal vs static-ordinal vs dynamic-binary on 2015–2025.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER — rating-methodology audit for the Elo/power-rating lane; no QB/coaching/OL/scheme content.
+## Engine-actionable? (yes/no + one-line what)
+Yes — run the three-part Elo audit (HFA fit, importance-weights vs equal-weights on held-out log-loss, K-step-size check) on nflverse 2015–2025, and prototype the ordinal margin-of-victory model with the ≥0.005 log-loss adoption gate.
