@@ -1,0 +1,29 @@
+# docs/data/CARDS_SHARE_CORE_WIRING.md
+## What it is (1-2 sentences)
+A 10-card implementation deck (SC1–SC10) for a "share core" props stack: team-week usage matrices → masked Dirichlet-multinomial share fits over targets/carries → per-player volume marginals via Beta-Binomial × team-trials mixture → shadow-mode walk-forward validation against the incumbent per-player NB models. Data class CROWN (INTERNAL for SC1–SC5, CROWN for SC6–SC10).
+## Key metrics/methods (formulas where given, else "not specified")
+- Activity mask: a player is a column of a team-week row iff offSnaps ≥ 1; targets>0 or rushAtt>0 with offSnaps=0 ⇒ refuse the ENTIRE team-week (the healthy-scratch-as-talent bug #519/#530/#531).
+- Masked Minka fixed-point (ψ = digamma, from `kernel/numeric.js`, never re-derived):
+  - n_i = Σ_{j active} x_ij; A_i = Σ_{j active} α_j
+  - α_j ← α_j · ( Σ_{i active j} [ψ(x_ij + α_j) − ψ(α_j)] ) / ( Σ_{i active j} [ψ(n_i + A_i) − ψ(A_i)] )
+  - init 2 × mean observed share floored 1e-3; α floor 1e-6; tol 1e-9, budget 500; non-convergence ⇒ `KernelError` NO_CONVERGENCE (never degrade).
+- Per-player marginal (SC5): X_i | N=n ~ BetaBinomial(n, α_i, A−α_i); pmf(k) = Σ_{n≥k} trialsPmf(n)·exp(logChoose(n,k) + logBeta(k+α_i, n−k+A−α_i) − logBeta(α_i, A−α_i)); mean = E[N]·s_i; variance = Σ_n pmf_N(n)·n·s_i(1−s_i)·(A+n)/(A+1) + s_i²·Var(N) (law of total variance).
+- Teammate correlation (SC8): Cov(X_i,X_j | n) = −n·s_i·s_j·(A+n)/(A+1) (i≠j); unconditional Cov = s_i·s_j·[Var(N) − (A·E[N] + E[N²])/(A+1)] — shared team total pushes positive, compositional shares push negative; both components reported, the sign is an empirical fact per team.
+- Alpha exposure-offset projection (SC6): s_i^fit = α_i/A; s'_i ∝ s_i^fit·(eNext_i/eHist_i)^β (β default 1); α'_i = A·s'_i with concentration preserved ("preserve_total"); fail-closed whole-projection refusal on any missing exposure.
+- Injury re-projection (SC7): drop inactive α, renormalize, apply vacancy elasticity hook, renormalize again; default `drop_mass` honestly widens dispersion when big share leaves.
+- Trials baseline (SC4): exchangeable Gamma-Poisson via `fitGroupPrior`/`posteriorRate`/`nbPmf` from props-hb — an explicit shadow-only stand-in for the §3.1 script core, with NO market vocabulary allowed in the module (grep-verified).
+- Masterplan L465 kill condition: "Dirichlet share model merged without renormalization + teammate-correlation tests" — both are mandatory attack lists.
+## Data sources named
+- nflverse `player_stats_week` (grain player-week, since 1999) and `snap_counts` (since 2012, historically PFR-keyed — the join hazard), CC-BY-4.0 via `packages/data-ingestion/src/nflverse-source.ts`; kickoff timestamps from `packages/prediction-engine/src/edge-lab/loaders/nfl-games.ts`; ID crosswalk `docs/ops/NFLVERSE_GSIS_CROSSWALK.md`.
+- Shadow harness: seasons 2022–2024; K11 (dirichlet-multinomial), K1 (CRPS), K2 (PIT) kernel slots; `walk-forward.ts` purge/embargo machinery; sealed holdout never touched (`openHoldout` grep-scanned).
+## Findings (numbers and facts, not vibes)
+- Deck dependency order: SC1 (research source map) → SC2 (usage matrix) → SC3 (masked fit; needs K11 landed) → SC4 (trials baseline) + SC6 (alpha projection) + SC7 (injury reproject) + SC8 (teammate corr) → SC5 (volume marginal) → SC10 (shadow harness; needs K1, K2, K11); SC9 (bus registration plan) independent but BLOCKED until PR #555 + #556 merge.
+- Common contract across every card: priced:false on all records (nothing may set priced:true); nothing enters live p without masterplan §6 validation (as-of discipline, temporal CV, CRPS/PIT/Brier, economic referee); no MODEL_VERSION change (stays v5.2.7); fail-closed on missing/NaN/contradictory input (typed refusal, never imputation); no market-prop inputs anywhere on the p-side; no `Math.random` (injected rng only via `makeRng` + `boxMuller`); one artifact per card (module + test).
+- SC5 degenerate identities (test-enforced): single-player fit ⇒ marginal equals trials distribution exactly; point-mass trials at n ⇒ pure BetaBinomial(n, α_i, A−α_i); Σ_i mean_i = E[N] within 1e-9 (independent-NB stacks fail this).
+- SC10 shadow harness: per fold/team/player, over/under at lines k+0.5 for k in 0..6; shadow vs incumbent; Brier + log-loss + CRPS (K1) + PIT (K2) per fold and pooled; teammate coherence log (2000 joint draws via K11, empirical corr vs SC8 analytic, incumbent implied corr 0 by construction); --selftest mode with null-world (independent NB ⇒ shadow must not "win") and DM-world (shadow must beat incumbent CRPS and empirical teammate corr < 0 within 0.05) gates; output JSONL + summary MD to `reports/edge-lab/share-core-shadow/`, never touches `apps/web`, `scoring.ts`, or the DB.
+- Eight tracked open questions, incl. no decision-time inactive feed (SC10 v0 cannot exercise SC7 on real slates), no prop-line close archive (economic referee/CLV waits), and the Parlay MRI consumer seam unlocated.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: This is props-stack prediction-engine infrastructure — compositional share modeling (targets/carries) with closed-form teammate covariance feeding Parlay MRI same-game coherence and joint-simulation. No QB/coaching/OL/scheme content beyond the module names.
+- TRUST-SIGNAL: The fail-closed, priced:false, §6-gated shadow-first discipline is the engine's honesty machinery made concrete — log-only comparison against incumbents, null-world selftests that must not fabricate wins, and provenance-stamped CC-BY attribution.
+## Engine-actionable? (yes/no + one-line what)
+Yes — this IS the engine work order: execute the SC1–SC10 cards in dependency order (SC1/SC2 first, SC3 blocked on K11, SC9 blocked on PRs #555/#556), with the SC10 shadow harness as the §6 evidence generator for compositional props volume modeling.

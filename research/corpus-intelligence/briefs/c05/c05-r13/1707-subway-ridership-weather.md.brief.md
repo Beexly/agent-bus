@@ -1,0 +1,13 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/1707-subway-ridership-weather.md
+## What it is (1-2 sentences)
+Ledger verdict: REJECT. Full read of Curtis & Haines (2025), arXiv:2505.02990: an undergraduate-course-grade linear mixed-effects model of 2023 NYC subway ridership on weather covariates — transit demand, not sports; methodologically strictly dominated by ledger 1703's sports-native equivalent (24,582 finish times, finer granularity). Replaced by ledger 1712.
+## Key metrics/methods (formulas where given, else "not specified")
+Linear mixed-effects (nlme/lme4): Y_ij = fixed borough intercepts/slopes + b_0i + b_1i·month + β·weather + ε_ij; random intercepts/slopes per OD pair, compound-symmetry temporal correlation, REML. PCA on 11 weather covariates (PC1 ~65%, PC2 ~19%, PC3 ~6%); borough-stratified models; Manhattan×gust interaction; December-confounding check. Assumes linearity, monthly aggregation preserves signal, 50 sampled pairs representative.
+## Data sources named
+MTA 2023 origin-destination ridership (115M+ rows via API, aggregated to monthly averages) joined to Weather Underground monthly weather (max/avg/min temp, dew points, total precip, max/avg wind, max/avg gust). Analysis sample: only 50 OD pairs with complete 12-month records. Dataset on GitHub (hainesdata/subway-ridership-longitudinal-analysis); full R code in appendix.
+## Findings (numbers and facts, not vibes)
+Max gust speed: significant negative ridership effect (t ≈ −2.7 to −3.1); total precipitation and max wind insignificant. Effect concentrated in Manhattan-originated trips (max_gust t = −2.52, n.s. elsewhere); Manhattan×gust interaction t = −3.07. December's significance disappears once max_gust is added — gust confounds the December calendar effect (AIC 995.87 → 971.78). PC3 (steady-vs-gusty wind) × month interaction p = 0.03. Authors' own conclusion: weather has *minimal* influence on ridership since NYC depends on transit regardless. Limitations: n=50 of 111k possible pairs; one year of monthly data can't separate weather from seasonality; no holdout/CV; several models failed to converge; residual variance very high (σ² up to 25).
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: none portable — the December-confounding diagnostic (calendar effect dissolving under a weather covariate) is a nice pattern, but ledgers 1702/1703 already give GSE sharper versions of confounder analysis on actual sports data.
+## Engine-actionable? (yes/no + one-line what)
+No — rejected; no credible path to GSE's fantasy/prediction products; weather-demand modeling for stadium attendance is speculative and GSE has no attendance lane.
