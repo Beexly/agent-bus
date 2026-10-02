@@ -1,0 +1,22 @@
+# docs/arxiv-program/research/2026-09-21/arxiv-deep/0113-continuitybench-a-benchmark-and-systems-study.md
+## What it is (1-2 sentences)
+A full-paper deep-read of Pandey & Singh (2026, arXiv:2607.15899v1): a benchmark and systems study of stateful LLM-router failover, formalizing continuity as measurable via Continuity Preservation Rate (CPR) and Continuity Latency Overhead (CLO), and evaluating History-Forwarding (forward the full messages[] array) vs stateless failover across 750 failover events. The verdict is ADAPT (companion to ledger 0112 FailureAtlas): the History-Forwarding pattern, factual-anchor judge protocol, and CPR/CLO metrics port directly to Garrett's multi-agent stack (agent-bus handoffs, OmniRoute provider failover).
+## Key metrics/methods (formulas where given, else "not specified")
+- CPR = (1/N) sum preserved(f_i), preserved in {0,1} per failover event, with 95% Wilson CI; CLO = (1/N) sum (latency_treat_i - latency_base_i), reported mean and P95.
+- Fault injection: 150 synthetic 7-11-turn conversations (mean 9.1), turn-0 factual anchor, unrelated filler, final probe; failure classes TIMEOUT / simulated-502 API_ERROR / simulated-429 RATE_LIMIT; deterministic manifest (seed 42, "late" timing at probe turn); 5 runs x 150 = 750 events per system at concurrency C=100.
+- Judge: GPT-4o with structured output (binary + reasoning), blinded to full history; fast-path verbatim substring match; calibration 19/20 = 95% agreement on hand-labeled edge cases (gate >= 90%).
+- Retry policy after the retry-storm discovery: exponential backoff with jitter t_wait = min(30s, 2^a + U(0,1)), max 5 retries per failover.
+- Provider chain: OpenAI gpt-4o-mini -> Anthropic claude-3-5-sonnet-20240620 (Gemini tertiary excluded after its 15 req/min free tier triggered the retry storm).
+## Data sources named
+Synthetic suite released with the harness: https://github.com/Vishalsyscode/continuitybench (tag v1.0-phase2-final; audit scripts + results included). No production data.
+## Findings (numbers and facts, not vibes)
+- CPR (N=750 pooled): treatment 744/750 = 99.20% [95% Wilson CI 98.27%, 99.63%] vs stateless baseline 0/750 = 0.00% [0.00%, 0.51%]. Per-run: 99.3%, 99.3%, 99.3%, 98.7%, 99.3% (max spread 0.6 pp). By length: 97.7% (7-turn) / 100% (9-turn) / 100% (11-turn); the 6/750 treatment failures were fallback-model instruction-following errors, not forwarding failures.
+- CLO (Run 5, n=150, paired, ms): mean +59, median -450, P25 -1687, P75 +1295, P95 +13614 — "negligible additional latency at the central tendency"; P95 tail attributed to 9-11-turn payloads at the Anthropic fallback.
+- Negative results: (a) race condition — C=5 near-perfect CPR, C=100 collapsed to ~28% (shared global history cache + asyncio interleaving); fixed by per-conversation deep-copies before async yield. (b) Retry storm — 100 concurrent failovers vs 15 RPM free tier with fixed 2.0s retry -> self-sustaining synchronized cycle, sockets exhausted, proxy crash, CPR -> 0; fixed by jittered backoff + max 5 retries.
+- Minor flag: appendix pooled CI prints [98.3, 99.6] vs body [98.27%, 99.63%] — rounding discrepancy noted.
+- Limitations per the file: synthetic explicit probes (easier than organic references); GPT-4o judging Claude risks cross-family bias (10/10 manual audit passed, zero false positives found); one failure per conversation only (no compounding failovers); text-only, batch HTTP; harness numbers are not production numbers.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: operational/agent-stack capability — the agent-bus (Motif <-> Minis handoffs) suffers exactly the "silent continuity loss" pattern; OmniRoute's request-level failover matches the paper's criticized LiteLLM/Portkey/OpenRouter behavior; the anchor+juge protocol verifies subagent handoffs preserved parent context.
+- TRUST-SIGNAL: the CPR metric with judge calibration (>=90% agreement gate) is a ready-made trust-verification protocol for the program's concurrent research-agent orchestration.
+## Engine-actionable? (yes/no + one-line what)
+Yes — build a "HandoffBench" port: plant 2-3 factual anchors per parent->subagent task (e.g., a baseline number, a hard constraint, an invented term), measure Handoff Preservation Rate with the same blinded judge + >=90% calibration gate, and require History-Forwarding (full messages[] forward) plus jittered backoff in OmniRoute's failover path.
