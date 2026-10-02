@@ -1,0 +1,2967 @@
+RENEW: Towards Learning World Models and
+Repairing Model Exploitation from Preferences
+Logan Bhamidipaty
+Mykel Kochenderfer
+Subramanian Ramamoorthy
+Abstract
+World models are widely used in offline reinforcement learning (RL) to improve sample efficiency and generate experience beyond a fixed dataset. However, they are vulnerable to model exploitation where data coverage is thin. Prior work addresses this either by collecting more expert demonstrations, which is often expensive, unsafe, or unavailable, or by conservative algorithms that avoid uncertain regions, which limits generalization. We propose instead to repair exploitation directly using human preferences over imagined rollouts, leveraging the strong intuitive physics that allows humans to easily spot egregious dynamics hallucinations. We formalize this as Dynamics Learning from Human Feedback (DLHF), a Bradley-Terry preference loss over trajectory log-likelihoods under a learned dynamics model. Unfortunately, naive DLHF is sample inefficient, so we introduce RENEW, which uses epistemic uncertainty to focus finetuning where the model is most exploitable. We evaluate on several Jumanji and classic control environments and find that while naive DLHF requires an outsize preference budget, RENEW makes the framework practical by improving sample efficiency, limiting catastrophic forgetting, and reducing exploitation in pretrained world models. Taken together, our results provide initial evidence that preferences can supervise world model dynamics directly, offering a new approach to addressing exploitation in offline model-based RL.
+1
+1
+1
+Code:
+https://github.com/FlyingWorkshop/RENEW
+1
+Introduction
+Model-based reinforcement learning offers a compelling path toward sample-efficient decision-making: by learning a dynamics model of the environment, an agent can plan and optimize behavior without costly real-world interaction
+(
+37
+;
+9
+;
+8
+)
+. In the offline setting, where the agent must learn entirely from a fixed dataset, learned world models are especially attractive because they allow the agent to generate synthetic experience beyond what the dataset contains, effectively expanding the coverage of limited data
+(
+17
+;
+41
+)
+. However, this same capability creates a fundamental vulnerability. When a policy optimizes against a world model, it may discover and exploit inaccurate transitions to achieve artificially high predicted returns. This failure mode, known as model exploitation
+(
+12
+;
+17
+;
+3
+)
+, ranges from agents that teleport through walls in a simulated maze to deployed systems that act on incorrect dynamics with serious consequences, as when a robotaxi failed to model a pedestrian trapped beneath its chassis and continued driving while dragging them along underneath
+(
+22
+)
+.
+The typical response to model exploitation is pessimism: penalize the agent for visiting states where the model is uncertain
+(
+41
+;
+20
+)
+, or constrain the policy to remain close to the behavioral distribution
+(
+11
+;
+23
+)
+. While effective in some regimes, these approaches trade off exploration and generalization for robustness, limiting the very capabilities that make model-based methods appealing. A pragmatic alternative is to simply
+repair the model
+by collecting more data in the regions where it is wrong
+(
+35
+)
+. Yet in many practical domains, additional demonstrations are expensive, dangerous, or unavailable entirely. Expert teleoperation in robotics, near-failure driving data for autonomous vehicles, and rare economic events all represent settings where the training distribution cannot easily be expanded
+(
+42
+;
+39
+)
+. This raises a question:
+can we correct a world model’s dynamics without collecting more demonstrations?
+We observe that while demonstrating correct behavior requires domain expertise, identifying incorrect dynamics is often trivial. Humans possess strong intuitive models of physics, causality, and object permanence
+(
+36
+;
+2
+)
+, and even large-scale generative world models still produce outputs that violate these intuitions: objects pass through solid surfaces, entities appear or vanish between frames, and dynamics contradict basic mechanical expectations
+(
+30
+)
+. We do not aim to supervise nuanced physical laws such as fluid dynamics or thermodynamics; rather, we target the coarse, obvious violations that arise from model exploitation and that humans recognize immediately and effortlessly
+(
+34
+)
+. This motivates a different form of supervision: rather than asking an expert to
+demonstrate
+correct behavior, we can ask a non-expert to
+compare
+two trajectory segments and indicate which is more physically plausible. We formalize this idea as Dynamics Learning from Human Feedback (DLHF), replacing the reward model in the Bradley-Terry preference framework
+(
+5
+;
+7
+;
+32
+)
+with the trajectory log-likelihood under a dynamics model, so that preference labels supervise transitions directly without requiring an expert policy or environment interaction.
+However, learning dynamics from preferences is a harder problem than learning rewards from preferences. In typical RLHF, the preference signal trains a scalar reward function. In DLHF, the same binary comparison must supervise a high-dimensional structured transition model that maps states and actions to full next-state distributions. Each preference label therefore carries less information per parameter, and naively collecting preferences over uniformly sampled rollouts wastes much of the budget on transitions the model already predicts well. To address this, we introduce RENEW (
+R
+epairing
+E
+xploitatio
+N
+with
+E
+licited
+W
+orld-model preferences), which uses epistemic uncertainty to direct preference queries toward transitions where the model is most uncertain and therefore most vulnerable to exploitation.
+We show three results in several Jumanji
+(
+4
+)
+and classic control
+(
+25
+)
+environments: (1) binary preferences over trajectory rollouts are sufficient to learn simple world model dynamics from scratch, with no demonstrations, reward labels, or environment interaction; (2) active preference querying via epistemic uncertainty improves sample efficiency over uniform querying and avoids the catastrophic forgetting that naive DLHF exhibits; and (3) under a fixed preference budget, RENEW reduces prediction error and epistemic uncertainty in pretrained world models more effectively than naive finetuning, targeting the conditions that give rise to model exploitation.
+Figure 1
+:
+RLHF and DLHF share the same preference machinery but supervise different components. A human compares a segment pair, and the resulting binary preference is optimized under a Bradley-Terry loss.
+RLHF:
+the preference trains a reward model, so labels encode
+task success
+.
+DLHF (ours):
+the trajectory log-likelihood
+ℓ
+θ
+\ell_{\theta}
+replaces the reward model (
+Equation
+2
+), so the same labels supervise the dynamics model directly and encode
+physical realism
+. In the segment pair shown, both rollouts share a start (
+∙
+\bullet
+) and goal (
+⋆
+\star
+), and the orange rollout reaches the goal in 3 steps rather than 7 by clipping through a wall. Asked which is better at the task, an annotator may prefer the faster trace, reinforcing model exploitation; asked which is more physically realistic, the same annotator may prefer the plausible trace.
+2
+Methodology
+We present our approach in two parts.
+2
+2
+2
+For brevity, we defer the preliminaries to
+Appendix
+A
+.
+First, we formalize the problem of learning transition dynamics from human preferences, which we call Dynamics Learning from Human Feedback (DLHF). Second, we introduce RENEW (
+R
+epairing
+E
+xploitatio
+N
+with
+E
+licited
+W
+orld-model preferences), an algorithm that instantiates DLHF to repair model exploitation in offline world models via active preference querying.
+2.1
+Dynamics Learning from Human Feedback
+In typical RLHF, human preferences over trajectory segments are used to learn a reward model
+R
+ϕ
+R_{\phi}
+(
+Section
+A.4
+). We observe that the same preference framework can instead supervise the learning of transition dynamics
+𝒯
+^
+θ
+\hat{\mathcal{T}}_{\theta}
+directly. This reframing is motivated by a practical observation: in many domains, the expert demonstrations needed to train world models are expensive, dangerous, or unavailable, while humans possess strong intuitive priors over physical dynamics. Decades of developmental research have shown that even young infants expect objects to obey principles of solidity, continuity, and persistence
+(
+36
+;
+2
+)
+, and adults can readily distinguish plausible from implausible state transitions without needing to specify a reward function.
+3
+3
+3
+34
+provide an accessible summary of the developmental timeline of intuitive physics in infants.
+Preferences over imagined trajectories thus offer a cheaper supervision signal for dynamics learning that requires no expert policy and no environment interaction.
+It is important that preferences encode
+realism
+rather than
+task success
+. To see why, consider a maze-solving agent whose world model allows it to teleport through walls. A human providing reward preferences may prefer the teleporting trajectory, since it reaches the goal faster. A human providing dynamics preferences would reject it, since walls are solid. Reward preferences can therefore reinforce model exploitation rather than correct it. DLHF avoids this failure mode by construction: the preference signal is grounded in physical plausibility, not task performance (see
+Figure
+1
+).
+Problem formulation.
+We consider the reward-free setting introduced in
+Section
+A.3
+. Given a dynamics model
+𝒯
+^
+θ
+\hat{\mathcal{T}}_{\theta}
+, we define the log-likelihood of a trajectory segment
+σ
+=
+(
+s
+0
+,
+a
+0
+,
+s
+1
+,
+…
+,
+s
+H
+)
+\sigma=(s_{0},a_{0},s_{1},\ldots,s_{H})
+under the model as:
+ℓ
+θ
+​
+(
+σ
+)
+=
+∑
+t
+=
+0
+H
+−
+1
+log
+⁡
+𝒯
+^
+θ
+​
+(
+s
+t
++
+1
+∣
+s
+t
+,
+a
+t
+)
+\ell_{\theta}(\sigma)=\sum_{t=0}^{H-1}\log\hat{\mathcal{T}}_{\theta}(s_{t+1}\mid s_{t},a_{t})
+(1)
+The central observation is that
+ℓ
+θ
+\ell_{\theta}
+can replace the reward model
+R
+ϕ
+R_{\phi}
+in the Bradley-Terry preference framework (
+Equation
+5
+). Given a pair of segments
+(
+σ
+0
+,
+σ
+1
+)
+(\sigma^{0},\sigma^{1})
+, we model the probability that
+σ
+0
+\sigma^{0}
+is preferred as:
+P
+⁡
+(
+σ
+0
+≻
+σ
+1
+)
+=
+logistic
+⁡
+(
+ℓ
+θ
+​
+(
+σ
+0
+)
+−
+ℓ
+θ
+​
+(
+σ
+1
+)
+)
+P(\sigma^{0}\succ\sigma^{1})=\mathrm{logistic}(\ell_{\theta}(\sigma^{0})-\ell_{\theta}(\sigma^{1}))
+(2)
+and optimize
+θ
+\theta
+by minimizing the cross-entropy loss from
+Equation
+6
+, substituting
+ℓ
+θ
+\ell_{\theta}
+for
+R
+ϕ
+R_{\phi}
+:
+ℒ
+DLHF
+(
+θ
+)
+=
+−
+∑
+(
+σ
+0
+,
+σ
+1
+,
+y
+)
+∈
+𝒟
+≻
+[
+(
+1
+−
+y
+)
+log
+P
+(
+σ
+0
+≻
+σ
+1
+)
++
+y
+log
+P
+(
+σ
+1
+≻
+σ
+0
+)
+]
+\mathcal{L}_{\text{DLHF}}(\theta)=-\sum_{(\sigma^{0},\sigma^{1},y)\in\mathcal{D}_{\succ}}\left[(1-y)\log P(\sigma^{0}\succ\sigma^{1})+y\log P(\sigma^{1}\succ\sigma^{0})\right]
+(3)
+The dynamics model itself serves as the preference function: a trajectory is preferred if it is more likely under the learned dynamics. This formulation naturally accommodates latent dynamics models; when
+𝒯
+^
+θ
+\hat{\mathcal{T}}_{\theta}
+operates over learned representations
+z
+z
+via an encoder
+e
+ψ
+e_{\psi}
+and latent dynamics
+𝒯
+^
+θ
+​
+(
+z
+′
+∣
+z
+,
+a
+)
+\hat{\mathcal{T}}_{\theta}(z^{\prime}\mid z,a)
+(
+Section
+A.2
+), we replace
+ℓ
+θ
+\ell_{\theta}
+with the corresponding latent log-likelihood.
+2.2
+RENEW
+Algorithm 1
+RENEW
+0:
+Pretrained world model
+T
+^
+θ
+\hat{T}_{\theta}
+, preference budget
+N
+N
+, number of iterations
+I
+I
+1:
+for
+i
+=
+1
+,
+…
+,
+I
+i=1,\dots,I
+do
+2:
+Compute epistemic uncertainty
+u
+u
+under current
+T
+^
+θ
+\hat{T}_{\theta}
+3:
+Sample segment pairs
+(
+σ
+0
+,
+σ
+1
+)
+(\sigma^{0},\sigma^{1})
+from
+T
+^
+θ
+\hat{T}_{\theta}
+proportional to
+u
+u
+4:
+Elicit
+N
+/
+I
+N/I
+preferences
+𝒟
+≻
+=
+{
+(
+σ
+j
+0
+,
+σ
+j
+1
+,
+y
+j
+)
+}
+j
+=
+1
+N
+/
+I
+\mathcal{D}_{\succ}=\{(\sigma^{0}_{j},\sigma^{1}_{j},y_{j})\}_{j=1}^{N/I}
+5:
+Update
+θ
+←
+arg
+⁡
+min
+θ
+​
+ℒ
+DLHF
+​
+(
+θ
+,
+𝒟
+≻
+)
+\theta\leftarrow\arg\min_{\theta}\mathcal{L}_{\text{DLHF}}(\theta;\mathcal{D}_{\succ})
+(
+Equation
+3
+)
+6:
+end
+for
+7:
+return
+T
+^
+θ
+\hat{T}_{\theta}
+DLHF provides a general formulation for dynamics learning from preferences. However, collecting preferences over uniformly sampled rollouts is inefficient: most trajectory pairs will cover regions where the model is already accurate. In the offline setting, model exploitation arises specifically in regions where the model has high epistemic uncertainty due to poor coverage in the training data
+𝒟
+\mathcal{D}
+. RENEW targets these regions directly.
+We assume access only to the pretrained model, not the original training data. This is practically motivated: the pretraining corpus may be proprietary, prohibitively large, or subject to privacy constraints. RENEW finetunes exclusively on preference data.
+Epistemic uncertainty.
+Let
+u
+⁡
+(
+s
+,
+a
+)
+u(s,a)
+denote an epistemic uncertainty estimator over the dynamics model at state-action pair
+(
+s
+,
+a
+)
+(s,a)
+. Multiple estimators have been proposed in the MBRL literature, including ensemble disagreement
+(
+24
+)
+, maximum predicted variance
+(
+41
+)
+, probabilistic ensembles
+(
+8
+)
+, and bootstrapped uncertainty
+(
+31
+)
+. RENEW is agnostic to the choice of
+u
+u
+. Intuitively, the active querying loop relies on
+u
+u
+to identify regions where the dynamics model is underspecified by the training data, so that preference supervision can be directed where it is most needed. We extend
+u
+u
+to trajectory segments by defining
+u
+⁡
+(
+σ
+)
+=
+∑
+t
+=
+0
+H
+−
+1
+u
+⁡
+(
+s
+t
+,
+a
+t
+)
+u(\sigma)=\sum_{t=0}^{H-1}u(s_{t},a_{t})
+.
+Active preference querying.
+At each round, we generate candidate trajectory segment pairs by rolling out the current dynamics model from a pool of valid starting states.
+4
+4
+4
+In practice, we use states from the offline pretraining dataset as the starting pool. However, RENEW does not use the offline data as a training signal during finetuning, only as a source of valid initial conditions from which to generate rollouts for preference labeling. Any source of valid states suffices, including states drawn from the environment’s initial state distribution
+d
+0
+d_{0}
+.
+We sample start states with probability proportional to their mean epistemic uncertainty across actions, concentrating the preference budget on transitions where the model is most likely to be exploited by a downstream planning agent. Actions are sampled uniformly. This soft selection maintains diversity across the queried regions while still biasing heavily toward high-uncertainty states. Alternative selection strategies such as top-
+k
+k
+or nucleus sampling
+(
+10
+;
+14
+)
+over the uncertainty distribution can also be used to balance concentration and coverage.
+Finetuning.
+After curating the preference dataset, we finetune
+θ
+\theta
+by minimizing
+ℒ
+DLHF
+​
+(
+θ
+)
+\mathcal{L}_{\text{DLHF}}(\theta)
+(
+Equation
+3
+). The process iterates over
+I
+I
+rounds: after each round of finetuning, we recompute the epistemic uncertainty under the updated model, so that subsequent rounds direct the preference budget toward the remaining high-uncertainty regions. This adaptive targeting ensures that supervision is not wasted on transitions the model has already corrected in earlier rounds.
+We detail practical considerations in
+Appendix
+D
+.
+3
+Experimental Evaluation
+We pose three questions for our experimental evaluation.
+1.
+Can binary preferences serve as a training signal for world model dynamics?
+Yes, but at high cost: DLHF requires around 1M preference labels to reach error comparable to 1K supervised transitions (
+Section
+3.1
+).
+2.
+Does active query selection improve sample efficiency over uniform querying?
+Yes. Under identical preference budgets, RENEW roughly halves the final error on Sliding Tile
+3
+×
+3
+3\times 3
+and avoids the catastrophic forgetting that naive DLHF exhibits on Sokoban (
+Section
+3.2
+).
+3.
+Can preference-based finetuning reduce transition errors in regions vulnerable to model exploitation?
+Yes. With only 1600 labels, RENEW reduces both prediction error and epistemic uncertainty in pretrained world models (
+Section
+3.3
+).
+3.1
+Learning Discrete World Models from Preferences
+Figure 2
+:
+Imagined rollouts from world models trained from preferences on three Jumanji environments.
+Row 1:
+ground-truth dynamics.
+Rows 2 to 4:
+model predictions after training on 1K, 5K, and 1M preference labels.
+Green
+borders indicate correct predictions;
+red
+borders indicate errors.
+We first seek a proof of life:
+can naive DLHF learn simple world models in an idealized setting?
+We use a synthetic oracle that labels preference pairs by
+ℓ
+1
+\ell_{1}
+distance to the ground-truth transition, a large preference budget (up to 1M labels), and small discrete environments from the Jumanji suite
+(
+4
+)
+(
+Appendix
+E
+); continuous control results are in
+Appendix
+G
+. We train a convolutional world model with latent dynamics (
+Section
+C.1
+). If naive DLHF fails under these conditions, the framework has no hope of scaling.
+Figure
+2
+and
+Table
+1
+confirm that naive DLHF can learn transition dynamics from scratch across environments. At 1K preferences, the model produces recognizable but incorrect structure; at 1M, predictions match ground truth. However, DLHF requires several orders of magnitude more labels to reach error comparable to 1K supervised transitions. We note that under a synthetic oracle, DLHF is effectively a diluted form of supervised learning.
+Table 1
+:
+Final validation
+ℓ
+1
+\ell_{1}
+error for world models trained from scratch. Supervised: 1K random transitions. DLHF: 1M preference labels. Mean
+±
+\pm
+95% CI over 6 seeds.
+Environment
+Supervised (1K trans)
+DLHF (1M prefs)
+Maze
+10
+×
+10
+10\times 10
+0.0003
+±
+0.0001
+0.0003\pm 0.0001
+0.0001
+±
+0.0000
+\mathbf{0.0001\pm 0.0000}
+Sliding
+5
+×
+5
+5\times 5
+0.6622
+±
+0.0347
+0.6622\pm 0.0347
+0.0105
+±
+0.0023
+\mathbf{0.0105\pm 0.0023}
+Sokoban
+0.0198
+±
+0.0018
+0.0198\pm 0.0018
+0.0181
+±
+0.0016
+\mathbf{0.0181\pm 0.0016}
+2048
+1.2063
+±
+0.0121
+1.2063\pm 0.0121
+1.2024
+±
+0.0452
+\mathbf{1.2024\pm 0.0452}
+3.2
+Sample Efficiency of Preference-Based Dynamics Learning
+We have seen that DLHF can learn simple world models under idealized settings. Unfortunately, even with a noiseless oracle providing preferences, an outsize number of preferences are needed to match supervised performance. This limitation means that naive DLHF is unsuited for most practical learning problems. A natural next question is thus whether DLHF has a more sample efficient instantiation. In this section, we show that RENEW, which directs preference queries toward high-uncertainty transitions via ensemble disagreement, is one such algorithm.
+We compare naive DLHF and RENEW on Sliding Tile (
+3
+×
+3
+3\times 3
+and
+5
+×
+5
+5\times 5
+), Sokoban, and Maze (
+5
+×
+5
+5\times 5
+and
+10
+×
+10
+10\times 10
+). Both methods start from the same pretrained checkpoint and use identical architecture, optimizer, and ensemble settings (
+Appendix
+C
+). The only difference is start-state selection: naive samples uniformly, RENEW selects proportional to ensemble disagreement. We use
+K
+=
+2
+K=2
+candidates and batch size
+B
+=
+64
+B=64
+, giving both methods 64 preference labels per gradient step. Results report mean
+±
+\pm
+95% confidence intervals over 5 seeds.
+Figure 3
+:
+Validation
+ℓ
+1
+\ell_{1}
+error versus cumulative preference labels for naive DLHF and RENEW across three Jumanji environments. Mean over 5 seeds; shaded regions indicate 95% CIs.
+Table 2
+:
+Final validation
+ℓ
+1
+\ell_{1}
+after 100K preference labels. Mean
+±
+\pm
+95% CI over 5 seeds.
+Sliding Tile
+Sokoban
+Maze
+Method
+𝟑
+×
+𝟑
+\mathbf{3\times 3}
+𝟓
+×
+𝟓
+\mathbf{5\times 5}
+𝟓
+×
+𝟓
+\mathbf{5\times 5}
+𝟏𝟎
+×
+𝟏𝟎
+\mathbf{10\times 10}
+Pretrained
+1.3200
+±
+0.0510
+1.3200\pm 0.0510
+3.9660
+±
+0.1030
+3.9660\pm 0.1030
+0.0377
+±
+0.0012
+0.0377\pm 0.0012
+0.0233
+±
+0.0033
+0.0233\pm 0.0033
+0.0060
+±
+0.0005
+0.0060\pm 0.0005
+Naive
+0.4190
+±
+0.1220
+0.4190\pm 0.1220
+1.8190
+±
+0.0370
+1.8190\pm 0.0370
+0.0428
+±
+0.0016
+0.0428\pm 0.0016
+0.0019
+±
+0.0006
+0.0019\pm 0.0006
+0.0001
+±
+0.0000
+0.0001\pm 0.0000
+RENEW
+0.2070
+±
+0.0790
+\mathbf{0.2070\pm 0.0790}
+1.6890
+±
+0.1070
+\mathbf{1.6890\pm 0.1070}
+0.0257
+±
+0.0025
+\mathbf{0.0257\pm 0.0025}
+0.0018
+±
+0.0006
+\mathbf{0.0018\pm 0.0006}
+0.0001
+±
+0.0000
+\mathbf{0.0001\pm 0.0000}
+Figure
+3
+and
+Table
+2
+show that RENEW’s active querying substantially improves sample efficiency over naive DLHF across discrete environments, roughly halving the final error on Sliding Tile
+3
+×
+3
+3\times 3
+under the same preference budget. This is consistent with the well-established finding that active query selection improves sample efficiency in preference learning
+(
+7
+)
+. However, one unexpected result also emerged: on Sokoban, naive DLHF degrades the pretrained model while RENEW improves it, suggesting that active querying may also reduce catastrophic forgetting of pretrained dynamics. We expand on this observation in the next subsection.
+3.3
+Repairing Model Exploitation
+Our final question is whether RENEW can repair model exploitation. Exploitation is essentially unavoidable for imperfect models
+(
+3
+)
+, but in practice it is concentrated in regions of high epistemic uncertainty
+(
+41
+;
+20
+)
+. We measure whether RENEW reduces both prediction error and epistemic uncertainty in pretrained world models more effectively than naive finetuning.
+Figure 4
+:
+A single Maze
+10
+×
+10
+10\times 10
+instance (matched 1600-label budget).
+Top:
+per-cell transition error (green cells are correct, warmer cells are mispredictions labeled by the number of wrong transitions).
+Bottom:
+per-cell epistemic uncertainty (darker = lower/better). Both finetuned models improve over the pretrained baseline (pretrained:
+86.8
+%
+86.8\%
+, naive:
+88.6
+%
+88.6\%
+, RENEW:
+99.1
+%
+99.1\%
+), though naive forgets a few transitions the pretrained model had already predicted correctly.
+We pretrain on Maze environments of sizes
+5
+×
+5
+5\times 5
+,
+10
+×
+10
+10\times 10
+,
+15
+×
+15
+15\times 15
+, and
+20
+×
+20
+20\times 20
+, with each ensemble member trained on 500 offline transitions. Both methods finetune on 1600 preference labels using the same setup as
+Section
+3.2
+, except with
+K
+=
+4
+K=4
+candidates and 3 active rounds.
+5
+5
+5
+An ablation over
+K
+K
+(
+Table
+5
+) shows
+K
+=
+2
+K=2
+is optimal under a fixed label budget, suggesting the results reported here may understate RENEW’s advantage.
+Figure
+4
+visualizes the effect on a single Maze
+10
+×
+10
+10\times 10
+instance. The pretrained model (left) exhibits high epistemic uncertainty in regions where it makes prediction errors. Naive finetuning (center) reduces some errors but leaves substantial uncertainty. RENEW (right) reduces both more effectively by concentrating supervision where the model is most wrong.
+Table
+3
+confirms this quantitatively across maze sizes: RENEW outperforms naive finetuning at every size under the same preference budget, with tighter confidence intervals. Both methods substantially improve over the pretrained baseline, confirming that preference labels can repair model errors without additional demonstrations.
+Table 3
+:
+Transition accuracy (%) across Maze sizes. Preference budget: 1600 labels. Mean
+±
+\pm
+95% CI over 10 seeds.
+Method
+5
+×
+\boldsymbol{\times}
+5
+10
+×
+\boldsymbol{\times}
+10
+15
+×
+\boldsymbol{\times}
+15
+20
+×
+\boldsymbol{\times}
+20
+Pretrained
+83.8
+±
+3.6
+83.8\pm 3.6
+87.6
+±
+2.1
+87.6\pm 2.1
+87.8
+±
+2.8
+87.8\pm 2.8
+87.9
+±
+2.0
+87.9\pm 2.0
+Naive
+89.7
+±
+3.5
+89.7\pm 3.5
+93.2
+±
+2.4
+93.2\pm 2.4
+92.3
+±
+1.7
+92.3\pm 1.7
+93.2
+±
+2.3
+93.2\pm 2.3
+RENEW
+96.5
+±
+1.5
+\mathbf{96.5\pm 1.5}
+97.2
+±
+1.4
+\mathbf{97.2\pm 1.4}
+94.4
+±
+1.6
+\mathbf{94.4\pm 1.6}
+94.9
+±
+1.3
+\mathbf{94.9\pm 1.3}
+This observation also suggests a mechanism for the catastrophic forgetting observed in
+Section
+3.2
+: uniform sampling risks overwriting correct pretrained dynamics with updates from inaccurate imagined transitions, while RENEW avoids this by concentrating supervision on high-uncertainty regions where the model is most likely wrong.
+4
+Conclusion
+This paper introduced Dynamics Learning from Human Feedback (DLHF), a framework for learning world model dynamics directly from binary preferences, and RENEW, an algorithm that uses epistemic uncertainty to direct preference queries toward transitions where the model is most vulnerable to exploitation. We showed that binary preferences can serve as a training signal for latent dynamics world models, though at substantially higher label cost than supervised learning; that RENEW improves sample efficiency over naive DLHF and avoids catastrophic forgetting of pretrained dynamics; and that preference-based finetuning reduces prediction error and epistemic uncertainty in regions vulnerable to model exploitation.
+The core novelty is a shift in what preferences supervise. Prior work uses preferences to learn reward functions or align policies; DLHF uses them to learn transition dynamics directly, requiring no reward labels, no expert demonstrations, and no environment interaction.
+Several limitations remain. Our experiments use a synthetic oracle rather than real human annotators, and the environments we evaluate are small discrete grid worlds and low-dimensional continuous control tasks. Validating DLHF with noisy human labels and scaling to higher-dimensional observation spaces are the most important next steps. Connecting empirical reductions in prediction error to formal guarantees of unexploitability
+(
+3
+)
+and practical offline RL algorithms
+(
+15
+)
+are other important directions.
+References
+Andrus (2019)
+M. Andrus
+Inverse reinforcement learning for dynamics
+.
+Note:
+Master’s thesis, EECS Department, University of California, Berkeley. UCB/EECS-2019-98
+Cited by:
+Appendix B
+.
+Baillargeon (2004)
+R. Baillargeon
+Infants’ reasoning about hidden objects: evidence for event-general and event-specific expectations
+.
+Developmental Science
+7
+(
+4
+),
+pp. 391–414
+.
+Cited by:
+§1
+,
+§2.1
+.
+Bhamidipaty
+et al.
+(2026)
+L. M. Bhamidipaty, E. S. Whitammer, D. Abel, M. J. Kochenderfer, and S. Ramamoorthy
+Imperfect world models are exploitable
+.
+arXiv preprint arXiv:2605.15960
+.
+Cited by:
+§A.2
+,
+§1
+,
+§3.3
+,
+§4
+.
+Bonnet
+et al.
+(2024)
+C. Bonnet, D. Luo, D. Byrne, S. Surana, S. Abramowitz, P. Duckworth, V. Coyette, L. I. Midgley, E. Tegegn, T. Kalloniatis, O. Mahjoub, M. Macfarlane, A. P. Smit, N. Grinsztajn, R. Boige, C. N. Waters, M. A. Mimouni, U. A. M. Sob, R. de Kock, S. Singh, D. Furelos-Blanco, V. Le, A. Pretorius, and A. Laterre
+Jumanji: a diverse suite of scalable reinforcement learning environments in JAX
+.
+International Conference on Learning Representations (ICLR)
+.
+Cited by:
+Appendix E
+,
+§1
+,
+§3.1
+.
+Bradley and Terry (1952)
+R. A. Bradley and M. E. Terry
+Rank analysis of incomplete block designs: I. The method of paired comparisons
+.
+Biometrika
+39
+(
+3/4
+),
+pp. 324–345
+.
+Cited by:
+§A.4
+,
+§1
+.
+Cao
+et al.
+(2024)
+Y. Cao, B. Ivanovic, C. Xiao, and M. Pavone
+Reinforcement learning with human feedback for realistic traffic simulation
+.
+IEEE International Conference on Robotics and Automation (ICRA)
+.
+Cited by:
+Appendix B
+.
+Christiano
+et al.
+(2017)
+P. F. Christiano, J. Leike, T. Brown, M. Martic, S. Legg, and D. Amodei
+Deep reinforcement learning from human preferences
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+§A.4
+,
+§A.4
+,
+Appendix D
+,
+§1
+,
+§3.2
+.
+Chua
+et al.
+(2018)
+K. Chua, R. Calandra, R. McAllister, and S. Levine
+Deep reinforcement learning in a handful of trials using probabilistic dynamics models
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+§A.2
+,
+§1
+,
+§2.2
+.
+Deisenroth and Rasmussen (2011)
+M. Deisenroth and C. E. Rasmussen
+PILCO: a model-based and data-efficient approach to policy search
+.
+International Conference on Machine Learning (ICML)
+.
+Cited by:
+§A.2
+,
+§1
+.
+Fan
+et al.
+(2018)
+A. Fan, M. Lewis, and Y. Dauphin
+Hierarchical neural story generation
+.
+Annual Meeting of the Association for Computational Linguistics (ACL)
+.
+Cited by:
+§2.2
+.
+Fujimoto
+et al.
+(2019)
+S. Fujimoto, D. Meger, and D. Precup
+Off-policy deep reinforcement learning without exploration
+.
+International Conference on Machine Learning (ICML)
+.
+Cited by:
+§A.3
+,
+§1
+.
+Ha and Schmidhuber (2018)
+D. Ha and J. Schmidhuber
+Recurrent world models facilitate policy evolution
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+§A.2
+,
+§A.2
+,
+§1
+.
+Hafner
+et al.
+(2019)
+D. Hafner, T. Lillicrap, I. Fischer, R. Villegas, D. Ha, H. Lee, and J. Davidson
+Learning latent dynamics for planning from pixels
+.
+International Conference on Machine Learning (ICML)
+.
+Cited by:
+§A.2
+.
+Holtzman
+et al.
+(2020)
+A. Holtzman, J. Buys, L. Du, M. Forbes, and Y. Choi
+The curious case of neural text degeneration
+.
+International Conference on Learning Representations (ICLR)
+.
+Cited by:
+§2.2
+.
+Jackson
+et al.
+(2026)
+M. Jackson, U. Berdica, J. Liesen, S. Whiteson, and J. Foerster
+A clean slate for offline reinforcement learning
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+§4
+.
+Jang
+et al.
+(2017)
+E. Jang, S. Gu, and B. Poole
+Categorical reparameterization with Gumbel-softmax
+.
+International Conference on Learning Representations (ICLR)
+.
+Cited by:
+Appendix D
+.
+Janner
+et al.
+(2019)
+M. Janner, J. Fu, M. Zhang, and S. Levine
+When to trust your model: model-based policy optimization
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+§A.2
+,
+§A.2
+,
+§1
+.
+Kang
+et al.
+(2025)
+B. Kang, Y. Yue, R. Lu, Z. Lin, Y. Zhao, K. Wang, G. Huang, and J. Feng
+How far is video generation from world model: a physical law perspective
+.
+International Conference on Machine Learning (ICML)
+.
+Cited by:
+Appendix B
+.
+Katz
+et al.
+(2019)
+S. M. Katz, A. Le Bihan, and M. J. Kochenderfer
+Learning an urban air mobility encounter model from expert preferences
+.
+IEEE/AIAA Digital Avionics Systems Conference (DASC)
+.
+Cited by:
+Appendix B
+.
+Kidambi
+et al.
+(2020)
+R. Kidambi, A. Rajeswaran, P. Netrapalli, and T. Joachims
+MOReL: model-based offline reinforcement learning
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+Appendix B
+,
+§1
+,
+§3.3
+.
+Kingma and Welling (2014)
+D. P. Kingma and M. Welling
+Auto-encoding variational Bayes
+.
+International Conference on Learning Representations (ICLR)
+.
+Cited by:
+Appendix D
+.
+Koopman (2024)
+P. Koopman
+Anatomy of a robotaxi crash: lessons from the Cruise pedestrian dragging mishap
+.
+International Conference on Computer Safety, Reliability, and Security (SafeComp)
+.
+Cited by:
+§1
+.
+Kumar
+et al.
+(2019)
+A. Kumar, J. Fu, M. Soh, G. Tucker, and S. Levine
+Stabilizing off-policy Q-learning via bootstrapping error reduction
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+§A.3
+,
+§1
+.
+Lakshminarayanan
+et al.
+(2017)
+B. Lakshminarayanan, A. Pritzel, and C. Blundell
+Simple and scalable predictive uncertainty estimation using deep ensembles
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+§2.2
+.
+Lange (2022)
+R. T. Lange
+gymnax: a JAX-based reinforcement learning environment library
+.
+Note:
+Software, version 0.0.4.
+http://github.com/RobertTLange/gymnax
+Cited by:
+Appendix G
+,
+§1
+.
+Levine
+et al.
+(2020)
+S. Levine, A. Kumar, G. Tucker, and J. Fu
+Offline reinforcement learning: tutorial, review, and perspectives on open problems
+.
+arXiv preprint arXiv:2005.01643
+.
+Cited by:
+§A.3
+.
+Li
+et al.
+(2025)
+D. Li, Y. Fang, Y. Chen, S. Yang, S. Cao, J. Wong, M. Luo, X. Wang, H. Yin, J. E. Gonzalez,
+et al.
+WorldModelBench: judging video generation models as world models
+.
+Advances in Neural Information Processing Systems (NeurIPS), Datasets and Benchmarks Track
+.
+Cited by:
+Appendix B
+.
+Liu
+et al.
+(2022)
+Z. Liu, H. Mao, C. Wu, C. Feichtenhofer, T. Darrell, and S. Xie
+A ConvNet for the 2020s
+.
+IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+.
+Cited by:
+§C.1
+.
+Maddison
+et al.
+(2017)
+C. J. Maddison, A. Mnih, and Y. W. Teh
+The Concrete distribution: a continuous relaxation of discrete random variables
+.
+International Conference on Learning Representations (ICLR)
+.
+Cited by:
+Appendix D
+.
+Motamed
+et al.
+(2026)
+S. Motamed, L. Culp, K. Swersky, P. Jaini, and R. Geirhos
+Do generative video models understand physical principles?
+.
+IEEE/CVF Winter Conference on Applications of Computer Vision (WACV)
+.
+Cited by:
+Appendix B
+,
+§1
+.
+Osband
+et al.
+(2016)
+I. Osband, C. Blundell, A. Pritzel, and B. Van Roy
+Deep exploration via bootstrapped DQN
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+§2.2
+.
+Ouyang
+et al.
+(2022)
+L. Ouyang, J. Wu, X. Jiang, D. Almeida, C. Wainwright, P. Mishkin, C. Zhang, S. Agarwal, K. Slama, A. Ray,
+et al.
+Training language models to follow instructions with human feedback
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+§A.4
+,
+Appendix D
+,
+§1
+.
+Pace
+et al.
+(2025)
+A. Pace, B. Schölkopf, G. Rätsch, and G. Ramponi
+Preference elicitation for offline reinforcement learning
+.
+International Conference on Learning Representations (ICLR)
+.
+Cited by:
+Appendix B
+.
+Riochet
+et al.
+(2021)
+R. Riochet, M. Y. Castro, M. Bernard, A. Lerer, R. Fergus, V. Izard, and E. Dupoux
+IntPhys 2019: a benchmark for visual intuitive physics understanding
+.
+IEEE Transactions on Pattern Analysis and Machine Intelligence
+44
+(
+9
+),
+pp. 5016–5025
+.
+Cited by:
+§1
+,
+footnote 3
+.
+Ross
+et al.
+(2011)
+S. Ross, G. Gordon, and D. Bagnell
+A reduction of imitation learning and structured prediction to no-regret online learning
+.
+International Conference on Artificial Intelligence and Statistics (AISTATS)
+.
+Cited by:
+Appendix B
+,
+§1
+.
+Spelke
+et al.
+(1992)
+E. S. Spelke, K. Breinlinger, J. Macomber, and K. Jacobson
+Origins of knowledge
+.
+Psychological Review
+99
+(
+4
+),
+pp. 605
+.
+Cited by:
+§1
+,
+§2.1
+.
+Sutton (1991)
+R. S. Sutton
+Dyna, an integrated architecture for learning, planning, and reacting
+.
+ACM SIGART Bulletin
+2
+(
+4
+),
+pp. 160–163
+.
+Cited by:
+§A.2
+,
+§1
+.
+Wu
+et al.
+(2025)
+J. Wu, S. Yin, N. Feng, and M. Long
+RLVR-world: training world models with reinforcement learning
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+Appendix B
+.
+Yu
+et al.
+(2022)
+T. Yu, A. Kumar, Y. Chebotar, K. Hausman, C. Finn, and S. Levine
+How to leverage unlabeled data in offline reinforcement learning
+.
+International Conference on Machine Learning (ICML)
+.
+Cited by:
+§A.3
+,
+§1
+.
+Yu
+et al.
+(2021)
+T. Yu, A. Kumar, R. Rafailov, A. Rajeswaran, S. Levine, and C. Finn
+COMBO: conservative offline model-based policy optimization
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+Appendix B
+.
+Yu
+et al.
+(2020)
+T. Yu, G. Thomas, L. Yu, S. Ermon, J. Zou, S. Levine, C. Finn, and T. Ma
+MOPO: model-based offline policy optimization
+.
+Advances in Neural Information Processing Systems (NeurIPS)
+.
+Cited by:
+Appendix B
+,
+§1
+,
+§1
+,
+§2.2
+,
+§3.3
+.
+Zolna
+et al.
+(2020)
+K. Zolna, A. Novikov, K. Konyushkova, C. Gulcehre, Z. Wang, Y. Aytar, M. Denil, N. De Freitas, and S. Reed
+Offline learning from demonstrations and unlabeled experience
+.
+arXiv preprint arXiv:2011.13885
+.
+Cited by:
+§A.3
+,
+§1
+.
+Supplementary Materials
+The following content was not necessarily subject to peer review.
+Appendix A
+Preliminaries
+We briefly review the necessary background to understand DLHF and RENEW.
+A.1
+Reinforcement Learning
+We consider a Markov decision process (MDP)
+ℳ
+=
+(
+𝒮
+,
+𝒜
+,
+𝒯
+,
+d
+0
+,
+R
+,
+γ
+)
+\mathcal{M}=(\mathcal{S},\mathcal{A},\mathcal{T},d_{0},R,\gamma)
+, where
+𝒮
+\mathcal{S}
+is the state space,
+𝒜
+\mathcal{A}
+is the action space,
+𝒯
+:
+𝒮
+×
+𝒜
+→
+Δ
+⁡
+(
+𝒮
+)
+\mathcal{T}:\mathcal{S}\times\mathcal{A}\to\Delta(\mathcal{S})
+is the dynamics model,
+d
+0
+d_{0}
+is the initial state distribution,
+R
+:
+𝒮
+×
+𝒜
+→
+ℝ
+R:\mathcal{S}\times\mathcal{A}\to\mathbb{R}
+is the reward function, and
+γ
+∈
+[
+0
+,
+1
+)
+\gamma\in[0,1)
+is the discount factor. A policy
+π
+⁡
+(
+a
+|
+s
+)
+\pi(a|s)
+induces a distribution over trajectories. We use
+τ
+\tau
+to denote trajectories and
+σ
+\sigma
+to denote trajectory segments.
+A.2
+Model-Based RL, World Models, and Model Exploitation
+In model-based RL (MBRL), the agent learns an approximate dynamics model
+𝒯
+^
+θ
+​
+(
+s
+′
+∣
+s
+,
+a
+)
+\hat{\mathcal{T}}_{\theta}(s^{\prime}\mid s,a)
+from observed transitions, typically via maximum likelihood:
+θ
+∗
+∈
+arg
+⁡
+max
+θ
+​
+𝔼
+(
+s
+,
+a
+,
+s
+′
+)
+∼
+𝒟
+​
+[
+log
+⁡
+𝒯
+^
+θ
+​
+(
+s
+′
+∣
+s
+,
+a
+)
+]
+.
+\theta^{*}\in\arg\max_{\theta}\,\mathbb{E}_{(s,a,s^{\prime})\sim\mathcal{D}}\left[\log\hat{\mathcal{T}}_{\theta}(s^{\prime}\mid s,a)\right].
+(4)
+The agent then plans within this learned model, generating synthetic rollouts to optimize its policy without additional environment interaction
+(
+37
+)
+. This is what makes MBRL substantially more sample efficient than model-free methods, which must update value functions or policies directly from real transitions
+(
+9
+;
+8
+;
+17
+)
+.
+We refer to
+𝒯
+^
+θ
+\hat{\mathcal{T}}_{\theta}
+broadly as a
+world model
+(
+12
+)
+. World models may operate directly in the state space or over learned latent representations
+z
+z
+, where an encoder
+e
+ψ
+​
+(
+z
+∣
+s
+)
+e_{\psi}(z\mid s)
+maps observations to a latent space and a latent dynamics model
+𝒯
+^
+θ
+​
+(
+z
+′
+∣
+z
+,
+a
+)
+\hat{\mathcal{T}}_{\theta}(z^{\prime}\mid z,a)
+predicts transitions in that space
+(
+13
+)
+. World models may also predict rewards, but this work focuses exclusively on dynamics.
+The central vulnerability of MBRL is
+model exploitation
+: because the learned dynamics model is imperfect, a policy optimizing within it can discover transitions that
+𝒯
+^
+θ
+\hat{\mathcal{T}}_{\theta}
+misestimates and exploit them to achieve artificially high returns that do not transfer to the true environment
+(
+12
+;
+17
+;
+3
+)
+.
+A.3
+Offline Reinforcement Learning
+In offline RL, the agent learns entirely from a fixed dataset
+𝒟
+\mathcal{D}
+of transitions collected by one or more behavior policies, with no further environment interaction
+(
+26
+)
+. This creates a distributional shift problem: the policy being learned may need to act in states or take actions that
+𝒟
+\mathcal{D}
+covers poorly, and without the ability to collect corrective data, errors in these regions compound
+(
+23
+;
+11
+)
+. For model-based offline methods, distributional shift manifests directly as model exploitation: the world model is trained on
+𝒟
+\mathcal{D}
+and is unreliable outside its support, so a policy planning in the model will find and exploit exactly those unreliable transitions.
+We consider the reward-free offline setting, where
+𝒟
+\mathcal{D}
+contains only transition tuples
+{
+(
+s
+i
+,
+a
+i
+,
+s
+i
+′
+)
+}
+i
+=
+1
+N
+\{(s_{i},a_{i},s_{i}^{\prime})\}_{i=1}^{N}
+without reward labels. This is practically motivated: in domains such as robotics, autonomous driving, and healthcare, large corpora of interaction data exist but reward annotation is expensive or unavailable
+(
+42
+;
+39
+)
+.
+A.4
+Reinforcement Learning from Human Feedback
+Reinforcement learning from human feedback (RLHF) is a class of methods for learning reward functions from human judgments, typically in the form of pairwise preferences over trajectory segments
+(
+7
+)
+. The objective is to optimize a reward model
+R
+ϕ
+R_{\phi}
+under the Bradley-Terry preference model
+(
+5
+)
+given a dataset of pairwise preferences
+𝒟
+≻
+=
+{
+(
+σ
+0
+,
+σ
+1
+,
+y
+)
+}
+\mathcal{D}_{\succ}=\{(\sigma^{0},\sigma^{1},y)\}
+where
+(
+σ
+0
+,
+σ
+1
+)
+(\sigma^{0},\sigma^{1})
+is a trajectory segment pair and
+y
+∈
+{
+0
+,
+1
+,
+0.5
+}
+y\in\{0,1,0.5\}
+is a preference label indicating whether
+σ
+0
+\sigma^{0}
+is preferred,
+σ
+1
+\sigma^{1}
+is preferred, or both are equally preferred, respectively. The Bradley-Terry model estimates the probability that
+σ
+0
+\sigma^{0}
+is preferred over
+σ
+1
+\sigma^{1}
+as:
+P
+⁡
+(
+σ
+0
+≻
+σ
+1
+)
+=
+exp
+⁡
+R
+ϕ
+​
+(
+σ
+0
+)
+exp
+⁡
+R
+ϕ
+​
+(
+σ
+0
+)
++
+exp
+⁡
+R
+ϕ
+​
+(
+σ
+1
+)
+=
+logistic
+⁡
+(
+R
+ϕ
+​
+(
+σ
+0
+)
+−
+R
+ϕ
+​
+(
+σ
+1
+)
+)
+P(\sigma^{0}\succ\sigma^{1})=\frac{\exp R_{\phi}(\sigma^{0})}{\exp R_{\phi}(\sigma^{0})+\exp R_{\phi}(\sigma^{1})}=\mathrm{logistic}\!\left(R_{\phi}(\sigma^{0})-R_{\phi}(\sigma^{1})\right)
+(5)
+where
+logistic
+⁡
+(
+x
+)
+=
+1
+/
+(
+1
++
+exp
+⁡
+(
+−
+x
+)
+)
+\mathrm{logistic}(x)=1/({1+\exp(-x)})
+. The reward model parameters
+ϕ
+\phi
+are optimized by minimizing the cross-entropy loss over the preference dataset:
+ℒ
+⁡
+(
+ϕ
+)
+=
+−
+𝔼
+(
+σ
+0
+,
+σ
+1
+,
+y
+)
+​
+[
+(
+1
+−
+y
+)
+​
+log
+⁡
+P
+⁡
+(
+σ
+0
+≻
+σ
+1
+)
++
+y
+​
+log
+⁡
+P
+⁡
+(
+σ
+1
+≻
+σ
+0
+)
+]
+.
+\mathcal{L}(\phi)=-\mathbb{E}_{(\sigma^{0},\sigma^{1},y)}\left[(1-y)\log P(\sigma^{0}\succ\sigma^{1})+y\log P(\sigma^{1}\succ\sigma^{0})\right].
+(6)
+While RLHF has typically been applied to learn reward functions or policies
+(
+7
+;
+32
+)
+, in this work we apply the preference learning framework to the
+dynamics model
+𝒯
+^
+θ
+\hat{\mathcal{T}}_{\theta}
+, using human feedback to improve the fidelity of learned world models rather than to specify task objectives.
+Appendix B
+Related Work
+Learning dynamics from preferences.
+Several recent papers have detailed methods for improving world model realism with human preferences.
+6
+use preferences from licensed drivers to train a reward model that aligns traffic simulation agents with human judgments of realism, and
+19
+use pilot preferences to tune an airspace encounter model via inverse reinforcement learning. In both cases, the preference signal supervises a reward model rather than the dynamics model itself, and the approach is tailored to a specific domain with access to expert labelers.
+1
+formalizes the inverse problem of learning dynamics from demonstrations but similarly assumes access to the reward function. In contrast, DLHF is, to our knowledge, the first formulation for learning dynamics directly from preferences, requiring no reward labels, no demonstrations, and no environment interaction.
+Offline model-based RL.
+Model exploitation in offline model-based RL has primarily been addressed through pessimism. MOPO
+(
+41
+)
+penalizes predicted returns by ensemble disagreement, discouraging the policy from visiting states where the model is uncertain. MOReL
+(
+20
+)
+halts rollouts when uncertainty exceeds a threshold, restricting planning to well-covered regions. COMBO
+(
+40
+)
+regularizes value estimates on out-of-distribution state-action pairs without explicit uncertainty quantification. All three approaches trade coverage for robustness, limiting the ability of model-based methods to generalize beyond the training distribution. DAgger
+(
+35
+)
+takes a different approach, collecting corrective expert labels in regions where the learned model fails, but requires environment interaction and access to an expert policy. Sim-OPRL
+(
+33
+)
+is closest to our setup: it operates offline, learns a transition model, generates rollouts in simulation, and elicits preferences, but uses those preferences exclusively to learn a reward model while leaving the dynamics fixed. RENEW offers a third response to model exploitation: rather than avoiding uncertain regions or collecting additional demonstrations, it repairs them directly using preference supervision directed by epistemic uncertainty.
+World models and physical plausibility.
+A growing body of work has examined whether learned world models capture physically plausible dynamics.
+18
+show that video generation models trained at scale fail to extract general physical rules, instead exhibiting case-based generalization.
+30
+confirm that even large-scale generative world models violate solidity, object persistence, and basic mechanics, and WorldModelBench
+(
+27
+)
+demonstrates through 67,000 human annotations that these violations are both pervasive and reliably judged by humans. These findings motivate preference-based supervision: the gap between what MLE learns from limited data and what humans trivially recognize as wrong is precisely the gap RENEW targets. RLVR-World
+(
+38
+)
+also identifies MLE as a misaligned training objective but addresses it with verifiable task-specific rewards that require ground-truth access. RENEW instead uses binary preferences to close dynamics fidelity gaps without ground-truth states, targeting the complementary problem of physical plausibility rather than task alignment.
+Appendix C
+Architecture and Optimization Details
+We use two latent dynamics world model architectures: a convolutional model that outputs categorical distributions over discrete tile states for Jumanji environments (
+Section
+C.1
+), and a Gaussian MLP that outputs diagonal Gaussian distributions over continuous next states for classic control environments (
+Section
+C.2
+). Both define a trajectory log-likelihood that serves as the preference function in the DLHF loss (
+Equation
+3
+). All experiments were run on a single NVIDIA GeForce RTX 2080 Ti GPU.
+Table
+4
+reports hyperparameters.
+Table 4
+:
+Hyperparameters for both architectures.
+Jumanji
+Classic Control
+Ensemble size
+E
+E
+3
+3
+Batch size
+B
+B
+64
+64
+Segment horizon
+H
+H
+1
+1
+BT temperature
+β
+\beta
+1.0
+1.0
+Candidate pool size
+1,024
+1,024
+Optimizer
+Adam
+Adam
+Learning rate
+3
+×
+10
+−
+4
+3\times 10^{-4}
+3
+×
+10
+−
+3
+3\times 10^{-3}
+C.1
+Convolutional Latent Dynamics Model
+The world model consists of three components: an encoder, a latent dynamics model, and a decoder, all operating on a 2D grid representation. We use ConvNeXt blocks
+(
+28
+)
+as the residual unit throughout. Each block applies a depthwise
+3
+×
+3
+3\times 3
+convolution, LayerNorm, a two-layer MLP with
+4
+×
+4\times
+channel expansion and GELU activation, and a residual connection.
+The encoder maps discrete grid observations to a latent representation. Each cell is embedded via a learned tile embedding of dimension 32, producing a
+(
+rows
+,
+cols
+,
+32
+)
+(\text{rows},\text{cols},32)
+grid. A linear projection expands this to 64 latent channels, followed by 3 ConvNeXt blocks. The dynamics model predicts the next latent state given the current latent and an action. The action is one-hot encoded and projected to a
+(
+rows
+,
+cols
+,
+64
+)
+(\text{rows},\text{cols},64)
+map via a linear layer, concatenated channel-wise with the latent, projected back to 64 channels, and processed through 4 ConvNeXt blocks. The decoder predicts per-cell tile logits from the next latent state and action using the same action injection, 3 ConvNeXt blocks, and a final linear layer outputting
+(
+rows
+,
+cols
+,
+N
+tiles
+)
+(\text{rows},\text{cols},N_{\text{tiles}})
+logits. During pretraining, the model is trained with cross-entropy over tile classes. During preference finetuning, the log-softmax of these logits provides the trajectory log-likelihood.
+C.2
+Gaussian MLP
+The world model concatenates the state vector with a one-hot encoding of the discrete action and passes the result through two fully connected layers of 128 units with tanh activations. The output head predicts the mean of the next state. A separate learned parameter vector stores the log-standard-deviation per action. The model defines a diagonal Gaussian over next states, and the trajectory log-likelihood is the sum of per-dimension Gaussian log-probabilities.
+Appendix D
+Practical Considerations
+Following
+7
+, we highlight several implementation details that we found important for RENEW to work well in practice.
+Single-transition segments.
+We set the segment horizon to
+H
+=
+1
+H=1
+, reducing each preference query to a single-transition comparison. This avoids cascading prediction errors over long rollouts that can make trajectory-level preferences noisy and uninformative. At
+H
+=
+1
+H=1
+, each query asks the simplest possible question:
+which single transition is more plausible?
+In the discrete environments we evaluate, single transitions produce perceptible changes that are easy to judge. In environments with smoother dynamics or long-horizon dependencies, longer segments may be necessary to surface distinguishable differences between model and oracle.
+Relaxed action sequences.
+While the formulation in
+Algorithm
+1
+is agnostic to how segment pairs are constructed, a natural choice is to roll out the same start state and action sequence through both the world model and an oracle, forming a pair from the two resulting segments. In practice, we find that action sequences need not match across pairs: the Bradley-Terry loss compares log-likelihoods of fixed segments regardless of how they were generated. This contrasts with typical RLHF, where segment pairs share a common prompt or initial condition to control for context. In DLHF, the preference label reflects absolute plausibility under the true dynamics rather than relative quality conditioned on a shared input, so this constraint can be relaxed.
+Ranking-based pair construction.
+For each high-uncertainty state-action pair, we sample
+K
+K
+candidate transitions, identify the most plausible one, and form
+K
+−
+1
+K-1
+binary preference pairs against the remaining candidates. This follows the ranking-based elicitation strategy used in InstructGPT
+(
+32
+)
+, which extracts more training signal per query by converting a single
+K
+K
+-way ranking into multiple pairwise comparisons.
+Differentiable sampling.
+Note that while generating trajectory segments from
+𝒯
+^
+θ
+\hat{\mathcal{T}}_{\theta}
+involves non-differentiable sampling,
+ℒ
+DLHF
+\mathcal{L}_{\text{DLHF}}
+is computed over fixed trajectory segments and is fully differentiable with respect to
+θ
+\theta
+. The sampling step could be made differentiable via the reparameterization trick
+(
+21
+)
+for continuous dynamics or Gumbel-Softmax relaxation
+(
+16
+;
+29
+)
+for discrete dynamics, enabling end-to-end gradient flow through rollout generation. In practice, we found this unnecessary: optimizing the log-likelihood of fixed segments provides a sufficient training signal, and differentiable sampling did not improve convergence.
+Appendix E
+Jumanji Environments
+For reference, we describe some of the Jumanji
+(
+4
+)
+environments used in our experimental evaluation.
+•
+Maze
+10
+×
+10
+10\times 10
+.
+A grid world where an agent navigates corridors to reach a goal position. Walls are procedurally generated; the agent can move in four cardinal directions.
+•
+Sliding Tile
+5
+×
+5
+5\times 5
+.
+A generalization of the classic 15-puzzle to a
+5
+×
+5
+5\times 5
+board. Tiles are shuffled from the solved configuration, and the player slides tiles into the single empty cell to restore the original ordering.
+•
+Sokoban.
+A puzzle game where the agent pushes boxes onto designated target cells. Boxes can only be pushed, not pulled, and cannot pass through walls or other boxes, making many moves irreversible.
+•
+2048.
+A single-player tile-merging game on a
+4
+×
+4
+4\times 4
+grid. The player slides all tiles in a cardinal direction; matching tiles merge and double in value. After each valid move, a new tile spawns in a random empty cell. Unlike the other environments, 2048 has stochastic dynamics.
+Appendix F
+Ablation Studies
+We ablate two design choices in RENEW: the number of candidate rollouts
+K
+K
+used for ranking-based pair construction, and the treatment of tied preferences in the Bradley-Terry loss. All ablations use a fixed budget of 10K preference labels, an ensemble of
+E
+=
+3
+E=3
+members, and report mean
+±
+\pm
+95% CI over 5 seeds.
+F.1
+Number of Candidates (
+K
+K
+)
+For each start state, RENEW samples
+K
+K
+candidate transitions from the model and forms
+K
+−
+1
+K-1
+preference pairs by comparing each candidate against the best (
+Appendix
+D
+). Larger
+K
+K
+extracts more training signal per oracle query but reduces the number of training steps under a fixed label budget, since each step consumes
+B
+⁡
+(
+K
+−
+1
+)
+B(K-1)
+labels. We sweep
+K
+K
+over
+{
+2
+,
+3
+,
+4
+,
+6
+,
+8
+}
+\{2,3,4,6,8\}
+on maze10, sliding3, and sokoban. For each value of
+K
+K
+, the naive baseline uses a batch size of
+B
+⁡
+(
+K
+−
+1
+)
+B(K-1)
+to match RENEW’s labels per step, isolating active selection as the only variable.
+Table 5
+:
+Effect of
+K
+K
+on final validation
+ℓ
+1
+\ell_{1}
+. Each naive baseline uses batch size
+B
+⁡
+(
+K
+−
+1
+)
+B(K-1)
+to match RENEW’s labels per step. Budget: 10K labels,
+E
+=
+3
+E=3
+. Mean
+±
+\pm
+95% CI over 5 seeds.
+K
+K
+Env
+Method
+2
+3
+4
+6
+8
+maze10
+Naive
+.022
+±
+.004
+\mathbf{.022\pm.004}
+.026
+±
+.004
+.026\pm.004
+.030
+±
+.003
+.030\pm.003
+.032
+±
+.002
+.032\pm.002
+.035
+±
+.003
+.035\pm.003
+RENEW
+.021
+±
+.001
+\mathbf{.021\pm.001}
+.026
+±
+.003
+.026\pm.003
+.030
+±
+.003
+.030\pm.003
+.034
+±
+.003
+.034\pm.003
+.041
+±
+.008
+.041\pm.008
+sliding3
+Naive
+1.26
+±
+.03
+\mathbf{1.26\pm.03}
+1.48
+±
+.04
+1.48\pm.04
+1.58
+±
+.08
+1.58\pm.08
+1.81
+±
+.10
+1.81\pm.10
+1.94
+±
+.10
+1.94\pm.10
+RENEW
+1.29
+±
+.09
+\mathbf{1.29\pm.09}
+1.50
+±
+.08
+1.50\pm.08
+1.65
+±
+.08
+1.65\pm.08
+1.87
+±
+.08
+1.87\pm.08
+2.03
+±
+.05
+2.03\pm.05
+sokoban
+Naive
+.090
+±
+.008
+\mathbf{.090\pm.008}
+.124
+±
+.017
+.124\pm.017
+.140
+±
+.011
+.140\pm.011
+.186
+±
+.048
+.186\pm.048
+.215
+±
+.069
+.215\pm.069
+RENEW
+.079
+±
+.016
+\mathbf{.079\pm.016}
+.124
+±
+.027
+.124\pm.027
+.129
+±
+.010
+.129\pm.010
+.174
+±
+.014
+.174\pm.014
+.222
+±
+.042
+.222\pm.042
+Table
+5
+shows that
+K
+=
+2
+K=2
+achieves the lowest
+ℓ
+1
+\ell_{1}
+error for both methods across all three environments, with performance degrading monotonically as
+K
+K
+increases. Under a fixed budget of 10K labels, the gradient step reduction at large
+K
+K
+dominates the benefit of richer per-query signal: at
+K
+=
+2
+K=2
+the model receives 156 gradient updates, while at
+K
+=
+8
+K=8
+it receives 22.
+The gap between RENEW and the naive baseline is small at every value of
+K
+K
+, contrasting with the finetuning results in
+Section
+3.3
+where RENEW shows a clear advantage. This may reflect a difference in the structure of epistemic uncertainty when finetuning versus training from scratch. When finetuning, uncertainty is concentrated in regions where the offline data provided poor coverage, giving RENEW clear targets for active selection. When training from scratch, uncertainty is approximately uniform everywhere, so active selection offers little advantage over uniform sampling. We leave verification of this hypothesis to future work.
+F.2
+Tie Exclusion
+When two candidate rollouts have identical
+ℓ
+1
+\ell_{1}
+error to the ground truth, the oracle has no preference. By default, RENEW excludes these tied pairs from the Bradley-Terry loss. The alternative is to include them with a preference label of
+0.5
+0.5
+, which pushes the model toward assigning equal likelihood to both candidates. We compare both strategies for RENEW and the batch-matched naive baseline on
+maze10
+,
+sliding3
+, and
+sokoban
+with
+K
+=
+2
+K=2
+.
+Table 6
+:
+Effect of tie exclusion on final validation
+ℓ
+1
+\ell_{1}
+. Budget: 10K labels,
+K
+=
+2
+K=2
+,
+E
+=
+3
+E=3
+. Mean
+±
+\pm
+95% CI over 5 seeds.
+Env
+Method
+Exclude ties
+Include ties
+maze10
+Naive
+.023
+±
+.002
+.023\pm.002
+.021
+±
+.001
+\mathbf{.021\pm.001}
+RENEW
+.022
+±
+.002
+.022\pm.002
+.022
+±
+.001
+\mathbf{.022\pm.001}
+sliding3
+Naive
+1.26
+±
+.03
+\mathbf{1.26\pm.03}
+1.27
+±
+.02
+1.27\pm.02
+RENEW
+1.32
+±
+.07
+1.32\pm.07
+1.27
+±
+.07
+\mathbf{1.27\pm.07}
+sokoban
+Naive
+.115
+±
+.025
+.115\pm.025
+.086
+±
+.018
+\mathbf{.086\pm.018}
+RENEW
+.078
+±
+.020
+\mathbf{.078\pm.020}
+.085
+±
+.025
+.085\pm.025
+Table
+6
+shows that the effect of tie handling is small and inconsistent across environments and methods. Including ties helps naive on
+maze10
+and
+sokoban
+but is neutral on
+sliding3
+. For RENEW, excluding ties helps on
+sokoban
+but including ties helps on
+sliding3
+. No consistent pattern emerges, and most differences fall within confidence intervals. We retain tie exclusion as the default for RENEW since it avoids injecting uninformative gradient signal, but the results suggest the method is not sensitive to this choice.
+Appendix G
+Continuous Control Experiments
+To evaluate whether DLHF extends beyond discrete environments, we apply the same comparisons from the main text to MountainCar-v0 (2-dimensional state, 3 actions) and Acrobot-v1 (6-dimensional state, 3 actions) from Gymnax
+(
+25
+)
+. Both have continuous state spaces and deterministic dynamics. The world model is a Gaussian MLP predicting diagonal Gaussian distributions over next states (
+Section
+C.2
+).
+Learning continuous dynamics from preferences is inherently harder than the discrete case. In discrete environments, two candidate predictions often land on entirely different tiles, producing an unambiguous preference signal. In continuous environments, both candidates are sampled from the same predicted Gaussian and tend to cluster near the mean, yielding more near-tied comparisons and less informative gradient updates. Despite this, DLHF learns continuous dynamics at near-parity with supervised baselines on both tasks.
+G.1
+Learning from Scratch
+We train both supervised and DLHF models from scratch using the same protocol as
+Section
+3.1
+. On MountainCar, both methods achieve near-zero MSE: supervised attains
+3.1
+×
+10
+−
+5
+±
+8.0
+×
+10
+−
+6
+3.1\times 10^{-5}\pm 8.0\times 10^{-6}
+and DLHF attains
+1.3
+×
+10
+−
+4
+±
+3.7
+×
+10
+−
+5
+1.3\times 10^{-4}\pm 3.7\times 10^{-5}
+(mean
+±
+\pm
+95% CI over 6 seeds). Both are effectively perfect predictions of the deterministic dynamics, with supervised slightly lower in absolute terms. On Acrobot, DLHF matches supervised performance within confidence intervals (
+15.66
+±
+0.93
+15.66\pm 0.93
+versus
+15.63
+±
+0.75
+15.63\pm 0.75
+), confirming that preferences can train continuous dynamics models on a 6-dimensional state space.
+G.2
+Sample Efficiency
+We compare naive DLHF and RENEW on both environments using an ensemble of
+E
+=
+3
+E=3
+members with a budget of 100K preference labels over 10 seeds. Both methods are warm-started from a shared initialization trained on 5 random transitions for 50 gradient steps. We report results at both
+K
+=
+2
+K=2
+and
+K
+=
+8
+K=8
+.
+Figure 5
+:
+Naive DLHF versus RENEW on MountainCar-v0 and Acrobot-v1 at
+K
+=
+2
+K=2
+(left) and
+K
+=
+8
+K=8
+(right). Solid lines show the mean over 10 seeds; shaded regions indicate 95% confidence intervals. Both methods improve over the warm-start initialization, but neither attains the low validation MSE seen in the discrete Jumanji environments, reflecting the weaker preference signal from Gaussian versus categorical log-likelihoods.
+Table 7
+:
+Final validation MSE on classic control
+environments. Both methods are warm-started from the same
+initialization (50 steps on 5 random transitions). Budget:
+100K labels. Mean
+±
+\pm
+95% CI over 10 seeds. Best per
+setting in
+bold
+.
+Warm-start
+Naive
+RENEW
+MountainCar-v0
+K
+=
+2
+K=2
+.0162
+±
+.0066
+.0162\pm.0066
+.0004
+±
+.0002
+\mathbf{.0004\pm.0002}
+.0050
+±
+.0047
+.0050\pm.0047
+K
+=
+8
+K=8
+.0306
+±
+.0589
+.0306\pm.0589
+.0164
+±
+.0082
+\mathbf{.0164\pm.0082}
+Acrobot-v1
+K
+=
+2
+K=2
+39.48
+±
+2.03
+39.48\pm 2.03
+15.09
+±
+0.81
+\mathbf{15.09\pm 0.81}
+18.59
+±
+2.13
+18.59\pm 2.13
+K
+=
+8
+K=8
+35.98
+±
+0.69
+35.98\pm 0.69
+26.28
+±
+1.48
+\mathbf{26.28\pm 1.48}
+At
+K
+=
+2
+K=2
+(1,562 gradient steps), naive outperforms RENEW on both environments. The state-action spaces are small (2 or 6 state dimensions, 3 actions), so uniform sampling provides adequate coverage, and ensemble disagreement is a noisier estimator of model error in continuous spaces than in discrete ones, where member agreement reliably indicates correctness. At
+K
+=
+8
+K=8
+(223 gradient steps), RENEW substantially outperforms naive on Acrobot (
+26.28
+26.28
+vs
+35.98
+35.98
+) and preserves the warm-start performance on MountainCar (
+0.016
+0.016
+vs
+0.031
+0.031
+for naive). With fewer gradient steps, each update must count, and RENEW’s targeted selection avoids wasting scarce steps on uninformative examples. This is consistent with the catastrophic forgetting pattern observed in the Jumanji experiments: naive degrades the warm-start dynamics on both environments at
+K
+=
+8
+K=8
+, while RENEW avoids this.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

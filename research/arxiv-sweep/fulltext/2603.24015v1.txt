@@ -1,0 +1,3615 @@
+Shooting location is a core indicator of offensive style in invasion sports. Existing basketball shot-chart analyses often use spatial information for descriptive visualization, location-based efficiency modeling, or clustering players into shooting archetypes, yet few studies provide a unified framework for fair comparison of shot-type-specific tendencies. We propose the shot-type-aware areal multilevel Poisson (STAMP) model, which jointly models team-level field-goal attempts across predefined court regions, seasons, and shot types using a Poisson likelihood with a possession-based exposure offset. The hierarchical random-effects structure combines team, area, team-area, and team-side random effects with shot-type-specific random slopes for key shot categories. We fit the model using approximate Bayesian inference via the Integrated Nested Laplace Approximation (INLA), enabling efficient analysis of more than
+3
+×
+10
+5
+3\times 10^{5}
+shots from two seasons of B.LEAGUE (the men’s professional basketball league in Japan). The STAMP model achieves better out-of-sample predictive performance than simpler baselines, yielding interpretable relative-rate maps and left-right bias summaries. Case studies illustrate how the model reveals team-specific spatial tendencies for comparative analysis, and we discuss its limitations and potential extensions.
+STAMP: A shot-type-aware areal multilevel Poisson model for league-wide comparison of basketball shot charts
+Kazuhiro Yamada
+Email:
+yamada.kazuhiro.t5@s.mail.nagoya-u.ac.jp
+Affiliation:
+Graduate School of Informatics, Nagoya University, Nagoya, Japan
+Keisuke Fujii
+Email:
+fujii@i.nagoya-u.ac.jp
+Affiliation:
+Graduate School of Informatics, Nagoya University, Nagoya, Japan
+Affiliation:
+Center for Advanced Intelligence Project, RIKEN, Osaka, Japan
+1
+Introduction
+In invasion games, shooting is one of the most crucial actions. Beyond its practical value for performance evaluation and scouting, shot data have also become a testbed for methodological innovation. This type of work is especially prevalent in soccer and basketball; however, because their purposes and tasks differ, the modeling strategies adopted in each field often diverge.
+In soccer, the relative rarity of goals, which are the most critical event, has caused repeated attention to the value of shots. The most well-known metric for shots in soccer is the Expected Goal (xG), which represents the probability that a given shot results in a goal
+(
+1
+;
+18
+;
+24
+;
+34
+)
+. Using tracking data (time-series data that continuously record player or ball positions/velocities during a game) and event data (discrete data that record action types and coordinates during a game, such as passes), situation-dependent goal probabilities are modeled and quantified. The models used include logistic regression
+(
+7
+;
+9
+;
+2
+;
+23
+)
+, gradient boosting trees such as XGBoost
+(
+6
+)
+(
+23
+;
+5
+;
+19
+;
+13
+)
+, and in some cases (Bayesian) hierarchical models
+(
+32
+;
+29
+)
+.
+By contrast, in basketball, while research attempting to capture shot quality does exist
+(
+28
+;
+17
+)
+, it is relatively scarce, partly because player posture data, although critical, are not widely available. Instead, work that visualizes or quantifies shooting efficiency or tendencies is more common
+(
+35
+)
+. Previous studies
+(
+25
+;
+20
+;
+30
+;
+33
+;
+4
+;
+39
+;
+38
+;
+14
+)
+have centered on modeling spatial information using shot charts, which record the locations of shots taken. This literature can broadly be divided into two strands: studies focusing on shooting efficiency by location and studies focusing on spatial shooting tendencies. The former mainly addresses the question of where shots should be taken, with an eye toward applications in optimizing shot strategy
+(
+16
+;
+27
+;
+8
+)
+. The latter is primarily concerned with understanding players’ or teams’ spatial preferences, sometimes as a basis for clustering them into archetypes. For this second strand, the modeling approach most frequently applied to shot charts has been the Log-Gaussian Cox Process (LGCP;
+21
+)
+(
+20
+;
+27
+;
+15
+;
+37
+;
+3
+)
+.
+LGCP models the log-intensity over continuous space as a Gaussian process, typically estimated via a discretized, sparsity-inducing representation. However, when marks, that is, categorical labels associated with each event (e.g., shot type: jump shot, layup, etc.), are introduced, the continuous field can absorb variation that should instead be attributed to those categories. For comparative inference across players or teams, one natural approach is to introduce random effects indexed by grouping factors (such as team or player) and to impose centering or sum-to-zero constraints so that these effects are identifiable and interpretable as deviations from a common baseline. These additions, however, increase coupling among parameters, reduce sparsity, and worsen the conditioning of the Hessian, leading to numerical instability and higher computational cost. In practice, LGCPs can therefore be cumbersome for fair comparisons between players or teams, especially when mark information is required.
+Accordingly, we introduce the shot-type-aware areal multilevel Poisson (STAMP) model, a Poisson generalized linear mixed model (GLMM) for shot counts over predefined court regions. By incorporating possession counts as an offset term and random effects for team, area, team
+×
+\times
+area, team
+×
+\times
+side and shot-type-dependent team
+×
+\times
+area slopes, STAMP yields exposure-adjusted comparisons across teams. Mathematically, the specification is a latent Gaussian model, which enables fast Bayesian inference via the Integrated Nested Laplace Approximation (INLA;
+26
+). This structure allows us to fit league-scale, shot-type-aware spatial models in minutes; thus, the method is practical for routine performance analysis.
+Similarly, shot counts over predefined areas have been modeled using a Poisson GLMM
+(
+33
+)
+. Their goal, however, is player categorization while accounting for shot success, whereas our focus is comparative inference for players and teams. In particular, we emphasize team-level shot charts as a primary unit of analysis, which has been less frequently addressed in prior spatial shot-chart work. Furthermore, by using possession counts as an offset, we mitigate concerns regarding comparability based on exposure, a challenge in that study, enabling rate-based comparisons even when exposure levels differ. In parallel, marked spatial point process approaches have been proposed
+(
+16
+;
+36
+)
+. In contrast, our model is more interpretable, as it adopts a multiplicatively separable, log-linear decomposition on the rate scale, and it is more scalable because inference relies on sparse GLMM/INLA machinery rather than Markov Chain Monte Carlo (MCMC) or deep neural network-based models.
+Our contributions are threefold:
+•
+Model: reusable template for marked spatial count data.
+We formulate the STAMP model as a latent Gaussian Poisson GLMM for spatially structured count data with multiplicatively separable, log-linear rate components indexed by team, season, area, side, and shot type.
+Shot type plays the role of a categorical mark, with mark-specific random slopes on team-by-area effects; all random effects (team, area, team
+×
+\times
+area, team
+×
+\times
+side, and mark-specific slopes) are mean-centered and constrained to sum to zero, ensuring identifiability and interpretable log-rate contrasts.
+While our empirical study focuses on basketball, the same template can be applied to other invasion sports or spatially aggregated event processes defined over pre-specified regions and categorical marks.
+•
+Inference & scalability: fast and stable.
+The STAMP model remains within the latent Gaussian class and is fitted via INLA with Penalized Complexity (PC) priors on variance and correlation hyperparameters
+(
+31
+)
+, avoiding MCMC and heavy deep architectures while
+still providing stable approximate Bayesian inference for league-scale data (on the order of
+3
+×
+10
+5
+3\times 10^{5}
+shots) in roughly a minute per model on a standard CPU.
+•
+Utility: league-wide interpretability and fair comparisons.
+The model provides interpretable log-rate contrasts, supports exposure-fair team-to-team comparisons by incorporating possession counts as an offset. In the experiments, we demonstrate the predictive validity and practical application in the B.LEAGUE (the men’s professional basketball league in Japan).
+In brief, the STAMP model is a Poisson GLMM for areal shot counts with a possession offset and fixed effects for shot-type, season, and court side. It includes four key random-effects components, two interaction terms (team
+×
+\times
+area and team
+×
+\times
+side) and two shot-type-specific team
+×
+\times
+area slopes, that capture team- and location-specific deviations in shot tendencies within a latent Gaussian INLA framework with PC priors on variance and correlation hyperparameters. Using only priors that pass prior predictive checks, we then systematically evaluate out-of-sample predictive performance under alternative random-effects specifications obtained by switching on and off these four components. Full details of the model specification, prior choices, and experimental design are given in Methods
+4
+. Guided by this specification, our empirical analysis is designed to address three questions. First, we quantify how much each of the four random-effects components contributes to out-of-sample predictive performance by comparing the sixteen candidate structures obtained by switching them on and off (Section
+2.2
+). Second, we investigate what spatial and left-right patterns the fully specified STAMP model reveals at the league and team levels, focusing on representative B.LEAGUE teams (Section
+2.3
+). Third, we examine whether adding further team-level slopes for shot-type preferences yields meaningful gains in predictive performance beyond the core STAMP structure (Section
+2.4
+).
+2
+Results
+2.1
+Dataset
+In this study, we use play-by-play data for a total of 2,352 games from the 2023–24 and 2024–25 B.LEAGUE seasons.
+Play-by-play data are time-stamped logs that record on-court actions such as shots and rebounds, as well as game events such as substitutions. Note that B.LEAGUE play-by-play data is available for viewing on the official website for each game, but it is not provided as open data in a machine-readable format for bulk acquisition for research purposes. This study utilized play-by-play data with shot location provided for research purposes by Data Stadium Inc., the official data supplier for B.LEAGUE.
+In the B.LEAGUE, each team plays against an opponent in rounds consisting of one or two consecutive games; during the regular-season, B1 teams play 60 games over 36 rounds, and B2 teams play 60 games over 32 rounds.
+Afterwards, the top eight teams in each division advance to a post-season tournament played in a best-of-three (two-win) format.
+Figure 1:
+Half-court area divisions; 1: under basket, 2: in the paint, 3: inside right wing, 4: inside right, 5: inside center, 6: inside left, 7: inside left wing, 8: outside right wing, 9: outside right, 10: outside center, 11: outside left, 12: out side leftwing, 13: backcourt.
+For modeling, we use only the number of field-goal attempts in each court area for each shot-type, after standardizing the offensive direction, together with the number of possessions for each team.
+The shot-type is determined from the action type field in the play-by-play data, and the court area divisions follow the definitions commonly used in the B.LEAGUE (Figure
+1
+).
+However, left and right symmetric areas are merged into a single area (for example,
+outside left
+and
+outside right
+are merged into
+outside
+).
+We also merge several similar shot-type labels to ensure sufficient counts in each category: fadeaway and turnaround jump shot; layup and driving layup; dunk, tip-in, alley-oop, and hook shot; and step-back jump shot and pull-up jump shot, for a total of 6 categories.
+The dataset contains 306,444 field-goal attempts in total, of which jump shots (denoted
+jump_shot
+) account for 156,423 attempts, step-back / pull-up jump shots (denoted
+step_pull
+) account for 50,454 attempts, layup group (denoted
+lay_up
+) account for 48,550 attempts, floating jump shots (denoted
+floater
+) account for 19,000 attempts, dunk / tip-in / alley-oop / hook shots (denoted
+rim_finishes
+) acount for 17,819 attempts, and fadeaway / turnaround jump shots (denoted
+fade_turn
+) account for 14,198 attempts.
+The mean number of field-goal attempts per team per season is 4,032.16, with a standard deviation of 251.80. Note that each court area is also assigned to a coarse side category (Left, Center, Right) based on Figure
+1
+: zones 6, 7, 11, and 12 are treated as Left; zones 1, 2, 5, 10, and 13 as Center; and zones 3, 4, 8, and 9 as Right.
+2.2
+Predictive performance of STAMP model
+We first compare predictive performance across the sixteen
+structures obtained by switching on or off each group of random-effect
+components: team
+×
+\times
+area effects (
+use_ta
+), team
+×
+\times
+side
+effects (
+use_ts
+), shot-type-specific random slopes for jump
+shots (
+use_jump
+), and shot-type-specific random slopes for
+step-back/pull-up shots (
+use_step
+). All candidates share the
+same fixed-effects structure; only the presence
+or absence of these random-effect blocks differs (see
+Methods
+4
+for details).
+Table 1:
+Model comparison for core structures. The columns
+use_ta
+,
+use_ts
+,
+use_jump
+, and
+use_step
+indicate whether each component is included
+(✓) or excluded (–). The primary criterion is the
+Monte Carlo estimate of the out-of-sample expected log predictive
+density
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+, with
+LPML
+regular
+\mathrm{LPML}_{\text{regular}}
+reported as a secondary,
+fitting-data criterion. Larger values (less negative) indicate
+better predictive performance. All values are computed under the prior
+setting
+U
+sd
+=
+1.5
+U_{\mathrm{sd}}=1.5
+and
+U
+slope
+=
+1.0
+U_{\mathrm{slope}}=1.0
+described in Section
+4.2
+.
+Boldface entries denote the best value among all 16 candidate structures, including those not shown in this table.
+use_ta
+use_ts
+use_jump
+use_step
+elpd
+^
+post
+MC
+↑
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}\,\uparrow
+LPML
+reg
+↑
+\mathrm{LPML}_{\text{reg}}\,\uparrow
+–
+–
+–
+–
+−
+6
+,
+581
+-6,581
+−
+130
+,
+617
+-130,617
+✓
+–
+–
+–
+−
+6
+,
+422
+-6,422
+−
+115
+,
+261
+-115,261
+–
+–
+✓
+✓
+−
+3
+,
+499
+-3,499
+−
+50
+,
+141
+-50,141
+✓
+–
+✓
+✓
+−
+3
+,
+385
+-3,385
+-37835
+✓
+✓
+✓
+✓
+-3383
+−
+49
+,
+967
+-49,967
+For each random-effects structure, we fit the STAMP model to regular-season data and evaluate out-of-sample predictive performance on the post-season data. Our primary criterion is the Monte Carlo approximation
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+of the expected log predictive density on post-season possessions, computed by drawing posterior samples of the latent Gaussian field and averaging the log-likelihood contributions cell-wise. As a complementary fitting-data measure, we also report the log pseudo-marginal likelihood on the regular-season data,
+LPML
+reg
+\mathrm{LPML}_{\mathrm{reg}}
+. Table
+1
+summarizes
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+and
+LPML
+reg
+\mathrm{LPML}_{\mathrm{reg}}
+for selected core structures under a representative prior configuration.
+The simplest baseline that omits all random effects
+(
+use_ta
+=
+0
+0
+,
+use_ts
+=
+0
+0
+,
+use_jump
+=
+0
+0
+,
+use_step
+=
+0
+0
+) exhibits the worst
+predictive performance for post-season data. Adding only
+team
+×
+\times
+area or team
+×
+\times
+side interactions yields modest
+improvements, while the largest gains arise when both interactions and
+shot-type-specific slopes are included. The full model with all four
+components switched on (
+use_ta
+=
+1
+1
+,
+use_ts
+=
+1
+1
+,
+use_jump
+=
+1
+1
+,
+use_step
+=
+1
+1
+) achieves the best
+predictive score for post-season, outperforming the baseline by roughly
+Δ
+​
+elpd
+^
+post
+MC
+≈
+3.2
+×
+10
+3
+\Delta\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}\approx 3.2\times 10^{3}
+while also attaining the highest
+LPML
+reg
+\mathrm{LPML}_{\mathrm{reg}}
+among the structures with
+use_ta
+=
+1
+1
+,
+use_jump
+=
+1
+1
+, and
+use_step
+=
+1
+1
+.
+However, the gain from including the team
+×
+\times
+side effects is very
+small in out-of-sample terms: the model with
+use_ta
+=
+1
+1
+,
+use_ts
+=
+0
+0
+,
+use_jump
+=
+1
+1
+,
+use_step
+=
+1
+1
+attains an
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+only two units
+worse than the full model, while achieving a substantially better
+LPML
+reg
+\mathrm{LPML}_{\mathrm{reg}}
+. This suggests that most of the predictive
+gain comes from the team
+×
+\times
+area interactions and jump/step
+slopes, and that team
+×
+\times
+side effects provide, at best, a marginal
+refinement. Despite its richer random-effect structure, the full model
+remains computationally feasible: a single INLA fit requires on the
+order of one minute of wall-clock time on our hardware (see
+Section
+4.3
+).
+To assess the sensitivity of this comparison to the prior
+hyperparameters, we repeated the sixteen-model comparison across all
+prior configurations that passed the prior predictive checks in
+Section
+4.2
+. For each random-effects structure, we averaged
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+and
+LPML
+reg
+\mathrm{LPML}_{\mathrm{reg}}
+over these prior settings; the full model remained the best performer in terms of mean
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+, and the improvement over the baseline stayed on the order of
+3.2
+×
+10
+3
+3.2\times 10^{3}
+. Moreover, for every prior configuration, the highest
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+was always attained by one of the two richest structures,
+use_ta
+=
+1
+1
+,
+use_jump
+=
+1
+1
+,
+use_step
+=
+1
+1
+with
+use_ts
+either
+0
+0
+or
+1
+1
+; no sparser specification ever
+ranked first. The difference between these two top models was always
+small (on the order of a few units in
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+), reinforcing the
+view that team
+×
+\times
+side effects play a secondary role compared with
+team
+×
+\times
+area interactions and shot-type-specific slopes. The ranking of the sixteen structures was also highly stable across prior configurations: Kendall’s
+τ
+\tau
+rank correlations between the model rankings were above 0.97. Taken together, these results indicate that the qualitative advantage of including
+team
+×
+\times
+area interactions and shot-type-specific random slopes (with or without team
+×
+\times
+side effects) is robust to reasonable changes in the prior specification.
+2.3
+Spatial patterns and interpretation
+To illustrate how the STAMP model with all random effects can be used to interpret spatial tendencies in practice, we first summarize league-wide left-right biases and then present detailed examples for two representative B.LEAGUE teams, Utsunomiya Brex and Nagoya Diamond Dolphins.
+Figure 2:
+Left-right asymmetry caterpillar plot.
+The horizontal axis shows the logarithm of the ratio of relative occurrence rates between right and left (aggregated for each team using the geometric mean over the season; values closer to the left indicate a bias toward the left side).
+The dashed line indicates no left-right bias, the points represent the estimated values, and the horizontal bars represent the approximate 95% confidence interval.
+Figure 3:
+Area-specific relative appearance trends for the Utsunomiya Brex in the 2024-25 season (Left:
+jump_shot
+, Right:
+step_pull
+); side scaling applied. Colors and labels represent team-level percentiles (pXX), with larger values and brighter colors indicating relatively more frequent occurrences.
+Figure 4:
+Area-specific relative appearance trends for the Nagoya Diamond Dolphins in the two seasons (left: 2023–24 season, right: 2024–25 season); side scaling applied. Colors and labels represent team-level percentiles (pXX), with larger values and brighter colors indicating relatively more frequent occurrences.
+Figure
+2
+shows a caterpillar plot of the
+team-by-side effects
+z
+i
+​
+d
+​
+s
+z_{ids}
+, summarized as the log ratio
+log
+⁡
+(
+Right
+/
+Left
+)
+\log(\mathrm{Right}/\mathrm{Left})
+of the posterior multipliers for the right and left sides,
+aggregated over seasons via a geometric mean. Values greater than zero
+indicate a preference for shots on the right side, whereas negative
+values indicate a left-side preference; horizontal bars indicate
+approximate
+95
+%
+95\%
+credible intervals. Most teams exhibit moderate left-right asymmetries whose intervals overlap
+the symmetric case
+log
+⁡
+(
+Right
+/
+Left
+)
+=
+0
+\log(\mathrm{Right}/\mathrm{Left})=0
+, but a few teams show clearly identifiable side-to-side biases. This type of summary is directly interpretable for coaches and analysts: it highlights whether a team tends to favor one side of the court over the other, after adjusting for overall shot volume.
+We then focus on two B.LEAGUE teams, Utsunomiya Brex and Nagoya Diamond Dolphins, to provide concrete examples of the spatial patterns captured by the STAMP model. For each team, we combine the estimated shot-type-specific random slopes with the team
+×
+\times
+side effects and convert the resulting posterior mean rates into percentiles relative to the league-wide distribution for each area. Intuitively, these maps summarize where a team shoots more or less frequently than the league baseline, after accounting for overall shooting volume.
+Figure
+3
+shows side-adjusted shot charts for Utsunomiya Brex in the 2024-25 season, for
+jump_shot
+(left panel) and
+step_pull
+(right panel). Each tile corresponds to one of the predefined court regions, and its color encodes the team-level percentile of the posterior rate among all teams in the same season (brighter colors indicate higher percentiles), while overlaid labels (pXX) report the corresponding percentile in numerical form. By construction, the figure highlights hot and cold regions in terms of relative attempt frequency, rather than raw shot counts, making it easy to identify where Utsunomiya is particularly active or inactive compared with league-wide tendencies. The chart indicates that Utsunomiya is not only a team that attempts many three-point shots, but also shows a relatively strong preference for taking above the break three-pointers when shooting off the dribble. This qualitative agreement with Utsunomiya’s reputation as a three-point-oriented team
+(
+22
+)
+offers a useful sanity check on the STAMP estimates, suggesting that the model captures salient aspects of their offensive profile.
+To illustrate temporal comparisons, Figure
+4
+presents
+side-adjusted
+step_pull
+charts for Nagoya Diamond Dolphins in the 2023-24 and 2024-25 seasons, displayed side by side. Because the color scale and percentile definition are shared across panels, changes in shading and labels directly reflect shifts in the team’s relative use of each region from season to season. In this way,
+STAMP-based maps provide an interpretable league-normalized summary of how spatial tendencies of a team remain stable or evolve.
+2.4
+Extended team-level slopes
+To examine whether further team-level heterogeneity in shot-type preferences improves predictive performance, we conducted an additional experiment that augments the STAMP model with extra team-level slopes. Fixing
+use_ta
+=
+1
+\texttt{use\_ta}=1
+,
+use_jump
+=
+1
+\texttt{use\_jump}=1
+, and
+use_step
+=
+1
+\texttt{use\_step}=1
+, we considered all
+2
+×
+2
+4
+=
+32
+2\times 2^{4}=32
+model configurations obtained by toggling the inclusion of team-by-side effects (
+use_ts
+∈
+{
+0
+,
+1
+}
+\texttt{use\_ts}\in\{0,1\}
+) and four additional team-level, season-specific slopes for the remaining shot-type categories, which have small spatial variation:
+lay_up
+,
+floater
+,
+rim_finishes
+, and
+fade_turn
+(indicators
+use_lay
+,
+use_float
+,
+use_rim
+,
+use_fade
+). All models were fitted under the same PC prior configuration as in the main comparison (
+U
+sd
+=
+1.5
+U_{\mathrm{sd}}=1.5
+,
+U
+slope
+=
+1.0
+U_{\mathrm{slope}}=1.0
+;
+Section
+4.2
+) and evaluated using
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+and
+LPML
+reg
+\mathrm{LPML}_{\mathrm{reg}}
+. Selected results are summarized in Table
+2
+, which lists the top 10 extended-slope configurations ranked by
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+.
+Table 2:
+Top 10 extended team-level slope configurations, ranked by
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+(larger values indicate better
+out-of-sample predictive performance). All models include
+team
+×
+\times
+area interactions and jump/step team
+×
+\times
+area
+×
+\times
+season
+slopes (
+use_ta
+=✓,
+use_jump
+=✓,
+use_step
+=✓); the table reports which additional components are
+switched on (✓) or off (–). The prior scales are fixed at
+U
+sd
+=
+1.5
+U_{\mathrm{sd}}=1.5
+and
+U
+slope
+=
+1.0
+U_{\mathrm{slope}}=1.0
+.
+Boldface entries denote the best value among all 32 candidate structures, including those not shown in this table.
+use_ts
+use_lay
+use_float
+use_rim
+use_fade
+elpd
+^
+post
+MC
+↑
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}\,\uparrow
+LPML
+reg
+↑
+\mathrm{LPML}_{\text{reg}}\,\uparrow
+✓
+✓
+✓
+–
+✓
+-3284
+−
+510
+,
+493
+-510,493
+✓
+✓
+–
+✓
+✓
+−
+3
+,
+308
+-3,308
+−
+355
+,
+010
+-355,010
+✓
+✓
+–
+–
+✓
+−
+3
+,
+341
+-3,341
+−
+73
+,
+155
+-73,155
+–
+✓
+✓
+–
+✓
+−
+3
+,
+347
+-3,347
+−
+37
+,
+184
+-37,184
+–
+✓
+–
+–
+✓
+−
+3
+,
+347
+-3,347
+−
+37
+,
+404
+-37,404
+✓
+✓
+✓
+✓
+–
+−
+3
+,
+347
+-3,347
+−
+50
+,
+299
+-50,299
+–
+✓
+✓
+✓
+✓
+−
+3
+,
+348
+-3,348
+−
+37
+,
+297
+-37,297
+–
+–
+✓
+✓
+✓
+−
+3
+,
+349
+-3,349
+−
+37
+,
+232
+-37,232
+–
+✓
+✓
+✓
+–
+−
+3
+,
+349
+-3,349
+−
+37
+,
+453
+-37,453
+–
+–
+✓
+–
+✓
+−
+3
+,
+352
+-3,352
+-36806
+As shown in Table
+2
+, some highly flexible specifications that turn on most of the additional slopes achieve slightly larger
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+than the original full STAMP model, but at the cost of extremely poor
+LPML
+reg
+\mathrm{LPML}_{\mathrm{reg}}
+(e.g., on the order of
+−
+5
+×
+10
+5
+-5\times 10^{5}
+), suggesting overfitting and unstable fit to the regular-season data. Focusing on configurations that simultaneously perform well on both criteria, the best trade-off was obtained by the model with
+use_ta
+=
+1
+\texttt{use\_ta}=1
+,
+use_ts
+=
+0
+\texttt{use\_ts}=0
+,
+use_jump
+=
+1
+\texttt{use\_jump}=1
+,
+use_step
+=
+1
+\texttt{use\_step}=1
+, and additional team-level slopes only for
+floater
+and
+fade_turn
+(
+use_lay
+=
+use_rim
+=0,
+use_float
+=
+use_fade
+=1; Table
+2
+). This configuration improved the postseason criterion to
+elpd
+^
+post
+MC
+≈
+−
+3.35
+×
+10
+3
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}\approx-3.35\times 10^{3}
+,
+about
++
+3.0
+×
+10
+1
++3.0\times 10^{1}
+relative to the original full model
+(
+use_ta
+=
+use_ts
+=
+use_jump
+=
+use_step
+=
+1
+\texttt{use\_ta}=\texttt{use\_ts}=\texttt{use\_jump}=\texttt{use\_step}=1
+),
+and simultaneously increased
+LPML
+reg
+\mathrm{LPML}_{\mathrm{reg}}
+by roughly
+1.0
+×
+10
+3
+1.0\times 10^{3}
+.
+Overall, these results indicate that allowing additional team-level slopes for a subset of shot types can yield incremental gains, but the marginal improvement in predictive performance over the original STAMP specification is modest compared to the gains already obtained from including team
+×
+\times
+area interactions and shot-type-specific jump/step slopes. For parsimony and interpretability, we therefore adopt the full STAMP model without the extra team-level slopes on
+lay_up
+,
+floater
+,
+rim_finishes
+, and
+fade_turn
+as our primary specification, and regard this extended-slope analysis as a robustness check. In applications where the main objective is to obtain a concise, stable description of team-level spatial tendencies, such additional slopes may not justify the extra model complexity, whereas they can be selectively introduced when one wishes to sharpen relative comparisons for a particular shot-type category of interest.
+3
+Discussion
+3.1
+Summary and practical implications
+The STAMP model extends conventional shot-chart analyses by jointly modelling team-level field-goal attempts across predefined court regions, seasons, and shot types, while remaining computationally feasible for league-scale datasets. The resulting relative-rate maps and left–right bias summaries can provide coaches and analysts with interpretable diagnostics of where and how a team tends to generate shots relative to the rest of the league, as illustrated by the examples for Utsunomiya Brex and Nagoya Diamond Dolphins (Section
+2.3
+).
+Beyond the case studies in this paper, we believe that the STAMP model has the potential to serve as a routine monitoring and scouting tool. Because the model only requires play-by-play-level shot records and possession counts, it can be refit as new games accumulate and embedded into existing analytics dashboards without additional tracking infrastructure. The per-possession rate formulation facilitates comparisons fair across teams with different paces, while the percentile-based maps and left-right bias summaries can be overlaid on conventional efficiency statistics (e.g., field-goal percentage by region) to jointly assess “how often” and “how well” teams shoot from different locations. In practice, such a tool could help coaching staff quickly identify stylistic tendencies and potential blind spots.
+3.2
+Methodological implications and robustness
+Methodologically, the STAMP model is specified as a Poisson linear mixed model with Gaussian random effects, which places it squarely within the class of latent Gaussian models targeted by INLA. Working with predefined court regions further helps keep the dimensionality of the latent field manageable and the resulting components interpretable, enabling fitting and inference at league scale without resorting to MCMC or heavy architectures.
+Our systematic comparison of structures and prior configurations suggests that the main substantive gains in predictive performance arise from including team
+×
+\times
+area effects together with shot-type-specific slopes for jump shots and step-back/pull-up jump shots (Section
+2.2
+). This conclusion was robust
+across all PC prior scale choices that passed the prior predictive checks, with the richest models consistently ranking at or near the top. The extended experiment with additional team-level slopes for
+lay_up
+,
+floater
+,
+rim_finishes
+, and
+fade_turn
+showed only modest incremental improvements in
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+relative to the original STAMP specification. These findings suggest that, unless a specific application calls for detailed relative comparisons within those particular shot-type categories, the simpler slope structure appears to retain most of the predictive and explanatory power while keeping the model more parsimonious. In a similar spirit, side effects are handled in a deliberately simple way in the present specification, through additive team
+×
+\times
+side interactions only. If an analysis required more detailed side-specific behaviour, the same framework could be extended to allow shot-type-dependent team
+×
+\times
+side slopes or other side-varying components, at the cost of additional complexity and data requirements.
+From a modeling perspective, the STAMP model can be viewed as a pragmatic compromise between fully continuous (marked) point-process formulations (e.g., LGCP) and purely descriptive
+shot-chart summaries. By aggregating shots to predefined court regions and modelling region-level attempt rates with a log-linear hierarchical structure, the STAMP model no longer tracks the exact
+(
+x
+,
+y
+)
+(x,y)
+location of each shot. Consequently, it cannot represent very fine-grained within-region preferences (for example, a tendency to favor certain spots in the paint). In return, the model works with a much lower-dimensional latent field, enjoys far more replication per parameter, and can be easier to fit and interpret at the league scale. Combined with the partial pooling structure across teams and seasons, this often makes the STAMP model more data-efficient than continuous-space LGCP approaches when applied at the league scale.
+The choice of predefined regions is also motivated by practice.
+We adopt a predefined partition of the half-court that closely matches the zone layout used in official B.League shot charts, so that the regions remain coarse enough to have a clear tactical interpretation while still being fine enough to reveal substantial differences in shot selection. In applied analysis and scouting, shot charts are often summarized at this regional resolution, so working with these predefined areas preserves practical interpretability while enabling efficient partial pooling.
+3.3
+Limitations and future directions
+This study has several limitations regarding scope and
+generalizability. All analyses are based on two seasons of B.LEAGUE play and are carried out at the team level within a single men’s league. We do not examine longer historical windows, women’s competitions, lower divisions, or multi-league settings, nor do we fit player-level models. Consequently, it remains an open question how well the present STAMP specification and its fitted spatial patterns would transfer to other contexts, and applying the model elsewhere would likely require recalibrating priors and possibly adapting random effects.
+Second, the current work focuses exclusively on shot frequency rather than shot outcomes or efficiency. We do not model made/missed outcomes, effective field-goal percentage, or expected points, so the STAMP model as specified here is best viewed as a tool for comparing where teams tend to generate shots, not how efficient they are from those locations.
+Nevertheless, the same hierarchical framework can be extended to jointly model shot volume and outcomes. A natural next step would be to combine the current Poisson model for attempt counts with an additional binomial (or logistic) submodel for made/missed outcomes, thereby defining both an expected attempt rate (xR) and expected points (xP) at the team-region-shot-type level. Such an extension would retain the interpretability of the present STAMP model specification, while offering a unified view of spatial shooting tendencies and scoring efficiency.
+Third, by construction, the STAMP model is an areal model: shots are aggregated to predefined court regions and summarized via a log-linear Poisson hierarchy. As a result, the model cannot resolve fine-grained variation in continuous shot locations within a region, nor does it
+explicitly account for defender positions, play type, or other
+contextual factors. Such information is averaged within regions or indirectly absorbed into the random effects, which is appropriate for team-level tendency comparisons, but may be limiting for more detailed tactical analysis. If richer mark information, such as play-type labels (e.g., those provided by commercial tagging services), is available, the same areal framework could be extended to incorporate these marks as additional fixed or random effects, or even as alternative responses, thereby enabling complementary models that focus on offensive style or play-context patterns.
+An additional modeling choice concerns the shot-type taxonomy used in the present analysis. For modeling convenience and to secure sufficient counts per cell, we manually merged several play-by-play action labels into six broader shot-type categories (e.g., grouping layups and driving layups, or fadeaway and turnaround jump shots). Although these groupings are defensible from a basketball perspective, they are inevitably somewhat ad hoc. If richer contextual information, such as shooting posture, ball trajectory, or player tracking data, were available, the indicator functions that gate the shot-type-specific random slopes could, in principle, be replaced by features or latent representations learned from those data. This would open the door to more data-driven and potentially more nuanced shot-type partitions within the same hierarchical framework, while preserving the overall structure of STAMP.
+Beyond team-level applications, extending the STAMP model to player-level comparisons would be a natural next step. A straightforward approach would be to embed additional random effects for players nested within teams, allowing the same regional and shot-type structure to describe within-team variation. For cross-team comparisons, however, it may often be more meaningful to compare players who occupy similar tactical roles (e.g., ball handlers, shooters, bigs). In such settings, one could either fit separate models by role or include role indicators and role-specific random effects so that differences in spatial tendencies are interpreted relative to players with comparable responsibilities and usage, provided that each player accumulates sufficient shot volume. Practically, adding such player- and role-level components also increases the number of hyperparameters and the size of the latent field, which in turn raises the computational cost of INLA. If player comparison is the only objective, a simpler player-level shot-chart model may therefore be a more computationally convenient choice.
+More broadly, the STAMP framework is potentially applicable to other invasion sports in which shot actions are spatially structured, such as handball or ice hockey. In contrast, for sports like soccer, where shots are relatively rare and much of the tactical richness lies in the build-up play, it may be more practically useful to adapt the same areal Poisson idea to model passes, entries into dangerous zones, or other intermediate actions using an appropriate exposure offset rather than shots themselves. In this sense, the STAMP model can be regarded as a general template for spatially structured count data that can be repurposed according to the most informative action type in each sport.
+4
+Methods
+4.1
+Proposed model: shot-type-aware areal multilevel Poisson (STAMP) model
+In this study, for team
+i
+=
+1
+,
+…
+,
+I
+i=1,\dots,I
+, season
+s
+=
+1
+,
+…
+,
+S
+s=1,\dots,S
+, area
+a
+=
+1
+,
+…
+,
+A
+a=1,\dots,A
+,
+side
+d
+∈
+{
+Left
+,
+Right
+,
+Center
+}
+d\in\{\mathrm{Left},\mathrm{Right},\mathrm{Center}\}
+, and shot-type
+k
+∈
+𝒦
+k\in\mathcal{K}
+, we model the number of field goal attempts in the cell
+(
+i
+,
+s
+,
+a
+,
+d
+,
+k
+)
+(i,s,a,d,k)
+, denoted by
+Y
+i
+​
+s
+​
+a
+​
+d
+​
+k
+Y_{isadk}
+, using the team
+×
+\times
+season possession
+count
+E
+i
+​
+s
+E_{is}
+as an exposure offset. Throughout, we adopt a shot-terminated definition of possession: a possession ends at each field goal attempt, and an offensive rebound begins a new possession.
+4.1.1
+Likelihood and linear predictor
+The likelihood and linear predictor are given by
+Y
+i
+​
+s
+​
+a
+​
+d
+​
+k
+\displaystyle Y_{isadk}
+∼
+Poisson
+⁡
+(
+μ
+i
+​
+s
+​
+a
+​
+d
+​
+k
+)
+,
+\displaystyle\sim\mathrm{Poisson}(\mu_{isadk}),
+log
+⁡
+μ
+i
+​
+s
+​
+a
+​
+d
+​
+k
+\displaystyle\log\mu_{isadk}
+=
+log
+⁡
+E
+i
+​
+s
++
+η
+i
+​
+s
+​
+a
+​
+d
+​
+k
+,
+\displaystyle=\log E_{is}+\eta_{isadk},
+(1)
+where
+η
+i
+​
+s
+​
+a
+​
+d
+​
+k
+\eta_{isadk}
+denotes the linear predictor. We decompose
+η
+i
+​
+s
+​
+a
+​
+d
+​
+k
+\eta_{isadk}
+as
+η
+i
+​
+s
+​
+a
+​
+d
+​
+k
+\displaystyle\eta_{isadk}
+=
+β
+0
++
+β
+s
+(
+season
+)
++
+β
+d
+(
+side
+)
++
+β
+k
+(
+shot
+​
+_
+​
+type
+)
+⏟
+fixed effects
+\displaystyle=\underbrace{\beta_{0}+\beta^{(\mathrm{season})}_{s}+\beta^{(\mathrm{side})}_{d}+\beta^{(\mathrm{shot\_type})}_{k}}_{\text{fixed effects}}
++
+u
+i
+⏟
+team (iid)
++
+v
+a
+⏟
+area (iid)
+\displaystyle\quad+\,\underbrace{u_{i}}_{\text{team (iid)}}+\underbrace{v_{a}}_{\text{area (iid)}}
++
+w
+i
+​
+a
+​
+s
+⏟
+team
+×
+area (seasonally correlated)
++
+z
+i
+​
+d
+​
+s
+⏟
+team
+×
+side (season-specific)
+\displaystyle\quad+\,\underbrace{w_{ias}}_{\text{team}\times\text{area (seasonally correlated)}}+\underbrace{z_{ids}}_{\text{team}\times\text{side (season-specific)}}
++
+∑
+m
+=
+1
+M
+γ
+m
+(
+k
+)
+r
+i
+​
+a
+​
+s
+(
+m
+)
+⏟
+shot-type-specific team
+×
+area (seasonally correlated)
+,
+\displaystyle\quad+\,\sum_{m=1}^{M}\gamma_{m}(k)\,\underbrace{r^{(m)}_{ias}}_{\text{shot-type-specific team}\times\text{area (seasonally correlated)}},
+(2)
+subject to the sum-to-zero constraints
+∑
+i
+=
+1
+I
+u
+i
+\displaystyle\sum_{i=1}^{I}u_{i}
+=
+0
+,
+\displaystyle=0,
+(3)
+∑
+a
+=
+1
+A
+v
+a
+\displaystyle\sum_{a=1}^{A}v_{a}
+=
+0
+,
+\displaystyle=0,
+(4)
+∑
+i
+=
+1
+I
+∑
+a
+=
+1
+A
+∑
+s
+=
+1
+S
+w
+i
+​
+a
+​
+s
+\displaystyle\sum_{i=1}^{I}\sum_{a=1}^{A}\sum_{s=1}^{S}w_{ias}
+=
+0
+,
+\displaystyle=0,
+(5)
+∑
+d
+∈
+{
+Left
+,
+Right
+,
+Center
+}
+z
+i
+​
+d
+​
+s
+\displaystyle\sum_{d\in\{\mathrm{Left},\mathrm{Right},\mathrm{Center}\}}z_{ids}
+=
+0
+(
+∀
+i
+,
+s
+)
+,
+\displaystyle=0\quad(\forall\,i,s),
+(6)
+∑
+i
+=
+1
+I
+∑
+a
+=
+1
+A
+∑
+s
+=
+1
+S
+r
+i
+​
+a
+​
+s
+(
+m
+)
+\displaystyle\sum_{i=1}^{I}\sum_{a=1}^{A}\sum_{s=1}^{S}r^{(m)}_{ias}
+=
+0
+(
+∀
+m
+)
+,
+\displaystyle=0\quad(\forall\,m),
+(7)
+where,
+E
+i
+​
+s
+E_{is}
+is the number of possessions for team
+i
+i
+in season
+s
+s
+(offset term);
+u
+i
+u_{i}
+is an i.i.d. random effect for team
+i
+i
+; and
+v
+a
+v_{a}
+is an i.i.d. random effect for area
+a
+a
+. The terms
+w
+i
+​
+a
+​
+s
+w_{ias}
+are
+seasonally correlated team
+×
+\times
+area effects; for each
+(
+i
+,
+a
+)
+(i,a)
+we assume an
+equicorrelation structure
+corr
+⁡
+(
+w
+i
+​
+a
+​
+s
+,
+w
+i
+​
+a
+​
+s
+′
+)
+=
+ρ
+ta
+\mathrm{corr}(w_{ias},w_{ias^{\prime}})=\rho_{\mathrm{ta}}
+for
+s
+≠
+s
+′
+s\neq s^{\prime}
+.
+For team
+×
+\times
+side, we use season-specific i.i.d. random effects
+z
+i
+​
+d
+​
+s
+z_{ids}
+with zero-sum constraints
+∑
+d
+z
+i
+​
+d
+​
+s
+=
+0
+\sum_{d}z_{ids}=0
+for each
+(
+i
+,
+s
+)
+(i,s)
+, but do not
+impose an explicit temporal correlation across seasons. Since side is a coarse
+factor (Left/Right/Center) and the corresponding counts are relatively
+abundant, we mainly introduce seasonal correlation for the more granular and
+data-sparse team
+×
+\times
+area and shot-type-specific effects.
+The collection
+{
+r
+i
+​
+a
+​
+s
+(
+m
+)
+}
+m
+=
+1
+M
+\{r^{(m)}_{ias}\}_{m=1}^{M}
+denotes shot-type-dependent random
+slopes for team
+×
+\times
+area; for each
+m
+m
+and
+(
+i
+,
+a
+)
+(i,a)
+these are also modeled as
+seasonally correlated across
+s
+s
+, analogously to
+w
+i
+​
+a
+​
+s
+w_{ias}
+. The function
+γ
+m
+​
+(
+k
+)
+\gamma_{m}(k)
+is a known coding function for shot-type
+k
+k
+. As the simplest
+example, using the indicator function based on the family of shot-type sets
+{
+𝒦
+m
+}
+m
+=
+1
+M
+\{\mathcal{K}_{m}\}_{m=1}^{M}
+,
+γ
+m
+(
+k
+)
+=
+{
+k
+∈
+𝒦
+m
+}
+,
+\displaystyle\gamma_{m}(k)\;=\;\mathbf{1}\!\left\{k\in\mathcal{K}_{m}\right\},
+(8)
+(
+2
+) can be written as
+η
+i
+​
+s
+​
+a
+​
+d
+​
+k
+=
+⋯
++
+∑
+m
+=
+1
+M
+{
+k
+∈
+𝒦
+m
+}
+r
+i
+​
+a
+​
+s
+(
+m
+)
+,
+\displaystyle\eta_{isadk}\;=\;\cdots\;+\;\sum_{m=1}^{M}\mathbf{1}\!\left\{k\in\mathcal{K}_{m}\right\}\,r^{(m)}_{ias},
+(9)
+and this is the specification adopted in our experiments. Note that each fixed effect is treated as a deviation from a reference category (
+𝒩
+⁡
+(
+0,100
+2
+)
+\mathcal{N}(0,100^{2})
+is used as a nearly uninformed prior).
+Because including a uniform interaction for all shot-types would cause over-parameterization and destabilize cells
+(
+i
+,
+s
+,
+a
+,
+d
+,
+k
+)
+(i,s,a,d,k)
+with few shots, we
+assign random slopes only to a limited set of shot-types and treat the remaining shot-type effects as fixed effects. This design keeps the model additive on the log scale and stabilizes computation; together with sum-to-zero constraints that fix the overall baseline and regularizing hyperpriors (described below) that shrink the variances and temporal correlations of the seasonally correlated effects towards their base models, it yields an appropriate degree of partial pooling. Furthermore, the equicorrelation structure across seasons for team
+×
+\times
+area and shot-type-specific effects allows us to capture both persistence and year-to-year variation, while the season-specific team
+×
+\times
+side effects flexibly absorb coarse directional biases within each season. Note that imposing, for each season and area, a sum-to-zero constraint across teams on the season-correlated effects could yield more discriminative (i.e., more relative) team differences, but we did not pursue this due to implementation difficulties.
+From a likelihood perspective, we retain a Poisson specification with a possession-based offset rather than switching to a negative-binomial likelihood with an additional dispersion parameter. In our setting, the dominant sources of overdispersion are heterogeneity across teams, regions, and shot types, which are already modeled through the random effects; adding a separate dispersion parameter at the likelihood level would effectively layer extra overdispersion on top of these components, complicating interpretation and identifiability. Prior predictive checks (Section
+4.2
+) did not indicate substantial lack of fit at the aggregated cell level, supporting the adequacy of the Poisson formulation. For similar reasons, we do not impose additional spatial smoothing priors (e.g., conditional autoregressive structure) across neighboring regions. Instead, predefined court regions are treated as discrete areal categories
+with independent random effects (i.e., we do not impose any spatial
+smoothing across neighboring regions): this preserves sharp team-specific hot and cold spots, avoids blurring practically meaningful contrasts between regions, and keeps the latent Gaussian field sufficiently low-dimensional for efficient INLA-based inference.
+4.1.2
+Priors for random effects and hyperparameters
+The random effects are modeled as
+u
+i
+\displaystyle u_{i}
+∼
+iid
+𝒩
+⁡
+(
+0
+,
+σ
+team
+2
+)
+,
+\displaystyle\stackrel{{\scriptstyle\mathrm{iid}}}{{\sim}}\mathcal{N}(0,\sigma^{2}_{\mathrm{team}}),
+(10)
+v
+a
+\displaystyle v_{a}
+∼
+iid
+𝒩
+⁡
+(
+0
+,
+σ
+area
+2
+)
+,
+\displaystyle\stackrel{{\scriptstyle\mathrm{iid}}}{{\sim}}\mathcal{N}(0,\sigma^{2}_{\mathrm{area}}),
+(11)
+𝐰
+i
+​
+a
+\displaystyle\mathbf{w}_{ia}
+:
+=
+(
+w
+i
+​
+a
+​
+1
+,
+…
+,
+w
+i
+​
+a
+​
+S
+)
+⊤
+∼
+𝒩
+⁡
+(
+𝟎
+,
+σ
+ta
+2
+​
+𝐑
+S
+​
+(
+ρ
+ta
+)
+)
+,
+\displaystyle:=(w_{ia1},\ldots,w_{iaS})^{\top}\sim\mathcal{N}\!\bigl(\mathbf{0},\,\sigma^{2}_{\mathrm{ta}}\,\mathbf{R}_{S}(\rho_{\mathrm{ta}})\bigr),
+(12)
+z
+i
+​
+d
+​
+s
+\displaystyle z_{ids}
+∼
+iid
+𝒩
+⁡
+(
+0
+,
+σ
+ts
+2
+)
+,
+\displaystyle\stackrel{{\scriptstyle\mathrm{iid}}}{{\sim}}\mathcal{N}(0,\sigma^{2}_{\mathrm{ts}}),
+(13)
+𝐫
+i
+​
+a
+(
+m
+)
+\displaystyle\mathbf{r}^{(m)}_{ia}
+:
+=
+(
+r
+i
+​
+a
+​
+1
+(
+m
+)
+,
+…
+,
+r
+i
+​
+a
+​
+S
+(
+m
+)
+)
+⊤
+∼
+𝒩
+(
+𝟎
+,
+σ
+m
+2
+𝐑
+S
+(
+ρ
+m
+)
+)
+,
+m
+=
+1
+,
+…
+,
+M
+,
+\displaystyle:=\bigl(r^{(m)}_{ia1},\ldots,r^{(m)}_{iaS}\bigr)^{\top}\sim\mathcal{N}\!\bigl(\mathbf{0},\,\sigma^{2}_{m}\,\mathbf{R}_{S}(\rho_{m})\bigr),\quad m=1,\ldots,M,
+(14)
+where
+𝐑
+S
+​
+(
+ρ
+)
+\mathbf{R}_{S}(\rho)
+denotes the
+S
+×
+S
+S\times S
+equicorrelation matrix with ones on the diagonal and off-diagonal elements equal to
+ρ
+\rho
+.
+For the variance and correlation hyperparameters, we use PC priors. In particular, for given thresholds
+U
+∙
+,
+V
+∙
+U_{\bullet},V_{\bullet}
+and
+tail probabilities
+α
+prec
+,
+α
+cor
+\alpha_{\mathrm{prec}},\alpha_{\mathrm{cor}}
+, we specify
+Pr
+⁡
+(
+σ
+∙
+>
+U
+∙
+)
+\displaystyle\Pr(\sigma_{\bullet}>U_{\bullet})
+=
+α
+prec
+,
+Pr
+⁡
+(
+|
+ρ
+∙
+|
+>
+V
+∙
+)
+=
+α
+cor
+,
+\displaystyle=\alpha_{\mathrm{prec}},\qquad\Pr(|\rho_{\bullet}|>V_{\bullet})=\alpha_{\mathrm{cor}},
+(15)
+so that large standard deviations and correlations close to
+±
+1
+\pm 1
+are a priori penalized, while moderate values remain plausible. In all analyses we fix
+α
+prec
+=
+0.05
+\alpha_{\mathrm{prec}}=0.05
+, so that there is
+only
+5
+%
+5\%
+prior probability that any standard deviation exceeds its
+scale parameter
+U
+∙
+U_{\bullet}
+. For the season-correlation parameters
+ρ
+ta
+\rho_{\mathrm{ta}}
+and
+ρ
+m
+\rho_{m}
+we use PC-cor priors with
+V
+∙
+=
+0.7
+V_{\bullet}=0.7
+and
+α
+cor
+=
+0.7
+\alpha_{\mathrm{cor}}=0.7
+, that is,
+Pr
+⁡
+(
+|
+ρ
+∙
+|
+>
+0.7
+)
+=
+0.7
+,
+\displaystyle\Pr\bigl(|\rho_{\bullet}|>0.7\bigr)=0.7,
+(16)
+which encodes a prior preference for moderate-to-strong correlations
+while still shrinking towards
+ρ
+∙
+=
+0
+\rho_{\bullet}=0
+.
+The detailed calibration of other thresholds using prior predictive checks is described in
+Section
+4.2
+.
+4.2
+Prior specification and prior predictive checks
+As described above, we place PC priors on the standard deviations and
+seasonal correlation parameters of the random effects. In practice, we
+tune the scale parameters
+U
+∙
+U_{\bullet}
+that control the typical size of
+the standard deviations, and we divide them into two groups: a common
+scale
+U
+sd
+U_{\mathrm{sd}}
+for the main random effects (team, area, and
+team
+×
+\times
+area) and a separate scale
+U
+slope
+U_{\mathrm{slope}}
+for the
+shot-type-specific random slopes
+r
+i
+​
+a
+​
+s
+(
+m
+)
+r^{(m)}_{ias}
+.
+We follow a Bayesian workflow that emphasizes prior predictive checks to
+calibrate these hyperparameters and detect implausible model behavior
+(
+10
+)
+. Concretely, for each candidate’s choice of
+PC prior scales
+(
+U
+sd
+,
+U
+slope
+)
+(U_{\mathrm{sd}},U_{\mathrm{slope}})
+, we simulate
+from the prior predictive distribution of the STAMP model, and compare
+summaries of the simulated shot charts to simple empirical benchmarks
+derived from the B.LEAGUE data, as described below.
+In particular, to assess whether a given pair
+(
+U
+sd
+,
+U
+slope
+)
+(U_{\mathrm{sd}},U_{\mathrm{slope}})
+produces realistic prior predictive behavior, we consider the summary
+statistics of the replicated data. Let
+T
+cell
+,
+95
+T_{\mathrm{cell},95}
+denote the
+95
+95
+th percentile of the empirical cell-level rates
+Y
+i
+​
+s
+​
+a
+​
+d
+​
+k
+/
+E
+i
+​
+s
+Y_{isadk}/E_{is}
+across all cells
+c
+=
+(
+i
+,
+s
+,
+a
+,
+d
+,
+k
+)
+c=(i,s,a,d,k)
+, and let
+T
+tot
+,
+95
+T_{\mathrm{tot},95}
+denote the
+95
+95
+th percentile of the team-by-season total counts
+∑
+a
+,
+d
+,
+k
+Y
+i
+​
+s
+​
+a
+​
+d
+​
+k
+\sum_{a,d,k}Y_{isadk}
+over
+(
+i
+,
+s
+)
+(i,s)
+. For each configuration of
+(
+U
+sd
+,
+U
+slope
+)
+(U_{\mathrm{sd}},U_{\mathrm{slope}})
+we generate
+800
+800
+prior predictive
+replicates and compute two-sided
+p
+p
+-values
+p
+cell
+,
+95
+=
+2
+​
+min
+​
+{
+Pr
+⁡
+(
+T
+cell
+,
+95
+rep
+≤
+T
+cell
+,
+95
+obs
+)
+,
+Pr
+⁡
+(
+T
+cell
+,
+95
+rep
+≥
+T
+cell
+,
+95
+obs
+)
+}
+,
+\displaystyle p_{\mathrm{cell},95}\;=\;2\min\bigl\{\Pr(T_{\mathrm{cell},95}^{\mathrm{rep}}\leq T_{\mathrm{cell},95}^{\mathrm{obs}}),\Pr(T_{\mathrm{cell},95}^{\mathrm{rep}}\geq T_{\mathrm{cell},95}^{\mathrm{obs}})\bigr\},
+(17)
+and analogously
+p
+tot
+,
+95
+p_{\mathrm{tot},95}
+for
+T
+tot
+,
+95
+T_{\mathrm{tot},95}
+. The
+probabilities are approximated by empirical proportions over the 800
+replicates. Following a conventional prior predictive check, we regard a
+configuration as acceptable if both
+p
+cell
+,
+95
+p_{\mathrm{cell},95}
+and
+p
+tot
+,
+95
+p_{\mathrm{tot},95}
+exceed a nominal threshold (here
+0.05
+0.05
+).
+We performed a grid search over
+U
+sd
+∈
+{
+0.5
+,
+0.8
+,
+1.0
+,
+1.2
+,
+1.5
+}
+,
+U
+slope
+∈
+{
+0.5
+,
+0.8
+,
+1.0
+,
+1.2
+,
+1.5
+}
+,
+\displaystyle U_{\mathrm{sd}}\in\{0.5,0.8,1.0,1.2,1.5\},\qquad U_{\mathrm{slope}}\in\{0.5,0.8,1.0,1.2,1.5\},
+(18)
+resulting in
+25
+25
+candidate configurations. Among these,
+7
+7
+pairs
+satisfied the prior predictive criterion
+(
+p
+cell
+,
+95
+>
+0.05
+p_{\mathrm{cell},95}>0.05
+and
+p
+tot
+,
+95
+>
+0.05
+p_{\mathrm{tot},95}>0.05
+):
+(
+U
+sd
+,
+U
+slope
+)
+∈
+{
+(
+1.5
+,
+1.5
+)
+,
+(
+1.5
+,
+1.2
+)
+,
+(
+1.5
+,
+1.0
+)
+,
+(
+1.5
+,
+0.8
+)
+,
+(
+1.5
+,
+0.5
+)
+,
+(
+1.2
+,
+1.2
+)
+,
+(
+1.2
+,
+0.5
+)
+}
+.
+\displaystyle(U_{\mathrm{sd}},U_{\mathrm{slope}})\in\{(1.5,1.5),(1.5,1.2),(1.5,1.0),(1.5,0.8),(1.5,0.5),(1.2,1.2),(1.2,0.5)\}.
+(19)
+We regard these seven settings as admissible priors and use all of them
+in a subsequent prior sensitivity analysis. For brevity, we report model-comparison results for a representative configuration from
+this admissible set.
+4.3
+Model fitting and evaluation
+All models are fitted in a Bayesian framework using the latent Gaussian
+structure described in Section
+4.1
+and the PC
+priors and prior predictive calibration in
+Section
+4.2
+. In what follows, we distinguish
+between
+regular-season
+possessions, which are used for model
+fitting, and
+post-season
+possessions, which are used only for
+out-of-sample evaluation (see Section
+2.1
+for details
+of the dataset construction).
+4.3.1
+Data split (fitting and evaluation)
+We train all models on regular-season possessions and evaluate their
+out-of-sample performance on post-season possessions, reflecting the
+intended deployment scenario in which a model fitted on past seasons is
+used to assess post-season tendencies. In total, the dataset contains
+306,444
+306{,}444
+field-goal attempts, of which
+296,768
+296{,}768
+shots
+(
+96.84
+%
+96.84\%
+) occur in the regular season and
+9,676
+9{,}676
+shots
+(
+3.16
+%
+3.16\%
+) occur in the post-season. Regular-season shots contribute to
+the likelihood used for parameter estimation, whereas post-season shots
+are held out and used only for out-of-sample predictive evaluation.
+4.3.2
+Model configurations
+We compare a family of
+16
+16
+candidate specifications obtained by
+switching on or off four groups of random effects. Concretely, we
+introduce binary indicators
+use_ta
+,
+use_ts
+,
+use_jump
+,
+use_step
+∈
+{
+0
+,
+1
+}
+\texttt{use\_ta},\texttt{use\_ts},\texttt{use\_jump},\texttt{use\_step}\in\{0,1\}
+controlling the inclusion of
+team
+×
+\times
+area effects
+w
+i
+​
+a
+​
+s
+w_{ias}
+(
+use_ta
+),
+team
+×
+\times
+side effects
+z
+i
+​
+d
+​
+s
+z_{ids}
+(
+use_ts
+), and
+shot-type-specific random slopes for jump shots
+(
+use_jump
+) and step-back / pull-up jump shots
+(
+use_step
+). We then consider all combinations
+{
+use_ta
+,
+use_ts
+,
+use_jump
+,
+use_step
+}
+∈
+{
+0
+,
+1
+}
+4
+,
+\displaystyle\{\texttt{use\_ta},\texttt{use\_ts},\texttt{use\_jump},\texttt{use\_step}\}\in\{0,1\}^{4},
+(20)
+so that the most complex specification uses all four components and the
+simplest one includes only the fixed effects and the team- and
+area-level main effects.
+Random slopes are introduced only for the
+jump_shot
+and
+step_pull
+categories. These shot-types have sufficiently many
+attempts per team to support additional parameters, and they exhibit
+substantially larger spatial variability than other categories, making
+them natural candidates for capturing team-specific spatial tendencies.
+For the remaining shot-types we retain only fixed effects, which helps
+avoid over-parameterization and instability in cells
+c
+c
+with
+few observations. All candidate models share the same fixed-effect
+structure and the same family of hyperpriors; only the presence or
+absence of these random-effect blocks differs.
+4.3.3
+Fitting via INLA
+For each model configuration, we aggregate the play-by-play data to the
+cell level
+c
+c
+and form regular-season counts
+Y
+c
+reg
+Y^{\mathrm{reg}}_{c}
+, post-season counts
+Y
+c
+post
+Y^{\mathrm{post}}_{c}
+, and
+team-by-season exposure terms
+E
+i
+​
+s
+reg
+E^{\mathrm{reg}}_{is}
+and
+E
+i
+​
+s
+post
+E^{\mathrm{post}}_{is}
+. The model in (
+2
+) is then
+fitted to the regular-season data by treating
+Y
+c
+reg
+Y^{\mathrm{reg}}_{c}
+as
+the response and
+log
+⁡
+E
+i
+​
+s
+reg
+\log E^{\mathrm{reg}}_{is}
+as the offset. We use a
+Poisson likelihood with a log link and exploit the latent Gaussian
+structure to perform approximate Bayesian inference via INLA, as implemented in the
+R-INLA
+package. For each fit we request posterior summaries for
+all fixed and random effects and for the linear predictors
+η
+c
+\eta_{c}
+, and
+enable configuration sampling (
+config = TRUE
+) so that we can
+draw posterior samples from the latent Gaussian field using
+inla.posterior.sample
+. These posterior draws are later used to
+evaluate out-of-sample predictive performance on the post-season data via
+Monte Carlo integration of the log predictive density.
+All random-effect blocks are implemented as independent Gaussian effects
+with
+model="iid"
+in
+R-INLA
+. Seasonally correlated
+team
+×
+\times
+area effects
+w
+i
+​
+a
+​
+s
+w_{ias}
+and shot-type-specific slopes
+r
+i
+​
+a
+​
+s
+(
+m
+)
+r^{(m)}_{ias}
+are represented using the
+group
+mechanism with
+group = season
+and an exchangeable correlation structure across
+seasons, corresponding to the equicorrelation matrix
+𝐑
+S
+​
+(
+ρ
+)
+\mathbf{R}_{S}(\rho)
+in Section
+4.1
+. The
+team
+×
+\times
+side effects
+z
+i
+​
+d
+​
+s
+z_{ids}
+are modeled as season-specific i.i.d. effects without an explicit temporal correlation, with zero-sum
+constraints over
+d
+d
+for each
+(
+i
+,
+s
+)
+(i,s)
+imposed via the
+extraconstr
+argument. To improve numerical stability we add a small ridge term to the fixed effects (through
+control.fixed
+) and use
+strategy="adaptive"
+and
+int.strategy="ccd"
+for the INLA internal approximations.
+4.3.4
+Criterion on fitting (regular-season) data
+On the regular-season data used for fitting, we monitor the log
+pseudo-marginal likelihood (LPML;
+11
+;
+12
+). LPML is defined as
+LPML
+reg
+=
+∑
+c
+log
+⁡
+{
+CPO
+c
+}
+,
+\displaystyle\mathrm{LPML}_{\mathrm{reg}}\;=\;\sum_{c}\log\bigl\{\mathrm{CPO}_{c}\bigr\},
+(21)
+where
+CPO
+c
+\mathrm{CPO}_{c}
+denotes the conditional predictive ordinate for
+cell
+c
+c
+(regular-season observation), as returned by INLA. Larger
+values of
+LPML
+reg
+\mathrm{LPML}_{\mathrm{reg}}
+correspond to better in-sample
+predictive fit. In the result tables we report
+LPML
+reg
+\mathrm{LPML}_{\mathrm{reg}}
+as a secondary diagnostic to check that the models selected by the post-season criterion are also reasonable on the fitting data.
+4.3.5
+Out-of-sample evaluation on the post-season
+Our primary model-comparison criterion is the expected log predictive density on the post-season data. For each fitted model we keep the posterior obtained from regular-season data and evaluate predictive performance on the held-out post-season counts
+Y
+c
+post
+Y^{\mathrm{post}}_{c}
+with exposure
+E
+i
+​
+s
+post
+E^{\mathrm{post}}_{is}
+. Let
+θ
+\theta
+denote the collection of fixed and random effects and hyperparameters; for each cell
+c
+c
+with
+E
+i
+​
+s
+post
+>
+0
+E^{\mathrm{post}}_{is}>0
+we consider the log predictive density
+log
+⁡
+p
+⁡
+(
+Y
+c
+post
+∣
+θ
+)
+,
+\displaystyle\log p\bigl(Y^{\mathrm{post}}_{c}\mid\theta\bigr),
+(22)
+where the Poisson mean is
+μ
+c
+post
+=
+E
+i
+​
+s
+post
+​
+exp
+⁡
+(
+η
+c
+)
+\mu^{\mathrm{post}}_{c}=E^{\mathrm{post}}_{is}\exp(\eta_{c})
+.
+From each INLA fit, we draw
+J
+J
+posterior samples
+θ
+(
+1
+)
+,
+…
+,
+θ
+(
+J
+)
+\theta^{(1)},\dots,\theta^{(J)}
+of the latent Gaussian field (here
+J
+=
+400
+J=400
+), and approximate the pointwise log predictive densities by
+Monte Carlo,
+ℓ
+^
+c
+=
+log
+⁡
+(
+1
+J
+​
+∑
+j
+=
+1
+J
+p
+⁡
+(
+Y
+c
+post
+∣
+θ
+(
+j
+)
+)
+)
+.
+\displaystyle\widehat{\ell}_{c}\;=\;\log\Biggl(\frac{1}{J}\sum_{j=1}^{J}p\bigl(Y^{\mathrm{post}}_{c}\mid\theta^{(j)}\bigr)\Biggr).
+(23)
+Summing over all post-season cells yields the Monte Carlo estimate of the
+expected log predictive density,
+elpd
+^
+post
+MC
+=
+∑
+c
+ℓ
+^
+c
+.
+\displaystyle\widehat{\mathrm{elpd}}_{\mathrm{post}}^{\mathrm{MC}}\;=\;\sum_{c}\widehat{\ell}_{c}.
+(24)
+We use
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\mathrm{post}}^{\mathrm{MC}}
+as the primary selection criterion, with larger values indicating better out-of-sample predictive performance on post-season shot charts. In the result tables we report
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\mathrm{post}}^{\mathrm{MC}}
+together with
+LPML
+reg
+\mathrm{LPML}_{\mathrm{reg}}
+to jointly assess extrapolative performance and fit to the regular-season data.
+All computations are carried out in
+R
+using a single BLAS thread for reproducibility. With the present dataset (on the order of
+3
+×
+10
+5
+3\times 10^{5}
+shots aggregated to team-season-area-side-shot-type cells), each INLA fit completes within roughly a minute on a standard workstation-class CPU.
+4.3.6
+Additional team-level shot-type slopes
+In addition to the main family of 16 candidate models based on
+team
+×
+\times
+area and shot-type-specific slopes for jump and
+step-back/pull-up shots (Section
+4.3
+), we also
+considered an extended set of models that introduce team-level
+shot-type slopes for the remaining categories (
+lay_up
+,
+floater
+,
+rim_finishes
+,
+fade_turn
+). Concretely, we kept the team
+×
+\times
+area
+slopes for
+jump_shot
+and
+step_pull
+unchanged and switched on/off the
+presence of team-level slopes for each of the four additional shot types, combined with
+use_ts
+∈
+{
+0
+,
+1
+}
+\in\{0,1\}
+, yielding
+2
+×
+2
+4
+=
+32
+2\times 2^{4}=32
+additional candidates. The prior hyperparameters were fixed to the values calibrated in Section
+4.2
+, with
+U
+sd
+=
+1.5
+U_{\mathrm{sd}}=1.5
+,
+U
+slope
+=
+1.0
+U_{\mathrm{slope}}=1.0
+,
+α
+prec
+=
+0.05
+\alpha_{\mathrm{prec}}=0.05
+and
+V
+=
+0.7
+V=0.7
+,
+α
+cor
+=
+0.7
+\alpha_{\mathrm{cor}}=0.7
+. We evaluated these extended models in the same way as the main candidates, using
+elpd
+^
+post
+MC
+\widehat{\mathrm{elpd}}_{\text{post}}^{\mathrm{MC}}
+on post-season data and
+LPML
+reg
+\mathrm{LPML}_{\text{reg}}
+on regular-season data.
+Competing interests
+The authors have no competing interests to declare that are relevant to the content of this article.
+Author Contributions
+K.Y. contributed to the study conception and design. Data preparation, modeling, and analysis were performed by K.Y. The first draft of the manuscript was contributed by K.Y. and K.F. All authors read and approved the final manuscript.
+Data availability
+The data of the research is obtained by participating in a competition hosted by the academic organizations.
+The central idea of this study was independent of the competition (not restricted by the competition).
+Data acquisition was based on the contract between the basketball league and Data Stadium, Inc., but not between the players/teams and us.
+Funding Information
+K. Yamada gratefully acknowledges support from the “THERS Make New Standards Program for the Next Generation Researchers”.
+This work was financially supported by JSPS KAKENHI Grant Number 23H03282.
+Acknowledgments
+The data used in this study were provided by the Institute of Statistical Mathematics, Academy for Statistics and Data Science, Research Organization of Information and Systems, and Data Stadium Inc.
+References
+Anzer and Bauer (2021)
+G. Anzer and P. Bauer
+A goal scoring probability model for shots based on synchronized positional and event data in football (soccer)
+.
+Frontiers in Sports and Active Living
+Volume 3 - 2021
+.
+External Links:
+Document
+,
+ISSN 2624-9367
+Cited by:
+§1
+.
+Brechot and Flepp (2020)
+M. Brechot and R. Flepp
+Dealing with randomness in match outcomes: how to rethink performance evaluation in european club football using expected goals
+.
+Journal of Sports Economics
+21
+(
+4
+),
+pp. 335–362
+.
+External Links:
+Document
+Cited by:
+§1
+.
+Cao
+et al.
+(2025a)
+J. Cao, Q. Cai, L. A. Waller, D. A. Hickson, G. Hu, and J. Kang
+What influences the field goal attempts of professional players? analysis of basketball shot charts via log gaussian cox processes with spatially varying coefficients
+.
+External Links:
+2503.02137
+,
+Link
+Cited by:
+§1
+.
+Cao
+et al.
+(2025b)
+J. Cao, H. Yang, and G. Hu
+How do the professional players select their shot locations? an analysis of field goal attempts via bayesian additive regression trees
+.
+External Links:
+2503.07789
+,
+Link
+Cited by:
+§1
+.
+Cavus and Biecek (2022)
+M. Cavus and P. Biecek
+Explainable expected goal models for performance analysis in football analytics
+.
+In
+2022 IEEE 9th International Conference on Data Science and Advanced Analytics (DSAA)
+,
+Vol.
+,
+pp. 1–9
+.
+External Links:
+Document
+Cited by:
+§1
+.
+Chen and Guestrin (2016)
+T. Chen and C. Guestrin
+XGBoost: a scalable tree boosting system
+.
+KDD ’16
+,
+New York, NY, USA
+,
+pp. 785–794
+.
+External Links:
+ISBN 9781450342322
+,
+Link
+,
+Document
+Cited by:
+§1
+.
+Eggels
+et al.
+(2016)
+H. Eggels, R. Van Elk, and M. Pechenizkiy
+Explaining soccer match outcomes with goal scoring opportunities predictive analytics
+.
+In
+3rd Workshop on machine learning and data mining for sports analytics (MLSA 2016)
+,
+Cited by:
+§1
+.
+Ehrlich and Sanders (2024)
+J. Ehrlich and S. Sanders
+Estimating nba team shot selection efficiency from aggregations of true, continuous shot charts: a generalized additive model approach
+.
+Continuous Shot Charts: A Generalized Additive Model Approach (January 16, 2024)
+.
+Cited by:
+§1
+.
+Fairchild
+et al.
+(2018)
+A. Fairchild, K. Pelechrinis, and M. Kokkodis
+Spatial analysis of shots in mls: a model for expected goals and fractal dimensionality
+.
+Journal of Sports Analytics
+4
+(
+3
+),
+pp. 165–174
+.
+External Links:
+Document
+Cited by:
+§1
+.
+Gabry
+et al.
+(2019)
+J. Gabry, D. Simpson, A. Vehtari, M. Betancourt, and A. Gelman
+Visualization in bayesian workflow
+.
+Journal of the Royal Statistical Society Series A: Statistics in Society
+182
+(
+2
+),
+pp. 389–402
+.
+External Links:
+ISSN 0964-1998
+,
+Document
+Cited by:
+§4.2
+.
+Geisser and Eddy (1979)
+S. Geisser and W. F. Eddy
+A predictive approach to model selection
+.
+Journal of the American Statistical Association
+74
+(
+365
+),
+pp. 153–160
+.
+Cited by:
+§4.3.4
+.
+Held
+et al.
+(2009)
+L. Held, B. Schrödle, and H. Rue
+Posterior and cross-validatory predictive checks: a comparison of mcmc and inla
+.
+In
+Statistical modelling and regression structures: Festschrift in honour of ludwig fahrmeir
+,
+pp. 91–110
+.
+Cited by:
+§4.3.4
+.
+Hewitt and Karakuş (2023)
+J. H. Hewitt and O. Karakuş
+A machine learning approach for player and position adjusted expected goals in football (soccer)
+.
+Franklin Open
+4
+,
+pp. 100034
+.
+External Links:
+ISSN 2773-1863
+,
+Document
+,
+Link
+Cited by:
+§1
+.
+Ho (2025)
+K. Ho
+A bayesian negative binomial-bernoulli model with tensor decomposition: application to jointly analyzing shot attempts and shot successes in basketball games
+.
+Journal of Data Science
+,
+pp. 1–15
+.
+External Links:
+Document
+,
+ISSN 1680-743X
+Cited by:
+§1
+.
+Hu
+et al.
+(2021)
+G. Hu, H. Yang, and Y. Xue
+Bayesian group learning for shot selection of professional basketball players
+.
+Stat
+10
+(
+1
+),
+pp. e324
+.
+Cited by:
+§1
+.
+Jiao
+et al.
+(2021)
+J. Jiao, G. Hu, and J. Yan
+A bayesian marked spatial point processes model for basketball shot chart
+.
+Journal of Quantitative Analysis in Sports
+17
+(
+2
+),
+pp. 77–90
+.
+Cited by:
+§1
+,
+§1
+.
+Kambhamettu
+et al.
+(2024)
+A. R. Kambhamettu, A. Shrivastava, and M. Gwilliam
+Quantifying nba shot quality: a deep network approach
+.
+In
+Proceedings of the 7th ACM International Workshop on Multimedia Content Analysis in Sports
+,
+pp. 91–95
+.
+Cited by:
+§1
+.
+Lucey
+et al.
+(2015)
+P. Lucey, A. Bialkowski, M. Monfort, P. Carr, and I. Matthews
+Quality vs quantity: improved shot prediction in soccer using strategic features from spatiotemporal data
+.
+Cited by:
+§1
+.
+Mead
+et al.
+(2023)
+J. Mead, A. O’Hare, and P. McMenemy
+Expected goals in football: improving model performance and demonstrating value
+.
+PLOS ONE
+18
+(
+4
+),
+pp. 1–29
+.
+External Links:
+Document
+,
+Link
+Cited by:
+§1
+.
+Miller
+et al.
+(2014)
+A. Miller, L. Bornn, R. Adams, and K. Goldsberry
+Factorized point process intensities: a spatial analysis of professional basketball
+.
+In
+International conference on machine learning
+,
+pp. 235–243
+.
+Cited by:
+§1
+.
+Møller
+et al.
+(1998)
+J. Møller, A. R. Syversveen, and R. P. Waagepetersen
+Log gaussian cox processes
+.
+Scandinavian journal of statistics
+25
+(
+3
+),
+pp. 451–482
+.
+Cited by:
+§1
+.
+Onuma (2025)
+K. Onuma
+CS participating teams introduction 1. utsunomiya brex “overcoming the obstacles and sadness of last season to reclaim the championship”
+.
+Note:
+B.MAGAZINE
+, B.LEAGUE official websiteIn Japanese. Accessed 4 December 2025
+External Links:
+Link
+Cited by:
+§2.3
+.
+Pardo (2020)
+P. M. Pardo
+Creating a model for expected goals in football using qualitative player information
+.
+Ph.D. Thesis
+,
+Universitat Politècnica de Catalunya. Facultat d’Informàtica de Barcelona
+.
+Cited by:
+§1
+.
+Rathke (2017)
+A. Rathke
+An examination of expected goals and shot efficiency in soccer
+.
+Journal of Human Sport and Exercise
+12
+(
+2
+),
+pp. 514–529
+.
+Cited by:
+§1
+.
+Reich
+et al.
+(2006)
+B. J. Reich, J. S. Hodges, B. P. Carlin, and A. M. Reich
+A spatial analysis of basketball shot chart data
+.
+The American Statistician
+60
+(
+1
+),
+pp. 3–12
+.
+Cited by:
+§1
+.
+Rue
+et al.
+(2009)
+H. Rue, S. Martino, and N. Chopin
+Approximate bayesian inference for latent gaussian models by using integrated nested laplace approximations
+.
+Journal of the Royal Statistical Society: Series B (Statistical Methodology)
+71
+(
+2
+),
+pp. 319–392
+.
+External Links:
+Document
+Cited by:
+§1
+.
+Sandholtz
+et al.
+(2020)
+N. Sandholtz, J. Mortensen, and L. Bornn
+Measuring spatial allocative efficiency in basketball
+.
+Journal of Quantitative Analysis in Sports
+16
+(
+4
+),
+pp. 271–289
+.
+External Links:
+Link
+,
+Document
+Cited by:
+§1
+.
+Schmid
+et al.
+(2025)
+M. Schmid, M. Schöpf, and O. Kolbinger
+Getting nba shots in context: analysing basketball shots with graph embeddings
+.
+Journal homepage: http://iacss. org/index. php? id
+24
+(
+1
+).
+Cited by:
+§1
+.
+Scholtes and Karakuş (2024)
+A. Scholtes and O. Karakuş
+Bayes-xg: player and position correction on expected goals (xg) using bayesian hierarchical approach
+.
+Frontiers in Sports and Active Living
+Volume 6 - 2024
+.
+External Links:
+Document
+,
+ISSN 2624-9367
+Cited by:
+§1
+.
+Scrucca and Karlis (2025)
+L. Scrucca and D. Karlis
+A model-based approach to shot charts estimation in basketball
+.
+Computational Statistics
+40
+(
+4
+),
+pp. 2031–2048
+.
+Cited by:
+§1
+.
+Simpson
+et al.
+(2017)
+D. Simpson, H. Rue, A. Riebler, T. G. Martins, and S. H. Sørbye
+Penalising model component complexity: a principled, practical approach to constructing priors
+.
+Cited by:
+2nd item
+.
+Tureen and Olthof (2022)
+T. Tureen and S. Olthof
+“Estimated player impact”(epi): quantifying the effects of individual players on football (soccer) actions using hierarchical statistical models
+.
+In
+StatsBomb Conference Proceedings
+,
+Cited by:
+§1
+.
+Wong-Toi
+et al.
+(2023)
+E. Wong-Toi, H. Yang, W. Shen, and G. Hu
+A joint analysis for field goal attempts and percentages of professional basketball players: bayesian nonparametric resource.
+.
+Journal of Data Science
+21
+(
+1
+).
+Cited by:
+§1
+,
+§1
+.
+Xu
+et al.
+(2025)
+Y. Xu, L. Bretzner, T. Wang, and A. Maki
+Skor-xg: skeleton-oriented expected goal estimation in soccer
+.
+In
+Proceedings of the Computer Vision and Pattern Recognition Conference
+,
+pp. 5967–5977
+.
+Cited by:
+§1
+.
+Yamada and Fujii (2025)
+K. Yamada and K. Fujii
+Two clusterings to capture basketball players’ shooting tendencies using tracking data: clustering of shooting styles and the shots themselves
+.
+International Journal of Computer Science in Sport
+24
+(
+1
+),
+pp. 35–55
+.
+External Links:
+Document
+Cited by:
+§1
+.
+Yeung
+et al.
+(2025)
+C. Yeung, T. Sit, and K. Fujii
+Transformer-based neural marked spatio temporal point process model for analyzing football match events
+.
+Applied Intelligence
+55
+(
+5
+),
+pp. 335
+.
+Cited by:
+§1
+.
+Yin
+et al.
+(2023)
+F. Yin, G. Hu, and W. Shen
+Analysis of professional basketball field goal attempts via a bayesian matrix clustering approach
+.
+Journal of Computational and Graphical Statistics
+32
+(
+1
+),
+pp. 49–60
+.
+Cited by:
+§1
+.
+Zuccolotto
+et al.
+(2021)
+P. Zuccolotto, M. Sandri, and M. Manisera
+Spatial performance indicators and graphs in basketball
+.
+Social Indicators Research
+156
+(
+2
+),
+pp. 725–738
+.
+Cited by:
+§1
+.
+Zuccolotto
+et al.
+(2023)
+P. Zuccolotto, M. Sandri, and M. Manisera
+Spatial performance analysis in basketball with cart, random forest and extremely randomized trees
+.
+Annals of Operations Research
+325
+(
+1
+),
+pp. 495–519
+.
+Cited by:
+§1
+.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

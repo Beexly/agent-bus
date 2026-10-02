@@ -1,0 +1,3233 @@
+Pitwall: Faithful Natural-Language Race-Strategy Briefings
+from a Calibrated Real-Time Monte Carlo Engine
+Juan S. Santillana
+Affiliation:
+Independent Researcher
+Email:
+juan@jsantillana.com
+Abstract
+Live sports commentary is grounded generation under a deadline: statements
+concern real, named athletes, the grounding state changes every few seconds,
+and no reference text exists at generation time. We present
+Pitwall
+, a production system that generates natural-language
+Formula 1 strategy briefings in English, Spanish, and Portuguese, and that
+treats faithfulness as an
+architectural
+property rather than an
+aspiration: every published sentence is decomposed into typed factual
+claims (positions, gaps, tyres, pace, overtakes, race control) and each
+claim is verified against the probabilistic race state that prompted it.
+The same verifier gates the fine-tuning data—of 3,045
+model-written targets, only the 81.9% whose every claim is
+state-supported are retained; the rest fall back to a provably faithful
+template—so the generator is trained never to have seen an ungrounded
+target. What makes verification
+meaningful
+is the grounding
+substrate: a vectorized Monte Carlo engine (
+N
+=
+2,000
+N{=}2{,}000
+per-lap race
+continuations) whose probabilities are calibrated on 126 races
+(2018–2024) and validated on fully held-out 2025–2026 seasons
+(winner-in-top-3
+90.3
+%
+90.3\%
+over 155 backtests; held-out Brier
+0.0745
+0.0745
+).
+A recurring finding spans both halves of the system: virtues trade off and
+must be gated separately. In simulation, calibration-optimal is not
+decision-optimal; in generation, fine-tuning on richer targets buys
+vividness that collapses into hallucination precisely when the grounding
+state is sparse—a collapse that a four-base replication traces to the
+base model’s instruction adherence rather than to scale, and that
+base-model selection under a sparse-context audit removes in
+production. End-to-end operation—live timing to verified
+trilingual briefings—was confirmed at two consecutive live Grands Prix
+(Austria and Britain, 2026); at Silverstone a timestamped probability
+trace, committed to disk before the outcome was known, locked onto the
+eventual winner ten laps before the flag.
+1
+Introduction
+A modern Formula 1 race is decided as much on the pit wall as on the track.
+A pit stop costs roughly 20–25 s of race time, tyre compounds degrade
+non-linearly and at circuit-specific rates, overtaking difficulty varies by
+an order of magnitude between venues, and Safety-Car interruptions arrive
+stochastically and reprice every open strategic option within a single lap.
+The teams’ strategists must therefore answer questions of the form
+“if we box now, what is the probability we emerge ahead of the car we
+are racing—and how does that change if we wait two laps?”
+in well under a
+minute, continuously, for two hours. Every top team operates simulation
+tooling for this purpose, but that tooling is proprietary, its calibration
+has never been publicly audited, and the academic literature on race
+strategy simulation
+(
+Bekker and Lotz 2009
+;
+Heilmeier et al. 2020a
+)
+stops
+short of the real-time, probability-calibrated, decision-focused setting in
+which the problem is actually solved.
+The answers, moreover, are consumed as
+language
+. Engineers,
+broadcasters, and audiences do not read probability vectors; they read
+sentences—“Norris pits and rejoins P4, 2.1 s behind Sainz on
+mediums”—and a generated sentence about a real, named athlete that is
+confidently wrong is worse than no sentence at all. Live commentary is
+therefore a demanding instance of grounded generation
+(
+Wiseman et al. 2017
+;
+Ji et al. 2023
+)
+: the grounding state mutates
+every few seconds, no reference text exists at generation time (ruling out
+reference-based evaluation entirely), and the sparse moments—early laps,
+partial state after an ingestion hiccup—are exactly the moments a fluent
+generator is most tempted to fill from its prior.
+This paper describes
+Pitwall
+, to our knowledge the first publicly
+documented end-to-end system that (i) ingests the official F1 live-timing
+stream during a session, (ii) maintains a canonical probabilistic race state,
+(iii) evaluates strategic counterfactuals by vectorized Monte Carlo
+simulation at interactive latency, (iv) reports
+calibrated
+probabilities—win, podium, points, and undercut success—validated against
+seven complete scored seasons of historical racing (2018–2025, excl. 2022)
+plus the opening races of 2026, and (v) verbalises state and
+recommendations as natural-language briefings in English, Spanish, and
+Portuguese, publishing only text whose factual claims pass verification
+against the engine state (Section
+6
+).
+The system runs in production on commodity cloud infrastructure; operational
+feasibility was confirmed at the live 2026 Austrian and British Grands
+Prix.
+Beyond the system itself, we make a methodological argument that we believe
+generalizes to decision-support systems in other sports. Simulation
+components are usually adopted because they make the simulator more
+realistic
+. We instead gate every component with two independent
+held-out tests: does it improve
+outcome calibration
+(Brier score and
+reliability of finish-position probabilities), and does it improve
+decision fidelity
+(does the recommended strategy match what actually
+worked)? These two criteria repeatedly disagree in our experiments. A
+learned overtake kernel that beats a threshold baseline out-of-sample at
+predicting individual passes does
+not
+improve field-level calibration
+once the simulator is re-calibrated around it; a compound-pace normalization
+that demonstrably fixes pathological live pit calls
+worsens
+finishing
+order prediction, because the raw, confounded per-race fit carries genuine
+race-specific signal. Rather than resolving this tension by fiat, the engine
+routes each component to the path it improves: the
+oracle path
+that
+produces calibrated probabilities keeps the Brier-optimal configuration,
+while the
+decision path
+that produces recommendations uses the
+feasibility-aware, normalized models. The language layer supplies a third
+instance of the same lesson: fine-tuning the commentary generator on
+richer, more natural targets improves fluency and coverage on
+information-dense states, yet the identical model fabricates drivers,
+gaps, and tyre compounds when the grounding state is sparse
+(Section
+7.7
+); replicating the recipe across four base
+models shows this failure is a property of the base model’s instruction
+adherence, not of scale or of the training data—richness and
+precision, like calibration and decision quality, are separate
+objectives that must be gated separately, and the base model is itself
+one of the gates.
+We report both the positive and the
+negative gating results, since the negative results—rare in applied sports
+analytics—are precisely what makes the faithfulness and calibration
+claims credible.
+Our contributions are:
+1.
+A validated, calibrated real-time Monte Carlo engine.
+A
+vectorized simulator (all
+N
+N
+races advanced simultaneously as
+N
+×
+C
+N\times C
+array operations over cars
+C
+C
+) with per-lap Safety-Car and
+Virtual-Safety-Car regimes, dirty-air interaction, stochastic
+retirements, and a game-theoretic rival policy; calibrated by
+bound-constrained differential evolution on 126 training races (2018–2024)
+and evaluated with Brier score, expected calibration error, and reliability
+analysis on the fully held-out 2025–2026 seasons
+(Section
+5
+, Section
+7
+).
+2.
+A learned overtake kernel with an honest ablation.
+A logistic
+model of pass probability fitted on 131,000 adjacent-car battles
+(4,142 clean passes) with per-circuit difficulty offsets, which improves
+pass prediction out-of-sample (Brier
+0.0275
+0.0275
+vs.
+0.0298
+0.0298
+baseline,
+passes-per-race MAE
+8.9
+8.9
+) yet yields no field-calibration gain when wired
+into the simulator—an instructive negative result we analyze in
+Section
+4.3
+.
+3.
+The undercut window as a CRN counterfactual.
+A formal
+treatment of the box-now/box-later decision as a common-random-numbers
+comparison across pit horizons
+h
+∈
+{
+0
+,
+1
+,
+2
+}
+h\in\{0,1,2\}
+and a stay-out policy,
+so that inter-option probability deltas reflect strategy rather than
+sampling noise, with percentile-bootstrap confidence intervals on every
+reported probability (Section
+4.7
+).
+4.
+Compound-base normalization and the calibration/decision
+split.
+A principled projection of fitted per-compound base paces onto the
+canonical soft
+≤
+\leq
+medium
+≤
+\leq
+hard ordering that eliminates a
+compound
+×
+\times
+race-phase confound responsible for pathological
+“box to the fast tyre” live calls; together with the finding that this
+correction must live on the decision path only
+(Sections
+4.4
+,
+5.3
+).
+5.
+A verifier-gated language layer with faithfulness-gated
+fine-tuning.
+A typed claim schema (ten claim types over positions,
+gaps, tyres, pace, overtakes, and race control) with extraction and
+state-verification in three languages; a fine-tuning corpus of 3,045
+trilingual briefing targets in which a model-written target is admitted
+only if every claim it makes is supported by the race state (81.9%
+admitted; the remainder fall back to a provably faithful template); and
+a held-out audit across four base models (1B–7B) showing that the
+resulting richness–precision trade-off is real but base-dependent:
+three bases hallucinate precisely on sparse states while a fourth
+abstains, isolating base-model instruction adherence—not parameter
+count and not the training data—as the deciding factor
+(Sections
+6
+,
+7.7
+).
+6.
+An end-to-end live deployment.
+Live-timing ingestion
+→
+\rightarrow
+state reconstruction
+→
+\rightarrow
+calibrated Monte Carlo
+→
+\rightarrow
+recommendation
+→
+\rightarrow
+verifier-grounded natural
+language commentary, demonstrated at the 2026 Austrian and British
+Grands Prix, the latter with a live probability trace scored against
+the official result (Sections
+7.5
+–
+7.6
+).
+2
+Related Work
+Race strategy simulation.
+Early work modeled circuit racing strategy as deterministic lap-time
+optimization:
+Bekker and Lotz 2009
+built a discrete-event simulation
+of the Zandvoort circuit for race planning, and
+Limebeer et al. 2014
+treated fuel/tyre scheduling as an optimal control problem. The most
+complete academic treatment is the race simulation of
+Heilmeier et al. 2020a
+, whose FAST algorithm couples lap-time,
+tyre-degradation, and fuel models and was later extended with a
+virtual strategy engineer based on neural networks
+(
+Heilmeier et al. 2020b
+)
+. These simulators are calibrated to reproduce
+race
+times
+; none report probability calibration of race
+outcomes
+, none model the box-now-vs-later counterfactual under
+common random numbers, and none operate against a live timing feed.
+Monte Carlo race simulation is also used commercially (e.g. by the teams
+themselves and by broadcast providers), but no methodology or validation
+is public.
+Monte Carlo methods and forecasting in sports.
+Monte Carlo season and match simulators are standard in basketball,
+football, and soccer analytics; forecast quality is typically assessed with
+the Brier score
+(
+Brier 1950
+)
+and its
+reliability–resolution–uncertainty decomposition
+(
+Murphy 1973
+)
+.
+Our use of percentile-bootstrap confidence intervals on simulated event
+probabilities follows standard resampling practice
+(
+Efron and Tibshirani 1994
+)
+,
+and our variance-reduction strategy for comparing policies under a shared
+random world is the classical common-random-numbers technique from the
+stochastic simulation literature
+(
+Glasserman and Yao 1992
+;
+Law 2015
+)
+.
+Calibration of probabilistic classifiers and forecasters more broadly is
+surveyed by
+Guo et al. 2017
+and
+Gneiting et al. 2007
+;
+we adopt reliability diagrams and expected calibration error (ECE) from that
+literature.
+Overtaking and interaction effects in F1.
+Overtaking in Formula 1 is strongly circuit-dependent and pace-gated.
+Statistical analyses of historical passing
+(
+de Groote 2021
+)
+document order-of-magnitude differences in
+pass counts between street and power circuits, consistent with the
+per-circuit offsets our kernel learns (Monaco and Imola hardest; Las Vegas,
+Spa, and Qatar easiest). Aerodynamic wake (“dirty air”) penalties for a
+following car are documented in the vehicle-dynamics literature and
+motivated the 2022 technical regulations
+(
+Guerrero and Castilla 2020
+)
+; we model
+them as a calibrated per-lap loss inside a gap window rather than
+aerodynamically. Tyre degradation modeling, including the non-linear
+“cliff,” appears in engineering treatments of race tyres
+(
+Kelly and Sharp 2012
+;
+Heilmeier et al. 2020a
+)
+; our contribution is mining
+circuit-and-compound-specific cliff knots from seven scored seasons of stint data
+with an explicit evidence gate, rather than assuming a functional form
+globally.
+Faithfulness in data-grounded generation.
+Data-to-text generation has long been evaluated by decomposing outputs
+into atomic facts checked against the source records, from the extractive
+metrics of
+Wiseman et al. 2017
+on basketball box scores to
+gold-standard fact-level protocols
+(
+Thomson and Reiter 2020
+)
+; in abstractive
+summarization,
+Maynez et al. 2020
+established that fluent
+neural generators hallucinate content unsupported by their input, and
+Ji et al. 2023
+survey the resulting hallucination literature. Our
+setting sharpens these concerns in three ways: claims concern live, named
+athletes; the grounding source is a probabilistic state that changes
+lap-to-lap, so verification must be
+reference-free
+; and generation
+happens under a latency budget that precludes post-hoc human review. The
+claim-extraction-and-verification methodology we build on, including the
+finding that low-coverage extractors make faithfulness scores degenerate,
+is developed in a companion paper
+(
+Santillana 2026
+)
+; here we
+extend it from post-race ground truth to the live state, and—to our
+knowledge novel—use the verifier not only for evaluation but as an
+admission gate on the fine-tuning data itself
+(Section
+6.2
+).
+Decision support and human-in-the-loop deployment.
+Our deployment philosophy—calibrated probabilities with uncertainty
+intervals presented to a human decision maker, never an autonomous
+action—follows the forecasting-as-decision-support tradition
+(
+Gneiting et al. 2007
+)
+.
+3
+System Overview
+Ingestion
+SignalR live feed
+1 s cadence
+FastF1 ETL
+157 races 2018–26
+Race State
+per-car: pos, gap
+compound, tyre age
+track status (SC/VSC)
+MC Engine
+N
+=
+2,000
+N{=}2{,}000
+; NumPy
+calibrated
+θ
+∗
+\theta^{*}
+Serving
+REST API
+Probability board
+Grounded commentary
+Oracle path
+win/podium/pts
++ bootstrap CIs
+Decision path
+undercut window
+strategy report
+structured race store
+calibration corpus & backtest oracle
+Figure 1:
+Pitwall
+architecture. The same structured race store (157 races, 2018–2026,
+excl. 2022) serves as calibration corpus, held-out backtest oracle, and grounding source for the
+language layer. The MC Engine runs two parallel paths: an oracle path (Brier-optimal configuration)
+for calibrated probabilities and a decision path (H5+H9 enabled) for recommendations.
+Pitwall
+consists of four stages (Figure
+1
+).
+Data pipeline.
+Historical data for 157 races (2018–2026; 2022 is
+absent because its timing data does not load reliably) is
+extracted with FastF1 and normalized into a structured JSON store: per-race
+stints (compound, start/end lap, tyre life), lap times, pit stops, Safety
+Car and VSC periods, and final classification. Degradation models are fit
+per race and compound on
+green laps only
+—laps under SC/VSC, in-laps,
+and out-laps are excluded—yielding for each compound
+t
+t
+a base pace
+b
+t
+b_{t}
+and a linear wear slope
+δ
+t
+\delta_{t}
+, with a fuel-burn correction
+(Section
+4.2
+). During a live session the same state is
+reconstructed incrementally from the official SignalR live-timing stream,
+received through a low-latency proxied edge agent and decoded into the
+identical canonical schema, so that the live engine and the backtest engine
+run the same engine code path.
+Engine.
+The simulator advances all
+N
+N
+Monte Carlo replications of
+the remaining race in lockstep as array operations (Section
+4
+).
+Model components beyond the base engine are individually flag-gated
+(Table
+1
+); each flag was adopted, shelved, or routed to
+the decision path based on held-out evidence (Section
+5.3
+).
+Decision layer.
+On top of raw finish distributions the engine
+exposes: win/podium/points probabilities with 90% percentile-bootstrap
+confidence intervals; the H14 undercut window (box now vs.
++
+1
++1
+vs.
++
+2
++2
+laps vs. stay out, under common random numbers); undercut/overcut verdicts
+against a named rival modeled as a pace-optimal open-loop agent (H1:
+executes its pre-race strategy at the current pace estimate, non-reactive to
+the ego car’s stops); and a strategy-cost report comparing each driver’s
+executed plan to the feasibility-constrained optimum.
+Serving.
+A REST API on Azure Container Apps serves the live
+probability board and decision cards; a fine-tuned language model verbalises
+selected engine outputs as grounded commentary, with each generated claim
+checked against the engine state by the verifier before publication.
+ID
+Component
+Fitted on
+Path (evidence)
+H1
+Pace-optimal rival policy
+— (assumption)
+oracle + decision
+H5
+Tyre cliff + feasibility caps
+8,278 stints / 191k laps
+decision (stops-match
++
+9.5
++9.5
+pp)
+H7
+Logistic overtake kernel
+131k battles / 4,142 passes
+shelved for oracle; live narrative
+H9
+Compound-base normalization
+— (projection)
+decision (fixes live call)
+H13
+VSC regime
+VSC frequency priors
+oracle + decision
+H14
+Undercut window (CRN)
+— (estimator)
+decision
+H15
+Pit-stop physics
+— (mechanism)
+parity-gated
+∗
+H17
+SC-reactive rival pull-forward
+— (mechanism)
+parity-gated
+∗
+H18
+Live Kalman pace filter
+live green laps
+parity-gated
+∗
+Table 1:
+Flag-gated engine components and the path each serves after
+held-out gating. “Oracle” = calibrated outcome probabilities;
+“decision” = recommendations and counterfactuals.
+∗
+Implemented and bit-identical to the base engine at default
+settings; enabled on a path only after the pending held-out win
+(Section
+5.3
+).
+4
+The Monte Carlo Engine
+4.1
+Race state and vectorized formulation
+Let
+C
+C
+denote the number of running cars (
+≤
+20
+{\leq}20
+) and
+N
+N
+the number of
+Monte Carlo replications (
+N
+=
+2,000
+N{=}2{,}000
+in production). The engine maintains,
+for each replication, per-car cumulative race time, current stint index,
+tyre age, and pit schedule; all quantities are stored as
+N
+×
+C
+N\times C
+arrays. A single simulated lap is one pass of array operations: draw
+per-replication track status (green/SC/VSC), compute the
+N
+×
+C
+N\times C
+lap-time matrix from the stint arrays (Section
+4.2
+), apply
+pit losses where the schedule fires (discounted under SC/VSC), apply
+dirty-air and overtaking interaction in gap order, and accumulate. Because
+strategy plans are precompiled into per-car stint arrays—compound base,
+slope, cliff knot, and cliff slope per stint—the inner loop contains no
+per-car branching. The vectorized engine is validated against a scalar
+reference implementation by distributional parity tests (maximum
+per-driver mean-finish discrepancy below
+0.6
+0.6
+positions across the field)
+and runs
+10
+10
+–
+50
+×
+50\times
+faster, which is what makes lap-rate re-simulation
+of a full field feasible on a single CPU node during a live session.
+Retirements are drawn per car per replication with calibrated probability
+(
+dnf_prob
+); a retired car is placed behind all classified
+finishers. Grid position enters as an initial time spread
+(
+grid_spread
+seconds per slot) plus a grid-informed prior on
+driver pace, and per-lap Gaussian pace noise (
+lap_noise
+) makes
+lap-level outcomes stochastic even under a fixed strategy.
+4.2
+Lap time and tyre degradation (H5)
+The lap time of a car on compound
+t
+t
+at tyre age
+a
+a
+is
+ℓ
+(
+t
+,
+a
+)
+=
+f
+0
+(
+t
+)
++
+δ
+(
+t
+)
+a
++
+[
+a
+>
+k
+(
+t
+)
+]
+s
+(
+t
+)
+(
+a
+−
+k
+(
+t
+)
+)
++
+ϵ
+,
+ϵ
+∼
+𝒩
+(
+0
+,
+σ
+lap
+2
+)
+,
+\ell(t,a)\;=\;f_{0}^{(t)}\;+\;\delta^{(t)}a\;+\;\mathbf{1}\!\left[a>k^{(t)}\right]\,s^{(t)}\bigl(a-k^{(t)}\bigr)\;+\;\epsilon,\qquad\epsilon\sim\mathcal{N}(0,\sigma^{2}_{\text{lap}}),
+(1)
+where
+f
+0
+(
+t
+)
+f_{0}^{(t)}
+is the fitted compound base pace,
+δ
+(
+t
+)
+\delta^{(t)}
+the
+linear wear slope, and
+(
+k
+(
+t
+)
+,
+s
+(
+t
+)
+)
+(k^{(t)},s^{(t)})
+an optional per-circuit,
+per-compound
+cliff
+: extra degradation of
+s
+(
+t
+)
+s^{(t)}
+seconds per lap
+beyond the knot age
+k
+(
+t
+)
+k^{(t)}
+. Two corrections are essential in practice.
+First, raw fitted slopes conflate tyre wear with fuel burn-off and track
+evolution; because fuel effect and track grip
+improve
+lap time as the
+race progresses, the blended slope is frequently negative—a model in which
+tyres improve forever, which a plan optimizer will exploit with impossible
+50-lap soft stints. We therefore decompose the slope by adding back a
+calibrated per-lap fuel effect and clamping the tyre-only wear component to
+a physically plausible band
+[
+0
+,
+0.22
+]
+[0,0.22]
+s/lap. Second, the cliff parameters
+are
+mined, not assumed
+: hinge fits on fuel-corrected per-stint deltas
+over 8,278 stints (191k laps) yield 37 circuit–compound cliffs passing
+an evidence gate (
+≥
+25
+%
+{\geq}25\%
+SSE reduction over the linear fit,
+n
+≥
+300
+n\geq 300
+laps, physically sane slope). Pooled globally the cliff
+signal is survivorship-flattened—stints that hit the cliff are the ones
+that ended—so circuit-specific mining is necessary. The decision path
+additionally enforces a
+max-stint feasibility cap
+: no recommended
+stint may exceed the longest stint any car demonstrably completed on that
+compound at that venue (95th percentile of circuit history pre-race; the
+demonstrated maximum post-race), which automatically inherits venue-specific
+regulations such as mandated tyre-life limits.
+4.3
+Overtaking: the H7 kernel
+The base engine resolves on-track proximity with a deterministic rule: a car
+within the calibrated dirty-air window of the car ahead loses
+dirty_air_loss
+seconds per lap and passes only when its pace
+advantage exceeds a per-circuit threshold. To test whether a learned
+stochastic model improves the simulation, we fitted a logistic overtake
+kernel on every adjacent-car battle in the store (a battle: consecutive
+cars within the interaction window on a green lap, pit-cycle position
+changes excluded): 131,000 battles containing 4,142 clean passes
+(3.2% base rate). The kernel is
+P
+⁡
+(
+pass
+)
+=
+σ
+⁡
+(
+A
+G
+​
+P
++
+k
+p
+​
+Δ
+pace
++
+k
+t
+​
+Δ
+age
+)
+,
+P(\mathrm{pass})\;=\;\sigma\!\bigl(A_{GP}+k_{p}\,\Delta_{\text{pace}}+k_{t}\,\Delta_{\text{age}}\bigr),
+(2)
+with
+Δ
+pace
+\Delta_{\text{pace}}
+the pace delta to the car ahead
+(s/lap, positive when the attacker is faster),
+Δ
+age
+\Delta_{\text{age}}
+the
+tyre-age delta, and
+A
+G
+​
+P
+A_{GP}
+an additive-shrinkage per-circuit difficulty
+offset. Fitted on seasons
+≤
+2023
+{\leq}2023
+(89k battles) and tested on
+≥
+2024
+{\geq}2024
+(41k)—the kernel’s own task-level split; the engine-level
+gating below uses the engine’s held-out seasons
+(Table
+4
+)—the kernel is well behaved: standardized coefficients
+k
+p
+=
++
+0.87
+k_{p}{=}{+}0.87
+,
+k
+t
+=
++
+0.46
+k_{t}{=}{+}0.46
+(both signs correct), monotonic in pace
+delta (a car ahead 1.0 s/lap slower is passed with probability 11% per
+battle-lap; 2.0 s/lap, 27.5%), test Brier
+0.0275
+0.0275
+against a
+climatological baseline of
+0.0298
+0.0298
+, and passes-per-race MAE
+8.9
+8.9
+(mean 23.5). Circuit offsets recover known difficulty orderings (hardest:
+Monaco, Imola, Canada; easiest: Qatar, Spa, Las Vegas).
+When wired into the simulator (sampling
+rng
+≥
+P
+⁡
+(
+pass
+)
+\text{rng}\geq P(\mathrm{pass})
+in
+gap order each lap) and fully re-calibrated, however, the kernel does
+not
+improve field-level outcome metrics—held-out Brier
+0.0757
+0.0757
+vs.
+0.0745
+0.0745
+for the threshold engine, with essentially
+identical rank correlation (Table
+4
+). The diagnosis is
+that at a
+∼
+\sim
+3% per-battle base rate the kernel keeps the field almost
+as order-locked as the threshold rule, and the calibration optimizer
+compensates through the pace-spread parameters in either configuration:
+the binding constraint on finishing-order fidelity is the magnitude of
+pace separation, not the functional form of the pass model. We report
+this as a negative result; the kernel remains available (default-off)
+where its per-battle probabilities are the object of interest, e.g. live overtake-watch narratives.
+4.4
+Compound-base normalization (H9)
+Per-compound base paces
+b
+c
+b_{c}
+are fitted independently per race, which
+confounds a compound’s intrinsic pace with
+when in the race it was
+run
+: soft tyres run early on full fuel and a green track, hards late on
+low fuel and rubbered-in asphalt. The result is frequent order inversions
+(in 18 of 24 races in the 2025 season the soft was
+not
+the fastest
+fitted compound) with spreads up to 3.1 s/lap—and a live decision
+pathology: boxing onto the spuriously “fast” compound dominates every
+counterfactual, so the engine over-recommends the undercut. A joint
+per-race fit
+lap
+∼
+b
+c
++
+δ
+c
+​
+a
++
+γ
+​
+racelap
+\text{lap}\sim b_{c}+\delta_{c}a+\gamma\,\text{racelap}
+is
+ill-conditioned for exactly the same reason (compound and race phase are
+collinear when a compound spans only one phase), so we use a robust
+projection: with
+b
+¯
+\bar{b}
+the mean fitted base and
+c
+¯
+\bar{c}
+a canonical
+centroid respecting soft
+≤
+\leq
+medium
+≤
+\leq
+hard,
+b
+^
+c
+=
+b
+c
+−
+b
+¯
++
+c
+¯
+,
+c
+¯
+:=
+arg
+⁡
+min
+c
+∈
+𝒞
+​
+∥
+c
+−
+b
+∥
+2
+​
+s.t.
+​
+g
+min
+≤
+c
+t
++
+1
+−
+c
+t
+≤
+g
+max
+,
+\hat{b}_{c}\;=\;b_{c}-\bar{b}+\bar{c},\qquad\bar{c}:=\arg\min_{c\,\in\,\mathcal{C}}\lVert c-b\rVert^{2}\;\;\text{s.t.}\;\;g_{\min}\leq c_{t+1}-c_{t}\leq g_{\max},
+(3)
+i.e. the fitted bases are projected onto the nearest vector with canonical
+ordering and adjacent gaps constrained to
+[
+g
+min
+,
+g
+max
+]
+[g_{\min},g_{\max}]
+(calibration bounds
+[
+0
+,
+0.2
+]
+[0,0.2]
+and
+[
+0.3
+,
+1.2
+]
+[0.3,1.2]
+s/lap respectively), while
+the mean pace level and all wear slopes are preserved. On the
+decision path this correction is unambiguous: in a representative
+pathological case (2025 Spanish GP, lap 46) the recommended box-now call
+carried an inflated 72.9% success probability under raw bases and a
+realistic 23.4%—matching the full probability board—after projection,
+flipping the recommendation to stay out. On the oracle path the projection
+hurts
+: re-calibrated with normalization enabled, held-out Brier
+degrades from
+0.0745
+0.0745
+to
+0.0784
+0.0784
+(Table
+4
+), and the
+optimizer pushes the projection strength to its floor, indicating that the
+confounded raw fit encodes genuine race-specific pace signal
+(track-evolution and fuel effects that really did apply to the laps each
+compound ran). This asymmetry is the clearest instance of the
+calibration/decision split formalized in Section
+5.3
+.
+4.5
+Safety Car and Virtual Safety Car (H13)
+Track-status regimes are simulated per replication per lap. A full Safety
+Car deploys with per-lap hazard
+p
+SC
+=
+λ
+SC
+/
+L
+rem
+p_{\text{SC}}=\lambda_{\text{SC}}/L_{\text{rem}}
+, where
+λ
+SC
+\lambda_{\text{SC}}
+is a per-circuit expected-SC
+prior scaled by the calibrated multiplier
+sc_rate_mult
+; under SC,
+lap times are multiplied by
+sc_pace_mult
+(
+≈
+1.4
+\approx 1.4
+) and pit
+loss by
+sc_pit_factor
+(
+≈
+0.45
+\approx 0.45
+)—capturing the cheap-stop
+dynamics that dominate real strategy resets. The VSC regime (new in this
+system relative to prior academic simulators) is drawn analogously with its
+own rate, a shorter duration (uniform on
+1
+.
+.
+⌊
+vsc_dur_max
+⌋
+1..\lfloor\texttt{vsc\_dur\_max}\rfloor
+laps), a milder pace multiplier
+(
+vsc_pace_mult
+, bounds
+[
+1.10
+,
+1.35
+]
+[1.10,1.35]
+), and an intermediate pit
+discount (
+vsc_pit_factor
+, bounds
+[
+0.45
+,
+0.85
+]
+[0.45,0.85]
+); SC takes
+priority when both would be active, and the two regimes are mutually
+exclusive by construction. Modern F1 sees roughly
+0.5
+0.5
+–
+0.9
+0.9
+VSCs per
+race, and the distinction matters strategically: a VSC stop saves less than
+an SC stop but arrives more often and ends sooner, changing the
+option value of staying out.
+4.6
+Rival policy (H1)
+Counterfactual evaluation requires an assumption about what the other 19
+cars do. Replaying rivals’
+historical
+plans is wrong twice over: in
+backtests it leaks the future, and in live operation their remaining plan is
+unknown.
+Pitwall
+assumes rivals play their
+pace-optimal
+remaining strategy
+: for each rival, the plan minimizing deterministic
+remaining race time under the current compound model, feasibility caps, and
+pit-loss constant. This is a conservative, game-theoretically motivated
+choice—the focal car’s option value is measured against competent
+opposition rather than against the (frequently suboptimal) plans teams
+actually ran—and it makes backtest and live evaluation structurally
+identical. The known limitation is that rivals do not
+react
+to the
+focal car’s move (they do not cover the undercut); Section
+8
+discusses this sequential-game extension.
+SC-reactive pull-forward (H17).
+A first, well-identified slice
+of rival reactivity is already implemented: real teams pull a scheduled stop
+forward when a Safety Car or VSC discounts the pit loss, and an open-loop
+rival that ignores a cheap-stop window is systematically pessimistic about
+neutralisation-period strategy (in one live case the engine gave zero credit
+to an SC-window stop that every competent rival would have taken). Under
+H17, a rival whose next scheduled stop lies within
+sc_pull_window
+laps and whose tyres are at least
+sc_min_age
+laps old boxes
+immediately when a neutralisation is active; cumulative-lap scheduling
+guarantees that pulling a stop forward never shortens later stints, and the
+focal car is excluded so its committed plan remains the object of the
+counterfactual. The mechanism is reactive to the shared
+track state
+,
+not to the focal car’s private decision, so it composes with common random
+numbers without breaking the CRN coupling of Section
+4.7
+. Like
+H15 it ships parity-gated (bit-exact at its default-off setting, verified
+by golden-hash regression) pending a held-out calibration win; the full
+covering game—a rival responding to the focal undercut itself—remains
+future work (Section
+8
+).
+4.7
+The undercut window with common random numbers (H14)
+The core live decision is not “pit or not” but
+when
+: box now, or
+in one or two laps, or stay to the pace-optimal stop.
+Pitwall
+evaluates the option set
+ℋ
+=
+{
+h
+=
+0
+,
+h
+=
+1
+,
+h
+=
+2
+,
+stay
+}
+\mathcal{H}=\{h{=}0,h{=}1,h{=}2,\text{stay}\}
+, where option
+h
+h
+runs
+h
+h
+further laps on the current compound and then boxes onto the cheapest
+fresh continuation (itself chosen by deterministic plan search under the
+feasibility caps), and “stay” is the focal car’s H1-optimal remaining
+plan. Each option is simulated with an
+identical
+random seed—the
+same Safety-Car draws, the same retirement draws, the same lap-noise
+sequence—so that for any pair of options the difference in outcomes is
+attributable to the strategy alone. Formally, with
+F
+h
+(
+i
+)
+F_{h}^{(i)}
+and
+R
+(
+i
+)
+R^{(i)}
+the finish positions of the focal car under option
+h
+h
+and of
+the designated rival in replication
+i
+i
+of the common world
+ω
+(
+i
+)
+\omega^{(i)}
+,
+the engine reports
+P
+^
+h
+(
+ahead
+)
+=
+1
+N
+∑
+i
+=
+1
+N
+[
+F
+h
+(
+i
+)
+<
+R
+(
+i
+)
+]
+,
+Δ
+^
+h
+=
+P
+^
+h
+(
+ahead
+)
+−
+P
+^
+stay
+(
+ahead
+)
+,
+\widehat{P}_{h}(\text{ahead})=\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}\!\left[F_{h}^{(i)}<R^{(i)}\right],\qquad\widehat{\Delta}_{h}=\widehat{P}_{h}(\text{ahead})-\widehat{P}_{\text{stay}}(\text{ahead}),
+(4)
+along with expected finish position, and win and podium probabilities per
+option. Under common random numbers the variance of
+Δ
+^
+h
+\widehat{\Delta}_{h}
+contains a
+−
+2
+​
+Cov
+​
+(
+F
+h
+,
+F
+stay
+)
+-2\,\mathrm{Cov}(F_{h},F_{\text{stay}})
+term that is strongly
+negative for positively coupled options
+(
+Glasserman and Yao 1992
+)
+; in
+practice option deltas at
+N
+=
+2,000
+N{=}2{,}000
+are stable to well under a
+percentage point, whereas independently seeded options would require an
+order of magnitude more replications for the same contrast precision. The
+rival defaults to the nearest running car directly ahead on track—the car
+an undercut is
+for
+.
+4.8
+Pit-stop physics (H15)
+The base engine applies a deterministic pit loss, while the analytical
+undercut module charges a cold-tyre out-lap penalty the Monte Carlo engine
+did not—an internal inconsistency that biased the simulator optimistic
+toward pitting and inflated the H14 stay-vs-box deltas on marginal calls.
+H15 closes it with three physically grounded terms: stationary time becomes
+pit_loss
+⋅
+f
+neut
++
+Exp
+⁡
+(
+σ
+pit
+)
+\text{pit\_loss}\cdot f_{\text{neut}}+\mathrm{Exp}(\sigma_{\text{pit}})
+,
+whose right-tailed exponential noise captures the slow-stop tail that a
+symmetric Gaussian would understate; an in-lap overhead
+δ
+in
+\delta_{\text{in}}
+is charged on the pitting lap; and an out-lap warm-up
+penalty
+δ
+out
+\delta_{\text{out}}
+is charged on the first lap after every stop
+(detected as tyre age zero on a non-initial stint, which correctly excludes
+the race start). The deterministic optimizer’s stint-time model accepts the
+same
+δ
+out
+\delta_{\text{out}}
+, so the plan search and the simulator price a
+stop identically. All three parameters default to zero—the engine is
+bit-identical to its pre-H15 behaviour until calibration frees them—which
+is the parity-gating discipline of Section
+5.3
+applied at
+the implementation level.
+4.9
+Uncertainty quantification
+Every reported probability carries a 90% percentile-bootstrap confidence
+interval: the
+N
+N
+simulated finish matrices are resampled
+B
+=
+500
+B{=}500
+times
+along the replication axis, and for each driver and event
+E
+∈
+{
+win
+,
+podium
+,
+points
+}
+E\in\{\text{win},\text{podium},\text{points}\}
+,
+W
+^
+d
+=
+1
+N
+∑
+i
+=
+1
+N
+[
+rank
+(
+d
+,
+i
+)
+∈
+E
+]
+,
+CI
+90
+(
+W
+^
+d
+)
+=
+[
+q
+5
+%
+(
+W
+^
+d
+∗
+)
+,
+q
+95
+%
+(
+W
+^
+d
+∗
+)
+]
+,
+\widehat{W}_{d}=\frac{1}{N}\sum_{i=1}^{N}\mathbf{1}\!\left[\mathrm{rank}(d,i)\in E\right],\qquad\mathrm{CI}_{90}(\widehat{W}_{d})=\bigl[\,q_{5\%}(\widehat{W}_{d}^{\ast}),\;q_{95\%}(\widehat{W}_{d}^{\ast})\,\bigr],
+(5)
+where
+W
+^
+d
+∗
+\widehat{W}_{d}^{\ast}
+are the bootstrap replicates. Because the
+bootstrap reuses the already-simulated matrices, intervals attach to the
+live probability board at zero additional simulation cost. These intervals
+quantify
+Monte Carlo sampling
+error, not model error; model error is
+addressed by the calibration protocol of Section
+5
+.
+5
+Calibration
+5.1
+Parameters and bounds
+The engine exposes a twelve-dimensional core parameter vector
+θ
+\theta
+—per-lap pace noise, retirement hazard, SC pace and pit-loss
+multipliers, the dirty-air window and loss, the pace clip, scale, and
+grid spread, the fuel effect, and the SC and overtake rate multipliers
+(Table
+2
+)—plus the shaping constants of the gated
+components (VSC pace and pit multipliers, compound-projection gaps,
+pace-prior weights). Every
+parameter is searched inside physically interpretable bounds
+(Table
+2
+); the discrete component switches (H5, H7, H9, H13)
+are
+pinned
+per run and each configuration is calibrated separately,
+so a component is never half-adopted by a fractional flag. Bounding is not
+cosmetic: bounds keep the fitted engine auditable (an SC pace multiplier of
+1.42
+1.42
+means something to a strategist; an unconstrained value of
+3.7
+3.7
+would mean the optimizer is laundering a misspecification through the SC
+model), and
+which bounds the optimizer saturates is itself
+diagnostic
+—the persistent pinning of
+pace_clip
+,
+pace_scale
+, and
+grid_spread
+at their upper bounds
+across configurations is what identified pace-spread magnitude, not the
+overtake model, as the binding constraint on order fidelity
+(Section
+4.3
+).
+Parameter
+Meaning
+Bounds
+Default
+lap_noise
+per-lap pace noise (s)
+[
+0.05
+,
+0.40
+]
+[0.05,0.40]
+0.18
+dnf_prob
+per-car retirement probability
+[
+0.00
+,
+0.15
+]
+[0.00,0.15]
+0.07
+sc_pace_mult
+lap time under SC vs. green
+[
+1.15
+,
+1.70
+]
+[1.15,1.70]
+1.40
+sc_pit_factor
+pit loss under SC vs. green
+[
+0.20
+,
+0.80
+]
+[0.20,0.80]
+0.45
+dirty_air_window
+interaction gap window (s)
+[
+0.4
+,
+2.5
+]
+[0.4,2.5]
+1.2
+dirty_air_loss
+held-up loss (s/lap)
+[
+0.0
+,
+0.8
+]
+[0.0,0.8]
+0.35
+pace_clip
+cap on driver pace offset (s/lap)
+[
+0.3
+,
+2.5
+]
+[0.3,2.5]
+0.6
+pace_scale
+compression of raw pace deltas
+[
+0.2
+,
+1.0
+]
+[0.2,1.0]
+0.55
+grid_spread
+start spread per grid slot (s)
+[
+0.0
+,
+1.5
+]
+[0.0,1.5]
+0.28
+fuel_effect
+fuel burn-off folded out of deg (s/lap)
+[
+0.00
+,
+0.15
+]
+[0.00,0.15]
+0.05
+sc_rate_mult
+multiplier on per-circuit SC prior
+[
+0.3
+,
+3.0
+]
+[0.3,3.0]
+1.0
+ot_rate_mult
+multiplier on overtake difficulty
+[
+0.3
+,
+3.0
+]
+[0.3,3.0]
+1.0
+vsc_pace_mult
+lap time under VSC vs. green
+[
+1.10
+,
+1.35
+]
+[1.10,1.35]
+1.22
+vsc_pit_factor
+pit loss under VSC vs. green
+[
+0.45
+,
+0.85
+]
+[0.45,0.85]
+0.65
+vsc_dur_max
+max VSC duration (laps)
+[
+2.0
+,
+4.0
+]
+[2.0,4.0]
+3.0
+Table 2:
+Core calibrated parameters with physically plausible search
+bounds. Discrete component switches (
+pace_model
+,
+overtake_model
+,
+compound_norm
+,
+tyre_cliff
+,
+vsc_rate
+) are pinned per configuration and searched separately.
+5.2
+Objective and protocol
+For each historical race the engine simulates the field from the grid
+(the pre-race oracle) and produces per-driver event probabilities
+p
+i
+p_{i}
+for win, podium, and points, compared to realized outcomes
+y
+i
+∈
+{
+0
+,
+1
+}
+y_{i}\in\{0,1\}
+over classified drivers. Forecast quality is the Brier
+score
+(
+Brier 1950
+)
+BS
+=
+1
+n
+​
+∑
+i
+=
+1
+n
+(
+p
+i
+−
+y
+i
+)
+2
+=
+REL
+⏟
+reliability
+−
+RES
+⏟
+resolution
++
+UNC
+⏟
+uncertainty
+,
+\mathrm{BS}=\frac{1}{n}\sum_{i=1}^{n}(p_{i}-y_{i})^{2}\;=\;\underbrace{\mathrm{REL}}_{\text{reliability}}-\underbrace{\mathrm{RES}}_{\text{resolution}}+\underbrace{\mathrm{UNC}}_{\text{uncertainty}},
+(6)
+with the
+Murphy 1973
+decomposition computed over binned forecasts;
+reliability diagrams plot empirical frequency against forecast probability
+per bin, and ECE summarizes the bin-weighted reliability gap. Because a
+strategy engine must get
+ordering
+right as well as probabilities, the
+calibration objective blends rank fidelity with calibration:
+J
+⁡
+(
+θ
+)
+=
+ρ
+Spearman
+​
+(
+θ
+)
+−
+w
+B
+​
+BS
+​
+(
+θ
+)
+−
+w
+E
+​
+ECE
+​
+(
+θ
+)
+,
+w
+B
+=
+2
+,
+w
+E
+=
+1
+,
+J(\theta)=\rho_{\text{Spearman}}(\theta)-w_{B}\,\mathrm{BS}(\theta)-w_{E}\,\mathrm{ECE}(\theta),\qquad w_{B}=2,\;w_{E}=1,
+(7)
+where
+ρ
+Spearman
+\rho_{\text{Spearman}}
+is the mean rank correlation between
+expected and realized finishing order.
+J
+J
+is maximized by
+bound-constrained differential evolution over the training split
+(seasons 2018–2024, 126 races), with
+n
+sims
+=
+400
+n_{\text{sims}}{=}400
+per race
+per evaluation and multiple seeds to control optimizer noise; the test
+split (the 2025–2026 seasons, 29 races at the time of the gating runs) is
+never seen by the optimizer and is touched only for final configuration
+comparison. Each gated configuration (base, +H7, +H9,
++H5) receives its
+own
+full calibration run—components are never
+evaluated with parameters tuned for a different configuration, which would
+bias the ablation against the challenger.
+Calibration infrastructure (H16).
+Two properties of the search
+itself proved as important as the objective. First,
+identifiability
+logging
+: alongside differential evolution the harness supports CMA-ES
+(
+Hansen and Ostermeier 2001
+)
+, whose evolved per-parameter standard deviations
+report which parameters the data actually pins down and which remain
+prior-dominated—a direct check that a fitted value like
+sc_pace_mult
+=
+1.4
+{=}1.4
+is identified rather than inherited from its
+initialization. Second,
+season-blocked cross-validation
+: a
+K
+K
+-fold
+protocol that trains on
+K
+−
+1
+K{-}1
+seasons and evaluates on the held-out season
+separates calibration variance from genuine era drift, guarding against the
+single-split lottery. Both are implemented and parity-tested; the joint
+recalibration that frees the pinned H13/H15/H17 parameters under this
+protocol is the designated next experiment, and per the gating rule of
+Section
+5.3
+none of those components ships enabled until it
+produces a held-out win.
+5.3
+The dual-path principle
+The gating experiments (Table
+4
+) produce a consistent
+pattern: components that add realism or fix decision pathologies do not
+necessarily improve—and can degrade—outcome calibration, because the
+calibration objective rewards whatever correlates with finishing order,
+including confounds (H9) and compression artifacts (H7). We therefore adopt
+a dual-path rule:
+the oracle path runs the configuration that wins
+the held-out calibration comparison; the decision path runs the
+configuration that wins the held-out decision-fidelity comparison; no
+component is enabled on a path without a held-out win on that path’s
+metric.
+Concretely, production probabilities come from the base-engine
+configuration (H13 enabled), while recommendations, the strategy-cost
+report, and live calls use the feasibility-capped H5 tyre model and the H9
+projection. This costs one extra deterministic plan search per decision
+query and buys an engine whose probabilities and whose advice are each
+separately auditable. We consider making this split explicit—rather than
+quietly shipping the prettier model everywhere—a core lesson of the
+system. The rule has an implementation-level counterpart,
+parity
+gating
+: every new component ships behind a flag whose default reproduces
+the incumbent engine bit-for-bit (verified by golden-hash regression
+tests), so adoption is always a measured decision against a held-out
+metric rather than a silent behavioral drift. H15, H17, and H18 currently
+sit in this state, implemented but inert pending their gating experiments.
+6
+The Language Layer: Verifier-Gated Briefings
+Everything the engine computes reaches its audience as prose. The
+language layer turns the canonical state and the probability board into
+short strategy briefings—“Verstappen leads on 18-lap hards; Norris,
+1.4 s back, has the undercut if he boxes within two laps”—in English,
+Spanish, and Portuguese, at every lap, for live and replayed sessions.
+The design constraint is asymmetric: an omitted fact costs little, while a
+fabricated one, attached to a real athlete’s name and published in real
+time, is a reputational defect of the same severity class as the
+pathological pit calls of Section
+4.4
+. We therefore treat
+faithfulness not as a property to be measured after the fact but as a
+gate applied at three points: on every published sentence, on every
+fine-tuning target, and on the choice of generator itself.
+6.1
+Typed claims and reference-free verification
+A briefing is decomposed into typed factual claims drawn from a schema of
+ten types:
+leader
+,
+position
+,
+gap-to-leader
+,
+battle
+,
+pace
+,
+tyre
+,
+safety-car
+,
+lap-number
+,
+overtake
+, and
+position-change
+.
+Extraction is available in two regimes: a deterministic multilingual
+pattern extractor (surnames resolved to canonical three-letter driver
+codes), and an LLM extractor for free-form text. Each claim is verified
+against the live state snapshot—and, for the two lap-over-lap types
+(
+overtake
+,
+position-change
+), against the previous
+snapshot—yielding
+supported
+,
+contradicted
+, or
+unverifiable
+; a text’s faithfulness is the supported fraction of
+its claims and its hallucination rate the contradicted fraction. Because
+the grounding source is the state itself, the metric is reference-free:
+it requires no gold commentary, which for a live session does not exist.
+Coverage determines whether these scores mean anything. The pattern
+extractor, written to the template’s phrasings, recovers only 0–2 claims
+from free-form model output that in fact asserts 4–15 verifiable facts,
+collapsing scores to degenerate values (0.00, or a vacuous 1.00 at
+n
+=
+1
+n{=}1
+); the LLM extractor recovers 8–15 claims per text and yields
+discriminative scores (0.78–1.00 across our development texts). This is
+the live counterpart of the coverage-aware argument of
+Santillana 2026
+: a verifier that cannot see a claim
+cannot falsify it, so extractor coverage is a validity precondition, not
+an implementation detail. The verification layer is exercised by a suite
+of 36 unit tests spanning all claim types and all three languages; one
+audit finding is illustrative of why tests must cover the domain’s full
+history—the compound vocabulary initially omitted the hypersoft,
+ultrasoft, and supersoft compounds used in 2018–2021 (
+∼
+\sim
+150
+occurrences in the store), silently converting true tyre claims into
+false
+contradicted
+verdicts.
+6.2
+Faithfulness-gated fine-tuning
+A deterministic template generator over the state is faithful by
+construction but rigid. To obtain a generator that is natural without
+license to invent, we gate the fine-tuning corpus with the verifier
+itself. For 145 training races (2018–2024; the 2025–2026 seasons are
+held out here exactly as in the engine calibration), at seven lap
+fractions per race and in three languages, a frontier model
+(GPT-4o) is prompted with the same structured context the production
+generator sees and asked for natural commentary. A candidate is admitted
+as a fine-tuning target only if it makes at least one checkable claim
+and
+zero
+contradicted claims under
+score
+​
+(
+⋅
+)
+\textsc{score}(\cdot)
+with the LLM extractor; a cheap
+stopword-based language check additionally rejects responses in the wrong
+language (caught in
+∼
+\sim
+5% of Spanish/Portuguese requests in the
+pilot). Failures are retried twice, then fall back to the template—so
+every one of the 3,045 resulting targets is either rich-and-verified or
+faithful-by-construction, and the fine-tuned model has, by design, never
+been shown an ungrounded target. Of the corpus, 2,494 targets (81.9%)
+are admitted model generations and 551 (18.1%) are template fallbacks.
+This inverts the usual relationship between generation and evaluation:
+the faithfulness metric is not applied to the model after training but
+determines what the model is permitted to learn from. Section
+7.7
+evaluates what this buys—and what it does not.
+At serving time the same discipline applies downstream: briefing cards
+published to the live dashboard and to social channels carry only claims
+that pass verification against the current state, so the deployment-time
+guarantee does not depend on the generator being perfect, only on the
+verifier’s coverage of what it says.
+7
+Experiments
+7.1
+Backtest: outcome prediction over seven scored seasons
+Table
+3
+reports the pre-race oracle over the full
+structured store (155 scoreable races at the time of the backtest;
+n
+sims
+=
+400
+n_{\text{sims}}{=}400
+per race), with the calibrated parameter vector. The engine
+identifies the eventual winner as its modal winner in 64.5% of races,
+places the winner in its top-3 in 90.3%, and recalls 72.3% of podium
+finishers, with mean Spearman
+ρ
+=
+0.749
+\rho=0.749
+against the final
+classification. These full-store figures span training and test years and
+are reported for completeness; the held-out 2025–2026 split alone achieves
+ρ
+=
+0.766
+\rho=0.766
+(Table
+4
+), so the aggregate is not inflated
+by in-sample races. Year-over-year stability is good (top-3 between 80.0% and
+100%;
+ρ
+\rho
+between 0.647 and 0.806) with no evident drift across the
+2022 regulation change, indicating that per-race pace fitting absorbs most
+era effects. As a reference point, a grid-order baseline (winner = pole)
+achieves substantially lower podium recall and rank correlation in every
+season; a climatological baseline (championship-order priors) cannot react
+to race-specific pace at all. Held-out probability quality for the production
+configuration is combined Brier
+0.0745
+0.0745
+and ECE
+0.0297
+0.0297
+(combined
+win / podium / points events, computed in the gating runs on the 29-race
+2025–2026 test split,
+3
+3
+seeds); re-evaluated on the current 31-race
+held-out store (
+calibration_vec
+,
+N
+=
+400
+N{=}400
+, 3 seeds), per-event
+Brier is
+0.0254
+0.0254
+for win (reliability term
+0.0014
+0.0014
+),
+0.0652
+0.0652
+for podium,
+and
+0.1381
+0.1381
+for points.
+Reliability diagrams (Figure
+2
+) show forecasts within a
+few points of empirical frequency across the well-populated bins, with mild
+over-confidence in the sparsely populated
+0.8
+0.8
+–
+0.9
+0.9
+win bin.
+Season
+Races
+Winner hit %
+Winner top-3 %
+Podium recall %
+Spearman
+ρ
+\rho
+2018
+20
+45.0
+80.0
+73.3
+0.705
+2019
+21
+61.9
+95.2
+79.4
+0.803
+2020
+17
+76.5
+82.4
+70.6
+0.647
+2021
+22
+72.7
+86.4
+71.2
+0.747
+2023
+22
+72.7
+95.5
+71.2
+0.736
+2024
+24
+62.5
+95.8
+73.6
+0.805
+2025
+24
+62.5
+91.7
+68.1
+0.757
+2026
+†
+5
+60.0
+100.0
+66.7
+0.806
+Overall
+155
+64.5
+90.3
+72.3
+0.749
+Table 3:
+Pre-race oracle backtest with the calibrated engine
+(
+n
+sims
+=
+400
+n_{\text{sims}}{=}400
+/race). “Winner hit” = modal simulated winner
+won; “winner top-3” = actual winner within the three most probable.
+†
+Partial season at time of writing.
+7.2
+Component ablations on held-out seasons
+Table
+4
+is the gating experiment: each configuration
+independently calibrated on the 2018–2024 training split, evaluated on the
+held-out 2025–2026 test split (
+n
+=
+400
+n{=}400
+sims
+×
+\times
+3 seeds). The production configuration wins
+or ties every calibration metric. Enabling the H7 kernel is calibration-
+neutral-to-negative despite the kernel’s own out-of-sample validity
+(Section
+4.3
+); enabling H9 normalization or the H5 engine-path
+cliff degrades Brier by 4–6%. We emphasize that these are
+post-recalibration
+comparisons—each challenger was given its best
+shot—which is what licenses routing those components to the decision path
+rather than discarding them.
+Configuration
+Brier
+↓
+\downarrow
+ECE
+↓
+\downarrow
+Spearman
+ρ
+\rho
+↑
+\uparrow
+Winner top-3 %
+↑
+\uparrow
+Production (base + H13)
+0.0745
+0.0297
+0.766
+95.4
++ H7 overtake kernel (recal.)
+0.0757
+0.0344
+0.762
+95.4
++ H9 compound norm. (recal.)
+0.0784
+0.0308
+0.742
+90.8
++ H5 cliff, engine path
+0.0786
+–
+0.755
+–
+H7 kernel alone (pass-level task)
+0.0275
+vs. 0.0298 climatological; passes/race MAE 8.9
+Table 4:
+Held-out gating (2025–2026 test split; combined win/podium/points Brier/ECE;
+3
+3
+seeds). Realism components that win their own task (bottom row) do not
+transfer to field-level calibration — the empirical basis for the
+dual-path design of Section
+5.3
+.
+7.3
+Decision fidelity: strategy recommendations against history
+The decision path is evaluated on 42 dry races from 2024–2025, with
+the H5 artifact mined on
+≤
+2023
+{\leq}2023
+only; this evaluation exercises the
+deterministic plan optimizer rather than the calibrated simulator, so the
+relevant holdout basis is the artifact’s mining cutoff, and all 42 races are
+out-of-sample with respect to the mined caps and cliffs.
+Table
+5
+compares the recommended plan to the executed race. Without feasibility
+constraints the optimizer recommends a stint longer than any real car
+achieved in 90.5% of races—the negative-slope pathology of
+Section
+4.2
+; with the mined caps and cliff, infeasible
+recommendations drop to
+zero
+, stop-count agreement with the
+modal executed strategy rises from 59.5% to 69.0%, and stop-count MAE
+falls from 0.40 to 0.31. The baseline’s 59.5% is itself degenerate—it
+recommends one stop nearly always; restricted to the 18 races where the
+modal real strategy was two stops, the baseline matches 1/18 and the H5
+decision path 9/18. Strategy-cost audits corroborate the fix: the median
+gap between executed and recommended plan time on pathological venues
+collapses (Monza
++
+73
++73
+–
+102
+102
+s
+→
+\rightarrow
+median
+16
+16
+s; Suzuka
+→
+7
+\rightarrow 7
+s; Monaco
+→
+19
+\rightarrow 19
+s; field median of race
+medians
+11
+11
+s), and residual high-cost venues are precisely the
+track-position circuits (e.g. Singapore) where lap-time optimality is the
+wrong objective—the report flags these with a confidence gate rather
+than feigning precision.
+Decision metric (42 held-out dry races)
+Base optimizer
++H5 (train-mined)
++H5 (full)
+Recommends an infeasible stint (%)
+↓
+\downarrow
+90.5
+50.0
+0.0
+Stop-count match with executed modal plan (%)
+↑
+\uparrow
+59.5
+∗
+69.0
+—
+Stop-count MAE
+↓
+\downarrow
+0.40
+0.31
+—
+Match on modal-2-stop races
+↑
+\uparrow
+1/18
+—
+9/18
+Table 5:
+Decision-path gating.
+∗
+Degenerate: the unconstrained
+baseline almost always recommends one stop. “Train-mined” caps use
+≤
+2023
+{\leq}2023
+data only (honest held-out); “full” uses all mined circuit
+history as deployed.
+7.4
+Undercut window behaviour and empirical grounding (H14)
+The H14 window’s value is contrast precision. With common random numbers
+the sign of
+Δ
+^
+h
+\widehat{\Delta}_{h}
+(Eq.
+4
+) is stable across seeds
+at
+N
+=
+2,000
+N{=}2{,}000
+for gaps outside
+±
+0.3
+\pm 0.3
+percentage points, and the
+window exhibits the qualitatively correct phenomenology on historical
+replays: box-now dominates when the rival ahead is on old rubber near a
+mined cliff knot and pit loss is about to be VSC-discounted; stay-out
+dominates under high SC hazard (banking a possible cheap stop) and on
+high-difficulty circuits where track position outweighs tyre delta. On
+undercut-heavy historical moments the H9-projected window agrees with the
+full probability board, where the raw-base window systematically inflated
+box-now by tens of points (Section
+4.4
+).
+To ground the H14 predictor empirically, we extract all
+2,134
+2{,}134
+undercut
+events from
+pit_battles
+across the structured store
+(
+1,306
+1{,}306
+training events
+≤
+2023
+{\leq}2023
+;
+828
+828
+test events from 2024–2025,
+held out with respect to this event model’s own fitting cutoff) and
+score a marginal model for position-swap success. We fit a logistic
+regression on three inputs available before the stop: (i)
+gap_before_s
+(gap to the target rival in seconds), (ii) tyre-age delta (attacker age
+minus defender age, derived from stint records), and (iii) log remaining laps.
+On the held-out split the model achieves Brier
+0.168
+0.168
+against a
+climatological baseline of
+0.188
+0.188
+(Brier Skill Score
+0.107
+0.107
+;
+position-swap base rate
+25
+%
+25\%
+,
+N
+=
+828
+N{=}828
+). The dominant coefficient is
+gap_before_s
+(
+w
+^
+=
+−
+1.21
+\hat{w}{=}{-}1.21
+, negative as expected:
+a larger gap before the stop makes an outright position swap less likely)
+and tyre-age delta is positive but weak (
+w
+^
+=
++
+0.01
+\hat{w}{=}{+}0.01
+), consistent
+with the H7 finding that the overtake model captures relatively little
+marginal information beyond pace separation. These results confirm that undercut outcomes are statistically predictable
+from pit-time features available without telemetry (BSS
+0.107
+0.107
+), and
+independently establish
+gap_before_s
+as the dominant input.
+Note that this logistic evaluation validates
+feature importance
+;
+the inter-option deltas
+Δ
+^
+h
+\widehat{\Delta}_{h}
+from the MC engine are
+separately variance-controlled by the shared CRN seed, ensuring they
+reflect strategy choice rather than simulation noise.
+Both findings motivate H9’s role in purging spurious gap estimates from
+the live compound-base fit.
+Figure 2:
+Reliability diagrams on the held-out 2025–2026 test races
+(31 races,
+N
+=
+400
+N{=}400
+, 3 seeds; win / podium / points).
+Forecast probability on the
+x
+x
+-axis, empirical event frequency on the
+y
+y
+-axis;
+diagonal = perfect calibration; bar underlay shows bin count.
+Production configuration (solid): win Brier
+0.0254
+0.0254
+with reliability term
+0.0014
+0.0014
+; forecasts sit within a few percentage points of the diagonal in the
+well-populated bins, with mild over-confidence in the sparse
+0.8
+0.8
+–
+0.9
+0.9
+win
+bin. Overlay (+H9 flag-flip on the production parameters, dashed): marginally
+better on the win event (
+0.0234
+0.0234
+) but worse on podium and points (combined
+0.0799
+0.0799
+vs.
+0.0762
+0.0762
+), directionally consistent with the fully recalibrated
+gating comparison of Table
+4
+. Murphy decomposition:
+BS
+=
+REL
+−
+RES
++
+UNC
+\mathrm{BS}=\mathrm{REL}-\mathrm{RES}+\mathrm{UNC}
+.
+7.5
+Live deployment: the 2026 Austrian Grand Prix
+Pitwall
+operated end-to-end during the 2026 Austrian Grand Prix:
+the SignalR live-timing stream was ingested at 1 s cadence through a
+proxied edge agent, decoded into the canonical state (compound, tyre age,
+gaps, track status—including correct discrimination of yellow flags from
+VSC deployment, validated earlier on a real yellow
+→
+\rightarrow
+VSC
+→
+\rightarrow
+clear sequence in Barcelona free practice), and the full board
+(win/podium/points with CIs), the undercut window, and grounded commentary
+cards were recomputed continuously as laps arrived. Because 2026 races have
+no same-season historical store, compound models were seeded from the 2025
+running of the same event and refreshed from live green laps as the race
+developed—the pre-race prior mattered mainly for the first stint. The
+deployment also functioned as an adversarial test of the state layer: a
+mid-race anomaly (a P8 car
++
+25
++25
+s showing an implausible 55.8% win
+probability at lap 17/71) was traced to out-lap contamination of the live
+pace fit and a compound double-count in the state builder, both fixed and
+regression-tested; we report this because live operation surfaces
+state-estimation failure modes that no backtest exercises, and the
+credibility of a live decision system rests on treating them as
+first-class defects rather than presentation glitches. The
+end-to-end lap-to-updated-board latency was dominated by the feed cadence
+rather than by simulation (
+N
+=
+2,000
+N{=}2{,}000
+full-field continuations complete
+in seconds on a single CPU container), confirming that calibrated
+counterfactual advice at live cadence is feasible without team-grade
+compute.
+From incident to estimator (H18).
+The out-lap anomaly also
+exposed a structural weakness: the live pace offset was a single-lap
+estimate (
+σ
+≈
+0.18
+\sigma\approx 0.18
+s), so one contaminated observation could
+move the entire probability board. The systematic fix is a per-car
+two-state Kalman filter over
+[
+β
+0
+,
+β
+1
+]
+[\beta_{0},\beta_{1}]
+—pace offset (s/lap) and
+residual degradation slope (s/lap
+2
+)—with observation model
+H
+=
+[
+1
+,
+a
+]
+H=[1,a]
+at tyre age
+a
+a
+, measurement noise inflated
+4
+×
+4\times
+when the
+car runs in dirty air, out-laps and neutralised laps excluded from updates,
+and a compound change resetting the slope’s variance to its prior while
+carrying the offset. The filter’s posteriors enter the simulator not as
+point estimates but as per-replication draws (sampled once outside the lap
+loop), so live
+estimation
+uncertainty propagates into the reported
+probabilities alongside Monte Carlo sampling uncertainty. Consistent with
+the gating discipline, the filter ships parity-gated—bit-identical to the
+single-lap estimator until enabled—and its live validation at a
+subsequent Grand Prix is the designated acceptance test.
+7.6
+Live deployment II: the 2026 British Grand Prix
+A second race-distance deployment, one week later at the 2026 British
+Grand Prix (Silverstone), exercised the same stack under a different
+failure surface and added one capability: authenticating the SignalR
+connection against a broadcast subscription unlocked the
+positional-telemetry topics that the anonymous connection does not
+deliver, enabling a live track map alongside the probability board.
+From incident to guardrail: prior contamination.
+The pre-race compound prior follows the recipe of
+Section
+7.5
+: with no same-season store for the circuit, base
+pace and degradation per compound are seeded from a prior running of
+the same event. The 2025 British Grand Prix—the natural analog—was
+a wet race, and the fit silently inherited its regime: HARD fitted at
+108.3
+108.3
+s/lap against MEDIUM at
+94.1
+94.1
+s/lap, a
+14
+14
+s/lap spread
+where dry slick compounds are separated by
+1
+1
+–
+3
+3
+s/lap. The live
+symptom was unmistakable once it fired: a P21 car,
+75.8
+75.8
+s off the
+lead on ten-lap-old hards, reported an
+89.1
+%
+89.1\%
+win probability—but
+only under the candidate plans that pitted it onto the faster-fitted
+compound, while every other plan for the same car correctly read
+∼
+0
+%
+{\sim}0\%
+. In the simulator’s arithmetic, switching to a compound
+14
+14
+s/lap faster is time travel, and the plan search found it.
+Notably, enabling H9 live did
+not
+repair the board:
+mean-centering re-scales the corrupted bases but carries no information
+about which fit is wrong, and the projected prior was wrong by a
+comparable margin in the opposite direction (every candidate plan
+converged to
+∼
+90
+%
+{\sim}90\%
+). This is consistent with H9’s
+characterization in Section
+4.4
+: a projection for implausibly
+ordered
+fits of roughly correct scale, not a repair for a prior
+estimated under a different weather regime. The operational fix was
+selection, not correction: re-seeding from the most recent
+dry
+running of the circuit (2024; fitted slick spread
+1.2
+1.2
+s/lap, with
+2023 at
+1.3
+1.3
+s/lap confirming the scale) restored the board without
+interrupting ingestion—the same car fell to
+0.0
+%
+0.0\%
+win, median P18.
+The incident yielded a guardrail in the same spirit as the H5
+feasibility audit: the analog prior is now gated on the fitted spread
+of slick base times (a spread above
+∼
+3
+{\sim}3
+–
+4
+4
+s/lap rejects the
+analog)
+before
+the race, so a physically impossible prior is
+caught by an audit rather than discovered on a live board. Taxonomically
+this is a second, distinct failure family—prior selection, where
+Austria’s was state estimation—and, like the first, it was surfaced
+only by live operation.
+A live probability trace, scored against the official result.
+A lightweight collector polled the public field board every
+120
+120
+s
+and appended timestamped snapshots to disk; it was deployed mid-race,
+so the trace covers the closing quarter—14 polls over laps 39–52 of
+52 (lap 51 was sampled twice; the identical repeat is shown once in
+Table
+6
+). We score each poll’s full-field win
+vector against the official race outcome. The trace splits into three
+regimes. Laps 39–41 straddle the front-runners’ pit cycle and—as
+became public only after the race—the championship leader’s
+developing car failure (a wheel-shield detachment on lap 41 that forced
+two further stops): the top pick alternated among the three
+front-runners, and the per-poll field win-Brier ran
+0.071
+0.071
+–
+0.087
+0.087
+.
+This window is a live instance of declared limitation (i) of
+Section
+8
+: a mechanical failure is invisible to the
+public timing stream until it manifests in lap time, and no simulator
+conditioned on that stream could have priced it. From lap 42 the board
+locked onto the eventual winner at
+97.7
+97.7
+–
+99.5
+%
+99.5\%
+, and the per-poll
+field win-Brier fell below
+10
+−
+3
+10^{-3}
+in every subsequent poll but one:
+a single transient at lap 50 (
+55.4
+%
+55.4\%
+, win-Brier
+0.014
+0.014
+) under the
+race-closing Safety Car, when the bunched field compresses exactly the
+gap structure that separates win-probability mass; the board recovered
+by the following poll and the race finished under that Safety Car.
+The classification coda is instructive. At the flag, the board’s
+on-road ordering matched the official classification exactly through
+P8; the single divergence was the failed former front-runner, ninth on
+the road but sixteenth in the official classification after a
+five-second track-limits penalty was applied to a field bunched behind
+the Safety Car. The simulator predicts on-road order; stewarding
+decisions that reorder it after the flag are a noise channel the
+backtest oracle silently charges against the engine
+(limitation (vii)). Fourteen polls from one race are an anecdote, not
+calibration evidence—the reliability claims of this paper rest on
+Section
+7
+—but the trace is the system’s first
+end-to-end live artifact in which every number was committed to disk
+before the outcome was known.
+Lap (of 52)
+Caution
+Top pick
+Win %
+Field win-Brier
+39
+✓
+ANT
+88.1
+0.071
+40
+HAM
+96.2
+0.087
+41
+ANT
+92.2
+0.077
+42
+LEC
+97.7
+<
+10
+−
+3
+{<}10^{-3}
+44
+LEC
+97.8
+<
+10
+−
+3
+{<}10^{-3}
+45
+LEC
+98.7
+<
+10
+−
+3
+{<}10^{-3}
+46
+LEC
+98.2
+<
+10
+−
+3
+{<}10^{-3}
+47
+LEC
+99.0
+<
+10
+−
+3
+{<}10^{-3}
+48
+✓
+LEC
+99.0
+<
+10
+−
+3
+{<}10^{-3}
+49
+✓
+LEC
+99.0
+<
+10
+−
+3
+{<}10^{-3}
+50
+✓
+LEC
+55.4
+0.014
+51
+✓
+LEC
+99.5
+<
+10
+−
+3
+{<}10^{-3}
+52
+✓
+LEC
+100.0
+<
+10
+−
+3
+{<}10^{-3}
+Table 6:
+Live probability trace, 2026 British Grand Prix: the field
+board’s top win pick at each
+120
+120
+s poll, laps 39–52. LEC (bold) is
+the eventual winner; the board locks onto him at lap 42 and never flips
+thereafter. “Caution” is the neutralisation flag (SC/VSC) as ingested
+in the same snapshot. Field win-Brier scores the full 22-car win vector
+of each poll against the official outcome. The final poll coincides
+with the chequered flag. Raw snapshots:
+live_predictions_silverstone.jsonl
+.
+7.7
+Briefing generation: the richness–precision trade-off
+Two generator adapters were fine-tuned from the same base model
+(Qwen2.5-3B with LoRA) and differ only in their targets:
+v1
+was trained on the deterministic template outputs verbatim,
+v2
+on the faithfulness-gated corpus of Section
+6.2
+(admitted rich targets plus template fallbacks). We audited both on a
+deployment-shaped probe set: real production contexts from a held-out
+2025 race at early, middle, and late race stages, plus constructed
+sparse
+contexts (a single ranked car, as arises in early laps or
+after an ingestion gap) and end-of-race contexts, under greedy decoding
+at two token budgets. We report this as a qualitative audit with
+deployment consequences rather than a large-scale benchmark; the
+companion paper
+(
+Santillana 2026
+)
+carries the quantitative
+evaluation programme.
+The outcome is a clean dissociation.
+v1 is faithful but terse
+:
+on every probe, including the sparse ones, it terminates cleanly at
+28–52 tokens, makes no contradicted claims, and adds little beyond the
+template.
+v2 is richer and remains grounded when the context is
+dense
+—with six ranked cars its output is genuinely more vivid than
+v1’s while every claim verifies—but on sparse contexts it fills its
+learned register from the prior: given only the leader and his tyre age,
+it invented pursuing drivers, gap figures, and compound states out of
+whole cloth (“closing in at 1.8 s on fresher mediums” with no such car
+in the context), in direct violation of its system prompt. Notably, the
+faithfulness gate on the training data did not prevent this: every v2
+target was verified against
+its own
+context, but rich targets
+teach a rich register, and at inference the register demands more facts
+than a sparse state supplies. Grounded targets are therefore necessary
+but not sufficient; the density mismatch between training and inference
+contexts is a distinct failure axis.
+To test whether this failure is intrinsic to faithfulness-gated
+fine-tuning, we repeated the recipe—same gated corpus, same LoRA
+configuration—on three further base models spanning an order of
+magnitude in scale, Llama-3.2-1B, Phi-4-mini (3.8B), and
+Mistral-7B-Instruct, and re-ran the same dense-and-sparse audit. The
+sparse-context failure replicates on two of the three: the 1B model
+invents a driver who does not exist in Formula 1 at all, and the 7B
+model—the one that fit the training corpus best, with the lowest final
+training loss—fabricates real but absent drivers most fluently,
+suggesting that fitting the rich register harder makes the density
+mismatch worse, not better. Phi-4-mini is the exception: on the same
+sparse probes it uniquely degrades to generic, non-checkable phrasing
+(“the rest of the field chasing hard”) instead of inventing entities,
+while remaining as vivid, and as fully verified, as the Qwen v2 adapter
+on dense contexts. Faithfulness under sparsity is therefore not monotone
+in parameter count (the 1B and 7B bases fail where the 3.8B succeeds)
+and is not conferred by the gated corpus alone; it tracks the base
+model’s instruction adherence. This is the third gate promised at the
+top of Section
+6
+—the choice of generator itself—and
+it ranks with data gating: an ungated corpus cannot be rescued by a
+compliant base, and a gated corpus does not rescue a non-compliant one.
+The deployment consequence follows the dual-path rule of
+Section
+5.3
+: a rich generator is admissible on the live
+path only if it survives the sparse audit. The production commentary
+model is accordingly the Phi-4-mini adapter, serving under the
+downstream claim verification of Section
+6.2
+; richer bases
+that fail the audit remain admissible only behind a context-density gate
+(a minimum count of ranked cars in the state) or after retraining with
+sparse-context abstention targets—mirroring, in the language layer,
+exactly the routing logic that keeps the H9 projection off the oracle
+path. Sparse faithfulness also proved fragile to serving-time choices,
+in ways the audit caught before deployment: sampled decoding at
+temperature
+0.7
+0.7
+hallucinates where greedy decoding does not (we serve
+greedy); quantizing the merged model to 8 bits preserves the abstention
+behaviour, while 4-bit quantization introduces compound errors and
+applying the LoRA adapter over an already-quantized base reintroduces
+invented drivers. We also note the audit corrected our own
+records: an earlier claim that v1 degenerates into repetition on
+late-race contexts did not reproduce under either token budget, a
+reminder that negative folklore needs re-verification as much as
+positive results do.
+8
+Discussion
+Limitations.
+Pitwall
+sees only what the public timing stream carries.
+(i)
+No car telemetry
+: retirements are a calibrated hazard rate, not
+a mechanical model; brake or power-unit degradation that a team would see
+coming is invisible until it manifests in lap time. (ii)
+Fuel mass is
+approximate
+: the fuel effect is a calibrated per-lap constant folded out of
+degradation, not a measured load; systematic fuel-saving phases can bias
+short-horizon pace estimates. (iii)
+Tyre thermals are only partially modeled
+:
+the degradation model is age-based; H15 parametrizes the cold-tyre out-lap
+and the slow-stop tail, but thermal degradation versus wear and
+compound-specific working windows remain absorbed into noise and the mined
+cliff, and the H15 constants await calibration. (iv)
+Rain is out of
+scope
+: wet–dry crossover strategy requires a switching model and live grip
+estimation; the engine currently gates its confidence rather than advising
+in mixed conditions.
+(v)
+Rivals react only to track state
+: H17 lets rivals take cheap-stop
+windows under SC/VSC, but the H1 policy remains open-loop with respect to
+the focal car; modeling the covering game (a rival responding to the focal
+undercut within one lap) is the natural sequential extension, and our
+evidence suggests it—not compound pace—is the main residual error source
+in undercut-heavy moments. (vi)
+Calibration inherits the store
+: eras with sparse or
+inconsistent timing data (notably 2022 in our store) contribute less; and
+the pre-race oracle conditions on the grid, so it measures strategy-and-race
+simulation quality, not qualifying prediction.
+(vii)
+The simulator predicts on-road order
+: post-race stewarding
+can reorder the official classification (at the 2026 British Grand Prix a
+five-second penalty applied to an SC-bunched field cost one car seven
+places, Section
+7.6
+); the backtest oracle grades against the
+official result, so this noise is charged to the engine. Mining penalty
+frequencies into an explicit classification-noise term, alongside
+dnf_prob
+, is the planned treatment.
+Ethical considerations.
+All outputs are probabilistic forecasts with explicit sampling uncertainty,
+presented for analysis, education, and broadcast-style commentary; they are
+not deterministic predictions, and the system is not designed for, offered
+for, or connected to wagering. Raw feed data is redistributed to no one:
+the public artifacts are derived structured summaries, model parameters,
+and code, consistent with the data provider’s terms. The commentary layer
+publishes only claims that pass verification against the engine state,
+limiting the reputational harm of confidently wrong generated statements
+about real, named athletes.
+9
+Conclusion
+We presented
+Pitwall
+, a production system that generates
+faithful, trilingual natural-language race-strategy briefings from a
+calibrated real-time Monte Carlo engine: probabilities are calibrated,
+recommendations are feasibility-audited, published sentences are verified
+claim-by-claim against the state that prompted them, and every model
+component—simulation or generation—carries a held-out justification
+for the path it serves. The system demonstrates that the core of a
+competitive pit-wall decision tool—calibrated win probabilities,
+variance-controlled undercut counterfactuals, SC/VSC option pricing, and
+verifier-gated verbalisation—can be built, validated against seven
+scored seasons of historical data, and confirmed operationally feasible
+in live deployment at consecutive Grands Prix, from public data on
+commodity infrastructure. The
+recurring empirical lesson is
+that realism, task-level accuracy, decision quality, and generation
+richness are different
+objectives that must be measured separately: the components that look most
+like domain knowledge (a learned overtake model, canonical compound
+ordering) are exactly the ones our gating protocol declined to put on the
+calibrated path, and the generator trained on richer verified targets is
+exactly the one that hallucinates when the grounding state thins—unless
+the base model supplies, through instruction adherence, the abstention
+that gated data alone does not. The path to team-grade deployment is clear and mostly a
+data problem: closing the loop on rival reactions (the covering game, of
+which the SC-reactive pull-forward of H17 is the first, already-implemented
+step), replacing the fuel and thermal constants with telemetry-informed
+estimates (H15 supplies the parametrization), extending the regime model to
+wet crossovers, and hardening the live state estimator (the H18 Kalman
+filter) and the pre-race priors (the analog spread gate of
+Section
+7.6
+) against the failure modes that only live
+operation reveals. We intend the calibration protocol—bounded parameters, per-path
+gating, and published negative results—as a template for decision-support
+systems in sports beyond racing.
+Reproducibility
+The structured race store schema, engine code (vectorized and scalar
+reference), calibration harness, mined H5/H7 artifacts, and backtest
+scripts are available in the project repository; raw timing data is not
+redistributed and is re-derivable from public sources via the documented
+ETL. All held-out splits, seeds, and bounds used in
+Tables
+4
+–
+5
+are specified in the
+repository’s experiment logs.
+References
+Bekker and Lotz [2009]
+J. Bekker and W. Lotz.
+Planning Formula One race strategies using discrete-event
+simulation.
+Journal of the Operational Research Society
+, 60(7):952–961,
+2009.
+Brier [1950]
+G. W. Brier.
+Verification of forecasts expressed in terms of probability.
+Monthly Weather Review
+, 78(1):1–3, 1950.
+Guerrero and Castilla [2020]
+A. Guerrero and R. Castilla.
+Aerodynamic study of the wake effects on a Formula 1 car.
+Energies
+, 13(19):5183, 2020.
+https://doi.org/10.3390/en13195183
+Efron and Tibshirani [1994]
+B. Efron and R. J. Tibshirani.
+An Introduction to the Bootstrap
+.
+Chapman & Hall/CRC, 1994.
+Glasserman and Yao [1992]
+P. Glasserman and D. D. Yao.
+Some guidelines and guarantees for common random numbers.
+Management Science
+, 38(6):884–908, 1992.
+Gneiting et al. [2007]
+T. Gneiting, F. Balabdaoui, and A. E. Raftery.
+Probabilistic forecasts, calibration and sharpness.
+Journal of the Royal Statistical Society: Series B
+,
+69(2):243–268, 2007.
+Guo et al. [2017]
+C. Guo, G. Pleiss, Y. Sun, and K. Q. Weinberger.
+On calibration of modern neural networks.
+In
+Proceedings of ICML
+, 2017.
+Hansen and Ostermeier [2001]
+N. Hansen and A. Ostermeier.
+Completely derandomized self-adaptation in evolution strategies.
+Evolutionary Computation
+, 9(2):159–195, 2001.
+Heilmeier et al. [2020a]
+A. Heilmeier, M. Graf, J. Betz, and M. Lienkamp.
+Application of Monte Carlo methods to consider probabilistic
+effects in a race simulation for circuit motorsport.
+Applied Sciences
+, 10(12):4229, 2020.
+Heilmeier et al. [2020b]
+A. Heilmeier, A. Thomaser, M. Graf, and J. Betz.
+Virtual strategy engineer: Using artificial neural networks for
+making race strategy decisions in circuit motorsport.
+Applied Sciences
+, 10(21):7805, 2020.
+Ji et al. [2023]
+Z. Ji, N. Lee, R. Frieske, T. Yu, D. Su, Y. Xu, E. Ishii, Y. J. Bang,
+A. Madotto, and P. Fung.
+Survey of hallucination in natural language generation.
+ACM Computing Surveys
+, 55(12):1–38, 2023.
+Kelly and Sharp [2012]
+D. P. Kelly and R. S. Sharp.
+Time-optimal control of the race car: influence of a thermodynamic
+tyre model.
+Vehicle System Dynamics
+, 50(4):641–662, 2012.
+Law [2015]
+A. M. Law.
+Simulation Modeling and Analysis
+.
+McGraw-Hill, 5th edition, 2015.
+Maynez et al. [2020]
+J. Maynez, S. Narayan, B. Bohnet, and R. McDonald.
+On faithfulness and factuality in abstractive summarization.
+In
+Proceedings of ACL
+, pages 1906–1919, 2020.
+Murphy [1973]
+A. H. Murphy.
+A new vector partition of the probability score.
+Journal of Applied Meteorology
+, 12(4):595–600, 1973.
+Limebeer et al. [2014]
+D. J. N. Limebeer, G. Perantoni, and A. V. Rao.
+Optimal control of Formula One car energy recovery systems.
+International Journal of Control
+, 87(10):2065–2080, 2014.
+https://doi.org/10.1080/00207179.2014.900705
+de Groote [2021]
+J. de Groote.
+Overtaking in Formula 1 during the Pirelli era: A driver-level
+analysis.
+Journal of Sports Analytics
+, 7(2):119–137, 2021.
+https://doi.org/10.3233/JSA-200466
+Santillana [2026]
+J. S. Santillana.
+Precision is not faithfulness: Coverage-aware evaluation of
+grounded generation with a complete oracle.
+arXiv preprint arXiv:2606.09376
+, 2026.
+Thomson and Reiter [2020]
+C. Thomson and E. Reiter.
+A gold standard methodology for evaluating accuracy in
+data-to-text systems.
+In
+Proceedings of INLG
+, pages 158–168, 2020.
+Wiseman et al. [2017]
+S. Wiseman, S. M. Shieber, and A. M. Rush.
+Challenges in data-to-document generation.
+In
+Proceedings of EMNLP
+, pages 2253–2263, 2017.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

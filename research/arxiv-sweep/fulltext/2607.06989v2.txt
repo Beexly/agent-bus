@@ -1,0 +1,2488 @@
+Ace! Motion Planning of Professional-Level Table Tennis Serves with a Robot Arm
+Guillem Torrente
+Affiliation:
+G. Torrente, G. J. Maeda, and H. Sahloul are with Sony AI, Tokyo, Japan.
+Guilherme Jorge Maeda
+Affiliation:
+G. Torrente, G. J. Maeda, and H. Sahloul are with Sony AI, Tokyo, Japan.
+Divij Grover
+Affiliation:
+D. Grover and P. Dürr are with Sony AI, Zürich, Switzerland.
+Megumu Tsukamoto
+Affiliation:
+M. Tsukamoto is with Sony Group Corporation, Tokyo, Japan.
+Hamdi Sahloul
+Affiliation:
+G. Torrente, G. J. Maeda, and H. Sahloul are with Sony AI, Tokyo, Japan.
+Peter Dürr
+Affiliation:
+D. Grover and P. Dürr are with Sony AI, Zürich, Switzerland.
+Thanks:
+Human table tennis players competed against our robot for the purpose of performance evaluation. Players were not subject to any situation involving risk. There was no direct physical contact between the two parties. No private data was collected other than videos of the experiments, with prior informed consent. Experiments involved competitive matches between humans and the robot according to official game settings, including umpires.
+Abstract
+Table tennis, a dynamic, compact, and popular sport, has received significant attention as a robotics benchmark over the last decades.
+Most of the research has focused on the rally aspect - returning an incoming ball - requiring high-speed vision, agile motion planning, and tight closed-loop control.
+However, the other component of table tennis gameplay - the serve - is comparatively a quite unexplored research problem, that in fact requires pushing physics modeling and control to the extremes.
+Achieving competitive serves with a robot presents domain-specific challenges, such as high-spin generation from a spinless ball, precise aiming, or multi-objective optimization.
+In this work, we present a novel approach for generating official rule-compliant serves by combining motion primitives, Model Predictive Control, and Bayesian Optimization.
+Serves generated in this way offer a wide and controllable variation of spins of up to 550 rad/s, and speeds of up to 6.7 m/s, matching and even surpassing those of elite table tennis players.
+Index Terms:
+Model Predictive Control, dynamic object interception, HEBO, motion planning, robot arm.
+I
+Introduction
+Table tennis is widely regarded as a rigorous benchmark for high-speed robotics.
+Characterized by its compact playing field, rapid ball exchanges, and complex aerodynamics, the sport demands systems capable of exceptional visual acuity, low-latency decision-making, and agile actuation
+[
+7
+,
+27
+]
+.
+Over the past several decades, the robotics research community has extensively utilized table tennis to advance the state of the art in these fields
+[
+21
+,
+25
+]
+.
+Fig. 1:
+A high side-spin serve executed by the robot. The ball trajectory curves after each bounce due to the spin applied.
+The robot pose corresponds to approximately that at the moment of contact with the ball.
+Historically, the vast majority of research in this domain has focused on the "rally", that is, the problem of intercepting and returning an incoming ball
+[
+3
+,
+9
+]
+.
+On the other hand, serving with a robot has received comparatively much less attention as a research problem.
+This focus is understandable; the challenges of the rally map directly to fundamental and universal requirements in robotics, which necessitate robust solutions for dynamic environment perception and reactive motion planning.
+Consequently, significant progress has been made in developing robot systems capable of sustaining rallies against human opponents
+[
+20
+,
+8
+,
+18
+]
+.
+The serve aspect remains relatively underexplored as far as robotics research is concerned, despite being an important part of the table tennis game.
+Being the only fully controllable action during the point, elite players use the serve tactically to force certain actions on the opponent and try to secure a quick advantage
+[
+24
+]
+.
+Unlike a return, where the player leverages the momentum on the incoming ball, a competitive serve requires the generation of high-speed and/or high-spin from a spinless, free-falling ball
+[
+27
+,
+6
+]
+.
+But, since the ball must bounce first on the player’s own side of the table, and then on the opponent’s side, there is a limit to how much energy can be applied to it, which also affects the ball landing point and its vertical arc, both also extremely important aspects of elite-level serve techniques.
+Furthermore, the racket must intercept the ball trajectory approximately perpendicularly, making the precision requirements much higher than returning a front-incoming ball.
+Table tennis athletes serve by executing a complex combination of movements, involving the wrist, the arm, legs and torso, generating explosive but controlled motions of the racket.
+In summary, serving demands an extreme level of precision modeling impact dynamics and controlling the body, both as human and robot athletes
+[
+14
+]
+.
+Unfortunately, mechanical actuators are not lightweight or powerful enough to replicate human capabilities, making the motion planning for serves a challenging problem.
+Contributions
+In this work, we present, to the best of our knowledge, the first comprehensive system for generating International Table Tennis Federation (ITTF)
+[
+13
+]
+compliant, elite-level serve motion plans for a robot arm (cf. Fig.
+1
+).
+With this framework, our robot platform can serve with the speed, spin, and placement control comparable to those of elite human players, as we show in the experimental section.
+Our pipeline consists on the combination of the following key components:
+1.
+A parametrized optimization-based motion planner, that generates the joint-level input sequence to control the racket End Effector (EE) with high precision to a desired state at a desired time.
+2.
+An implementation of the HEBO (Heteroscedastic and Evolutionary Bayesian Optimization) algorithm
+[
+5
+]
+, to optimize the parameters of the aforementioned motion planner, i.e. the racket hitting state and timing.
+We maximize the diversity and difficulty of the serves by generating a large collection of motion plans in simulation, filtering them offline and on the real platform by evaluating their performance, and selecting them online during experimental evaluations based on strategy algorithms.
+An earlier version of this approach was employed in a recent work, where a robot outcompeted elite players for the first time in umpire-officiated games
+[
+7
+]
+.
+II
+Related Work
+II-A
+Table tennis serves with robots
+Prior to the aforementioned breakthrough work in robot sports,
+there have been a handful of efforts to get robot arms to perform table tennis serves, however none to our knowledge have succeeded in consistently making elite-level nor ITTF-compliant demonstrations in real hardware.
+On backdrivable robots such as the Barrett WAM (7-DoF), one approach for serving is to use kinesthetic teaching
+[
+17
+]
+.
+However, as noted by the authors, human dexterous movements cannot be effectively replicated by commercially available robot arms due to our kinodynamics being too different.
+To bridge this gap, an iterative optimization algorithm that identifies and ranks the most essential features of a human serve from kinesthetic motion data is developed, effectively translating a complex human swing into a simplified, sparse set of parametrized motions the robot can execute.
+While the system successfully captures the "style" of a serve and reduces the complexity of robot learning, it remains limited by its reliance on manual manipulation, the quality of the generated data, and faces technical difficulties in replicating the high-precision, fine-motor adjustments of the human wrist.
+Another explored approach is to let the robot autonomously learn to serve in the real world by iterative trial-and-error
+[
+11
+]
+.
+By using a Neural Network model that learns the relationship between changes in the robot’s movement and the resulting change in the ball’s landing spot, the system can effectively multiply its training data without needing thousands of physical trials, to aim at a wide variety of locations.
+Since this system can be automated, the method is more scalable, and demonstrates the capability to produce serves after a handful of training episodes in the real world, but it primarily focuses on landing accuracy (placement) rather than producing high spin or velocity.
+Also, for this particular work, the ball is dropped from an overhead device, instead of being tossed up, making the serve non ITTF-compliant.
+Prior theoretical work focusing on the mathematical modeling of a hypothetical robot arm with a racket also exists
+[
+12
+]
+.
+In this work, an algorithm is proposed that calculates the necessary racket orientation and velocity at the moment of impact with the ball to ensure it lands at a specific target position with a desired spin.
+Although this work provides a theoretical framework for serve placement, its main limitation is that it is primarily validated through numerical simulations, which may not fully account for the mechanical vibrations or other "sim-to-real gap" encountered by a high-speed robot arm in a real-match scenario.
+Also, no assumptions are made on the kinematic or dynamic limitations of such potential robot arm.
+II-B
+MPC-based control for dynamic object interception
+In this paper, we employ a custom parametrized motion planner that plans and controls the robot EE to a desired pose and velocity at a specific time.
+The idea of using optimization-based techniques for dynamic object interception has been explored in the literature.
+In a prior study, a Non-linear Model Predictive Controller (NMPC) operates a 5-DoF arm with a table tennis racket
+[
+22
+]
+.
+Upon detecting an incoming ball, the arm is swung quickly and intercepts the ball at an estimated point along a fixed strike plane.
+However, unlike our approach, this work does not consider the safe deceleration of the arm or its dynamics model in the problem statement.
+Other work formulates the dynamic object interception task as a learning problem, training agents in simulation using either reinforcement or imitation learning
+[
+8
+,
+16
+]
+.
+Furthermore,
+[
+1
+]
+explicitly compares the performance of a learning approach against an optimization-based controller.
+Although these approaches demonstrate the feasibility of the data-driven methods, they are black box models that offer significantly less controllability regarding how the interception should be achieved, as well as robustness to out-of-distribution states.
+For that reason, in our work we use an optimization-based controller for the racket, since it allows us to explicitly specify the moment and type of contact and thus the produced serve.
+II-C
+Parameter Optimization with HEBO
+In this work we use HEBO to search for the MPC parameters that perform the best serves.
+HEBO has been applied in several black-box optimization applications beyond standard hyperparameter tuning.
+In robotics, it was used to optimize the parallel-elastic knee design parameters of the quadruped robot ANYmal
+[
+2
+]
+, evaluating candidates with a design-conditioned locomotion policy.
+In biological sequence design, HEBO was benchmarked for combinatorial Bayesian optimization of antibody CDRH3 sequences
+[
+15
+]
+.
+Compared to standard genetic algorithms, HEBO uses a surrogate function (usually a Gaussian Process) to estimate the expected reward across the search space, making exploration more efficient, particularly in highly-dimensional continuous spaces.
+In our serve-generation problem, infeasible motions and invalid serves indeed dominate the search space, while feasible, high-reward solutions are sparse and narrow, making directed exploration critical.
+Furthermore, HEBO’s Bayesian reward modeling inherently handles noisy reward measurements, which is also applicable to our problem since, as detailed in Section
+III-B
+, the ball toss is stochastic and the same serve can thus produce different outcomes.
+III
+Methodology
+Our system can perform serves with a single hand, a valid strategy used by some athletes with physical conditions that prevent them from doing a two-handed toss, and is accepted by the ITTF rules.
+In this section, we explain how we generate the motion plans for executing the serves, which are composed of
+preparation
+,
+toss
+and
+strike
+.
+The strike is the main contribution of this work.
+We use a position-controlled 8-Degree of Freedom (DoF) robot system composed of a gantry with two perpendicular prismatic axes, and an arm mounted on top with 6 revolute joints
+[
+7
+]
+.
+The racket attached to the end effector features a
+ball cup
+on its handle where a single ball can be placed for tossing (see Fig.
+2
+).
+Fig. 2:
+Our robot arm holding a ball on the ball cup, about to serve.
+During the
+preparation
+phase, the ball is placed onto the ball cup by a ball feeding system located in a corner of the robot court area, and the robot proceeds to move to the start of the
+toss
+motion while keeping the racket tilt fixed to prevent the ball from falling.
+III-A
+Notation and preliminaries
+Vector and matrix values are denoted in bold font (matrices are uppercase), while scalars are written in normal font.
+We denote robot joint position input commands as
+𝒖
+⁡
+(
+t
+)
+\bm{u}(t)
+(a time-parametrized
+8
+8
+-dimensional vector).
+Time derivatives are denoted with the dot operator:
+𝒖
+˙
+​
+(
+t
+)
+\dot{\bm{u}}(t)
+.
+All the input commands
+𝒖
+⁡
+(
+t
+)
+\bm{u}(t)
+sent to the robot are continuous up to acceleration
+𝒖
+¨
+​
+(
+t
+)
+\ddot{\bm{u}}(t)
+.
+The augmented robot joint state is written as
+𝑿
+⁡
+(
+t
+)
+\bm{X}(t)
+, an
+(
+8
+×
+2
+)
+(8\times 2)
+matrix, where the first column contains the actual joint positions and the second one an auxiliary state used for more accurate numerical modeling.
+A second-order state-space model is used, which can be generally written down as
+𝑿
+˙
+​
+(
+t
+)
+=
+𝒇
+D
+​
+(
+𝑿
+⁡
+(
+t
+)
+,
+𝒖
+⁡
+(
+t
+)
+)
+\dot{\bm{X}}(t)=\bm{f}_{D}(\bm{X}(t),\bm{u}(t))
+.
+It describes the linear, continuous-time dynamics of the joints, under the assumption that all joints can be modeled independently from the rest.
+We denote the 3D ball position trajectory by
+𝒑
+⁡
+(
+t
+)
+\bm{p}(t)
+and its velocity by
+𝒗
+⁡
+(
+t
+)
+\bm{v}(t)
+.
+We use sub-indices
+t
+t
+and
+s
+s
+to refer to the
+toss
+and
+strike
+actions respectively.
+The origin of a right-handed coordinates system is defined at the center of the table surface,
++
+X
++X
+pointing towards the human and
++
+Z
++Z
+towards the ceiling.
+III-B
+Ball toss using motion primitives
+Using a perception system for racket tracking, we collect human demonstrations of one-arm tosses, and re-target them to the robot’s kinematics via an optimization procedure
+[
+19
+]
+.
+The resulting motion is a trajectory of joint commands
+𝒖
+t
+​
+(
+t
+)
+\bm{u}_{t}(t)
+that produces a ball toss when executed by the robot.
+The trajectory of the racket must start with the racket pose in a "flat" state (as in Fig.
+2
+), such that configuration can be reached from the ball feeder without dropping the ball along the way.
+We define
+t
+lift
+t_{\text{{lift}}}
+as the time index along
+𝒖
+t
+​
+(
+t
+)
+\bm{u}_{t}(t)
+in which the acceleration of the ball approximates that of gravity, meaning that the ball has been released from the cup as it is in free-fall.
+Every toss
+𝒖
+t
+​
+(
+t
+)
+\bm{u}_{t}(t)
+is executed multiple times on the robot to analyze the resulting ball distributions and identify
+t
+lift
+t_{\text{{lift}}}
+empirically using a ball triangulation system based on overhead RGB cameras.
+Despite the joint commands being identical, robot vibrations and other stochastic factors such as small air flows in the room generate variability in the ball flight paths, as seen in Fig.
+3
+.
+Furthermore, the ball triangulation system has an accuracy of
+±
+3
+​
+mm
+\pm 3$\mathrm{m}\mathrm{m}$
+, which adds noise to the position estimates.
+To calculate
+t
+lift
+t_{\text{{lift}}}
+more reliably, the average path
+𝒑
+¯
+t
+​
+(
+t
+)
+\bar{\bm{p}}_{t}(t)
+is found by applying a Savitzky-Golay filter
+[
+26
+]
+on the time-aligned ball trajectories.
+−
+-
+1
+0
+1
+Spread x [cm]
+Toss-up ball spread (N=15)
+t
+l
+​
+i
+​
+f
+​
+t
+\displaystyle t_{lift}
+−
+-
+1
+0
+1
+Spread y [cm]
+−
+-
+0.2
+0.0
+0.2
+0.4
+0.6
+Time [s]
+−
+-
+0.5
+0.0
+0.5
+Spread z [cm]
+Fig. 3:
+Spread, i.e. deviation from the expected flight path, of a ball tossed 15 times.
+0.7
+​
+s
+0.7$\mathrm{s}$
+after the lift, the position uncertainty is approximately
+±
+1
+​
+cm
+\pm 1$\mathrm{c}\mathrm{m}$
+in all directions.
+III-C
+Parametrized motion planner for dynamic ball intersection
+The striking motion
+𝒖
+s
+​
+(
+t
+)
+\bm{u}_{s}(t)
+is generated by an optimization-based motion planner that solves a non-linear hybrid problem in EE and joint spaces.
+The optimization outputs a (locally) minimum-jerk control sequence
+𝒖
+˙˙˙
+​
+(
+t
+)
+\dddot{\bm{u}}(t)
+that simultaneously satisfies initial and final joint state constraints at times
+{
+0
+,
+τ
+f
+}
+\{0,\tau_{f}\}
+and EE constraints at time
+τ
+\tau
+,
+0
+<
+τ
+<
+τ
+f
+0<\tau<\tau_{f}
+.
+That is, it generates a feasible jerk trajectory that first takes the system from its current non-stationary state
+(
+𝒖
+0
+,
+𝒖
+˙
+0
+,
+𝒖
+¨
+0
+,
+𝑿
+0
+)
+(\bm{u}_{0},\dot{\bm{u}}_{0},\ddot{\bm{u}}_{0},\bm{X}_{0})
+to a desired EE state at time
+τ
+\tau
+defined by a position, normal, and velocity
+(
+𝒑
+τ
+,
+𝒏
+τ
+,
+𝒗
+τ
+)
+\left(\bm{p}_{\tau},\bm{n}_{\tau},\bm{v}_{\tau}\right)
+for the racket, and secondly to a desired resting joint configuration
+𝒖
+τ
+f
+\bm{u}_{\tau_{f}}
+at time
+τ
+f
+\tau_{f}
+.
+For simplicity of notation, the parameters for the problem are aggregated into a single variable:
+𝝃
+s
+≐
+(
+𝒖
+0
+,
+𝒖
+˙
+0
+,
+𝒖
+¨
+0
+,
+𝑿
+0
+,
+τ
+,
+𝒑
+τ
+,
+𝒏
+τ
+,
+𝒗
+τ
+,
+τ
+f
+,
+𝒖
+τ
+f
+)
+\displaystyle\bm{\xi}_{s}\doteq\left(\bm{u}_{0},\dot{\bm{u}}_{0},\ddot{\bm{u}}_{0},\bm{X}_{0},\tau,\bm{p}_{\tau},\bm{n}_{\tau},\bm{v}_{\tau},\tau_{f},\bm{u}_{\tau_{f}}\right)
+(1)
+And the optimization problem follows:
+min
+𝒛
+⁡
+1
+2
+​
+𝒖
+˙˙˙
+T
+​
+𝒖
+˙˙˙
+\displaystyle\min\limits_{\bm{z}}\tfrac{1}{2}\dddot{\bm{u}}^{T}\dddot{\bm{u}}
++
+λ
+^
+p
+​
+ϵ
+p
++
+λ
+^
+n
+​
+ϵ
+n
++
+λ
+^
+v
+​
+ϵ
+v
+\displaystyle+\hat{\lambda}_{p}\epsilon_{p}+\hat{\lambda}_{n}\epsilon_{n}+\hat{\lambda}_{v}\epsilon_{v}
+(2)
+s.t.
+​
+(
+𝒛
+,
+𝒒
+τ
+,
+𝒒
+˙
+τ
+)
+\displaystyle\text{s.t. }(\bm{z},\bm{q}_{\tau},\dot{\bm{q}}_{\tau})
+∈
+ℙ
+⁡
+(
+𝒖
+0
+,
+𝒖
+˙
+0
+,
+𝒖
+¨
+0
+,
+𝑿
+0
+,
+τ
+,
+τ
+f
+,
+𝒖
+τ
+f
+)
+\displaystyle\in\mathbb{P}(\bm{u}_{0},\dot{\bm{u}}_{0},\ddot{\bm{u}}_{0},\bm{X}_{0},\tau,\tau_{f},\bm{u}_{\tau_{f}})
+‖
+𝒑
+⁡
+(
+𝒒
+τ
+)
+−
+𝒑
+τ
+‖
+2
+\displaystyle\|\bm{p}(\bm{q}_{\tau})-\bm{p}_{\tau}\|_{2}
+≤
+Δ
+​
+p
+τ
++
+ϵ
+p
+\displaystyle\leq\Delta p_{\tau}+\epsilon_{p}
+−
+𝒏
+τ
+T
+​
+𝒏
+​
+(
+𝒒
+τ
+)
+\displaystyle-\bm{n}_{\tau}^{T}\bm{n}(\bm{q}_{\tau})
+≤
+−
+cos
+⁡
+(
+Δ
+​
+ϕ
+τ
+)
++
+ϵ
+n
+\displaystyle\leq-\cos(\Delta\phi_{\tau})+\epsilon_{n}
+‖
+𝑱
+v
+​
+(
+𝒒
+τ
+)
+​
+𝒒
+˙
+τ
+−
+𝒗
+τ
+‖
+2
+\displaystyle\|\bm{J}_{v}(\bm{q}_{\tau})\dot{\bm{q}}_{\tau}-\bm{v}_{\tau}\|_{2}
+≤
+max
+⁡
+{
+Δ
+​
+v
+a
+,
+τ
+,
+Δ
+​
+v
+r
+,
+τ
+​
+‖
+𝒗
+τ
+‖
+2
+}
++
+ϵ
+v
+\displaystyle\leq\max\big\{\Delta v_{a,\tau},\Delta v_{r,\tau}\|\bm{v}_{\tau}\|_{2}\big\}+\epsilon_{v}
+ϵ
+p
+,
+ϵ
+n
+,
+ϵ
+v
+\displaystyle\epsilon_{p},\epsilon_{n},\epsilon_{v}
+≥
+0
+\displaystyle\geq 0
+For speed purposes, the problem in (
+2
+) is formulated as the optimization of a continuous chain of
+n
+l
+=
+32
+n_{l}=32
+3rd degree order polynomials that yields
+32
+32
+piece-wise constant jerk values
+𝒖
+˙˙˙
+​
+(
+t
+)
+\dddot{\bm{u}}(t)
+between
+[
+0
+,
+τ
+f
+]
+[0,\tau_{f}]
+.
+This implies that the length of each of the
+32
+32
+segments varies according to
+τ
+f
+\tau_{f}
+, and the problem would need to be discretized and reformulated for every solver call.
+However, by appropriately scaling the states and inputs, we can avoid these computations and only need to update the left- and right-hand side vectors of the constraints.
+n
+l
+n_{l}
+is chosen to balance solver time and feasibility.
+A larger value would increase the degrees of freedom of the solution, but also increment the number of constraints linearly and solution time by a polynomial factor.
+The jerk solution can be integrated and sampled at any arbitrary frequency (in our case
+1
+​
+kHz
+1$\mathrm{k}\mathrm{H}\mathrm{z}$
+) to obtain the optimal joint position commands to achieve the desired strike motion
+𝒖
+s
+​
+(
+t
+)
+\bm{u}_{s}(t)
+.
+This sequence can then be evaluated using the dynamics model to obtain the expected sequence of joint positions.
+The decision variables
+𝒛
+\bm{z}
+as well as the robot joint position and velocity at time
+τ
+\tau
+,
+(
+𝒒
+τ
+,
+𝒒
+˙
+τ
+)
+(\bm{q}_{\tau},\dot{\bm{q}}_{\tau})
+, are constrained by the abstract polytopic set
+ℙ
+\mathbb{P}
+, which results from the dynamics model
+𝒇
+D
+\bm{f}_{D}
+, the kinodynamic limits of the robot, and the effect of polynomial sampling.
+All of these constraints can be formulated as affine equality and inequality constraints on
+𝒛
+\bm{z}
+.
+Physical limitations motivate the use of bounds on states (position, velocity and acceleration), whereas bounded jerk ensures smooth motion and reduces excessive strain on moving components and motors.
+The objective function minimizes the squared jerk of the system to yield smooth, dynamically viable trajectories, while simultaneously penalizing a set of non-negative slack variables (
+ϵ
+p
+,
+ϵ
+n
+,
+ϵ
+v
+\epsilon_{p},\epsilon_{n},\epsilon_{v}
+) via their respective scalar weights (
+λ
+^
+p
+,
+λ
+^
+n
+,
+λ
+^
+v
+\hat{\lambda}_{p},\hat{\lambda}_{n},\hat{\lambda}_{v}
+).
+To accommodate the practical realities of high-speed tracking, the terminal constraints for position, orientation, and velocity are softened using predefined small physical tolerances (
+Δ
+​
+p
+τ
+,
+Δ
+​
+ϕ
+τ
+,
+Δ
+​
+v
+a
+,
+τ
+,
+Δ
+​
+v
+r
+,
+τ
+\Delta p_{\tau},\Delta\phi_{\tau},\Delta v_{a,\tau},\Delta v_{r,\tau}
+).
+The exact values used for the slack weights and tolerances is summarized in Table
+I
+.
+If the optimization is successful, we do an
+a-posteriori
+check to verify that the errors of the end effector pose and velocity at time
+τ
+\tau
+do not exceed the tolerances before marking the solution as valid.
+Finally, in order to verify collision safety, we also do a post-processing check by running the motion plan through a custom collision detector based on Coal
+[
+23
+]
+.
+The optimization is formulated and solved using KNITRO
+[
+4
+]
+, with typical solution times in the order of
+10
+10
+to
+20
+​
+ms
+20~$\mathrm{m}\mathrm{s}$
+.
+TABLE I:
+Table of NMPC racket state tolerances and slack weights
+Param.
+Δ
+​
+p
+τ
+\Delta p_{\tau}
+Δ
+​
+ϕ
+τ
+\Delta\phi_{\tau}
+Δ
+​
+v
+a
+,
+τ
+\Delta v_{a,\tau}
+Δ
+​
+v
+r
+,
+τ
+\Delta v_{r,\tau}
+Value
+5
+​
+mm
+5~$\mathrm{m}\mathrm{m}$
+0.5
+​
+°
+0.01
+​
+m
+/
+s
+0.01~$\mathrm{m}\mathrm{/}\mathrm{s}$
+0.01
+0.01
+Slack
+λ
+^
+p
+\hat{\lambda}_{p}
+λ
+^
+n
+\hat{\lambda}_{n}
+λ
+^
+v
+\hat{\lambda}_{v}
+Value
+2
+​
+m
+−
+1
+2~$\mathrm{m}^{-1}$
+1
+1
+0.2
+​
+(
+m
+/
+s
+)
+−
+1
+0.2~$\mathrm{(}\mathrm{m}\mathrm{/}\mathrm{s}\mathrm{)}^{-1}$
+III-D
+Optimizing serve parameters
+We define the serve type (spin, position and velocity) by the ball state after the second bounce.
+In our case, the motion planner parameters
+𝝃
+s
+\bm{\xi}_{s}
+in (
+1
+) determine the type of serve that will be produced, since they parametrize the racket state at the approximate time of hitting the ball.
+After the impact, the ball must bounce on the table surface twice, one on each player side, and travel through the air and over the net.
+All of these events are described using non-linear models, making the analytical calculation of
+𝝃
+s
+\bm{\xi}_{s}
+very challenging.
+Furthermore, not all
+𝝃
+s
+\bm{\xi}_{s}
+are feasible for the problem (
+2
+), and some of the feasible ones will lead to the arm colliding with itself or the table, which is also undesirable.
+We therefore optimize
+𝝃
+s
+\bm{\xi}_{s}
+with a surrogate-based Bayesian optimizer, specifically HEBO, over a normalized bounded genome, i.e. a normalized set of
+𝝃
+s
+\bm{\xi}_{s}
+.
+Each candidate genome is decoded into strike parameters, solved with the motion planner, and rolled out in simulation.
+ITTF compliance and robot safety are checked before any positive reward is assigned, so the optimizer must first discover feasible and legal regions of the search space and only then improve serve quality.
+Since the racket end-effector (EE) should intercept the ball after the lift phase, i.e.,
+at some time
+τ
+>
+t
+lift
+\tau>t_{\mathrm{lift}}
+, we do not optimize the desired racket
+position
+𝒑
+τ
+\bm{p}_{\tau}
+and the contact time
+τ
+\tau
+independently. Instead, the
+nominal contact position is tied to the predicted ball trajectory.
+In the case that the average path is used, then the intercept point is calculated as:
+𝒑
+τ
+=
+𝒑
+¯
+t
+​
+(
+τ
+)
++
+δ
+​
+𝒑
+\bm{p}_{\tau}=\bar{\bm{p}}_{t}(\tau)+\delta\bm{p}
+, where
+δ
+​
+𝒑
+∈
+ℝ
+3
+\delta\bm{p}\in\mathbb{R}^{3}
+is an optional small optimizable position
+offset. The initial conditions in
+𝝃
+s
+\bm{\xi}_{s}
+are constrained by the toss motion
+(
+𝒖
+t
+​
+(
+t
+)
+,
+𝒙
+t
+​
+(
+t
+)
+)
+(\bm{u}_{t}(t),\bm{x}_{t}(t))
+, since continuity up to acceleration must be maintained, and
+𝒖
+τ
+f
+\bm{u}_{\tau_{f}}
+is also set to
+𝟎
+\bm{0}
+. Therefore, the optimization contains up to ten decision variables: the hit-timing index
+τ
+∈
+ℝ
+1
+\tau\in\mathbb{R}^{1}
+, the desired racket velocity at contact
+𝒗
+τ
+∈
+ℝ
+3
+\bm{v}_{\tau}\in\mathbb{R}^{3}
+, the racket orientation at contact parametrized by two Euler angles
+𝒏
+τ
+∈
+ℝ
+2
+\bm{n}_{\tau}\in\mathbb{R}^{2}
+, the return-to-rest duration
+τ
+f
+∈
+ℝ
+1
+\tau_{f}\in\mathbb{R}^{1}
+and, optionally, the position offset
+δ
+​
+𝒑
+∈
+ℝ
+3
+\delta\bm{p}\in\mathbb{R}^{3}
+. Each normalized gene is linearly mapped to its corresponding physical range during de-normalization. The position offset is bounded by
+[
+±
+0.07
+,
+±
+0.07
+,
+±
+0.07
+]
+​
+m
+[\pm 0.07,\pm 0.07,\pm 0.07]~$\mathrm{m}$
+, the racket velocity by
+[
+±
+10
+,
+±
+5
+,
+±
+5
+]
+​
+m
+/
+s
+[\pm 10,\pm 5,\pm 5]~$\mathrm{m}\mathrm{/}\mathrm{s}$
+, and the yaw-roll orientation by
+[
+π
+/
+2
+±
+π
+,
+±
+π
+]
+​
+rad
+[\pi/2\pm\pi,\pm\pi]~$\mathrm{r}\mathrm{a}\mathrm{d}$
+.
+If the motion planner does not yield a feasible trajectory, the evaluation is assigned a fixed hard penalty of
+P
+MPC
+=
+−
+10
+P_{\mathrm{MPC}}=-10
+and no rollout reward is computed.
+Otherwise, the produced serve is evaluated for correctness according to a sequential chain of checks, each more restrictive, until one does not pass, if any.
+If the simulated serve is deemed incorrect, the rollout returns a shaping term
+−
+10
+<
+s
+leg
+<
+0
+-10<s_{\mathrm{leg}}<0
+.
+The implemented checks and their penalties are, in order: contact with a non-racket robot body (
+−
+5
+-5
+), more than one racket–ball contact (
+−
+4
+-4
+), fewer than two table bounces (
+−
+3
+-3
+), first bounce on the wrong side of the net (
+−
+2.5
+-2.5
+), net collision (
+−
+2
+-2
+), second bounce on the wrong side of the net (
+−
+1.5
+-1.5
+), bounce too close to an edge (
+−
+0.5
+-0.5
+), insufficient net clearance (
+−
+0.3
+-0.3
+), and (optionally) failure of the robot to return to the rest configuration by the time of the opponent-side bounce (
+−
+0.1
+-0.1
+).
+For legal serves, the reward is computed from the ball state at the second
+bounce and from the maximum ball height during the serve. The total reward is
+defined as a combination of the following terms, which can selectively be enabled or
+disabled depending on the design choices:
+F
+=
+r
+pos
++
+r
+vel
++
+r
+top
+/
+back
++
+r
+side
++
+r
+height
++
+s
+leg
+.
+F=r_{\mathrm{pos}}+r_{\mathrm{vel}}+r_{\mathrm{top/back}}+r_{\mathrm{side}}+r_{\mathrm{height}}+s_{\mathrm{leg}}.
+(3)
+Here,
+r
+pos
+r_{\mathrm{pos}}
+rewards serves that land close to the specified target,
+whereas
+r
+vel
+r_{\mathrm{vel}}
+rewards or penalizes large rebound velocity
+magnitudes.
+We find that penalizing velocity can be useful for encouraging short or low serves, by adding negative rewards to the XY or Z velocity components respectively.
+The term
+r
+height
+r_{\mathrm{height}}
+is inversely proportional to the maximum ball height
+during the serve after the first bounce, thereby encouraging
+low-bouncing serves and trajectories that pass close to the net.
+The generic
+spin terms
+r
+top
+/
+back
+r_{\mathrm{top/back}}
+and
+r
+side
+r_{\mathrm{side}}
+can be used to reward
+signed or unsigned spin components directly, allowing different types of spin to
+be selected.
+The velocity and spin rewards are derived from the ball state after the second bounce.
+Let
+𝒗
+2
+\bm{v}_{2}
+and
+𝝎
+2
+\bm{\omega}_{2}
+denote the ball’s linear velocity and
+angular velocity at that instant, respectively.
+To decompose the spin into
+physically meaningful components, we construct a velocity-aligned frame in which
+𝒆
+x
+\bm{e}_{x}
+is parallel to
+𝒗
+2
+\bm{v}_{2}
+,
+𝒆
+y
+\bm{e}_{y}
+lies in the horizontal
+plane parallel to the table surface and is perpendicular to
+𝒆
+x
+\bm{e}_{x}
+, and
+𝒆
+z
+\bm{e}_{z}
+completes the
+right-handed triad, pointing towards the ceiling. Projecting
+𝝎
+2
+\bm{\omega}_{2}
+onto this frame yields a
+top/back-spin component
+ω
+tb
+=
+𝝎
+2
+⋅
+𝒆
+y
+\omega_{\mathrm{tb}}=\bm{\omega}_{2}\cdot\bm{e}_{y}
+and a sidespin component
+ω
+ss
+=
+𝝎
+2
+⋅
+𝒆
+z
+\omega_{\mathrm{ss}}=\bm{\omega}_{2}\cdot\bm{e}_{z}
+.
+Each component is
+clamped to
+[
+−
+ω
+¯
+,
+ω
+¯
+]
+[-\bar{\omega},\,\bar{\omega}]
+and divided by
+ω
+¯
+\bar{\omega}
+to
+obtain
+ω
+^
+tb
+,
+ω
+^
+ss
+∈
+[
+−
+1
+,
+1
+]
+\hat{\omega}_{\mathrm{tb}},\hat{\omega}_{\mathrm{ss}}\in[-1,1]
+.
+The corresponding rewards are
+r
+back
+\displaystyle r_{\mathrm{back}}
+=
+g
+back
+​
+max
+⁡
+(
+0
+,
+−
+ω
+^
+tb
+)
+,
+\displaystyle=g_{\mathrm{back}}\max(0,-\hat{\omega}_{\mathrm{tb}}),
+(4)
+r
+top
+\displaystyle r_{\mathrm{top}}
+=
+g
+top
+​
+max
+⁡
+(
+0
+,
+ω
+^
+tb
+)
+,
+\displaystyle=g_{\mathrm{top}}\max(0,\hat{\omega}_{\mathrm{tb}}),
+r
+side
+\displaystyle r_{\mathrm{side}}
+=
+g
+side
+​
+ϕ
+​
+(
+ω
+^
+ss
+)
+,
+\displaystyle=g_{\mathrm{side}}\,\phi(\hat{\omega}_{\mathrm{ss}}),
+where
+g
+back
+g_{\mathrm{back}}
+,
+g
+top
+g_{\mathrm{top}}
+, and
+g
+side
+g_{\mathrm{side}}
+are
+non-negative gains that select the desired spin profile,
+ϕ
+⁡
+(
+z
+)
+=
+max
+⁡
+(
+0
+,
+d
+⋅
+z
+)
+\phi(z)=\max(0,\,d\cdot z)
+if a preferred sidespin direction
+d
+∈
+{
+−
+1
+,
++
+1
+}
+d\in\{-1,+1\}
+is specified.
+For example, if the user wants to generate serves with negative sidespin and backspin, they might use the parameters:
+g
+back
+=
+1
+,
+g
+top
+=
+0
+,
+g
+side
+=
+1
+,
+d
+=
+−
+1
+\displaystyle g_{\mathrm{back}}=1,~g_{\mathrm{top}}=0,~g_{\mathrm{side}}=1,~d=-1
+Instead of using the average ball toss trajectory
+𝒑
+¯
+t
+​
+(
+t
+)
+\bar{\bm{p}}_{t}(t)
+, we can evaluate a serve
+𝝃
+s
+\bm{\xi}_{s}
+on multiple of the recorded tosses.
+In this case, a reward is computed for each rollout, and the results are aggregated across them.
+A genome is deemed legal if at least a percentage
+p
+>
+0
+p>0
+of the sampled serves passes all legality checks.
+HEBO minimizes the negated reward
+y
+=
+−
+F
+y=-F
+, so that the surrogate model explicitly biases the search towards parameters that are robust to deviations of the toss.
+III-E
+Real-world serve selection
+Finally, serves are executed on the real robot and evaluated by expert human players.
+Serve instances deemed sufficiently challenging are added to the so-called
+competition library
+for usage during official tournaments against human elite and professional athletes.
+The contents of the library itself also go through a process of iterative selection, albeit according to empirical observations, where the statistically worst serves are replaced by new candidates.
+Over the course of multiple tournaments, the contents of the serve competition library are tracked, and serves whose rallies tend to end in opponent points are removed.
+Furthermore, a heuristics-based serve selection algorithm is implemented to automatically select the next serve to use during tournaments.
+This selection is based on maximizing the spin dissimilarity of consecutive serves.
+Serves are clustered by spin direction and magnitude (e.g., topspin, backspin, sidespin), and the strategy picks the least-used serve from a cluster different from the previous one. This keeps consecutive serves spin-distinct while minimizing repetition, limiting the opponent’s ability to learn any particular serve.
+IV
+Results
+Fig. 4:
+(a) Real ball trajectories of serves used during the match against the Paris 2024 Olympic silver medalist Miu Hirano.
+(b) Ball velocities and heights as the ball crosses the net at different stages.
+The faded triangular markers indicate 1243 serves executed by the professional players as they played against our robot from April 2025 to April 2026.
+It is noticeable that starting from February 2026, the spin magnitude of robot serves exceeded those of the professional players.
+IV-A
+Serve proficiency
+We claim that the serves generated with our approach are capable of matching and, according to numerical metrics of spin and velocity, outperform those of world-class players.
+To empirically assess the serves, our robot plays against elite- and professional-level athletes of the Japanese leagues in tournaments officiated by licensed umpires.
+Because of the players’ limited availability to come to our laboratory and the cost involved in coordinating these experiments, the presented method is improved iteratively after analyzing the results after every session.
+Next, we detail the sequential improvements made to the serve generation pipeline together with performance metrics during player matches, enumerated in Table
+II
+.
+The first row indicates the baseline method
+as outlined in the original work
+[
+7
+]
+, and
+used during the April 2025 tournament, and the last row corresponds to the final method as described in Section
+III
+.
+For every iteration (row) of the serve motion planning pipeline, we provide an estimate of the probability of our robot winning a point, both when serving and when receiving.
+We use the Binomial 95% Wilson Confidence Intervals (WCI) for calculating a confidence range based on the limited data available.
+Also, we report the number of direct serve points (Aces) scored by our robot.
+Note that, as our pipeline and the generated serves improve, also does the probability of winning the point by serving, while the probability of winning the point by receiving remains roughly unchanged.
+That is, despite the fact that later experiments were mostly conducted against professional players, whose level is higher than those of elite players, who we mostly invited during earlier sessions.
+On the first iteration, the serve simulation relies only on the mean trajectory
+𝒑
+¯
+t
+​
+(
+t
+)
+\bar{\bm{p}}_{t}(t)
+for simulating the ball toss.
+Starting in November 2025, instead of using
+𝒑
+¯
+t
+​
+(
+t
+)
+\bar{\bm{p}}_{t}(t)
+, for every serve training episode, we sample multiple ball toss trajectories from the recordings and compute the serve average reward over all.
+This helps make our serves more robust, which we verify empirically as the reliability of open-loop execution improves.
+Ball tosses from both sides of the robot are also introduced, increasing variability and making adaptation more difficult for players.
+The method described in Sec.
+III
+is fully deployed during the December 2025 tournament, with HEBO replacing the classic genetic algorithm optimizer used until that point.
+Then, the derivative limits used by the motion planner are increased such that joint acceleration and jerk limits are higher, as we found that the torque usage for every joint was still within the saturation levels.
+This allows to generate a set of motion plans producing increased linear and angular ball velocities, which can be clearly observed in Fig.
+4
+(b).
+This figure shows the state of the robot’s library in three different stages, compared against professional human serve data.
+For the tournaments in March and April 2026, we also strategically prune and replace serves whose historical performance shows a tendency to lead to opponent’s points during the rally.
+This way of modulating the library leads to an increase in the robot’s direct serve points—a situation in which the opponent fails to return the ball legally, also sometimes called “aces”—as the average speed of serves in the library also increases.
+According to pre-existing analyses of elite table tennis matches, points won while serving are approximately 52.78% and 53.28% for professional male and female players, respectively
+[
+10
+]
+.
+Therefore, the ability of our robot to maintain slightly higher winning probabilities while serving (51.5 to 58.7% in April 2026) suggests that the serves achieve comparable effectiveness to top professional human players, even against notable players such as the two-time Olympian and silver medalist Miu Hirano.
+TABLE II:
+Serve statistics against elite and professional players
+Date
+Participants
+Feature
+Serves in
+library
+(right, left)
+Total robot
+serves during
+the game
+Cumulative
+win probability
+95% WCI
+[%]
+Serve Points
+“Aces”
+(%)
+receiving
+serving
+Apr. 2025
+3 elite females
+3 elite males
+Pro male: Kakeru Sone
+Pro female: Minami Ando
+Baseline
+15
+(15, 0)
+177
+44.7–59.2
+40.8–55.3
+20
+(11%)
+Nov. 2025
+3 elite females
+2 elite males
+Training on tossing distributions
+Serving from both sides
+14
+(10, 4)
+102
+47.6–59.3
+45.1–56.7
+9
+(9%)
+Dec. 2025
+2 elite females
+3 elite males
+Pro male: Kazuhiro Yoshimura
+Pro female: Mayuka Taira
+HEBO as optimizer
+16
+(11, 5)
+171
+46.7–55.9
+48.1–57.2
+14
+(8%)
+Feb. 2026
+2 elite males
+Pro female: Maki Shiomi
+Dynamic limit expansion
+17
+(12, 5)
+125
+46.9–55.0
+49.1–57.3
+2
+(1.6%)
+Mar. 2026
+Pro female: Miyuu Kihara
+Pro male: Tonin Ryuzaki
+Pro male: Fumiya Igarashi
+Priority to side and
+topspin serves
+21
+(13, 8)
+109
+48.6–56.1
+50.8–58.2
+23
+(21%)
+Apr. 2026
+Pro female: Miu Hirano
+—
+22
+(12, 10)
+40
+49.9–57.1
+51.5–58.7
+8
+(20%)
+IV-B
+Task-specific serve generation example
+For the professional tournaments, the serves were strategically added and removed from the
+competition library
+based on empirical observations, to make our repertoire as competitive as possible.
+To help illustrate the raw output of the serve training framework without human intervention, we run an experiment where we define 4 different tasks and train 25 serves for each.
+These tasks are:
+Aiming
+: making the ball land on one table corner at the second bounce,
+Topspin & velocity
+: maximize the ball topspin and velocity magnitude in the x-y plane at the second bounce,
+Backspin
+: maximize the ball backspin at the second bounce,
+Sidespin
+: maximize the ball sidespin (in any direction) at the second bounce.
+The reward weights of the HEBO algorithm are adjusted according to these objectives, and the algorithm is run
+25
+25
+times for each.
+Besides the main task reward weights, we also add the low-height reward weight for all training runs as it helps producing human-like serves.
+Other constant hyperparameters include a population size of 20 and maximum number of iterations of 100.
+Under this setup, a serve can be trained in about
+1.5
+​
+min
+1.5$\mathrm{m}\mathrm{i}\mathrm{n}$
+in a single thread using a Desktop PC with an Intel i9-12900KF CPU.
+The generated motion plans are finally run on the robot in open-loop.
+Table
+III
+reports the statistics of the generated serves in simulation and in the real hardware.
+Note that from the
+25
+25
+motion plans generated for each experiment, not all of them yielded valid serves when deployed due to still existent sim-to-real gaps.
+The statistics reported in the real world are thus based on the subset of serves that actually transferred zero-shot without issues.
+The aiming error is only reported for the
+Aiming
+task since the others do not have defined locations to aim at.
+Topspin and backspin are reported in the same column since the difference between the two is in their sign (negative for backspin).
+The results indeed suggest that there is a strong correlation between the serve property encouraged through the reward function and the corresponding physical metric (in bold font).
+For example, when topspin is rewarded, the average value will become significantly larger for both Sim and Real setups (218 to 263
+rad
+/
+s
+\mathrm{r}\mathrm{a}\mathrm{d}\mathrm{/}\mathrm{s}
+) but the sign is flipped when backspin is encouraged instead (-131 to -164
+rad
+/
+s
+\mathrm{r}\mathrm{a}\mathrm{d}\mathrm{/}\mathrm{s}
+).
+Note that, since for the sidespin task we do not specify a preferred direction, the obtained mean value is relatively small, but the standard deviation is much larger compared to that of the other tasks as both positive and negative sidespins are produced.
+TABLE III:
+Serve statistics in simulation and in the real world for different task settings
+Task
+Environment
+Aim error
+[mm]
+Velocity
+[m/s]
+Spin
+[rad/s]
+x-y norm
+x
+y
+z
+cork
+top (+) / back (-)
+side
+Aiming
+Sim
+(
+N
+=
+25
+)
+(N=25)
+𝟏𝟔𝟔
+±
+𝟐𝟖𝟓
+\bm{166\pm 285}
+2.6
+±
+1.2
+2.6\pm 1.2
+−
+0.9
+±
+0.4
+-0.9\pm 0.4
+2.3
+±
+0.3
+2.3\pm 0.3
+26.9
+±
+41.6
+26.9\pm 41.6
+60.0
+±
+129.0
+60.0\pm 129.0
+−
+12.9
+±
+124.6
+-12.9\pm 124.6
+Real
+(
+N
+=
+15
+)
+(N=15)
+𝟐𝟗𝟗
+±
+𝟑𝟏𝟑
+\bm{299\pm 313}
+2.8
+±
+1.0
+2.8\pm 1.0
+−
+1.0
+±
+0.4
+-1.0\pm 0.4
+2.3
+±
+0.3
+2.3\pm 0.3
+22.9
+±
+41.5
+22.9\pm 41.5
+56.7
+±
+158.3
+56.7\pm 158.3
+3.5
+±
+111.8
+3.5\pm 111.8
+Topspin
+velocity
+Sim
+(
+N
+=
+25
+)
+(N=25)
+N/A
+4.5
+±
+1.3
+\bm{4.5\pm 1.3}
+−
+0.7
+±
+0.8
+\bm{-0.7\pm 0.8}
+2.0
+±
+0.1
+2.0\pm 0.1
+33.8
+±
+44.2
+33.8\pm 44.2
+218.0
+±
+75.4
+\bm{218.0\pm 75.4}
+38.2
+±
+143.8
+38.2\pm 143.8
+Real
+(
+N
+=
+14
+)
+(N=14)
+N/A
+4.4
+±
+1.1
+\bm{4.4\pm 1.1}
+−
+0.7
+±
+0.6
+\bm{-0.7\pm 0.6}
+2.0
+±
+0.1
+2.0\pm 0.1
+48.8
+±
+54.3
+48.8\pm 54.3
+263.4
+±
+70.0
+\bm{263.4\pm 70.0}
+100.5
+±
+131.8
+100.5\pm 131.8
+Backspin
+Sim
+(
+N
+=
+25
+)
+(N=25)
+N/A
+2.7
+±
+0.9
+2.7\pm 0.9
+−
+0.9
+±
+0.5
+-0.9\pm 0.5
+1.7
+±
+0.1
+1.7\pm 0.1
+−
+68.9
+±
+70.5
+-68.9\pm 70.5
+−
+164.7
+±
+128.0
+\bm{-164.7\pm 128.0}
+19.1
+±
+113.3
+19.1\pm 113.3
+Real
+(
+N
+=
+12
+)
+(N=12)
+N/A
+3.3
+±
+0.8
+3.3\pm 0.8
+−
+1.1
+±
+0.5
+-1.1\pm 0.5
+1.7
+±
+0.2
+1.7\pm 0.2
+−
+69.7
+±
+83.5
+-69.7\pm 83.5
+−
+131.8
+±
+176.9
+\bm{-131.8\pm 176.9}
+29.2
+±
+72.3
+29.2\pm 72.3
+Sidespin
+Sim
+(
+N
+=
+25
+)
+(N=25)
+N/A
+3.5
+±
+0.8
+3.5\pm 0.8
+−
+0.4
+±
+0.8
+-0.4\pm 0.8
+1.9
+±
+0.1
+1.9\pm 0.1
+13.2
+±
+44.1
+13.2\pm 44.1
+124.4
+±
+108.0
+124.4\pm 108.0
+84.3
+±
+243.8
+\bm{84.3\pm 243.8}
+Real
+(
+N
+=
+13
+)
+(N=13)
+N/A
+3.7
+±
+1.0
+3.7\pm 1.0
+−
+0.7
+±
+0.7
+-0.7\pm 0.7
+2.0
+±
+0.2
+2.0\pm 0.2
+36.7
+±
+35.2
+36.7\pm 35.2
+139.7
+±
+79.3
+139.7\pm 79.3
+−
+13.1
+±
+255.2
+\bm{-13.1\pm 255.2}
+V
+Conclusions and Future work
+We have presented, to our knowledge, the first framework capable of generating professional-level, ITTF-compliant serve motion plans for a robot arm.
+When evaluated against elite- and professional-level players, our serves showcased comparable or even higher amounts of velocity and especially spin to those performed by these players.
+This method has been one of the key components that allowed, also for the first time in history, a robot to win in fair Best-of-3 matches against multiple professional table tennis players, and also more generally that a robot could beat a professional human athlete in their competitive sport of choice.
+Our method consists of a parametrized hybrid end-effector and joint-space optimization-based motion planner, whose parameters are found in simulation by a Bayesian optimizer (HEBO).
+In our case, HEBO is used to find the parameters defining the racket state when intercepting the table tennis ball to perform serves with user-defined characteristics.
+We expect this approach to be generalizable to other motion planning problems where the main challenge is to find a large diversity of motion profiles subject to secondary quantifiable tasks with local smoothness properties.
+Possible future work could focus on reducing the sim-to-real gap that reduces the efficiency of our method.
+This could be achieved by a combination of improved physics modeling (including ball-racket contact, ball toss, robot dynamics, robot deflection and robot vibration), as well as enabling automatic fine-tuning of motion plans, with HEBO or other black-box optimizers, in the hardware system.
+Acknowledgements
+The authors thank Stefan Richter for his contributions to the development of the motion planner, and all the players and umpires who participated in the experiments.
+References
+[1]
+S. Abeyruwan
+et al.
+(2023)
+Agile catching with whole-body mpc and blackbox policy learning
+.
+In
+Proceedings of The 5th Annual Learning for Dynamics and Control Conference
+,
+N. Matni, M. Morari, and G. J. Pappas (Eds.)
+,
+Proceedings of Machine Learning Research
+, Vol.
+211
+,
+pp. 851–863
+.
+Cited by:
+§II-B
+.
+[2]
+F. Bjelonic, J. Lee, P. Arm, D. Sako, D. Tateo, J. Peters, and M. Hutter
+(2023)
+Learning-based design and control for quadrupedal robots with parallel-elastic actuators
+.
+IEEE Robotics and Automation Letters
+8
+(
+3
+),
+pp. 1611–1618
+.
+External Links:
+Document
+Cited by:
+§II-C
+.
+[3]
+D. Büchler, S. Guist, R. Calandra, V. Berenz, B. Schölkopf, and J. Peters
+(2022)
+Learning to play table tennis from scratch using muscular robots
+.
+IEEE Transactions on Robotics
+38
+(
+6
+),
+pp. 3850–3860
+.
+Cited by:
+§I
+.
+[4]
+R. H. Byrd, J. Nocedal, and R. A. Waltz
+G. Di Pillo and M. Roma (Eds.)
+(2006)
+Knitro: an integrated package for nonlinear optimization
+.
+Springer US
+,
+Boston, MA
+.
+Cited by:
+§III-C
+.
+[5]
+A. Cowen-Rivers
+et al.
+(2022)
+HEBO: pushing the limits of sample-efficient hyperparameter optimisation
+.
+Journal of Artificial Intelligence Research
+74
+,
+pp.
+.
+Cited by:
+item 2
+.
+[6]
+Z. Djokic
+(2020)
+Serve analyses of elite european table tennis matches
+.
+International Journal of Racket Sports Science
+,
+pp.
+.
+External Links:
+Document
+Cited by:
+§I
+.
+[7]
+P. Dürr
+et al.
+(2026)
+Outplaying elite table tennis players with an autonomous robot
+.
+Nature
+652
+(
+8111
+),
+pp. 886–891
+.
+External Links:
+ISSN 1476-4687
+,
+Document
+Cited by:
+§I
+,
+§I
+,
+§III
+,
+§IV-A
+.
+[8]
+D. B. D’Ambrosio
+et al.
+(2023)
+Robotic table tennis: a case study into a high speed learning system
+.
+arXiv preprint arXiv:2309.03315
+.
+Cited by:
+§I
+,
+§II-B
+.
+[9]
+D. B. D’Ambrosio
+et al.
+(2025)
+Achieving human level competitive robot table tennis
+.
+In
+7th Robot Learning Workshop: Towards Robots with Human-Level Abilities
+,
+Cited by:
+§I
+.
+[10]
+M. Gómez, A. García-de-Alcaráz, and P. Furley
+(2017)
+Analysis of contextual-related variables on serve and receiving performances in elite men’s and women’s table tennis players
+.
+International Journal of Performance Analysis in Sport
+17
+(
+6
+),
+pp. 919–933
+.
+Cited by:
+§IV-A
+.
+[11]
+Q. Guo, X. Shi, K. Murakami, R. Jia, and Y. Yamakawa
+(2025)
+SEAL: a sample-efficient adjustment-learning method for table tennis robot serve
+.
+In
+2025 IEEE International Conference on Robotics and Automation (ICRA)
+,
+Vol.
+,
+pp. 14924–14930
+.
+External Links:
+Document
+Cited by:
+§II-A
+.
+[12]
+Y. Hayakawa, A. Nakashima, S. Itoh, and Y. Nakai
+(2016)
+Ball trajectory planning in serving task for table tennis robot
+.
+SICE Journal of Control, Measurement, and System Integration
+9
+(
+),
+pp. 50–59
+.
+External Links:
+Document
+Cited by:
+§II-A
+.
+[13]
+International Table Tennis Federation
+(2025)
+International table tennis federation (ittf)
+.
+Note:
+At: https://www.ittf.com
+Cited by:
+§I
+.
+[14]
+M. Katsikadelis, T. Pilianidis, and A. Misichroni
+(2010)
+Comparison of rally time in xxix beijing (2008) and xxviii athens (2004) olympic table tennis tournaments
+.
+Int. J. Table Tennis Sci
+6
+,
+pp. 55–59
+.
+Cited by:
+§I
+.
+[15]
+M. A. Khan
+et al.
+(2023)
+Toward real-world automated antibody design with combinatorial bayesian optimization
+.
+Cell Reports Methods
+3
+(
+1
+),
+pp. 100374
+.
+External Links:
+Document
+Cited by:
+§II-C
+.
+[16]
+S. Kim, A. Shukla, and A. Billard
+(2014)
+Catching objects in flight
+.
+IEEE Transactions on Robotics
+30
+(
+5
+),
+pp. 1049–1065
+.
+External Links:
+Document
+Cited by:
+§II-B
+.
+[17]
+O. Koç and J. Peters
+(2019)
+Learning to serve: an experimental study for a new learning from demonstrations framework
+.
+IEEE Robotics and Automation Letters
+4
+(
+2
+),
+pp. 1784–1791
+.
+External Links:
+Document
+Cited by:
+§II-A
+.
+[18]
+A. Kyohei, N. Masamune, and Y. Satoshi
+(2019)
+The ping pong robot to return a ball precisely   trajectory prediction and racket control for spinning balls
+.
+In
+OMRON Technics
+,
+Vol.
+51
+.
+Cited by:
+§I
+.
+[19]
+G. Maeda, M. Ewerton, D. Koert, and J. Peters
+(2016)
+Acquiring and generalizing the embodiment mapping from human observations to robot skills
+.
+IEEE Robotics and Automation Letters
+1
+(
+2
+),
+pp. 784–791
+.
+Cited by:
+§III-B
+.
+[20]
+K. Muelling, A. Boularias, B. Mohler, B. Schölkopf, and J. Peters
+(2014)
+Learning strategies in table tennis using inverse reinforcement learning
+.
+Biological cybernetics
+108
+,
+pp. 603–619
+.
+Cited by:
+§I
+.
+[21]
+K. Mülling, J. Kober, O. Kroemer, and J. Peters
+(2013)
+Learning to select and generalize striking movements in robot table tennis
+.
+The International Journal of Robotics Research
+32
+(
+3
+),
+pp. 263–279
+.
+Cited by:
+§I
+.
+[22]
+D. Nguyen, K. D. Cancio, and S. Kim
+(2025)
+High speed robotic table tennis swinging using lightweight hardware with model predictive control
+.
+In
+2025 IEEE International Conference on Robotics and Automation (ICRA)
+,
+Vol.
+,
+pp. 15278–15284
+.
+External Links:
+Document
+Cited by:
+§II-B
+.
+[23]
+J. Pan, S. Chitta, D. Manocha, F. Lamiraux, J. Mirabel, J. Carpentier, L. Montaut,
+et al.
+(2015)
+Coal: an extension of the flexible collision library
+.
+Note:
+https://github.com/coal-library/coal
+Cited by:
+§III-C
+.
+[24]
+F. Pradas, V. Toro-Román, C. Castellar, and L. Carrasco
+(2023)
+Analysis of the spatial distribution of the serve and the type of serve-return in elite table tennis. Sex differences
+.
+Physical Education Theory and Methodology
+.
+Cited by:
+§I
+.
+[25]
+A. Russell
+(1988)
+A robot ping-pong player: experiment in real-time intelligent control
+.
+In
+AT Bell Laboratories
+,
+Cited by:
+§I
+.
+[26]
+Abraham. Savitzky and M. J. E. Golay
+(1964)
+Smoothing and differentiation of data by simplified least squares procedures.
+.
+Analytical Chemistry
+36
+(
+8
+),
+pp. 1627–1639
+.
+External Links:
+Document
+,
+https://doi.org/10.1021/ac60214a047
+Cited by:
+§III-B
+.
+[27]
+H. Tang, M. Mizoguchi, and S. Toyoshima
+(2002)
+"Speed and spin characteristics of the 40mm table tennis ball"
+.
+Table tennis sciences
+4
+,
+pp. 278–284
+.
+Cited by:
+§I
+,
+§I
+.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►
