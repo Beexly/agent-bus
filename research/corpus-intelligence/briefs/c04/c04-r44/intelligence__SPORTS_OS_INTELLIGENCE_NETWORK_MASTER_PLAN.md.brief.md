@@ -1,0 +1,20 @@
+# docs/intelligence/SPORTS_OS_INTELLIGENCE_NETWORK_MASTER_PLAN.md
+## What it is (1-2 sentences)
+The controlling doctrine for the Sports OS Intelligence Network (placed in-repo 2026-05-27): the product thesis ("intelligence layer between fragmented sports reality and decision-ready insight"), a 15-component ecosystem map, a component-architecture summary with a 6-tier source hierarchy, a 10-phase implementation sequence, validation rules, and a quality bar. Planning/control artifact only — it implements nothing and requires a pre-implementation change proposal + owner approval for any code.
+## Key metrics/methods (formulas where given, else "not specified")
+not specified — no formulas. Key definitional constructs: intelligence categories (verified fact / source observation / trusted report / market signal / weak signal / rumor / community chatter / model output / confidence 0–100 / volatility / risk / public claim / recommendation / settlement / calibration impact) and a 6-tier source hierarchy (T1 official/primary → T6 synthetic/AI/low-trust).
+## Data sources named
+Named by tier, not as specific feeds: Tier 1 — League APIs, injury reports, transaction logs; Tier 2 — Odds APIs, stats feeds, fantasy APIs; Tier 3 — verified beat writers, reputable analysts; Tier 4 — line movement, book disagreement, prop movement; Tier 5 — Reddit/forums/fan boards (watchlist only, never source of truth); Tier 6 — AI summaries, scraper spam, aggregators (never source of truth). Spec docs referenced: `docs/brain/` (source-hierarchy, weak-signal-engine, entity-graph, evidence-vault, signal-ledger, market-gravity, ask-the-brain, fantasy-war-room, research-lab, claim-governance, operator-cockpit-governance), `docs/intelligence/product-ecosystem.md`, `docs/design/`.
+## Findings (numbers and facts, not vibes)
+- 15 ecosystem components named: Picks Intelligence, Fantasy Intelligence, Sports Research Brain, Weak Signal/Rumor Radar, Source Acquisition Mesh, Evidence Vault, Entity Graph, Signal Ledger, Market Gravity, Operator Cockpit, Research Lab, Public Trust/Methodology Layer, Developer/Innovation Layer, AI-Search/GEO Visibility Layer, Future API/B2B Intelligence Layer.
+- 10-phase implementation sequence: Phase 0 R&D Extraction complete; Phase 1 architecture docs in progress; Phases 4–10 blocked pending approvals (Evidence Vault MVP, Signal Ledger MVP, Internal Ask the Brain, Fantasy War Room MVP, Public Brain Beta, Developer/Methodology Layer).
+- Ask the Brain public launch is blocked until four gates pass: Evidence Vault implemented+tested, claim governance implemented+tested, public methodology pages exist, internal Q&A validation passed.
+- Hard constraints include: no fake data/picks/odds/injuries; Reddit/forum content never verified fact; no "sharp money" claims without specific legitimate data; no sportsbook/tout certainty language; no imported GPL/AGPL code without legal review.
+- Validation rules require: show branch, `git status`, inspect open PRs, list files to touch, confirm no route/schema/dependency changes or weakened gates; then run `npm run db:generate && lint && typecheck && test && test:smoke && build`.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- Source-tier system as a trust-weighting doctrine (beat-writer quotes as Tier 3 contextual claims, never facts — INFERENCE: directly constrains how TRUST-SIGNAL quote evidence can be used) — TRUST-SIGNAL
+- Weak Signal / Rumor Radar as the intake lane for community chatter that may precede usage/scheme changes — SCHEME
+- Signal Ledger + settlement/calibration-impact categories as the loop that scores recommendations against outcomes — OTHER
+- No "inside information" / no-fake-data doctrine constraining public surfaces — OTHER
+## Engine-actionable? (yes/no + one-line what)
+Yes — the source-tier hierarchy and weak-signal intake taxonomy are the trust-weighting backbone any player/team signal pipeline (including QB trust-target quote mining) must be wired against.
