@@ -233,6 +233,8 @@ inbox/from-motif (59–61): TASK-001…015, BUILD-BIBLE.md, DEEPSEEK-*-PROMPT.md
 
 ## §7. Gap + Leverage Audit (reconciled, 2026-10-02 ~12:15 CT)
 
+**STALENESS BANNER (added ~12:45 CT):** this audit was anchored to HEAD `b3e15f21f`. The branch has since advanced through `f880c7f67` → `fceb123` (Motif: seed CSVs) → `a704d0ca5` (OL provider) → `71e6fd9a2` (doctrine) → `c72a46c7f` (weather skill) → `1fce7fb4c` (registry SURVEY) → `c530d0409` (PIT@CLE engine run) → `e28e4b80` (homeSign). Findings marked "missing" that have since been built (OL provider, registry file, seed CSVs) are CLOSED below. All other findings need re-verification against `e28e4b80` before being treated as closed — anchor SHAs are breadcrumbs, not truth.
+
 **Method:** two auditors ran the identical brief independently over §1–§6, spot-checking their five highest-stakes claims each against the filesystem/GitHub/HF APIs. 33 + 34 findings; reconciled below as a deduplicated union, ranked by impact (engine accuracy > revenue > completeness). Every finding: what, why it matters, one-sentence next action.
 
 ### OVERTURNED — the field report was wrong, I verified it myself
@@ -314,27 +316,22 @@ inbox/from-motif (59–61): TASK-001…015, BUILD-BIBLE.md, DEEPSEEK-*-PROMPT.md
 - [x] Reconciled dual-sweep inventory — DONE 2026-10-02 ~12:10 CT (§4/§5). Zero substantive disagreements.
 - [ ] Hermes second-wave outputs (night of 2026-10-01/02) — land on agent-bus or branch, then append here.
 - [ ] "Corpus processed twice" language in overnight prompt — replace with honest accounting (owed before delivery).
-- [x] Gap + leverage audit complete (2026-10-02 ~12:15 CT) — 44 reconciled findings in §7; consensus top 3: OL provider, signal registry, tau consumer.
-- [x] Seed-CSV "missing" claim resolved — files existed on Motif's VM, absent on the Windows host; landed on the branch at `intelligence/coaching/data/` (commit `fceb123`). Windows host unblocks on next pull; 10 seed tests should go green with 1e-6 pins intact.
-- [ ] Branch HEAD is now `fceb123` (via `f880c7f67`, child of `b3e15f21f`) — all green claims must re-baseline to it.
-- [ ] PR #1002 conflict map in progress (read-only); PR stays untouched.
-- [ ] Implement OL provider (`get_ol_status`/`get_ol_starters`) per the reconciled spec; re-run `test_t1_real_e2e.py`.
-- [ ] Implement OL provider (`get_ol_status`/`get_ol_starters`) per the reconciled spec; re-run `test_t1_real_e2e.py`.
-- [ ] Write the 47-signal registry as a versioned file; first real producer; one end-to-end fired-signal test.
-- [ ] Clean-state full-suite rerun at HEAD `b3e15f21` (all green claims currently stale).
-- [ ] PR #1002: fix conflicts/checks or close (non-draft, unmergeable, Vercel failed).
+- [x] Gap + leverage audit complete (2026-10-02 ~12:15 CT) — 44 reconciled findings in §7; staleness banner added ~12:45 CT (HEAD now `e28e4b80`).
+- [x] Seed-CSV "missing" claim resolved — files existed on Motif's VM, absent on the Windows host; landed on the branch at `intelligence/coaching/data/` (commit `fceb123`). Coaching tests pass (`test_coaching.py` exit 0, 1e-6 pins intact) — confirmed by Hermes.
+- [x] OL provider — DONE at `a704d0ca5` ("Serve OL state from nflverse injuries and the depth chart"). PIT@CLE trace confirms `offensive_line` CLEAR.
+- [x] 47-signal registry file — landed at `intelligence/signals/registry.json` (`1fce7fb4c`), 47 signals, labeled SURVEY of `cc151ddd3` ("inventory, not a runtime registry"; all `wired_state` null). homeSign wired on `nfl_age_conditioned_rest` at `e28e4b80` (tilt tests pass with it, fail without it). Still owed: regenerate from HEAD; flip wired states.
+- [x] PR #1002 conflict map — DONE (read-only): 16 conflict paths, 5 are doctrine reversals (main deleted/darkened NGS + expected-metrics routes; branch keeps them behind env flags; default merge would restore the looser side). PR stays unmerged per Hermes.
+- [x] PIT@CLE Week 4 trace (`c530d0409`): 237 CLE offensive plays pre-week-4, Pass EPA +11.91, Rush EPA -21.279, 3 turnovers -16.008 EPA. Both OLs checked, both tau cells served, live forecast attached. `analyze()` → INVALID (honest refusal); `qb_behavior` + `coaching_scheme` DATA-GAP. No pick, no probability. Next: same runner on rest of week-4 slate.
+- [ ] Branch HEAD is now `e28e4b80` — all green claims must re-baseline to it.
+- [ ] `GSE_COACHING_DATA_DIR` exclusivity audit — `f880c7f67` hardened the override; `base_data.py` at HEAD still falls through (env → repo → legacy) with `DataGapError` on absence, so the exclusivity may live in the tau-gate path. Line-by-line audit owed; CI foot-gun (env set-but-empty) unexamined.
 - [ ] tau_hat 2026 cells: rebuild walk-forward or stamp "point fit — not pre-kickoff."
-- [ ] Fetch the artifact's underlying data files into the corpus (report, catalog, 170 CSVs, 14 digests, manifest).
+- [ ] Fetch the artifact's underlying data files into the corpus (report, catalog, 170 CSVs, 14 digests, manifest). NOTE: the 1.45MB markdown IS on the bus (`inbox/from-motif/nfl-analytics-reverse-engineering.md`, 1,449,267 bytes — verified 2026-10-02 ~12:40 CT).
 - [ ] Join the 1,115 local arXiv fulltexts against the 585/750 tracker (find the missing 165).
 - [ ] Hermes second-wave outputs: land on the bus or a branch.
 - [ ] Corpus processing receipts ledger; claim-matrix handoff template.
 - [ ] Replace "corpus processed twice" language in the overnight prompt with the §1 honest ledger.
-- [ ] 47-signal registry: 0 wired — wiring is the engine work per §2 §13.
 - [ ] Artifact's 2,204-file manifest vs current repo tree — diff owed.
-- [ ] Artifact's underlying data files (report.md, catalog, 170 CSVs, 14 digests) — fetch into corpus?
 - [ ] PR #1012 (intelligence) and PR #1002 — both unmerged; merge states recorded in §2.
 - [ ] Weather mission — added to overnight prompt backlog 2026-10-02.
 - [ ] GSE agent skill sketch — `~/workspace/your_files/gse-agent-skill-sketch.md`.
-- [ ] **NEW:** the 40+ extra top-level dirs were invisible to every prior accounting — the coding agent's corpus brief must point at §4's table, not just the 9 listed roots.
-- [ ] **NEW:** branch HEAD moved (d255965 → b3e15f21) after the "final" handoff — re-verify clean-state tests at the new HEAD before any green claim.
-- [ ] **NEW:** 2-byte stub JSONs in hf-survey-raw/ and the empty injury-week5.json — exclude from completion counts; the surveys need real re-pulls.
+- [ ] 2-byte stub JSONs in hf-survey-raw/ and the empty injury-week5.json — exclude from completion counts; the surveys need real re-pulls.
