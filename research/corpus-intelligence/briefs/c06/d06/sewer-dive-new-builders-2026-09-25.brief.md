@@ -1,0 +1,44 @@
+# dfs/research/2026-09-25/youtube-builder-research/sewer-dive-new-builders-2026-09-25.md
+
+## What it is (1-2 sentences)
+Motif's 2026-09-25 "sewer dive" sweep of 29 newly-created NFL modeling repos/creators (second wave, tracks A–D), read-only across GitHub/YouTube/social, ranking 18 independent builders by GSE value, logging every license, plus honest-negative signals (what not to copy) and observed weekly pipeline patterns — all under Garrett's no-relevance-filtering rule (methodology fair game, code reuse needs license).
+
+## Key metrics/methods (formulas where given, else "not specified")
+- **sjpagano/nfl-win-probability** — held-out 2025 test: Brier .1613, log loss .4831, AUC .8459, ECE .0331; tested isotonic calibration and REJECTED it when it worsened the holdout. Calibration-gate discipline lesson.
+- **benbr11/edgelabs** — NFL winner model at 65.9% accuracy vs ~66% closing-market benchmark (model-vs-market parity on paper); walk-forward validation with model cards and reports committed. Validation ritual against the closing line = GSE's honesty standard.
+- **joscho11/joschoanalytics** — NFL ATS ensemble on 4,300+ games, walk-forward with feature ablation; killed his own sparse "ULTRA" tier rather than overselling it.
+- **greerreNFL / nfelo ecosystem** — 538-Elo framework + QB Elo + market regression + six-unit EPA decomposition (`nfelounits`: pass/rush/special teams × offense/defense, weather sigmoids, volatile-play discounts, QB adjustments, trend smoothing) + `pip install nfelodcm` typed nflverse loader; backtest to 2009; +130.2u vs open claimed on-site (audit note: self-reported). PredictionTracker.com calls it "most accurate model of 2024."
+- **Excel LADZ** (YouTube @excel_ladz, ~6.73K subs) — SOS-adjusted offensive/defensive ratings, 12-game trailing window, Bayesian prior-season blending, hypothesis-tested ~10% home-field advantage, generalized Poisson for under-dispersed TD counts, separate rare-event distributions, 5,000-run Monte Carlo in Excel, Power Query automation; data: TeamRankings.com + Pro Football Reference, no API keys; explicitly publishes no track record; workbook Patreon-gated at $27.50+/month.
+- **urwishpatel2003/nfl-engine** — documented an ATS spread-sign bug that falsely produced an 86% backtest; true OOS ~49%; regression test added. (Canonical sign-convention lesson.)
+- **rrmethodco/mypicks** — loses to the closing line by 0.33 MAE over 4,235 OOS games; no divergence bucket beats -110. (Quantified null result = GSE's bar.)
+- **colemason6524/nfl_props** — no standalone closing-line edge overall; narrow positive bands only; labels ≥15% EV as toxic. (Prop edge is regime-dependent.)
+- **craftypicks** — full-board Brier/calibration with significance tests and "needs N more samples" counters. (Statistical humility as a product feature.)
+- **jaredpatchett/nfl-model** — append-only pregame logs; insists on grading against prices available at prediction time.
+- **tinpham4/nfl-win-predictor** — Streamlit + XGBoost claiming 66.2% held-out accuracy (unverified).
+- **A-Peoples/NFL_Play_Predictor** — play-calling prediction from situation, claimed 71% (unvalidated), live Streamlit app.
+- **maximusdesir/engage8** (original 15) — LightGBM pre-snap 69.7%.
+- **jake0miller/nfl-predictions** — 22,000+ games, NFL + CFB + HS, pushed 2026-09-16.
+- **MENG-COOLMAN/PitchQuant** — LLM-orchestrated football odds analysis pipeline over ~227,000 matches; dev.to writeup 2026-09-19.
+- **Nicholas Wong — UCLA thesis (published June 12, 2026)** — improved Elo + Monte Carlo futures + quantified uncertainty + market anchoring + soft-label log loss against de-vigged closing odds.
+
+## Data sources named
+nflverse (via typed loader `nfelodcm`, nfl-big-Dbwarehouse pipes); TeamRankings.com + Pro Football Reference (Excel LADZ); The Odds API historical odds (~10x live rate, cost ceilings as code); Sleeper data (mitch-avis); ESPN odds blocks (deleted at final — capture pre-kickoff, "irreplaceable"); Snowflake+dbt (Gridiron-Warehouse), BigQuery (nfl-bigquery), DuckDB+dbt (fantasy-football-ai), SQLite (NFLVERSE-DB), Apache-2.0 dbt on NFL PBP (clausherther/nfl-dbt). Two HF Spaces erroring (scheduling failures — likely HF infra), one Render app 403 (bot-blocking, unverified).
+
+## Findings (numbers and facts, not vibes)
+- **MIT-licensed, safe-to-reuse code (ledger-verified):** CHZN1/nfl-anytime-td-model (MIT, leakage-aware anytime-TD probabilities with EV odds integration); dgrifka/nfl_simulator (MIT, "luck-neutralized" EPA + deserve-to-win distributions); saahilmanekar/snapshift (MIT, event-driven historical game replay with streamed win probabilities); ayushnair2/Gridiron-Warehouse (MIT, Snowflake+dbt warehouse, pushed 2026-09-23); blahovec-labs/nfl-bigquery (MIT, idempotent nflverse→BigQuery); tinpham4/nfl-win-predictor (MIT, XGBoost); cbratkovics/fantasy-football-ai (MIT, nflverse+dbt+DuckDB, as-of features, pushed 2026-09-22); MENG-COOLMAN/PitchQuant (MIT, LLM odds pipeline); MattWenzel/NFLVERSE-DB (MIT, queryable SQLite); maximusdesir/engage8 (MIT, LightGBM pre-snap 69.7%); jake0miller/nfl-predictions (MIT, 22,000+ games NFL+CFB+HS, pushed 2026-09-16). Apache-2.0: clausherther/nfl-dbt.
+- **Non-commercial keep-out:** CC BY-NC 4.0 items (Big Data Bowl-derived repos) — keep out of paid/published paths. License unknown on: sjpagano, benbr11, joscho11, nfelo ecosystem, tucknub/nfl-prop-war-room, djscott03/scott-sports-predictions, theedgepredictor, mitch-avis, A-Peoples — check before reuse.
+- **Top-4 fresh repo pushes (all 2026-09-24):** tucknub/nfl-prop-war-room (leakage-safe backtest + calibration artifacts — prop-line engine reference), CHZN1/nfl-anytime-td-model, dgrifka/nfl_simulator, djscott03/scott-sports-predictions (only recently-pushed full ship loop: train → deploy → alert → grade vs closing line, with CLV tracking roadmap).
+- **Observed pipeline patterns (Track D):** Tuesday is the rollover day (MNF + nflverse publish drive weekly pipelines); immutable ledgers — committed back logs, no reruns revising old calls, git commit timestamp as the Merkle trust anchor (sooth); pre-kickoff price capture is irreplaceable (ESPN deletes odds blocks at final); sub-hourly GitHub cron unreliable (~3 runs/day vs 48 scheduled; odd-minute offsets and batched commits mitigate).
+- **Honest-negative signals:** mypicks -0.33 MAE vs close over 4,235 OOS; nfl_props narrow bands only, ≥15% EV toxic; 86%→49% spread-sign bug with regression test; Track B liveness: 0 confirmed live deployed apps.
+- **Meta-gaps:** GitHub stargazer enumeration blocked by token scope (follow-up with broader token could surface more); Reddit/X/Instagram: 0 validated recent small-account leads (poor indexing, not proof of absence); nfelo pushed 2026-09-25 (fresh).
+
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- **TRUST-SIGNAL (primary tag — the whole file is a calibration-discipline manual):** grade against the closing line; publish what didn't work (joscho11 killed "ULTRA", sjpagano rejected isotonic); sign-convention regression tests (86%→49% bug); immutable ledgers with git-timestamp trust anchors; grade vs prices available at prediction time (jaredpatchett); "needs N more samples" counters (craftypicks); soft-label log loss against de-vigged closing odds (Wong thesis); CLV tracking roadmap (djscott03). This is GSE's honesty infrastructure.
+- **OTHER:** luck-neutralized EPA / deserve-to-win distributions (dgrifka) for Monte Carlo inputs; generalized Poisson + separate rare-event distributions (Excel LADZ) for TD-count modeling; six-unit EPA decomposition (nfelo: pass/rush/ST × off/def, weather sigmoids, volatile-play discounts); leakage-safe backtest design (tucknub); event-driven WP replay (snapshift) for stress-testing; market anchoring + Monte Carlo futures (Wong); play-type models as thin territory (A-Peoples 71% claim, unvalidated — INFERENCE: GSE could own this lane given the CV/footage work); Sleeper-depth-chart-to-model plumbing (mitch-avis).
+- **QB-BEHAVIOR:** 538-Elo framework + QB Elo + QB adjustments (nfelo); QB adjustments inside EPA decomposition — INFERENCE: QB-specific Elo deltas are the mechanism by which the engine should price starter/backup switches rather than a flat team penalty.
+- **SCHEME:** play-calling prediction from situation (A-Peoples); LightGBM pre-snap 69.7% (engage8); trend smoothing in nfelounits.
+- **OL:** no direct OL findings; weather sigmoids in the EPA decomposition touch environment.
+- **COACHING:** no coaching findings in this file.
+
+## Engine-actionable? (yes/no + one-line what)
+Yes — pull the four MIT models (CHZN1 anytime-TD, dgrifka luck-neutralized EPA, snapshift WP replay, cbratkovics nflverse+dbt+DuckDB schema) directly into GSE, and copy the calibration rituals (close-line grading, immutable ledgers, sign-convention regression tests, N-sample counters) into the engine's honesty layer.
