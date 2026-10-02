@@ -363,6 +363,8 @@ A wired signal without a calibration row is not wired — it is a fixture wearin
 - [x] Training vintage committed (`0170769`): 2022–2025 PBP parquet in-repo alongside 2026. Train-now directive recorded (walk-forward, vintage sync, refusal calibration).
 - [x] Wire package received from Grok 4.7 (20 wires) → bus `f373f26`; reconciled line-by-line in §8 (2 done, 3 in flight, 15 owed).
 - [x] Tau ruling adopted: stamp now + walk-forward rebuild, sequenced. Granularity measured: 2022–2025 complete (wks 1–22); 2026 has weeks 1–3 only — week 4 missing, vintage freeze is the blocking prerequisite.
+- [x] TASK-016 v3 consolidated mission → bus `c508793` (`inbox/from-motif/TASK-016-v3-CONSOLIDATED-MISSION-2026-10-02.md`). Replaces wire prompt + training mission + v2. 14 phases, dependency-ordered, everything from the 6-hour arc.
+- [x] TASK-017 repo-intel follow-through → bus `db15457`. Adoptables (license gate first), 10 weak-point builds, branch prune, 5 playbook rebuilds. Queues after v3; leakage gate is urgent (v3 Phase 3 numbers provisional until it lands).
 - [ ] Training mission execution — walk-forward tau, EPA facet backtest, per-signal calibration rows, OL backtest.
 - [ ] Branch HEAD is now `e28e4b80` — all green claims must re-baseline to it.
 - [ ] `GSE_COACHING_DATA_DIR` exclusivity audit — `f880c7f67` hardened the override; `base_data.py` at HEAD still falls through (env → repo → legacy) with `DataGapError` on absence, so the exclusivity may live in the tau-gate path. Line-by-line audit owed; CI foot-gun (env set-but-empty) unexamined.
@@ -373,7 +375,10 @@ A wired signal without a calibration row is not wired — it is a fixture wearin
 - [ ] Corpus processing receipts ledger; claim-matrix handoff template.
 - [ ] Replace "corpus processed twice" language in the overnight prompt with the §1 honest ledger.
 - [ ] Artifact's 2,204-file manifest vs current repo tree — diff owed.
-- [ ] PR #1012 (intelligence) and PR #1002 — both unmerged; merge states recorded in §2.
+- [x] PR #1012 MERGED to main (`1bd7cdb95`, 2026-10-02 18:27Z) — typecheck + full test job green; the earlier red was three possibly-undefined vote reads in the tilt test (fixed at `62d3d7c40`). PR #1013 merged (`2723def34`, "Record each team's last 2026 game date") — last-game file on main: 32 teams as of week 4, CLE last game 2026-10-01. main HEAD is now `2723def34`.
+- [ ] Production NOT deployed — last prod deploy still `930043928` (02:37 UTC); Vercel skipped the merge (apps/web unchanged). The engine is on main but NOT live and NOT on the pick path.
+- [ ] Gates not flipped. Published pick still does not pass through reasoning traces. Merging onto main did not change this — it remains the core gap.
+- [x] Hermes refused to invent roster ages to force the tilt to fire. Honest refusal recorded.
 - [ ] Weather mission — added to overnight prompt backlog 2026-10-02.
 - [ ] GSE agent skill sketch — `~/workspace/your_files/gse-agent-skill-sketch.md`.
 - [ ] 2-byte stub JSONs in hf-survey-raw/ and the empty injury-week5.json — exclude from completion counts; the surveys need real re-pulls.
