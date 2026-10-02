@@ -1,0 +1,1312 @@
+Towards long-term player tracking with graph hierarchies and domain-specific features
+Maria Koshkina
+Affiliation:
+York University
+Affiliation:
+Toronto, Canada
+Email:
+koshkina@yorku.ca
+James H. Elder
+Affiliation:
+York University
+Affiliation:
+Toronto, Canada
+Email:
+jelder@yorku.ca
+Abstract
+In team sports analytics, long-term player tracking remains a challenging task due to player appearance similarity, occlusion, and dynamic motion patterns. Accurately re-identifying players and reconnecting tracklets after extended absences from the field of view or prolonged occlusions is crucial for robust analysis. We introduce SportsSUSHI, a hierarchical graph-based approach that leverages domain-specific features, including jersey numbers, team IDs, and field coordinates, to enhance tracking accuracy. SportsSUSHI achieves high performance on the SoccerNet dataset and a newly proposed hockey tracking dataset. Our hockey dataset, recorded using a stationary camera capturing the entire playing surface, contains long sequences and annotations for team IDs and jersey numbers, making it well-suited for evaluating long-term tracking capabilities. The inclusion of domain-specific features in our approach significantly improves association accuracy, as demonstrated in our experiments. The dataset and code are available at
+https://github.com/mkoshkina/sports-SUSHI
+1
+Introduction
+Figure 1
+:
+Team uniform and protective gear make players on the same team hard to distinguish. Jersey number is a key feature for player re-identification and long-term player tracking.
+Sports video understanding and automatic statistics are
+important applications of computer vision. They help coaches
+improve tactics and run better training, enable efficient game
+analysis, and can enrich the sports viewing experience. The
+ability to automatically track players during a team game is
+essential for game analysis. It involves detecting and following
+players during a game. Player tracking is a
+specific case of a well-studied topic in computer vision - Multi-Object Tracking (MOT). Typically, MOT is studied in the
+context of pedestrian tracking (for example, for surveillance
+purposes) and vehicle tracking (for self-driving cars and traffic
+analysis). Tracking players during a team sports event shares
+the same problem setup and challenges as tracking pedestrians.
+Generic MOT tracking algorithms can be applied to tracking
+players and will produce reasonable results. However, there
+are several important differences between generic MOT
+and team sport MOT:
+•
+Players on the same team often look similar, especially in winter sports like hockey, where gear obscures distinctive features, making traditional re-identification methods less effective.
+•
+Pedestrian tracking focuses on short-term tracking, while player tracking in sports requires recovering tracks after long occlusions or absences.
+•
+Players move quickly and often follow non-linear motion patterns.
+•
+Sports settings involve fewer individuals in view compared to pedestrian scenes.
+•
+Players can be uniquely identified by their team and jersey numbers.
+Most recent approaches to player tracking utilize online short-term tracking
+[
+24
+,
+51
+,
+40
+]
+. Some apply the post-processing steps to reconnect the resulting tracklets into longer tracks
+[
+42
+,
+41
+]
+. In our work, we follow a unified, hierarchical approach proposed by Cetintas et al.
+[
+10
+]
+that addresses both short-term and long-term tracking. We argue that we need to incorporate domain-specific features such as jersey numbers, team ID, and field position to achieve reliable long-term tracking of players. Experiments on SoccerNet
+[
+15
+]
+player tracking dataset show that our approach is effective.
+To further evaluate the performance of our method we propose a new hockey player tracking dataset. Recorded with a stationary camera, the video clips capture the whole playing surface and have longer video sequences (the average length is 1311 frames). The dataset is particularly challenging for tracking because individual player’s features are hidden by protective gear, and motion blur and frequent occlusion make jersey numbers hard to recognize. The dataset is available at
+https://github.com/mkoshkina/sports-SUSHI
+.
+Our main contributions are as follows:
+•
+We present a new player tracking method, SportsSUSHI built on top of the hierarchical graph-based method SUSHI
+[
+10
+]
+that allows for the long-term association between tracklets. We show how incorporating domain-specific features such as jersey numbers improves the performance of player tracking.
+•
+We propose a novel hockey tracking dataset that is unique in that it captures the whole playing surface with a stationary camera.
+•
+To showcase its high performance we evaluate SportsSUSHI our novel hockey dataset and on publicly-available SoccerNet
+[
+15
+]
+.
+2
+Related Work
+2.1
+MOT
+In recent years, convolutional networks have driven the success of tracking-by-detection for multi-object tracking (MOT). This approach uses object detectors to identify objects in each frame, followed by data association to link detections to tracks. Challenges such as occlusions, missed detections, and similar object appearances are addressed by tracking ”lost” tracks and employing re-identification.
+MOT methods are classified as online or offline
+[
+14
+]
+. Online tracking processes frames sequentially, enabling real-time applications but limiting its ability to correct past errors. Offline tracking, in contrast, processes entire sequences, leveraging both past and future frames for globally optimal trajectories, making it more accurate but unsuitable for real-time use.
+Online tracking performs well for short-term tracking and pedestrian datasets, where occlusions and absences are minimal. However, it struggles with player tracking, which involves more complex dynamics and prolonged occlusions.
+The majority of the proposed generic MOT methods are online such as Tracktor++
+[
+5
+]
+, CenterTrack
+[
+57
+]
+, FairMOT
+[
+55
+]
+, ByteTrack
+[
+54
+]
+, SORT
+[
+6
+]
+and DeepSORT
+[
+50
+]
+. Some of these piggyback on object detectors repurposing them to perform detection and association between a pair of frames in a single step (Tracktor
+[
+5
+]
+, CenterTrack
+[
+57
+]
+). The data association approach is often performed using bi-partite matching (with Hungarian algorithm), where matching is sometimes done in stages
+[
+50
+,
+54
+]
+.
+The offline MOT problem is often modelled as a graph where nodes represent detections or
+tracklets and edges between two nodes are potential associations. One trajectory corresponds to one flow path in the graph. Several early methods were proposed to use this model and solve for an optimal global solution using min-cost network flow algorithms
+[
+52
+,
+13
+]
+. The min-cost flow formulation is guaranteed to find an optimal solution in polynomial time.
+MPNTrack
+[
+9
+]
+built on this approach but used a graph neural network (GNN) and treated the problem as edge classification. Building the graph based on all frames and all detections is, of course, too expensive. Therefore, they use a batch approach considering 15 frames at a time. That is a limited window to consider for long-term tracking.
+Cetintas et al.
+[
+10
+]
+use the MPNTrack
+[
+9
+]
+GNN approach to develop a unified model
+they call SUSHI which is scalable, generalizable, and suitable for both short-term and long-term tracking. Instead of having a different approach and manual feature architecture for short-term and long-term tracking, they break up an image sequence into a hierarchy. They construct a graph with detections as nodes and employ a GNN to classify the edges. The resulting tracklets are then utilized to create a new graph, connecting them into longer tracklets, and so forth. While the multi-stage approach has been employed in other works, SUSHI
+[
+10
+]
+distinguishes itself by reusing the same architecture and weights across all levels. SUSHI breaks down
+the image sequence into multiple levels, resulting in smaller graphs at each level, which enhances the system’s speed and scalability. To avoid manual feature selection for each hierarchy level, each level has its own trained MLP layer to encode features (such as appearance and geometric features). This way the network is trained to select the most relevant features for each hierarchy level. Due to its speed and scalability, SUSHI is a step forward in offline long-term tracking. Weight-sharing and level-specific feature encoding allow for data-driven level-specific feature selection.
+Due to its ability to capture long-term associations, SUSHI is well-suited for the task of long-term tracking. In our work, we adopt the SUSHI approach and explore domain-specific features that best guide long-term associations.
+Figure 2
+:
+SportsSUSHI: we propose a player tracking system based on hierarchical tracker SUSHI
+[
+10
+]
+. Our feature extraction module, extracts features crucial for player tracking: jersey number, field coordinates, and team ID, in addition to classic re-ID features. The tracker then builds a hierarchy of graphs where each next level spans longer temporal distances. Initial graphs contain detections as nodes. Similarity measures between node features serve as the edge feature. Each following layer contains tracklets formed by solving the graph in the previous step as nodes.
+2.2
+Player MOT
+Most Multi-Object Tracking (MOT) methods focus on pedestrians or vehicles, while player tracking (or Multiple Athlete Tracking, MAT) remains less explored, largely due to its niche application and the historical lack of large public datasets. However, the recent introduction of SoccerNet
+[
+15
+]
+and SportsMOT
+[
+16
+]
+has spurred significant advancements in this field, as evidenced by a rise in research publications
+[
+41
+,
+16
+,
+24
+,
+51
+,
+42
+,
+40
+,
+26
+]
+.
+Player tracking leverages both appearance and kinematic features, as in MOT, but requires additional sports-specific features like team IDs and jersey numbers due to the visual similarity among teammates
+[
+49
+,
+53
+,
+42
+]
+. Unlike pedestrians, players exhibit abrupt, non-linear movements, which tracking methods often address
+[
+51
+,
+24
+,
+26
+,
+40
+]
+. Pose extraction is also commonly used to enhance appearance features and manage occlusions
+[
+30
+,
+29
+]
+.
+Zhang et al.
+[
+53
+]
+proposed a multi-camera tracking method incorporating team IDs, jersey numbers, and pose-guided feature extraction into a unified identity feature for track association. Their pipeline, trained separately for each game, demonstrated strong results on the APIDIS
+[
+1
+]
+dataset but required retraining for new games.
+Yang et al.
+[
+51
+]
+introduced a Cascaded Buffered IoU (C-BIoU) tracker to handle rapid player movements. This method extends bounding box matching and improves short-term tracking, as seen in its performance on SoccerNet. Similarly, Huang et al.
+[
+26
+]
+combined ideas from ByteTrack and C-BIoU into Deep-EIoU, achieving superior short-term tracking results.
+Lv et al.
+[
+40
+]
+addressed motion modelling by replacing the Kalman Filter with a Decoupled Diffusion Model, better suited for abrupt movements in sports. Their method, DiffMOT, achieved state-of-the-art results on SportsMOT but remains focused on short-term tracking.
+Two of the most successful methods on SoccerNet dataset
+[
+15
+]
+, Mansourian et al.
+[
+42
+]
+and Maglo et al.
+[
+41
+]
+, both focus on improving player re-identification and using it to connect tracklets into longer tracks as a post-processing step. Mansourian et al.
+[
+42
+]
+use an approach similar to Zhang et al.
+[
+53
+]
+. Their proposed tracker PRT-Track utilizes keypoint detection to build an appearance feature that is composed of appearance features from different body parts of the player. The resulting ID feature is less susceptible to occlusions. On the other hand, Maglo et al.
+[
+41
+]
+approach this by first running an existing short-term tracker, then using resulting tracklets to fine-tune the re-ID system in a self-supervised way to distinguish between players present in the game. They utilize contrastive learning, using detections that belong to the same tracklet as positives and detections that are captured in the same frame but belonging to other tracklets as negatives. After fine-tuning the re-ID network they use these new re-ID features to connect tracklets into longer tracks. Maglo et al.
+[
+41
+]
+reports state-of-the-art results on both SoccerNet
+[
+15
+]
+and SportsMOT
+[
+16
+]
+. This shows the importance of reliable re-ID feature and its role in long-term tracking. This approach, although effective, requires a lot of overhead as it includes training on every single test game separately at inference time.
+Our approach utilizes domain knowledge similarly to
+[
+42
+]
+by extracting jersey number, team id and re-ID feature. However, using hierarchical graphs provides a unified approach to both short-term and long-term tracking and does not require re-training on each new test game as does Maglo et al.
+[
+41
+]
+.
+2.3
+Jersey Number Recognition
+Gerke et al.
+[
+20
+]
+and Li et al.
+[
+33
+]
+pioneered CNN-based approaches for jersey number recognition, which remain dominant. Liu et al.
+[
+34
+,
+35
+]
+further improved classification by integrating body pose detection with Faster R-CNN
+[
+45
+]
+and Mask R-CNN
+[
+22
+]
+.
+Vats et al.
+[
+48
+]
+showed that multi-task training on both holistic and digit-wise number classification outperforms single-task training. However, their large labelled dataset is not public, lacks all possible jersey numbers, and struggles to generalize. Bhargavi et al.
+[
+7
+]
+addressed this by pre-training on synthetic data and fine-tuning on a small real-world dataset.
+Most prior approaches treat jersey number recognition
+as a specialized classification problem requiring the design and training of a dedicated classification network. In
+contrast,
+[
+31
+,
+44
+,
+12
+]
+use a more generally trained scene text recognition (STR) model that allows handling of all possible jersey numbers, instead of being restricted to numbers
+that happen to be in the training dataset. Koshkina et al.
+[
+31
+]
+propose a pipeline that uses filtering out of players that don’t have visible jersey numbers, before relying on pose estimation to detect jersey number on the player and predict the number using PARSeq
+[
+3
+]
+model. They report high accuracy on both hockey and soccer datasets. We use their approach as a pre-processing step to estimate jersey numbers when they are visible.
+2.4
+Team Identification
+Early methods for team affiliation classification relied on color histograms
+[
+43
+,
+4
+,
+28
+,
+18
+,
+38
+,
+36
+,
+8
+]
+and ”bag of words” representations of color features
+[
+47
+]
+. While lightweight, these approaches are sensitive to illumination changes and perform poorly when teams wear similar colors.
+More recent supervised deep learning methods
+[
+37
+,
+27
+]
+improve performance but require labelled data. Istasse et al.
+[
+27
+]
+trained a CNN to segment players and generate pixel-wise team descriptors, clustering these to identify teams. However, this approach requires pixel-level labels for training and does not provide instance-level segmentation, limiting its use for applications like player location heatmaps.
+Lu et al.
+[
+37
+]
+used a cascaded CNN for team classification (team A, team B, and others) but required fine-tuning on labelled data for each new game, limiting generalization.
+Koshkina et al.
+[
+32
+]
+adopted a contrastive learning approach in which an embedding network learns to maximize the distance between representations of players on different teams relative to players
+on the same team. Referees whose uniforms are typically consistent between games are identified using a supervised classification network. In our work, we use this method of team identification in our feature extraction phase.
+2.5
+Field Registration
+In broadcast videos, the camera movement makes the position of the player in the frame an unreliable feature. Given the importance of spatial information for tracking, establishing the player’s position that is independent of the span and zoom of the camera is critical. Sports field registration methods can obtain a homography from a given camera view to a 2D field surface position. Several proposed methods use convolutional neural networks or transformers to find key points and line segments in the frame
+[
+21
+,
+41
+,
+46
+]
+. Typically, the RANSAC method is used to estimate the homography matrix. In our work, we use the system proposed by Gutiérrez-Pérez et al.
+[
+21
+]
+to obtain frame-to-field homography. We then estimate player positions on the playing surface.
+3
+Method
+Our tracking-by-detection approach begins by taking the detected bounding boxes of players and processing them through a feature-extraction module. This module predicts key attributes such as jersey numbers, field coordinates, team IDs, and appearance features (Figure
+2
+). Tracking is performed offline by recursively constructing a hierarchy of graphs. At the initial level, the nodes in the graph represent detections, and edges represent potential associations between detections across consecutive frames. The edge features are derived from the distance between detection features. Solving these initial graphs produces short tracklets. In subsequent levels, the tracklets from the previous step become the nodes of new graphs, with edges representing associations between tracklets over longer time spans. This hierarchical process is repeated for N levels, enabling the system to handle increasingly longer temporal relationships. For video clips exceeding the longest temporal distance considered, the method processes them using a sliding window approach, applying a simple stitching scheme, as described in the original method
+[
+11
+]
+.
+3.1
+SportsSUSHI
+We extend hierarchical graph tracker SUSHI
+[
+11
+]
+to support domain-specific features. The strength of SUSHI lies not only in considering long-term connections but in having an architecture that on one hand shares GNN weights between different levels but on the other learns separate feature encoders for each level. This allows the network to learn which features are more important at each temporal distance. At each level, once edge features are encoded using MLP, the GNN is solved for the task of binary edge classification using neural message passing
+[
+9
+]
+. The linear program is then used to convert edge predictions into binary decisions and obtain final trajectories. For more information on SUSHI, refer to the original paper
+[
+11
+]
+.
+In the original SUSHI implementation, the authors use spatial features, such as the position and size of the bounding box, as well as the appearance (re-ID) feature. Unfortunately, these features are not sufficient for accurate player tracking. Based on our experiments we found that using sports-domain features improves tracking performance. Therefore, we introduce jersey number prediction and team ID to supplement appearance features. In broadcast videos, where the camera follows the play, comparing positions of bounding boxes between frames becomes unreliable, especially at longer intervals. To mitigate this, we use field registration as part of the pre-processing stage to estimate the homography matrix between the image and 2D playing field map. We then use projected player positions on the field as the spatial feature. In the following subsections, we discuss the feature extraction process in more detail.
+Figure 3
+:
+Sample frames from our hockey dataset.
+3.2
+Feature Extraction
+3.2.1
+Jersey Number Prediction
+We make use of the jersey number recognition pipeline introduced by Koshkina et al.
+[
+31
+]
+. The pipeline takes player detections as input and classifies them to identify player images with legible jersey numbers. For these player images, pose estimation is used to select the torso area containing the number, before passing it to the scene text recognition network (STR) PARSeq
+[
+3
+]
+. Before decoding its prediction into a character string, PARSeq produces a confidence vector for each possible character value at each position. For a jersey number,
+c
+1
+=
+[
+c
+1
+​
+(
+E
+​
+O
+​
+L
+)
+,
+c
+1
+​
+(
+0
+)
+,
+c
+1
+​
+(
+1
+)
+​
+…
+​
+c
+1
+​
+(
+9
+)
+]
+c_{1}=[c_{1}(EOL),c_{1}(0),c_{1}(1)...c_{1}(9)]
+and
+c
+2
+=
+[
+c
+2
+​
+(
+E
+​
+O
+​
+L
+)
+,
+c
+2
+​
+(
+0
+)
+,
+c
+2
+​
+(
+1
+)
+​
+…
+​
+c
+2
+​
+(
+9
+)
+]
+c_{2}=[c_{2}(EOL),c_{2}(0),c_{2}(1)...c_{2}(9)]
+where
+E
+​
+O
+​
+L
+EOL
+is an end-of-line character and
+c
+i
+​
+(
+d
+)
+c_{i}(d)
+is a confidence of having digit
+d
+d
+in position
+i
+i
+. We mark any image with predictions of
+E
+​
+O
+​
+L
+EOL
+in the first position as illegible. For the rest, we calculate
+c
+⁡
+(
+d
+i
+​
+d
+j
+)
+=
+c
+1
+​
+(
+d
+i
+)
+​
+c
+2
+​
+(
+d
+j
+)
+c(d_{i}d_{j})=c_{1}(d_{i})c_{2}(d_{j})
+for two-digit numbers and
+c
+⁡
+(
+d
+i
+)
+=
+c
+1
+​
+(
+d
+i
+)
+​
+c
+2
+​
+(
+E
+​
+O
+​
+L
+)
+c(d_{i})=c_{1}(d_{i})c_{2}(EOL)
+for one-digit numbers. The resulting 100-value vector encodes jersey number prediction.
+3.2.2
+Team ID Prediction
+Our experiments show that the appearance feature is not sufficient for some datasets to distinguish between players on different teams. To address that, we also include the team ID feature. The team ID feature in our system is a one-hot vector that represents a prediction of whether the player belongs to team A, team B, or is a referee. We use a method proposed by Koshkina et al.
+[
+32
+]
+to first classify a person as a referee or a player, then extract the image embedding for each player using a previously trained embedding network. Both the referee classifier and the player embedding networks are trained on the training set. At inference, each detection is classified as player or referee first. For each test clip, the first N player images are clustered to learn Team A and Team B’s appearance for the given clip. All of the players in the clip are then assigned a label based on the closest cluster center. The team ID feature is therefore a one-hot vector of length 3.
+3.2.3
+Field Coordinates
+We make use of field registration work by Gutiérrez-Pérez et al.
+[
+21
+]
+. They use convolutional network encoder/decoder architecture to detect key points and line segments on the field and predict each frame’s frame-to-field homography matrix. After learning each frame’s homography matrix we use it to project a middle point of each detection bounding box in the frame (in pixels) to a position on a field (in meters). Field registration sometimes fails to detect key points in the frame. This typically happens when a large zoom and camera angle don’t capture enough field markings or when the camera motion results in the blurring of lines. To address this, we use linear interpolation of predicted camera parameters to approximate parameters for failed frames.
+3.2.4
+Person Re-ID
+For some sports, for example, soccer visual appearance provides a lot of useful information despite similar uniforms of players on the same team. As in the original SUSHI method, we extract the appearance feature vector using a person re-identification model
+[
+23
+]
+. We fine-tune the model on a specific dataset beforehand.
+3.2.5
+Edge Features
+For each edge connecting two detections (or two tracklets) we calculate the edge feature vector. Each value of the vector corresponds to a measure of similarity between these two nodes in the given feature space (re-ID, jersey number, etc). We use cosine similarity for re-ID, jersey number, team ID features, and absolute value for distance in meters of field coordinates. For nodes representing tracklets appearance features are computed by taking a mean of individual detection values. For position, the distance between the last detection of the first tracklet and the first detection of the second tracklet is computed. Note, that extracted features for each detection are used only to calculate the edge features. MLP (one for each hierarchy level) is then used to encode the edge features. To control the complexity of the graph Cetintas et al.
+[
+11
+]
+employ the edge-pruning method to only consider K closest nodes based on appearance and spatial features. We follow this approach with K=10. The resulting graph is used as input into GNN and is solved with neural message passing.
+Dataset
+Train
+Test
+Avg Length (frames)
+Frame Rate (fps)
+Dimensions (pixels)
+Hockey (ours)
+14
+6
+1,131
+30
+5930 x 1080
+SoccerNet
+[
+15
+]
+57
+49
+750
+25
+1920 x 1080
+Table 1
+:
+Dataset information.
+4
+Datasets
+There are several player tracking datasets that became available in the last few years: SoccerNet
+[
+15
+]
+, SportsMOT
+[
+16
+]
+, and MHPTD
+[
+2
+]
+. All of these contain clips from broadcast videos. To explore longer-term tracking we introduce a new hockey tracking dataset. The dataset is unique in capturing the whole playing surface. We evaluate SportsSUSHI on our hockey dataset and publicly-available SoccerNet
+[
+15
+]
+tracking dataset.
+4.1
+Hockey
+Recorded at university hockey games with a stationary camera at 30fps, the dataset contains 20 clips from 9 different games. We split it into 14 training set and 6 test set clips, keeping clips from the same game in the same partition. The average clip length is 1311 and the longest is 1530 frames (Figure
+4
+shows sequence length distribution).
+Figure 4
+:
+Hockey dataset sequence length.
+The dataset contains ground truth in standard MOT annotation. In most MOT datasets when the person is occluded there are no bounding box annotations for them. Motivated to investigate tracking a person throughout the time they are on the playing surface, we estimated bounding boxes of occluded players and included these in the annotation.
+The annotation process was a two-step approach:
+•
+Weak tracking ground truth was generated by annotators following each player in turn with a mouse pointer throughout the clip. Bounding boxes from an object detector were then associated with each such path, producing a set of imperfect tracks.
+•
+These tracks were then manually corrected and refined to ensure accuracy. Any missing bounding boxes were added and boundaries were adjusted. We used the CVAT
+[
+17
+]
+annotation tool for this step. During this stage, jersey numbers (whenever visible) and team ID labels were added to the annotation.
+Figure
+3
+shows sample frames for our new hockey dataset. Table
+1
+summarizes some statistics of the two datasets used.
+4.2
+SoccerNet
+SoccerNet
+[
+15
+]
+player tracking dataset introduced in 2022 is the first large-scale publicly available player tracking dataset. Its introduction and the corresponding challenge spurred interest in the area where in the past the lack of publicly available data posed a barrier to researchers. SoccerNet contains 200 clips, spread into train, test and challenge sets. The clips are from broadcast soccer games and contain a lot of challenging scenarios: camera motion, fast player movement, occlusions, and players leaving and re-entering a field of view. The last condition is especially challenging and relies heavily on the ability of the tracker to re-identify the player and reconnect parts of the track after long intervals.
+Method
+HOTA
+AssA
+DetA
+Ground Truth Detections
+SUSHI (9 layers)
+[
+11
+]
+85.79
+75.55
+97.42
+SUSHI (ft re-ID, 9 layers)
+85.37
+79.36
+92.20
+SportsSUSHI (ft reid, field position, 9 layers)
+89.22
+84.25
+94.82
+SportsSUSHI (ft reid, field position, jersey numbers, 7 layers)
+87.44
+80.92
+94.87
+SportsSUSHI (ft reid, field position, jersey numbers, 9 layers)
+89.78
+85.35
+94.80
+SportsSUSHI (ft reid, field position, jersey numbers, 10 layers)
+90.92
+87.51
+94.80
+Table 2
+:
+Abblations on SoccerNet
+[
+11
+]
+test partition.
+Soccer
+Hockey
+Step (frames)
+Original
+Soccer
+Original
+Hockey
+1
+98.0
+99.1
+99.1
+99.63
+50
+51.2
+79.1
+32.5
+38.2
+100
+35.7
+72.2
+25.5
+26.8
+300
+33.0
+62.2
+29.9
+26.6
+Table 3
+:
+FastReID performance analysis for matching player identities at varying frame intervals using cosine similarity of feature vectors. Accuracy is compared between the Market1501-trained model and its fine-tuned version for each dataset.
+5
+Experiments and Results
+5.1
+Re-ID Performance Analysis
+For appearance feature extraction, we use the FastReID model with ResNet50-IBN backbone
+[
+23
+]
+originally trained on the Market1501 dataset
+[
+56
+]
+and finetuned on the tracking dataset. We investigate how reliable the similarity of re-ID features is at different time gaps. To do that we take a subset of the test set and analyze the accuracy of matching the identity of the player in frame
+i
+i
+to that same player in frame
+i
++
+N
+i+N
+for different
+N
+N
+. We can see from the results in Table
+3
+that re-identification does predictably worse at large time intervals. We can also observe that for soccer where the player’s distinctive features such as face, skin colour, hair colour and style are visible, person re-identification performs better than for hockey. These findings motivate using jersey ID as a feature for both datasets and team identification for hockey.
+5.2
+Implementation
+For both jersey number recognition framework, team ID, and field registration we use the code and model weights from the original papers (
+[
+31
+]
+,
+[
+32
+]
+, and
+[
+21
+]
+accordingly)
+Our SportsSUSHI method uses the original SUSHI implementation but replaces feature extraction and edge feature calculation components. We train SportsSUSHI on the training partition of the player tracking dataset following the training protocol outlined in Cetintas et al.
+[
+11
+]
+: training earlier levels first for 500 iterations before unfreezing each next level. We then continue to train jointly for a total of 250 epochs. The model is trained with the Adam optimizer.
+We evaluate tracking results using key standard HOTA
+[
+39
+]
+metrics: Detection Accuracy, Association Accuracy, and HOTA. Since our goal is reliable long-term tracking we are most interested in Association Accuracy and HOTA metrics.
+Method
+HOTA
+AssA
+DetA
+Ground Truth Detections
+Maglo et al.
+[
+41
+]
+*
+96.57
+93.60
+99.65
+Mansourian et al.
+[
+42
+]
+*
+90.77
+82.53
+99.83
+Yang et al.
+[
+51
+]
+*
+89.2
+80.00
+99.4
+Huang et al.
+[
+25
+]
+*
+85.44
+73.57
+99.24
+SUSHI
+[
+11
+]
+85.79
+75.55
+97.42
+SportsSUSHI (ours)
+90.92
+87.51
+94.80
+YOLOX Detections
+Maglo et al.
+[
+41
+]
+*
+73.29
+73.42
+73.26
+Mansourian et al.
+[
+42
+]
+*
+59.77
+58.55
+61.09
+ByteTrack
+[
+54
+]
+60.56
+52.45
+70.10
+SportsSUSHI (ours)
+71.36
+69.99
+72.87
+Table 4
+:
+Results on SoccerNet
+[
+11
+]
+test partition. (results marked with * are taken from the corresponding paper)
+Method
+HOTA
+AssA
+DetA
+Tracktor++
+[
+5
+]
+44.33
+34.09
+58.08
+CenterTrack
+[
+57
+]
+59.70
+48.96
+72.90
+FairMOT
+[
+55
+]
+61.56
+55.51
+68.35
+ByteTrack
+[
+54
+]
+67.51
+64.63
+71.36
+SportsSUSHI (ours)
+71.24
+72.82
+70.47
+Table 5
+:
+Results on hockey dataset test partition.
+5.3
+Soccer
+The best results on the SoccerNet dataset were achieved by combining field coordinates, re-ID appearance, and jersey number features. Our SportsSUSHI tracker shows competitive performance compared to earlier published methods. Table
+4
+presents the results on both ground truth detections and YOLOX detections
+[
+19
+]
+.
+We show the contribution of various features to performance in Table
+2
+. We use the SUSHI out-of-the-box model without any fine-tuning on the dataset as our baseline. We show that using field coordinates instead of frame pixel coordinates introduces a significant performance improvement. The introduction of jersey numbers provides a further performance boost.
+We explore the effect of the number of layers in the graph hierarchy. With 7 layers the furthest time gap in a track considered for reconnection is 256, for 9 layers it is 512 and for 10 layers it is 1024. The performance improves with additional layers since the model gets to consider longer timespans (Note, the total length of SoccerNet clips is 750 frames, so further layers are not needed).
+5.4
+Hockey
+In our hockey dataset, the camera is stationary and captures the whole rink. Therefore, using the original spatial feature (position of the player in the frame and bounding box size) is sufficient and we don’t need to calculate the player’s position on the rink. We use the jersey number, team ID, and re-ID features in addition to spatial ones. We show results on our test set in Table
+5
+. All of the baselines we compare with have been fine-tuned on the hockey dataset. We use YOLOX
+[
+19
+]
+detections in our method. SportsSUSHI shows superior results compared to previous methods.
+5.5
+Failure Cases
+Using longer timestamps to connect tracklets and employing jersey IDs for re-identifying players yield promising results in player tracking. However, jersey numbers are not always visible or are often too blurry to decipher. Moreover, they offer no additional cues when tracking referees, who all wear the same uniform and are difficult to re-identify. The association errors observed in the hockey and soccer datasets primarily arise from failures to re-identify individuals after extended absences from the field of view or during occlusions. A potential next step could involve incorporating a motion model to predict player movements, which would enhance the utility of spatial features when appearance-based features are insufficient. We leave this to future work.
+6
+Conclusion
+In this paper, we proposed SportsSUSHI, a hierarchical graph-based approach designed for long-term player tracking in team sports. By incorporating domain-specific features such as jersey numbers, team IDs, and field coordinates, SportsSUSHI addresses key challenges like occlusion, camera movement, long absences of players from the field of view, and player similarity within teams. These features significantly enhance the system’s ability to maintain accurate associations across occlusions and rapid player movements. Evaluations conducted on the SoccerNet dataset and a newly introduced hockey dataset demonstrate the method’s effectiveness, particularly in improving association accuracy.
+In the future, we plan to investigate incorporating a motion model that can predict both past and future player positions, addressing the complex dynamics of sports motion patterns. Additionally, we look to expand the method’s applicability to diverse sports scenarios to further improve its robustness and versatility.
+References
+[1]
+APIDIS basketball dataset.
+https://sites.uclouvain.be/ispgroup/index.php/Softwares/APIDIS
+.
+[2]
+McGill Hockey Player Tracking Dataset (MHPTD).
+https://github.com/grant81/hockeyTrackingDataset
+.
+[3]
+Darwin Bautista and Rowel Atienza.
+Scene text recognition with permuted autoregressive sequence models.
+In
+European Conference on Computer Vision
+, pages 178–196, Cham, 10 2022. Springer Nature Switzerland.
+[4]
+H. Ben Shitrit, J. Berclaz, F. Fleuret, and P. Fua.
+Tracking multiple people under global appearance constraints.
+In
+2011 International Conference on Computer Vision
+, pages 137–144, 2011.
+[5]
+Philipp Bergmann, Tim Meinhardt, and Laura Leal-Taixe.
+Tracking without bells and whistles.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 941–951, 2019.
+[6]
+Alex Bewley, Zongyuan Ge, Lionel Ott, Fabio Ramos, and Ben Upcroft.
+Simple online and realtime tracking.
+In
+2016 IEEE International Conference on Image Processing (ICIP)
+, pages 3464–3468, 2016.
+[7]
+Divya Bhargavi, Erika Pelaez Coyotl, and Sia Gholami.
+Knock, knock. Who’s there? – Identifying football player jersey numbers with synthetic data.
+arXiv preprint arXiv:2203.00734
+, 2022.
+[8]
+Alina Bialkowski, Patrick Lucey, Peter Carr, Sridha Sridharan, and Iain Matthews.
+Representing team behaviours from noisy data using player role.
+In
+Computer Vision in Sports
+, pages 247–269. Springer, 2014.
+[9]
+Guillem Brasó and Laura Leal-Taixé.
+Learning a neural solver for multiple object tracking.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 6247–6257, 2020.
+[10]
+Orcun Cetintas, Guillem Brasó, and Laura Leal-Taixé.
+Unifying short and long-term tracking with graph hierarchies.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, pages 22877–22887, June 2023.
+[11]
+Orcun Cetintas, Guillem Brasó, and Laura Leal-Taixé.
+Unifying short and long-term tracking with graph hierarchies.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 22877–22887, 2023.
+[12]
+Qiao Chen and Charalambos Poullis.
+Tracking and identification of ice hockey players.
+In
+International Conference on Computer Vision Systems
+, pages 3–16. Springer, 2023.
+[13]
+Wongun Choi and Silvio Savarese.
+A unified framework for multi-target tracking and collective activity recognition.
+In
+12th European Conference on Computer Vision, Florence, Italy, October 7-13, 2012, Proceedings, Part IV 12
+, pages 215–230. Springer, 2012.
+[14]
+Gioele Ciaparrone, Francisco Luque Sánchez, Siham Tabik, Luigi Troiano, Roberto Tagliaferri, and Francisco Herrera.
+Deep learning in video multi-object tracking: A survey.
+Neurocomputing
+, 381:61–88, 2020.
+[15]
+Anthony Cioppa, Silvio Giancola, Adrien Deliege, Le Kang, Xin Zhou, Zhiyu Cheng, Bernard Ghanem, and Marc Van Droogenbroeck.
+Soccernet-tracking: Multiple object tracking dataset and benchmark in soccer videos.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 3491–3502, 2022.
+[16]
+Yutao Cui, Chenkai Zeng, Xiaoyu Zhao, Yichun Yang, Gangshan Wu, and Limin Wang.
+Sportsmot: A large multi-object tracking dataset in multiple sports scenes.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 9921–9931, 2023.
+[17]
+CVAT.ai Corporation.
+Computer Vision Annotation Tool (CVAT), Nov. 2023.
+[18]
+Tiziana D’Orazio, Marco Leo, Paolo Spagnolo, Pier Luigi Mazzeo, Nicola Mosca, Massimiliano Nitti, and Arcangelo Distante.
+An investigation into the feasibility of real-time soccer offside detection from a multiple camera system.
+IEEE Transactions on Circuits and Systems for Video Technology
+, 19(12):1804–1818, 2009.
+[19]
+Zheng Ge, Songtao Liu, Feng Wang, Zeming Li, and Jian Sun.
+YOLOX: Exceeding YOLO series in 2021, 2021.
+[20]
+Sebastian Gerke, Karsten Muller, and Ralf Schafer.
+Soccer jersey number recognition using convolutional neural networks.
+In
+Proceedings of the IEEE International Conference on Computer Vision Workshops
+, pages 17–24, 2015.
+[21]
+Marc Gutiérrez-Pérez and Antonio Agudo.
+No bells just whistles: Sports field registration by leveraging geometric properties.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 3325–3334, 2024.
+[22]
+Kaiming He, Georgia Gkioxari, Piotr Dollár, and Ross Girshick.
+Mask R-CNN.
+In
+Proceedings of the IEEE International Conference on Computer Vision
+, pages 2961–2969, 2017.
+[23]
+Lingxiao He, Xingyu Liao, Wu Liu, Xinchen Liu, Peng Cheng, and Tao Mei.
+Fastreid: A pytorch toolbox for general instance re-identification.
+arXiv preprint arXiv:2006.02631
+, 2020.
+[24]
+Hsiang-Wei Huang, Cheng-Yen Yang, Samartha Ramkumar, Chung-I Huang, Jenq-Neng Hwang, Pyong-Kun Kim, Kyoungoh Lee, and Kwangju Kim.
+Observation centric and central distance recovery for athlete tracking.
+In
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision
+, pages 454–460, 2023.
+[25]
+Hsiang-Wei Huang, Cheng-Yen Yang, Samartha Ramkumar, Chung-I Huang, Jenq-Neng Hwang, Pyong-Kun Kim, Kyoungoh Lee, and Kwangju Kim.
+Observation centric and central distance recovery for athlete tracking.
+In
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision (WACV) Workshops
+, pages 454–460, January 2023.
+[26]
+Hsiang-Wei Huang, Cheng-Yen Yang, Jiacheng Sun, Pyong-Kun Kim, Kwang-Ju Kim, Kyoungoh Lee, Chung-I Huang, and Jenq-Neng Hwang.
+Iterative scale-up expansioniou and deep features association for multi-object tracking in sports.
+In
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision
+, pages 163–172, 2024.
+[27]
+Maxime Istasse, Julien Moreau, and Christophe De Vleeschouwer.
+Associative embedding for team discrimination.
+In
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition Workshops
+, pages 0–0, 2019.
+[28]
+Zdravko Ivankovic, Milos Rackovic, and Miodrag Ivkovic.
+Automatic player position detection in basketball games.
+Multimedia Tools and Applications
+, 72(3):2741–2767, 2014.
+[29]
+Longteng Kong, Di Huang, and Yunhong Wang.
+Long-term action dependence-based hierarchical deep association for multi-athlete tracking in sports videos.
+IEEE Transactions on Image Processing
+, 29:7957–7969, 2020.
+[30]
+Longteng Kong, Mengxiao Zhu, Nan Ran, Qingjie Liu, and Rui He.
+Online multiple athlete tracking with pose-based long-term temporal dependencies.
+Sensors
+, 21(1):197, 2020.
+[31]
+Maria Koshkina and James H. Elder.
+A general framework for jersey number recognition in sports video.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops
+, pages 3235–3244, June 2024.
+[32]
+Maria Koshkina, Hemanth Pidaparthy, and James H Elder.
+Contrastive learning for sports video: Unsupervised player classification.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops
+, pages 4528–4536, 2021.
+[33]
+Gen Li, Shikun Xu, Xiang Liu, Lei Li, and Changhu Wang.
+Jersey number recognition with semi-supervised spatial transformer network.
+In
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition Workshops
+, pages 1783–1790, 2018.
+[34]
+Hengyue Liu and Bir Bhanu.
+Pose-guided r-cnn for jersey number recognition in sports.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops
+, pages 0–0, 2019.
+[35]
+Hengyue Liu and Bir Bhanu.
+Jede: Universal jersey number detector for sports.
+IEEE Transactions on Circuits and Systems for Video Technology
+, 32(11):7894–7909, 2022.
+[36]
+Jingchen Liu and Peter Carr.
+Detecting and tracking sports players with random forests and context-conditioned motion models.
+In
+Computer Vision in Sports
+, pages 113–132. Springer, 2014.
+[37]
+Keyu Lu, Jianhui Chen, James J Little, and Hangen He.
+Lightweight convolutional neural networks for player detection and classification.
+Computer Vision and Image Understanding
+, 172:77–87, 2018.
+[38]
+Wei-Lwun Lu, Jo-Anne Ting, James J Little, and Kevin P Murphy.
+Learning to track and identify players from broadcast sports videos.
+IEEE Transactions on Pattern Analysis and Machine Intelligence
+, 35(7):1704–1716, 2013.
+[39]
+Jonathon Luiten, Aljosa Osep, Patrick Dendorfer, Philip Torr, Andreas Geiger, Laura Leal-Taixé, and Bastian Leibe.
+HOTA: A higher order metric for evaluating multi-object tracking.
+International Journal of Computer Vision
+, 129(2):548–578, 2021.
+[40]
+Weiyi Lv, Yuhang Huang, Ning Zhang, Ruei-Sung Lin, Mei Han, and Dan Zeng.
+Diffmot: A real-time diffusion-based multiple object tracker with non-linear prediction.
+arXiv preprint arXiv:2403.02075
+, 2024.
+[41]
+Adrien Maglo, Astrid Orcesi, Julien Denize, and Quoc Cuong Pham.
+Individual locating of soccer players from a single moving view.
+Sensors
+, 23(18):7938, 2023.
+[42]
+Amir M Mansourian, Vladimir Somers, Christophe De Vleeschouwer, and Shohreh Kasaei.
+Multi-task learning for joint re-identification, team affiliation, and role classification for sports visual tracking.
+In
+Proceedings of the 6th International Workshop on Multimedia Content Analysis in Sports
+, pages 103–112, 2023.
+[43]
+Pier Luigi Mazzeo, Paolo Spagnolo, Marco Leo, and Tiziana D’Orazio.
+Football players classification in a multi-camera environment.
+In
+International Conference on Advanced Concepts for Intelligent Vision Systems
+, pages 143–154. Springer, 2010.
+[44]
+Ahmed Nady and Elsayed E Hemayed.
+Player identification in different sports.
+In
+VISIGRAPP (5: VISAPP)
+, pages 653–660, 2021.
+[45]
+Shaoqing Ren, Kaiming He, Ross Girshick, and Jian Sun.
+Faster R-CNN: Towards real-time object detection with region proposal networks.
+In
+Advances in Neural Information Processing Systems
+, pages 91–99, 2015.
+[46]
+Jonas Theiner and Ralph Ewerth.
+Tvcalib: Camera calibration for sports field registration in soccer.
+In
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision
+, pages 1166–1175, 2023.
+[47]
+Xiaofeng Tong, Jia Liu, Tao Wang, and Yimin Zhang.
+Automatic player labeling, tracking and field registration and trajectory mapping in broadcast soccer video.
+ACM Transactions on Intelligent Systems and Technology
+, 2(2):1–32, 2011.
+[48]
+Kanav Vats, Mehrnaz Fani, David A Clausi, and John Zelek.
+Multi-task learning for jersey number recognition in ice hockey.
+In
+Proceedings of the 4th International Workshop on Multimedia Content Analysis in Sports
+, pages 11–15, 2021.
+[49]
+Kanav Vats, Pascale Walters, Mehrnaz Fani, David A Clausi, and John Zelek.
+Player tracking and identification in ice hockey.
+arXiv preprint arXiv:2110.03090
+, 2021.
+[50]
+Nicolai Wojke, Alex Bewley, and Dietrich Paulus.
+Simple online and realtime tracking with a deep association metric.
+In
+2017 IEEE International Conference on Image Processing (ICIP)
+, pages 3645–3649. IEEE, 2017.
+[51]
+Fan Yang, Shigeyuki Odashima, Shoichi Masui, and Shan Jiang.
+Hard to track objects with irregular motions and similar appearances? make it easier by buffering the matching space.
+In
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision
+, pages 4799–4808, 2023.
+[52]
+Li Zhang, Yuan Li, and Ramakant Nevatia.
+Global data association for multi-object tracking using network flows.
+In
+2008 IEEE Conference on Computer Vision and Pattern Recognition
+, pages 1–8. IEEE, 2008.
+[53]
+Ruiheng Zhang, Lingxiang Wu, Yukun Yang, Wanneng Wu, Yueqiang Chen, and Min Xu.
+Multi-camera multi-player tracking with deep player identification in sports video.
+Pattern Recognition
+, 102:107260, 2020.
+[54]
+Yifu Zhang, Peize Sun, Yi Jiang, Dongdong Yu, Fucheng Weng, Zehuan Yuan, Ping Luo, Wenyu Liu, and Xinggang Wang.
+Bytetrack: Multi-object tracking by associating every detection box.
+In
+European Conference on Computer Vision
+, pages 1–21. Springer, 2022.
+[55]
+Yifu Zhang, Chunyu Wang, Xinggang Wang, Wenjun Zeng, and Wenyu Liu.
+FairMOT: On the fairness of detection and re-identification in multiple object tracking.
+International Journal of Computer Vision
+, 129:3069–3087, 2021.
+[56]
+Liang Zheng, Liyue Shen, Lu Tian, Shengjin Wang, Jingdong Wang, and Qi Tian.
+Scalable person re-identification: A benchmark.
+In
+Proceedings of the IEEE International Conference on Computer Vision
+, pages 1116–1124, 2015.
+[57]
+Xingyi Zhou, Vladlen Koltun, and Philipp Krähenbühl.
+Tracking objects as points.
+In
+European Conference on Computer Vision
+, pages 474–490. Springer, 2020.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

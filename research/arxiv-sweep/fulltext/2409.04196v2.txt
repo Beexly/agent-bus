@@ -1,0 +1,1912 @@
+GST: Precise 3D Human Body from a Single Image with Gaussian Splatting Transformers
+Lorenza Prospero
+Affiliation:
+The Podium Institute for Sports Medicine and Technology, University of Oxford
+Affiliation:
+Visual Geometry Group, University of Oxford
+{lorenza,abdullah,joao,chrisr}@robots.ox.ac.uk
+Abdullah Hamdi
+Affiliation:
+Visual Geometry Group, University of Oxford
+{lorenza,abdullah,joao,chrisr}@robots.ox.ac.uk
+Joao F. Henriques
+Affiliation:
+Visual Geometry Group, University of Oxford
+{lorenza,abdullah,joao,chrisr}@robots.ox.ac.uk
+Christian Rupprecht
+Affiliation:
+Visual Geometry Group, University of Oxford
+{lorenza,abdullah,joao,chrisr}@robots.ox.ac.uk
+Abstract
+Reconstructing posed 3D human models from monocular images has important applications in the sports industry, including performance tracking, injury prevention and virtual training.
+In this work, we combine 3D human pose and shape estimation with 3D Gaussian Splatting (3DGS), a representation of the scene composed of a mixture of Gaussians.
+This allows training or fine-tuning a human model predictor on multi-view images alone, without 3D ground truth.
+Predicting such mixtures for a human from a single input image is challenging due to self-occlusions and dependence on articulations, while also needing to retain enough flexibility to accommodate a variety of clothes and poses.
+Our key observation is that the vertices of standardized human meshes (such as SMPL) can provide an adequate spatial density and approximate initial position for the Gaussians. We can then train a transformer model to jointly predict comparatively small adjustments to these positions, as well as the other 3DGS attributes and the SMPL parameters.
+We show empirically that this combination (using only multi-view supervision) can achieve near real-time inference of 3D human models from a single image without expensive diffusion models or 3D points supervision, thus making it ideal for the sport industry at any level.
+More importantly, rendering is an effective auxiliary objective to refine 3D pose estimation by accounting for clothes and other geometric variations. The code is available at
+https://github.com/prosperolo/GST
+.
+Input Image
+Other Views
+HMR2
+Goel et al. 2023
+GST (ours)
+Input Image
+Other Views
+HMR2
+Goel et al. 2023
+GST (ours)
+Figure 1
+:
+Example of human pose improvements using our method GST.
+3D human body results of our GST and SMPL predictions of HMR2
+Goel et al. 2023
+on a sports sequence from the CMU panoptic dome dataset
+Joo et al. 2015
+.
+1
+Introduction
+Table 1
+:
+Single Image 3D Human Reconstruction Methods
+. Comparison of various 3D representation models, highlighting key attributes such as speed, method of obtaining the model, type of 3D representation, usage of diffusion prior, and supervision technique.
+Method
+Speed
+Obtained by
+3D Representation
+Diffusion Prior
+Supervision
+PIFU
+Saito et al. 2019
+10 seconds
+Inference
+SDF
+✗
+Direct 3D
+HumanLRM
+Weng et al. 2023
+7 seconds
+Inference
+NeRF (Triplane)
+✓
+Direct 3D + MV
+SiTH
+Ho et al. 2024
+2
+minutes
+Inference
+SDF
+✓
+Direct 3D
+SIFU
+Zhang et al. 2024b
+6
+minutes
+Optimization
+SDF
+✓
+Direct 3D
+GTA
+Zhang et al. 2023b
+0.55 seconds
+Optimization
+SDF
+✗
+Direct 3D
+SHERT
+Zhan et al. 2024
+23 seconds
+Inference
+Mesh
+✓
+Direct 3D
+R2Human
+Feng et al. 2023
+0.04 seconds
+Inference
+NeRF (MLP)
+✗
+Direct 3D
+ConTex-Human
+Gao et al. 2023
+60
+minutes
+Optimization
+NeRF+Mesh
+✓
+Direct 3D
+SHERF
+Hu et al. 2023
+0.75 seconds
+Inference
+NeRF (MLP)
+✗
+Multi-View
+GST (ours)
+0.02s seconds
+Inference
+Gaussian Splatting
+✗
+Multi-View
+Creating posed 3D human models from monocular images is crucial for the sports industry since reliably detecting the shape and pose of all humans in the scene is a fundamental prerequisite for any system monitoring players’ health or performance. A reliable system monitoring players’ poses throughout different games could be used to analyze their skills training, monitor return to play after injury, and influence game regulations to make the sport safer. These products require precise 3D rendering, speed, compactness, and flexibility to be practical and economically viable for teams at any level.
+Popular approaches like HMR2
+Goel et al. 2023
+regress the parameters of a human body model such as SMPL
+Loper et al. 2015
+. However, these approaches require ground truth 3D pose and shape annotations for every training frame. Therefore, they require significant time and economic investment for data collection before training in any new domain. This makes these methods unsuitable for training in any specific sports setup. Moreover, SMPL can only model the shape of the human body and cannot account for clothing or hair deformations.
+Modeling intricate 3D details and deformations of facial features, clothing, and hair is a long-standing challenge for deep learning methods. Early methods addressed these challenges using a learned Signed Distance Function (SDF) on a human template to predict detailed 3D meshes
+Saito et al. 2019
+;
+Zhang et al. 2023b
+. Later works incorporated Neural Radiance Fields (NeRFs) to capture texture details
+Hu et al. 2023
+;
+Weng et al. 2023
+or leveraged pre-trained diffusion models to generate dense views from a single frontal image, reducing prediction ambiguity
+Weng et al. 2023
+;
+Ho et al. 2024
+;
+Zhang et al. 2024b
+;
+Zhan et al. 2024
+;
+Gao et al. 2023
+;
+Chen et al. 2024
+. Despite the good visual quality of the results, these methods suffer from low speed, hindering real-time deployment, and often require expensive 3D scans as supervision.
+In this work, we present GST (Gaussian Splatting Transformer), illustrated in
+Fig.
+2
+, a direct method that learns to predict 3D Gaussian Splatting
+Kerbl et al. 2023
+as 3D representation, allowing for fast rendering and flexible editing abilities compared to others. Our method does not rely on diffusion priors and is, therefore, capable of near real-time predictions.
+GST leverages multi-view supervision instead of precise (and expensive) 3D point clouds. Despite this, it predicts accurate 3D joint and body poses while maintaining the perceptual quality of renderings from novel views.
+Table
+1
+summarizes the characteristics of prior work.
+GST is inspired by recent works on single-view 3D reconstruction
+Szymanowicz et al. 2024
+. However, the complexity of human pose in 3D space poses significant challenges to the direct applications of methods that associate one 3D point (or Gaussian) to each pixel. Therefore, we also augment our model to predict the pose parameters of the SMPL
+Loper et al. 2015
+model. The SMPL model is used as the
+scaffolding
+on which the Gaussians are positioned and rendered. Each Gaussian is loosely tied to a vertex on the SMPL model by an offset. This has two advantages. First, it provides a good initialization of the density and pose of the Gaussians, including back faces, which are notoriously difficult for single-view methods. Second, we find that the joint optimization of pose and appearance improves the SMPL pose prediction.
+To the best of our knowledge, GST is the first work that efficiently combines fast and accurate 3D pose human prediction with improved geometry, utilizing only multi-view supervision and without relying on diffusion priors.
+In summary, our contributions are the following:
+Contributions:
+(i)
+We propose GST, a 3D human body model prediction method that does not rely on diffusion priors and performs novel view synthesis and human pose estimation from a single image input. This makes it particularly amenable to real-time modeling tasks, where multiple views are uneconomical or impractical.
+(ii)
+We evaluate our method and compare it to other state-of-the-art models. In contrast to prior methods that only solve for 3D pose estimation or 3D reconstruction, our method can predict both
+without 3D supervision
+, making it suitable for training and deployment on any specific sports setup.
+Figure 2
+:
+Overview of the pipeline of Gaussian Splatting Transformer (GST)
+. Given a single input image, GST uses a Vision Transformer (ViT) to predict both the 3D human pose (in the form of SMPL parameters) and a refined full-color 3D model (in the form of 3D Gaussian Splats). Additional input tokens are used to predict each Gaussian color
+𝐜
+\mathbf{c}
+, opacity
+α
+\alpha
+, scale, rotation, and position offset
+𝜹
+\bm{\delta}
+. Every Gaussian position
+𝝁
+\bm{\mu}
+is tied to one vertex of the SMPL model
+𝐯
+\mathbf{v}
+by the offset
+𝜹
+\bm{\delta}
+.
+2
+Related work
+3D Human Pose Estimation.
+Many approaches in the literature focus on predicting 3D human pose and shape from a single image
+Kanazawa et al. 2018
+;
+Kolotouros et al. 2019
+;
+Lin et al. 2021a
+;
+Cho et al. 2022
+;
+Lin et al. 2021b
+;
+Goel et al. 2023
+. The approaches that directly regress the body shape and pose from a single image are most relevant to our work. The first work to introduce this approach was HMR
+Kanazawa et al. 2018
+, which uses a CNN to regress SMPL
+Loper et al. 2015
+parameters. Dedicated designs have been proposed for the HMR architecture; HoloPose
+Guler and Kokkinos 2019
+suggests a pooling strategy based on the 2D locations of body joints, while HKMR
+Georgakis et al. 2020
+relies on SMPL hierarchical structure to make predictions. PARE
+Kocabas et al. 2021
+introduces a body-part-guided attention mechanism to handle occlusions better, and PyMAF
+Zhang et al. 2021
+;
+Zhang et al. 2023a
+incorporates a mesh alignment module for SMPL parameter regression. More recently, HMR2
+Goel et al. 2023
+utilizes a transformer to predict the SMPL parameters and train on a large pool of 3D data and unprotected 2D joint labels. In contrast, TokenHMR
+Dwivedi et al. 2024
+improved HMR2 by leveraging tokenized encoding and reduced the 2D basis in training HMR2. In contrast to all these methods, our GST does not rely on 3D supervision and utilizes novel view synthesis training of a transformer to predict the Gaussian splats grounded on predicted SMPL parameters. Similar to our method, A-NeRF
+Su et al. 2021
+jointly optimizes human pose and 3D reconstruction. However, it takes videos as input and does not generalise to unseen subjects.
+Single-image Human Reconstruction.
+Recent advancements in 3D human reconstruction from single images have resulted in diverse methods, each employing different data sources, 3D representations, and supervision strategies
+Weng et al. 2023
+;
+Hu et al. 2023
+;
+Ho et al. 2024
+;
+Zhang et al. 2024b
+;
+Zhang et al. 2023b
+;
+Zhan et al. 2024
+;
+Feng et al. 2023
+;
+Gao et al. 2023
+;
+Chen et al. 2024
+;
+Pesavento et al. 2024
+;
+Yuan et al. 2024
+;
+Hu et al. 2024
+. PIFU
+Saito et al. 2019
+is one of the earlier works that successfully uses the learned Sign Distance Function (SDF) representation with direct 3D supervision to reconstruct a detailed 3D mesh of humans from a single image. ANIM
+Pesavento et al. 2024
+incorporates sparse voxel depth features with the input image features and uses direct 3D supervision to train on the RGBD input (depth is needed). SHERF
+Hu et al. 2023
+developed on PIFU’s 3D representation and adopted a NeRF representation for decoding the 3D human, training with multi-view supervision. While GST follows SHERF in the multi-view supervision, we utilize the more explicit Gaussian Splatting representation
+Kerbl et al. 2023
+for 3D, allowing for more flexible control and better 3D alignment.
+With the recent wave of success of generative image and text models
+Ramesh et al. 2021
+;
+Rombach et al. 2022
+;
+Ramesh et al. 2022
+;
+Saharia et al. 2022
+;
+OpenAI 2023
+, several methods try to leverage these foundation models to improve the performance of 3D human reconstruction
+Zhang et al. 2024b
+;
+Ho et al. 2024
+;
+Weng et al. 2023
+;
+Feng et al. 2023
+;
+Chen et al. 2024
+;
+Gao et al. 2023
+. For example, SIFU
+Zhang et al. 2024b
+integrates GPT-predicted captions with diffusion models for back-view generation and texture refinement and builds on GTA
+Zhang et al. 2023b
+, its predecessor, which learns a triplane SDF decoder. Similarly, SiTH
+Ho et al. 2024
+employs a diffusion prior to generate back views and decode the SDF and texture colours, while HumanLRM
+Weng et al. 2023
+generates multi-views with a pre-trained diffusion model and then trains a tri-plane NeRF Large Reconstruction Model (LRM) for decoding. ELICIT
+Huang et al. 2023
+leverages CLIP
+Radford et al. 2021
+to generate text-conditioned unseen regions. SHERT
+Zhan et al. 2024
+utilizes semantic mesh and whole texture inpainting with the help of diffusion priors to create detailed 3D meshes of humans. HumanSplat
+Pan et al. 2024
+and Human 3diffusion
+Xue et al. 2024
+use diffusion priors to generate novel views, and TeCH
+Huang et al. 2024
+uses text-to-image diffusion models to embed indescribable appearance information. Most of these methods rely on pre-trained diffusion models for texturing optimization, which slows down the process and limits scalability for high-speed, long-duration video motion. In contrast, our GST operates without diffusion priors, achieving near real-time inference while remaining flexible and capable of integrating with priors if needed.
+3
+Gaussian Splatting Transformers (GST)
+This section presents our methodology for reconstructing 3D human models from a single image using Gaussian Splatting Transformers (GST), as illustrated in
+Fig.
+2
+.
+3.1
+Architecture
+Our model predicts 3D Gaussian splatting parameters from a single input image using a transformer architecture, including tokenization, processing through transformer blocks, and decoding into Gaussian parameters.
+We detail the model architecture (
+Section
+3.1
+) and the loss functions (
+Section
+3.2
+).
+Image Encoder Architecture.
+Our backbone follows HMR2
+Goel et al. 2023
+and uses a ViT
+Dosovitskiy et al. 2021
+to map an image to a series of visual tokens.
+The input is an RGB image
+𝐗
+∈
+ℝ
+H
+×
+W
+×
+3
+\mathbf{X}\in\mathbb{R}^{H\times W\times 3}
+, which is divided into non-overlapping patches
+𝐩
+j
+∈
+ℝ
+p
+×
+p
+×
+3
+\mathbf{p}_{j}\in\mathbb{R}^{p\times p\times 3}
+, with
+j
+∈
+{
+1
+,
+…
+,
+H
+​
+W
+/
+p
+2
+}
+j\in\{1,\ldots,HW/p^{2}\}
+. The patches are vectorized and affinely transformed into patch tokens
+𝐱
+j
+∈
+ℝ
+d
+\mathbf{x}_{j}\in\mathbb{R}^{d}
+.
+The patch tokens are processed through a series of Transformer blocks
+Vaswani et al. 2017
+. The final output is a set of tokens
+𝐲
+j
+∈
+ℝ
+d
+\mathbf{y}_{j}\in\mathbb{R}^{d}
+encapsulating the transformed image information.
+Human Shape Representation.
+The SMPL model
+Loper et al. 2015
+represents the 3D human mesh shape as a mesh.
+SMPL is a low-dimensional parametric model defined by pose parameters
+𝜽
+∈
+ℝ
+24
+×
+3
+×
+3
+\bm{\theta}\in\mathbb{R}^{24\times 3\times 3}
+and shape parameters
+𝜷
+∈
+ℝ
+10
+\bm{\beta}\in\mathbb{R}^{10}
+, outputting mesh vertices’ 3D positions
+𝐯
+=
+SMPL
+​
+(
+𝜽
+,
+𝜷
+)
+∈
+ℝ
+6890
+×
+3
+\mathbf{v}=\text{SMPL}(\bm{\theta},\bm{\beta})\in\mathbb{R}^{6890\times 3}
+.
+Decoder Architecture.
+We build on HMR2
+Goel et al. 2023
+, which predicts the SMPL representation
+(
+𝜽
+,
+𝜷
+)
+(\bm{\theta},\bm{\beta})
+from the image representation
+𝐲
+j
+\mathbf{y}_{j}
+through a cross-attention mechanism. Specifically, a single (fixed) token
+t
+SMPL
+t_{\mathrm{SMPL}}
+attends to all image tokens
+𝐲
+j
+\mathbf{y}_{j}
+through a series of cross-attention layers.
+An MLP decodes the token into the pose parameters
+𝜽
+\bm{\theta}
+and
+𝜷
+\bm{\beta}
+.
+This representation could be learned with image-pose pairs
+(
+𝐗
+,
+𝜽
+,
+𝜷
+)
+(\mathbf{X},\bm{\theta},\bm{\beta})
+. However, here, we focus on multi-view supervision, as 3D supervision is costly and scarce, and not readily available for real-world setups.
+To train with multi-view supervision, the model needs to generate an image.
+We use recent advances in fast neural rendering: Gaussian Splatting
+Kerbl et al. 2023
+.
+This scene representation is defined by a set of 3D Gaussians, each characterized by a mean position
+𝝁
+∈
+ℝ
+3
+\bm{\mu}\in\mathbb{R}^{3}
+, a covariance matrix
+𝚺
+∈
+ℝ
+3
+×
+3
+\bm{\Sigma}\in\mathbb{R}^{3\times 3}
+, the opacity
+α
+∈
+ℝ
+\alpha\in\mathbb{R}
+and a colour
+𝐜
+∈
+ℝ
+3
+\mathbf{c}\in\mathbb{R}^{3}
+.
+We link the 3D body shape and pose with the Gaussian scene representation, such that each vertex
+𝐯
+n
+\mathbf{v}_{n}
+in the mesh is assigned a Gaussian
+G
+n
+=
+(
+𝝁
+n
+,
+𝚺
+n
+,
+α
+n
+,
+𝐜
+n
+)
+G_{n}=(\bm{\mu}_{n},\bm{\Sigma}_{n},\alpha_{n},\mathbf{c}_{n})
+.
+We allow the Gaussians to move away from the original vertex positions by a learned offset
+𝜹
+n
+\bm{\delta}_{n}
+to model clothes and other visual shape features that the SMPL model cannot capture.
+𝝁
+n
+=
+𝐯
+n
++
+𝜹
+n
+,
+\displaystyle\bm{\mu}_{n}=\mathbf{v}_{n}+\bm{\delta}_{n},
+(1)
+This combination ensures that the 3D model captures both shape and appearance, allowing for more realistic reconstructions.
+Similar to prior work
+Szymanowicz et al. 2024
+, we factorize and simplify the covariance into the product of a rotation matrix and a diagonal matrix, enforcing a reduced number of degrees of freedom from 9 to 6:
+G
+n
+∈
+ℝ
+14
+G_{n}\in\mathbb{R}^{14}
+.
+It is theoretically possible to assign five tokens per Gaussian, one for each parameter: rotation, offset, scale, color, and opacity. However, this would result in over 34k tokens, which is computationally infeasible to decode with a standard Transformer.
+We thus group vertices into
+K
+K
+groups, reducing the number of tokens to
+5
+​
+K
++
+1
+5K+1
+(in practice, we set
+K
+=
+26
+K=26
+). As discussed before, the additional token is used to predict the SMPL shape parameters.
+This representation allows initialization with the pre-trained weights of HMR2
+Goel et al. 2023
+since we only introduce additional (fixed but learned) tokens in the decoder architecture.
+A set of Gaussians can be assembled from the predictions, which can be rendered into an image from any viewpoint.
+3.2
+Loss Functions
+We use a combination of losses to train our model to ensure accurate and visually realistic 3D reconstructions.
+Image Reconstruction Loss.
+We use a combination of Mean Squared Error (MSE) to measure the difference between the
+M
+M
+multi-view ground truth images
+𝐈
+^
+i
+\hat{\mathbf{I}}_{i}
+and rendered images
+𝐈
+i
+\mathbf{I}_{i}
+, a perceptual loss to capture high-level features and textures with LPIPS metric
+Zhang et al. 2018
+, and a masked loss on the rendered opacity
+𝐈
+i
+α
+\mathbf{I}_{i}^{\alpha}
+to remove background splats
+Zhang et al. 2024a
+:
+ℒ
+img
+=
+1
+M
+​
+∑
+i
+=
+1
+M
+(
+CLOSE
+\displaystyle\mathcal{L}_{\text{img}}=\frac{1}{M}\sum_{i=1}^{M}\Big(
+‖
+𝐈
+^
+i
+−
+𝐈
+i
+‖
+2
+2
++
+λ
+perceptual
+⋅
+LPIPS
+​
+(
+𝐈
+^
+i
+,
+𝐈
+i
+)
+\displaystyle\left\|\hat{\mathbf{I}}_{i}-\mathbf{I}_{i}\right\|_{2}^{2}+\lambda_{\text{perceptual}}\cdot\text{LPIPS}(\hat{\mathbf{I}}_{i},\mathbf{I}_{i})
+(2)
+OPEN
++
+λ
+α
+​
+‖
+𝐌
+^
+i
+−
+𝐈
+i
+α
+‖
+2
+2
+)
+,
+\displaystyle+~\lambda_{\alpha}\left\|\hat{\mathbf{M}}_{i}-\mathbf{I}_{i}^{\alpha}\right\|_{2}^{2}~\Big),
+where
+𝐌
+^
+i
+\hat{\mathbf{M}}_{i}
+is the background mask of the ground truth images
+𝐈
+^
+i
+\hat{\mathbf{I}}_{i}
+, and
+λ
+perceptual
+\lambda_{\text{perceptual}}
+and
+λ
+α
+\lambda_{\alpha}
+are weighting hyperparameters for the perceptual and transparency losses respectively. The transparency loss is necessary to reduce floating Gaussians that do not contribute to the foreground object.
+Gaussian Tightness Regularization.
+To ensure that the predicted Gaussian Splats in
+Section
+3.1
+follow the SMPL parameters closely, we introduce a Gaussian tightness regularization that ensures the generated Gaussian splats
+Kerbl et al. 2023
+do not diverge and remain faithful to the underlying SMPL parameters as follows:
+ℒ
+tight
+=
+1
+V
+​
+∑
+n
+=
+1
+V
+‖
+𝜹
+n
+‖
+2
+,
+\displaystyle\mathcal{L}_{\text{tight}}=\frac{1}{V}\sum_{n=1}^{V}\left\|\bm{\delta}_{n}\right\|_{2},
+(3)
+where
+𝜹
+n
+\bm{\delta}_{n}
+is defined in (
+1
+) and
+V
+=
+6890
+V=6890
+is the number of Gaussian splats (number of vertices in SMPL).
+The total loss function is a weighted sum of the image losses (MSE, perceptual, and alpha) and tightness:
+ℒ
+=
+ℒ
+img
++
+λ
+tight
+​
+ℒ
+tight
+,
+\displaystyle\mathcal{L}=\mathcal{L}_{\text{img}}+\lambda_{\text{tight}}\mathcal{L}_{\text{tight}},
+(4)
+where
+λ
+tight
+\lambda_{\text{tight}}
+is the weighting hyperparameter for the tightness regularization.
+As we show later in
+Section
+5.3
+, this regularization plays an important role in the precision of the 3D human body predicted by GST. By minimizing this combined loss, our GST model learns to generate accurate human 3D models from a single image.
+Optionally, a further regularization term for the SMPL shape parameters can also be included. This regularization term is an L2 loss on the
+β
+\beta
+parameters. This additional term does not affect the pose or visual metrics. It only influences the predicted body thickness.
+4
+Experiments
+This section describes our evaluation setup and the baselines and prior work used in our comparisons.
+4.1
+Datasets and Metrics
+Datasets.
+Similar to previous works
+Hu et al. 2023
+, we utilize four comprehensive human datasets for evaluation: THuman
+Zheng et al. 2019
+, RenderPeople
+ren 2018
+, ZJU MoCap
+Peng et al. 2021
+, and HuMMan
+Cai et al. 2022
+. For ZJU MoCap, the dataset is divided following the SHERF setup
+Hu et al. 2023
+. Similarly, for HuMMan, we adhere to the official split (HuMMan-Recon), using 317 sequences for training and 22 for testing, with 17 frames sampled per sequence. For THuman, we select 90 subjects for training and 10 for testing, and for the RenderPeople dataset, we randomly sample 450 subjects for training and 30 for testing. Those four datasets used for evaluation above are all small in terms of subject diversity. To showcase the capabilities of GST on a large dataset, we train our GST also on the TH21 dataset
+Yu et al. 2021b
+, which contains 2,500 3D scans with high subject diversity. We randomly selected 200 scans for evaluation. Further validation is also conducted on the CMU Panoptic dataset with the single human partition that includes 9 sequences with 31 HD camera views; some qualitative examples of the pose estimation results for the sports sequence in this dataset are shown in
+Fig.
+1
+and in
+the Appendix
+. Another dataset that could have been suitable for evaluating our method is the SportsPose dataset
+Ingwersen et al. 2023
+; however, no multi-view data has been released.
+Table 2
+:
+Human Novel View Synthesis and 3D Keypoints Evaluation Performance Comparison.
+We compare GST on the RenderPeople
+ren 2018
+and HuMMan
+Cai et al. 2022
+datasets. We report PSNR, SSIM, and LPIPS for novel view synthesis and MPJPE (in mm) for 3D keypoint evaluation for each dataset. The top section methods use the Ground Truth input SMPL parameters, shown for reference, while the bottom section methods only use the single image input (our setup).
+↑
+\uparrow
+means the larger is better;
+↓
+\downarrow
+means the smaller is better. The best results are highlighted in
+bold
+.
+Method
+RenderPeople
+HuMMan
+GT 3D
+Novel View
+3D Shape
+Novel View
+3D Shape
+Test
+Train
+PSNR
+↑
+\uparrow
+SSIM
+↑
+\uparrow
+LPIPS
+↓
+\downarrow
+MPJPE (mm)
+↓
+\downarrow
+PSNR
+↑
+\uparrow
+SSIM
+↑
+\uparrow
+LPIPS
+↓
+\downarrow
+MPJPE (mm)
+↓
+\downarrow
+NHP
+Kwon et al. 2021
+✓
+✓
+20.59
+0.81
+0.22
+0.000
+18.99
+0.84
+0.18
+0.000
+MPS-NeRF
+Gao et al. 2022
+✓
+✓
+20.72
+0.81
+0.24
+0.000
+17.44
+0.82
+0.19
+0.000
+SHERF
+Hu et al. 2023
+w/ GT
+✓
+✓
+22.88
+0.88
+0.14
+0.000
+20.83
+0.89
+0.12
+0.000
+HMR2  (3D fine-tuned)
+✗
+✓
+-
+-
+-
+57.33
+-
+-
+-
+61.20
+HMR2
+Goel et al. 2023
+✗
+✗
+-
+-
+-
+101.0
+-
+-
+-
+133.4
+HMR2  (2D-only fine-tuned)
+✗
+✗
+-
+-
+-
+127.40
+-
+-
+-
+163.77
+TokenHMR
+Dwivedi et al. 2024
+✗
+✗
+-
+-
+-
+77.9
+-
+-
+-
+91.4
+SHERF
+Hu et al. 2023
+w/
+Goel et al. 2023
+✗
+✗
+13.55
+0.62
+0.37
+101.0
+18.00
+0.85
+0.18
+133.4
+SHERF
+Hu et al. 2023
+w/
+Dwivedi et al. 2024
+✗
+✗
+15.24
+0.70
+0.33
+77.9
+16.41
+0.84
+0.17
+91.4
+GST (Ours)
+✗
+✗
+17.80
+0.81
+0.25
+67.6
+18.40
+0.87
+0.14
+64.6
+Evaluation Metrics.
+When the Ground Truth 3D SMPL parameters are available as in RenderPeople
+ren 2018
+and HuMMan
+Cai et al. 2022
+, we adopt 3D Human Joints precision MPJPE as a metric
+Kanazawa et al. 2018
+.
+MPJPE refers to Mean Per Joint Position Error: the average L2 error across all joints after aligning with the root node.
+To quantitatively assess the quality of rendered novel view and novel pose images, we report peak signal-to-noise ratio (PSNR), structural similarity index (SSIM), and Learned Perceptual Image Patch Similarity (LPIPS)
+Zhang et al. 2018
+. Consistently with prior works
+Zheng et al. 2019
+;
+Gao et al. 2022
+;
+Hu et al. 2023
+, we project the 3D human bounding box onto each camera plane to derive the bounding box mask, subsequently reporting these metrics based on the masked regions.
+Baselines.
+In addition to earlier work on Human NeRF with a multi-view setting, NHP
+Kwon et al. 2021
+and MPS-NeRF
+Gao et al. 2022
+, we compare to recent single-image methods SHERF
+Hu et al. 2023
+for novel view synthesis and HMR2
+Goel et al. 2023
+and TokenHMR
+Dwivedi et al. 2024
+for 3D Human reconstruction precision. Unlike SHERF, our method does not take as input ground truth SMPL parameters. Therefore, we adapt SHERF to use HMR2
+Goel et al. 2023
+or TokenHMR
+Dwivedi et al. 2024
+SMPL predictions for a fair comparison to our method. We also include a comparison with Splatter Image
+Szymanowicz et al. 2024
+, a state-of-the-art single-image 3D reconstruction method for novel-view synthesis tables.
+Input Image
+Other Views
+GT
+GST (ours)
+vs GT
+HMR2
+Goel et al. 2023
+vs GT
+Figure 3
+:
+3D Shape Comparison with HMR2.
+3D human body results of our GST on two subjects of HuMMan
+Cai et al. 2022
+dataset compared to Ground Truth SMPL parameters
+Loper et al. 2015
+, and SMPL predictions of HMR2
+Goel et al. 2023
+.
+4.2
+Implementation Details of GST
+Our model follows the implementation of HMR2
+Goel et al. 2023
+for the prediction of the SMPL parameters. We extend the HMR2 decoder implementation to process some additional learnable tokens for the predictions of the Gaussian parameters. The Gaussian parameters (color, rotation, scale, opacity, and offset) are predicted for
+K
+=
+26
+K=26
+groups of 265 Gaussians. The token output is passed through a linear layer to obtain the final parameters. We use pre-trained HMR2 weights for the ViT and the decoder and freeze the ViT weights during training. For our experiments, we use the loss weights
+ℒ
+perceptual
+=
+0.01
+\mathcal{L}_{\text{perceptual}}=0.01
+,
+ℒ
+α
+=
+0.1
+\mathcal{L}_{\alpha}=0.1
+,
+ℒ
+tight
+=
+0.1
+\mathcal{L}_{\text{tight}}=0.1
+, and we train on square image crops of size 256. We train on a single A6000 GPU with a batch size of 32 for 3 days. At test time, GST can simultaneously perform 3D human pose estimation and 3D reconstruction in a single forward pass at 47fps. We verify that the network can learn to predict high-quality renderings by overfitting on a single dataset example (
+cf
+.
+the Appendix
+for more details).
+Table 3
+:
+Novel View Synthesis Performance Comparison.
+We compare GST on the ZJU_MoCap
+Peng et al. 2021
+and THuman
+Zheng et al. 2019
+datasets on novel view synthesis. The top section methods use the Ground Truth input SMPL parameters (allowing for changing the pose) and are shown for reference, while the bottom section methods only use the single image input (our setup).
+Method
+ZJU MoCap
+THuman
+PSNR
+↑
+\uparrow
+SSIM
+↑
+\uparrow
+LPIPS
+↓
+\downarrow
+PSNR
+↑
+\uparrow
+SSIM
+↑
+\uparrow
+LPIPS
+↓
+\downarrow
+PixelNeRF
+Yu et al. 2021a
+-
+-
+-
+16.51
+0.65
+0.35
+NHP
+Kwon et al. 2021
+21.66
+0.87
+0.17
+22.53
+0.88
+0.17
+MPS-NeRF
+Gao et al. 2022
+21.86
+0.87
+0.17
+21.72
+0.87
+0.18
+SHERF
+Hu et al. 2023
+/w GT
+22.87
+0.89
+0.12
+24.66
+0.91
+0.10
+Splatter Img
+Szymanowicz et al. 2024
+19.50
+0.80
+0.28
+19.20
+0.80
+0.20
+SHERF
+Hu et al. 2023
+/w
+Goel et al. 2023
+19.11
+0.81
+0.21
+17.27
+0.85
+0.16
+SHERF
+Hu et al. 2023
+/w
+Dwivedi et al. 2024
+20.72
+0.85
+0.16
+19.29
+0.84
+0.18
+GST (Ours)
+21.26
+0.85
+0.16
+16.34
+0.84
+0.20
+5
+Results
+In this section, we discuss the results obtained on five datasets in various evaluation settings.
+5.1
+3D Human Shape Results
+The primary focus of this work is the ability to infer a precise 3D human body from a single image without explicit 3D supervision. We show quantitative results in
+Table
+2
+on RenderPeople
+ren 2018
+and HuMMan datasets
+Cai et al. 2022
+. We compute the MPJPE error with respect to the ground truth SMPL joints before and after training. The results show that without explicit 3D supervision, our training improves the quality of the pose estimation from the pretrained HMR2
+Goel et al. 2023
+and TokenHMR
+Dwivedi et al. 2024
+. Furthermore,
+Fig.
+3
+shows some examples of our predictions in comparison with the HMR2 initialization and the ground truth SMPL pose. Our poses appear visually to be better aligned with the ground truth, highlighting the results in
+Table
+2
+.
+Input Image
+Other Views
+GT
+GST (ours)
+vs GT
+HMR2-3D finetuning
+vs GT
+HMR2-2D finetuning
+vs GT
+Figure 4
+:
+3D Shape Comparison with HMR2 After Fine-tuning on 2D and 3D Data.
+3D human body results of our GST on two subjects of HuMMan
+Cai et al. 2022
+dataset compared to Ground Truth SMPL parameters
+Loper et al. 2015
+, and SMPL predictions of HMR2
+Goel et al. 2023
+. We show two versions of HMR2, one finetuned on 2D data only (HMR2-2D), and one finetuned on 3D data (HMR2-3D). Our method is only finetuned on 2D image data, but the results are almost as accurate as HMR2 finetuned on 3D data.
+We also compare our results against a fine-tuned version of HMR2 (c.f.
+Table
+2
+). To reproduce a similar training setup to our method (that does not require any 3D ground truth annotations), we fine-tune HMR2 using only 2D keypoint annotations. We use images from all views in the dataset but restrict the supervision only to use the 2D keypoints loss. The results show that the 2D information alone is not enough for HMR2 to improve the quality of the 3D pose estimation on the two datasets, and the fine-tuned model MPJPE error is worse than the pretrained one. For completeness, we also report the errors when fine-tuning HMR2 with additional 3D annotations: 3D keypoints and ground truth SMPL parameters. We would like to emphasize that we think this is an unfair comparison to our method since our method does not use ground truth SMPL parameters or 3D keypoints for training. The MPJPE of the HMR2 version, fine-tuned with 3D data, is only 7mm better than ours on RenderPeople and 6mm better than ours on HuMMan.
+Figure
+4
+shows some examples of our predictions compared to the HMR2 models finetuned on 2D and 3D data.
+5.2
+Novel View Synthesis Results
+We evaluate our method in the task of novel view synthesis across 4 datasets and compare the results with SHERF
+Hu et al. 2023
+. For a fair comparison with our method, which does not assume ground truth SMPL parameters are available, we evaluate SHERF using the estimated HMR2/TokenHMR pose and shape parameters instead of the ground truth ones. Our results are in Tables
+Tables
+2
+and
+3
+. Visual results are shown in Fig.
+Fig.
+5
+. Note that the underlying 3D body is consistent, despite a slight blurriness due to the Gaussians, and follows precise 3D geometry.
+To showcase the capabilities of GST on a large dataset, we train our GST on multi-view images rendered from the TH21 dataset
+Yu et al. 2021b
+, which contains 2,500 3D scans and shows the results on 200 randomly sampled test scans in
+Table
+4
+and
+Fig.
+6
+. It clearly shows less blurriness than the other datasets. For reference, we include Splatter Image
+Szymanowicz et al. 2024
+in
+Table
+4
+, where our GST predicts precise 3D body pose and shape in addition to the renderable representation, unlike Splatter Image. Predicting the human model parameters is not only useful for downstream tasks but also ensures the reconstructed shape is plausible for a human. We include additional details on the TH21 experiment and the comparison with Splatter Image in
+the Appendix
+.
+Input Image
+SHERF
+Hu et al. 2023
+w/
+Goel et al. 2023
+GST (ours)
+GT
+Figure 5
+:
+Single Image NVS
+. GST on 2 subjects of HuMMan
+Cai et al. 2022
+dataset compared to Ground Truth renderings, and SHERF
+Hu et al. 2023
+(after being adapted with HMR2 to work with single image input only). GST depicts the
+correct
+human pose (compared with ground truth).
+Figure 6
+:
+Scaling Up Training of GST on TH21.
+We show rendering results for GST (
+top row
+) compared to Ground Truth renderings (
+bottom row
+) of each subject. The training of 2,500 subjects in TH21
+Yu et al. 2021b
+reduces the blurriness observed in other datasets and demonstrates the scalability merit of our GST Transformer training.
+Table 4
+:
+Novel View Synthesis on Large-Scale TH21
+. We compare GST to fast and large-scale multi-view baseline
+Szymanowicz et al. 2024
+that do not need 3D annotations on the 2,500 examples from TH21
+Yu et al. 2021b
+. Unlike Splatter Image
+Szymanowicz et al. 2024
+, our GST predicts precise 3D body pose and shape in addition to the renderable representation.
+Method
+Output
+Novel View
+3D Body
+PSNR
+↑
+\uparrow
+SSIM
+↑
+\uparrow
+LPIPS
+↓
+\downarrow
+Splatter Img
+Szymanowicz et al. 2024
+✗
+23.74
+0.91
+0.10
+GST (Ours)
+✓
+22.20
+0.90
+0.09
+5.3
+Ablation and analysis
+Input Image
+GT SMPL
+Our SMPL
+SMPL overlays
+Figure 7
+:
+Tightness Regularization.
+Renderings and SMPL models with (
+top
+) and without (
+bottom
+) tightness regularization. The regularization maintains a precise body shape and pose.
+Table 5
+:
+Ablation study
+. We show an ablation study on HuMMan Dataset
+Cai et al. 2022
+where the left shows the design choices and the right part shows the results. For each setup, we report PSNR, SSIM, and LPIPS for novel view synthesis, as well as MPJPE (in mm) for 3D keypoints evaluation.
+LPIPS
+loss
+Tightness
+loss
+Transparency
+loss
+Novel View
+3D Shape
+PSNR
+↑
+\uparrow
+SSIM
+↑
+\uparrow
+LPIPS
+↓
+\downarrow
+MPJPE (mm)
+↓
+\downarrow
+✓
+\checkmark
+✓
+\checkmark
+21.77
+0.87
+0.12
+82.3
+✓
+\checkmark
+✓
+\checkmark
+21.80
+0.86
+0.15
+53.6
+✓
+\checkmark
+✓
+\checkmark
+21.77
+0.87
+0.12
+52.3
+✓
+\checkmark
+✓
+\checkmark
+✓
+\checkmark
+21.79
+0.87
+0.12
+50.8
+Ablation Study.
+We present an ablation study of different design choices and key elements in our architectures and losses and their effect on the 2D and 3D results of a single image to 3D of humans on the HuMMan dataset
+Cai et al. 2022
+in
+Table
+5
+. For these experiments, we report PSNR, SSIM, and LPIPS metrics computed for the entire image. It shows the importance of combining the LPIPS, tightness, and transparency loss on the final 3D precision while maintaining the visual fidelity intact.
+The tightness regularization of (
+3
+) has the highest impact on 3D precision, as it favors solutions in which the majority of the pose corrections are obtained with the SMPL parameters, and the Gaussians are only used for small refinements. In contrast, removing the tightness regularization encourages unrealistic and less precise poses, with much larger adjustments obtained with the Gaussian offsets. We also visualize this effect in
+Fig.
+7
+. We conduct additional ablations in
+the Appendix
+, and we also report some results for 3D pose estimation from sparse views on the Human3.6M dataset
+Catalin Ionescu 2011
+.
+6
+Conclusions and Discussion
+In this paper, we introduced
+GST
+, a novel approach for human 3D representation that predicts 3D Gaussian Splatting
+Kerbl et al. 2023
+, enabling fast rendering with accurate poses.
+GST leverages multi-view rendering supervision to refine the 3D joint and body predictions. This dual capability combines precise pose estimation with novel view rendering, bridging two research paradigms and showcasing the benefits of our approach. Our method could be used to reduce the friction of training a pose estimation model to deploy to any novel sports setup, without requiring any expensive pose annotations or 3D scans.
+Limitations.
+The main limitation in our method is the requirement of multi-view datasets to train.
+Another issue is the slight blurriness that appears in some of the renderings, possibly as a result of the generalization limitations of the transformer when trained on relatively small datasets (in terms of subject diversity). A possible solution to this is to use a larger dataset or to pretrain on synthetic data.
+Acknowledgments.
+This work was funded by the Podium Institute for Sports Medicine and Technology, at the University of Oxford. A.H. acknowledges the support of the KAUST Ibn Rushd Postdoc Fellowship program. J.H. acknowledges the support of the Royal Society (RG\R1\241385), Toyota Motor Europe (TME), and EPSRC (VisualAI, EP/T028572/1).
+References
+ren (2018)
+Renderpeople.
+In
+https://renderpeople.com/3d-people
+, 2018.
+Cai et al. (2022)
+Zhongang Cai, Daxuan Ren, Ailing Zeng, Zhengyu Lin, Tao Yu, Wenjia Wang, Xiangyu Fan, Yang Gao, Yifan Yu, Liang Pan, Fangzhou Hong, Mingyuan Zhang, Chen Change Loy, Lei Yang, and Ziwei Liu.
+HuMMan: Multi-modal 4d human dataset for versatile sensing and modeling.
+In
+17th European Conference on Computer Vision, Tel Aviv, Israel, October 23–27, 2022, Proceedings, Part VII
+, pages 557–577. Springer, 2022.
+Catalin Ionescu (2011)
+Cristian Sminchisescu Catalin Ionescu, Fuxin Li.
+Latent structured models for human pose estimation.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)
+, 2011.
+Chen et al. (2024)
+Mingjin Chen, Junhao Chen, Xiaojun Ye, Huan ang Gao, Xiaoxue Chen, Zhaoxin Fan, and Hao Zhao.
+Ultraman: Single image 3d human reconstruction with ultra speed and detail.
+2024.
+Cho et al. (2022)
+Junhyeong Cho, Kim Youwang, and Tae-Hyun Oh.
+Cross-attention of disentangled modalities for 3d human mesh recovery with transformers.
+In
+Proceedings of the European Conference on Computer Vision (ECCV)
+, 2022.
+Dosovitskiy et al. (2021)
+Alexey Dosovitskiy, Lucas Beyer, Alexander Kolesnikov, Dirk Weissenborn, Xiaohua Zhai, Thomas Unterthiner, Mostafa Dehghani, Matthias Minderer, Georg Heigold, Sylvain Gelly, Jakob Uszkoreit, and Neil Houlsby.
+An image is worth 16x16 words: Transformers for image recognition at scale.
+In
+International Conference on Learning Representations (ICLR)
+, 2021.
+Dwivedi et al. (2024)
+Sai Kumar Dwivedi, Yu Sun, Priyanka Patel, Yao Feng, and Michael J. Black.
+Tokenhmr: Advancing human mesh recovery with a tokenized pose representation.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, pages 1323–1333, 2024.
+Feng et al. (2023)
+Qiao Feng, Yuanwang Yang, Yu-Kun Lai, and Kun Li.
+R²human: Real-time 3d human appearance rendering from a single image.
+arXiv preprint arXiv:2312.05826
+, 2023.
+Gao et al. (2022)
+Xiangjun Gao, Jiaolong Yang, Jongyoo Kim, Sida Peng, Zicheng Liu, and Xin Tong.
+Mps-nerf: Generalizable 3d human rendering from multiview images.
+arXiv preprint arXiv:2203.16875
+, 2022.
+Gao et al. (2023)
+Xiangjun Gao, Xiaoyu Li, Chaopeng Zhang, Qi Zhang, Yanpei Cao, Ying Shan, and Long Quan.
+Contex-human: Free-view rendering of human from a single image with texture-consistent synthesis, 2023.
+Georgakis et al. (2020)
+Georgios Georgakis, Ren Li, Srikrishna Karanam, Terrence Chen, Jana Košecká, and Ziyan Wu.
+Hierarchical kinematic human mesh recovery.
+In
+ECCV
+, 2020.
+Goel et al. (2023)
+Shubham Goel, Georgios Pavlakos, Jathushan Rajasegaran, Angjoo Kanazawa*, and Jitendra Malik*.
+Humans in 4D: Reconstructing and tracking humans with transformers.
+In
+International Conference on Computer Vision (ICCV)
+, 2023.
+Guler and Kokkinos (2019)
+Riza Alp Guler and Iasonas Kokkinos.
+Holopose: Holistic 3d human reconstruction in-the-wild.
+In
+CVPR
+, 2019.
+Ho et al. (2024)
+Hsuan-I Ho, Jie Song, and Otmar Hilliges.
+Sith: Single-view textured human reconstruction with image-conditioned diffusion.
+In
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition (CVPR)
+, 2024.
+Hu et al. (2023)
+Shoukang Hu, Fangzhou Hong, Liang Pan, Haiyi Mei, Lei Yang, and Ziwei Liu.
+Sherf: Generalizable human nerf from a single image.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)
+, 2023.
+Hu et al. (2024)
+Shoukang Hu, Tao Hu, and Ziwei Liu.
+Gauhuman: Articulated gaussian splatting from monocular human videos.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, pages 20418–20431, 2024.
+Huang et al. (2023)
+Yangyi Huang, Hongwei Yi, Weiyang Liu, Haofan Wang, Boxi Wu, Wenxiao Wang, Binbin Lin, Debing Zhang, and Deng Cai.
+One-shot implicit animatable avatars with model-based priors.
+In
+IEEE Conference on Computer Vision (ICCV)
+, 2023.
+Huang et al. (2024)
+Yangyi Huang, Hongwei Yi, Yuliang Xiu, Tingting Liao, Jiaxiang Tang, Deng Cai, and Justus Thies.
+TeCH: Text-guided Reconstruction of Lifelike Clothed Humans.
+In
+International Conference on 3D Vision (3DV)
+, 2024.
+Ingwersen et al. (2023)
+Christian Keilstrup Ingwersen, Christian Mikkelstrup, Janus Nørtoft Jensen, Morten Rieger Hannemose, and Anders Bjorholm Dahl.
+Sportspose: A dynamic 3d sports pose dataset.
+In
+Proceedings of the IEEE/CVF International Workshop on Computer Vision in Sports
+, 2023.
+Joo et al. (2015)
+Hanbyul Joo, Hao Liu, Lei Tan, Lin Gui, Bart Nabbe, Iain Matthews, Takeo Kanade, Shohei Nobuhara, and Yaser Sheikh.
+Panoptic studio: A massively multiview system for social motion capture.
+In
+Proc. of International Conference on Computer Vision (ICCV)
+, pages 3334–3342, 2015.
+Kanazawa et al. (2018)
+Angjoo Kanazawa, Michael J Black, David W Jacobs, and Jitendra Malik.
+End-to-end recovery of human shape and pose.
+In
+CVPR
+, 2018.
+Kerbl et al. (2023)
+Bernhard Kerbl, Georgios Kopanas, Thomas Leimkühler, and George Drettakis.
+3d gaussian splatting for real-time radiance field rendering.
+ACM Transactions on Graphics
+, 42(4), 2023.
+Kocabas et al. (2021)
+Muhammed Kocabas, Chun-Hao P Huang, Otmar Hilliges, and Michael J Black.
+Pare: Part attention regressor for 3d human body estimation.
+In
+ICCV
+, 2021.
+Kolotouros et al. (2019)
+Nikos Kolotouros, Georgios Pavlakos, and Kostas Daniilidis.
+Convolutional mesh regression for single-image human shape reconstruction.
+In
+CVPR
+, 2019.
+Kwon et al. (2021)
+Youngjoong Kwon, Dahun Kim, Duygu Ceylan, and Henry Fuchs.
+Neural human performer: Learning generalizable radiance fields for human performance rendering.
+Advances in Neural Information Processing Systems
+, 34:24741–24752, 2021.
+Lin et al. (2021a)
+Kevin Lin, Lijuan Wang, and Zicheng Liu.
+End-to-end human pose and mesh reconstruction with transformers.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, 2021a.
+Lin et al. (2021b)
+Kevin Lin, Lijuan Wang, and Zicheng Liu.
+Mesh graphormer.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)
+, 2021b.
+Lin et al. (2014)
+Tsung-Yi Lin, Michael Maire, Serge J. Belongie, Lubomir D. Bourdev, Ross B. Girshick, James Hays, Pietro Perona, Deva Ramanan, Piotr Dollár, and C. Lawrence Zitnick.
+Microsoft COCO: common objects in context.
+CoRR
+, abs/1405.0312, 2014.
+Loper et al. (2015)
+Matthew Loper, Naureen Mahmood, Javier Romero, Gerard Pons-Moll, and Michael J Black.
+Smpl: A skinned multi-person linear model.
+ACM Transactions on Graphics (TOG)
+, 34(6):1–16, 2015.
+OpenAI (2023)
+OpenAI.
+Gpt-4 technical report, 2023.
+Pan et al. (2024)
+Panwang Pan, Zhuo Su, Chenguo Lin, Zhen Fan, Yongjie Zhang, Zeming Li, Tingting Shen, Yadong Mu, and Yebin Liu.
+Humansplat: Generalizable single-image human gaussian splatting with structure priors.
+arXiv preprint arXiv:2406.12459
+, 2024.
+Peng et al. (2021)
+Sida Peng, Yuanqing Zhang, Yinghao Xu, Qianqian Wang, Qing Shuai, Hujun Bao, and Xiaowei Zhou.
+Neural body: Implicit neural representations with structured latent codes for novel view synthesis of dynamic humans.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 9054–9063, 2021.
+Pesavento et al. (2024)
+Marco Pesavento, Yuanlu Xu, Nikolaos Sarafianos, Robert Maier, Ziyan Wang, Chun-Han Yao, Marco Volino, Edmond Boyer, Adrian Hilton, and Tony Tung.
+Anim: Accurate neural implicit model for human reconstruction from a single rgb-d image, 2024.
+Radford et al. (2021)
+Alec Radford, Jong Wook Kim, Chris Hallacy, Aditya Ramesh, Gabriel Goh, Sandhini Agarwal, Girish Sastry, Amanda Askell, Pamela Mishkin, Jack Clark, et al.
+Learning transferable visual models from natural language supervision.
+In
+Proceedings of the International Conference on Machine Learning (ICML)
+, pages 8748–8763. PMLR, 2021.
+Ramesh et al. (2021)
+Aditya Ramesh, Mikhail Pavlov, Gabriel Goh, Scott Gray, Chelsea Voss, Alec Radford, Mark Chen, and Ilya Sutskever.
+Zero-shot text-to-image generation.
+In
+Proceedings of the International Conference on Machine Learning (ICML)
+, pages 8821–8831. PMLR, 2021.
+Ramesh et al. (2022)
+Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey Chu, and Mark Chen.
+Hierarchical text-conditional image generation with clip latents.
+arXiv preprint arXiv:2204.06125
+, 2022.
+Rombach et al. (2022)
+Robin Rombach, Andreas Blattmann, Dominik Lorenz, Patrick Esser, and Björn Ommer.
+High-resolution image synthesis with latent diffusion models.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, pages 10684–10695, 2022.
+Saharia et al. (2022)
+Chitwan Saharia, William Chan, Saurabh Saxena, Lala Li, Jay Whang, Emily L Denton, Kamyar Ghasemipour, Raphael Gontijo Lopes, Burcu Karagol Ayan, Tim Salimans, et al.
+Photorealistic text-to-image diffusion models with deep language understanding.
+Advances in Neural Information Processing Systems (NeurIPS)
+, 35:36479–36494, 2022.
+Saito et al. (2019)
+Shunsuke Saito, Zeng Huang, Ryota Natsume, Shigeo Morishima, Angjoo Kanazawa, and Hao Li.
+Pifu: Pixel-aligned implicit function for high-resolution clothed human digitization.
+In
+Proceedings of the IEEE/CVF international conference on computer vision
+, pages 2304–2314, 2019.
+Su et al. (2021)
+Shih-Yang Su, Frank Yu, Michael Zollhöfer, and Helge Rhodin.
+A-nerf: Articulated neural radiance fields for learning human shape, appearance, and pose.
+In
+Advances in Neural Information Processing Systems (NeurIPS)
+, 2021.
+Szymanowicz et al. (2024)
+Stanislaw Szymanowicz, Christian Rupprecht, and Andrea Vedaldi.
+Splatter image: Ultra-fast single-view 3d reconstruction.
+Conference on Computer Vision and Pattern Recognition (CVPR)
+, 2024.
+Vaswani et al. (2017)
+Ashish Vaswani, Noam Shazeer, Niki Parmar, Jakob Uszkoreit, Llion Jones, Aidan N Gomez, Łukasz Kaiser, and Illia Polosukhin.
+Attention is all you need.
+In
+Advances in Neural Information Processing Systems (NeurIPS)
+, 2017.
+Weng et al. (2023)
+Zhenzhen Weng, Jingyuan Liu, Hao Tan, Zhan Xu, Yang Zhou, Serena Yeung-Levy, and Jimei Yang.
+Template-free single-view 3d human digitalization with diffusion-guided lrm.
+Preprint
+, 2023.
+Xue et al. (2024)
+Yuxuan Xue, Xianghui Xie, Riccardo Marin, and Gerard Pons-Moll.
+Human 3diffusion: Realistic avatar creation via explicit 3d consistent diffusion models.
+Arxiv
+, 2024.
+Yu et al. (2021a)
+Alex Yu, Vickie Ye, Matthew Tancik, and Angjoo Kanazawa.
+pixelnerf: Neural radiance fields from one or few images.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, pages 4578–4587, 2021a.
+Yu et al. (2021b)
+Tao Yu, Zerong Zheng, Kaiwen Guo, Pengpeng Liu, Qionghai Dai, and Yebin Liu.
+Function4d: Real-time human volumetric capture from very sparse consumer rgbd sensors.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, 2021b.
+Yuan et al. (2024)
+Ye Yuan, Xueting Li, Yangyi Huang, Shalini De Mello, Koki Nagano, Jan Kautz, and Umar Iqbal.
+Gavatar: Animatable 3d gaussian avatars with implicit mesh learning.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, pages 896–905, 2024.
+Zhan et al. (2024)
+Xiaoyu Zhan, Jianxin Yang, Yuanqi Li, Jie Guo, Yanwen Guo, and Wenping Wang.
+Semantic human mesh reconstruction with textures.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, 2024.
+Zhang et al. (2021)
+Hongwen Zhang, Yating Tian, Xinchi Zhou, Wanli Ouyang, Yebin Liu, Limin Wang, and Zhenan Sun.
+Pymaf: 3d human pose and shape regression with pyramidal mesh alignment feedback loop.
+In
+ICCV
+, 2021.
+Zhang et al. (2023a)
+Hongwen Zhang, Yating Tian, Yuxiang Zhang, Mengcheng Li, Liang An, Zhenan Sun, and Yebin Liu.
+Pymaf-x: Towards well-aligned full-body model regression from monocular images.
+PAMI
+, 2023a.
+Zhang et al. (2024a)
+Kai Zhang, Sai Bi, Hao Tan, Yuanbo Xiangli, Nanxuan Zhao, Kalyan Sunkavalli, and Zexiang Xu.
+Gs-lrm: Large reconstruction model for 3d gaussian splatting.
+arXiv
+, 2024a.
+Zhang et al. (2018)
+Richard Zhang, Phillip Isola, Alexei A Efros, Eli Shechtman, and Oliver Wang.
+The unreasonable effectiveness of deep features as a perceptual metric.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, 2018.
+Zhang et al. (2023b)
+Zechuan Zhang, Li Sun, Zongxin Yang, Ling Chen, and Yi Yang.
+Global-correlated 3d-decoupling transformer for clothed avatar reconstruction.
+In
+Advances in Neural Information Processing Systems (NeurIPS)
+, 2023b.
+Zhang et al. (2024b)
+Zechuan Zhang, Zongxin Yang, and Yi Yang.
+Sifu: Side-view conditioned implicit function for real-world usable clothed human reconstruction.
+2024b.
+Zheng et al. (2019)
+Zerong Zheng, Tao Yu, Yixuan Wei, Qionghai Dai, and Yebin Liu.
+Deephuman: 3d human reconstruction from a single image.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 7739–7749, 2019.
+Appendix A
+Additional Results and Analysis
+A.1
+Additional Ablations
+In addition to the ablations described in Table 5 in the main paper, we report here
+three variations to the GST model that did not result in a performance improvement. The ablations are provided in Table
+I
+.
+More Gaussians.
+The first design change we tested is an increase in the number of Gaussians per vertex. We increase the number of splats by predicting two or three independent offsets per vertex. Because random initialization breaks the symmetry, the model can learn to move each splat independently even though all two/three are anchored to the same vertex. Contrary to our assumption, an increase in the number of splats did not result in a increased visual quality of the renderings.
+Setting Opacity to 1.
+Predicting opacity is not strictly necessary to render humans, therefore we tried simplifying the model by removing this parameter. We removed the opacity prediction during training and manually set the opacity to 1 for all the Gaussians.
+Single-view + Multi-view Images.
+Next, to increase the subject diversity in the small datasets we use, we tried including some single view images in our training pipeline. For this experiment, we use crops of images containing humans from the MSCOCO dataset
+Lin et al. 2014
+. The single view images are used for training together with the multi-view images from the original dataset. For the single view images, the model predictions are supervised using the same input image. The results do not show any notable improvement.
+Table I
+:
+Additional Negative Ablations.
+For completeness, we show additional ablations on HuMMan Dataset
+Cai et al. 2022
+that did not give positive improvements to our best setup of Table 5 in the main paper. For each setup, we report PSNR, SSIM, and LPIPS for novel view synthesis, as well as MPJPE (in mm) for 3D keypoints evaluation.
+Ablation setup
+Novel View
+3D Shape
+PSNR
+↑
+\uparrow
+SSIM
+↑
+\uparrow
+LPIPS
+↓
+\downarrow
+MPJPE (mm)
+↓
+\downarrow
+our best model
+21.79
+0.87
+0.12
+50.8
+2 Gaussians per vertex
+21.25
+0.87
+0.12
+50.1
+3 Gaussians per vertex
+21.18
+0.87
+0.12
+53.2
+setting opacity to 1
+21.17
+0.87
+0.11
+58.4
+single-view + multi-view
+21.47
+0.87
+0.12
+53.4
+A.2
+Overfitting Example
+To test that the number of Gaussians is sufficient to produce sharp details, we train our model to overfit a single data sample. We obtain an almost perfect reconstruction with PSNR of 41. Fig.
+I
+shows examples of the renderings we obtained. This result confirms our assumption that with a large enough dataset, our model would be able to learn sharper details than it currently learns on the small scale datasets.
+Renderings
+Ground truth
+Figure I
+:
+Overfitting to a single sample.
+Ground truth (
+top
+) and renderings (
+bottom
+) of our model results when overfitting to a single data sample.
+A.3
+Additional Details for TH21 Experiment
+For the TH21
+Yu et al. 2021b
+experiment in Table 4 in the main report, we use 72 views rendered in a loop around the subject. We train both our method and Splatter Image
+Szymanowicz et al. 2024
+using 256x256 images. Despite our model performing worse than Splatter Image in terms of visual metrics, our model also predicts the SMPL paramters for 3D pose estimation. This is both useful for downstream tasks, but also ensures that the underlying 3D shape is plausible for a human. This difference can be noticed in the examples in Fig.
+II
+, where GST can reconstruct a plausible human shape despite the uncommon input pose, while Splatter Image fails to reconstruct arms and legs.
+Splatter Image
+GST (ours)
+Ground truth
+Figure II
+:
+Splatter Image comparison.
+Side view comparison with Splatter Image
+Szymanowicz et al. 2024
+on TH21
+Yu et al. 2021b
+for unusual input poses. Input image on the left, Splatter Image rendering in the first row, GST renderings in the second row.
+A.4
+3D Pose Estimation from Sparse Views
+We train GST on the common 3D pose estimation dataset Human3.6M
+Catalin Ionescu 2011
+using the default split for train and test subjects (subjects 9 and 11 are used for testing). This dataset is not ideal for our method as it only has 4 views and very few subjects, therefore it’s difficult to generalize to unseen poses and subjects. Additionally, the human masks provided with the dataset are not always precise and our method tends to model parts of the background together with the human. This affects the visual results and the 3D pose estimation. The visual metrics for our GST are evaluated on a squared crop of size 256x256 around the human with a PSNR of 18.68 and a 3D error of MPJPE
+↓
+\downarrow
+= 63.7 mm compared to 50.0 mm for HMR2
+Goel et al. 2023
+.
+Input Image
+Other Views
+HMR2
+Goel et al. 2023
+GST (ours)
+Input Image
+Other Views
+HMR2
+Goel et al. 2023
+GST (ours)
+Figure III
+:
+Example of human pose improvements using our method GST.
+3D human body results of our GST and SMPL predictions of HMR2
+Goel et al. 2023
+on a sports sequence from the CMU panoptic dome dataset
+Joo et al. 2015
+.
+Appendix B
+Additional Visualizations
+Fig.
+III
+shows additional pose estimation results on the sports sequence of the CMU Panoptic dataset
+Joo et al. 2015
+. Fig.
+IV
+shows additional examples of novel view synthesis comparisons with SHERF
+Hu et al. 2023
+. Fig.
+V
+and
+VI
+show additional pose comparisons for the RenderPeople
+ren 2018
+dataset. Fig.
+VII
+and
+VIII
+show examples of novel view synthesis results for the TH21
+Yu et al. 2021b
+, THuman
+Zheng et al. 2019
+and RenderPeople
+ren 2018
+datasets.
+Input Image
+SHERF
+Hu et al. 2023
+w/
+Goel et al. 2023
+Renderings
+GST (ours)
+Renderings
+GT Renderings
+Figure IV
+:
+Single Image NVS
+on two subjects of Zju-Mocap
+Peng et al. 2021
+and two subjects of HuMMan
+Cai et al. 2022
+compared to SHERF
+Hu et al. 2023
+(after being adapted with HMR2 to work with single image input only). GST shows improved visual quality, especially when comparing the depicted pose to ground truth.
+Input Image
+Other Views
+GT
+GST (ours)
+vs GT
+HMR2
+Goel et al. 2023
+vs GT
+Figure V
+:
+3D Shape Comparison with HMR2.
+3D human body results of our GST on two subjects of RenderPeople
+ren 2018
+dataset compared to Ground Truth SMPL parameters
+Loper et al. 2015
+, and SMPL predictions of HMR2
+Goel et al. 2023
+.
+Input Image
+Other Views
+GT
+GST (ours)
+vs GT
+HMR2-3D finetuning
+vs GT
+HMR2-2D finetuning
+vs GT
+Figure VI
+:
+3D Shape Comparison with HMR2 After Fine-tuning on 2D and 3D Data.
+3D human body results of our GST on five subjects of RenderPeople
+ren 2018
+dataset compared to Ground Truth SMPL parameters
+Loper et al. 2015
+, and SMPL predictions of HMR2
+Goel et al. 2023
+. We show two versions of HMR2, one finetuned on 2D data only (HMR2-2D), and one finetuned on 3D data (HMR2-3D). Our method is only finetuned on 2D image data, but the results are almost as accurate as HMR2 finetuned on 3D data.
+Figure VII
+:
+Results in TH21
+Yu et al. 2021b
+.
+Rendering results for GST (
+top row
+) compared to Ground Truth renderings (
+bottom row
+) of each subject. An example of loose clothes is in the last row.
+Figure VIII
+:
+Visualization of Single Image Novel View Synthesis Results on THuman and RenderPeople
+. We show single image novel view synthesis results on one subject of THuman
+Zheng et al. 2019
+dataset and one subjects of RenderPeople
+ren 2018
+dataset of our GST (
+top row
+) compared to Ground Truth renderings (
+bottom row
+) of each subject.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►
