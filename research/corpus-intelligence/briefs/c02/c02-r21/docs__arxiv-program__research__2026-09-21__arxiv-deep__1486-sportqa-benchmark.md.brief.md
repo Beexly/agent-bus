@@ -1,0 +1,26 @@
+# docs/arxiv-program/research/2026-09-21/arxiv-deep/1486-sportqa-benchmark.md
+## What it is (1-2 sentences)
+Xia et al. (2024, arXiv:2402.15862v2) built SportQA, a 70,592-question multiple-choice/multiple-select benchmark across three difficulty levels (foundational knowledge, rules/tactics, scenario-based reasoning) to measure whether LLMs genuinely understand sports, finding GPT-4 leads but lags human experts by ~30–65% on scenario tasks. The corpus reader verdict is ADAPT — adopt the benchmark (NFL-relevant subset + a GSE-specific question extension) as an LLM-selection/QA harness for GSE's sports-content pipeline, not the paper's academic protocol.
+## Key metrics/methods (formulas where given, else "not specified")
+- Not a model paper; metric is accuracy everywhere; "holistic accuracy" for L3 multi-hop (whole question wrong if any sub-question wrong).
+- Evaluation protocol: temperature 0; 5-shot exemplars with expert-annotated CoT; three conditions: 0-shot CoT ("Let's think step by step"), 5-shot standard prompting (SP), 5-shot CoT.
+- Error taxonomies: L1/L2 — Deficiency in Conceptual Understanding, Misuse of Known Information, Inaccuracies in Factual Recall; L3 — Conceptual Misunderstanding, Logical Reasoning Error, Contextual Misinterpretation.
+- No equations stated (per the file).
+## Data sources named
+- SportQA benchmark, 70,592 questions: Level-1 (21,385 MC, one correct; aggregated from TriviaQA, QUASAR, HotpotQA, KQA Pro, BoolQ; semantic-template distractors + manual refinement); Level-2 (45,685 4-way MC covering 35 sports incl. American football, from Wikipedia rules/tactics content); Level-3 (3,522 multiple-select, 1–4 correct, across 6 sports incl. American football, 24 tasks = 6 sports × easy/hard × single/multi-hop, manually authored by sports experts; coaches proposed assessment angles).
+- Quality verification: 36 intercollegiate student-athletes (US + China), ≥8 years sports training, interviewed/trained before annotating; sampled eval sets: L1 2,000, L2 2,243 (tiered rates), L3 980; human baselines = student-athletes outside the review team.
+- Public: https://github.com/haotianxia/SportQA.
+## Findings (numbers and facts, not vibes)
+- [OTHER] GPT-4(5S,CoT) accuracy: L1 85.63, L2 78.82; L3-easy-single-hop 73.58, L3-hard-single-hop 64.08, L3-easy-multi-hop 34.40, L3-hard-multi-hop 23.01. Abstract averages: L1 82.16%, L2 75%, L3 47.14%.
+- [OTHER] GPT-4(5S,SP): L1 80.24, L2 77.17; L3: 70.73 / 63.27 / 33.60 / 24.69. GPT-4(0S,CoT): L1 80.60, L2 69.01; L3: 67.07 / 55.10 / 32.00 / 22.59.
+- [OTHER] GPT-3.5(5S,SP): L1 74.74, L2 68.07; L3: 45.52 / 36.73 / 25.20 / 19.24. PaLM2(5S,SP): L1 64.85, L2 56.62; L3: 49.19 / 49.80 / 29.20 / 16.74. Llama2-13b(5S,CoT): L1 48.65, L2 51.54; L3: 26.72 / 32.38 / 9.20 / 8.79.
+- [OTHER] Human (L3): 96.63 / 96.02 / 94.90 / 91.84 — GPT-4 lags human experts by roughly 30%–65% across L3 tasks; GPT-4 >15% ahead of other models on average.
+- [OTHER] Error analysis: L1/L2 — "deficiency in conceptual understanding" most frequent, 40% of mistakes. L3 — 82.5% of incorrect questions showed "inadequacy in multifaceted answer identification"; conceptual misunderstanding = 55% of single-hop, 50% of multi-hop errors.
+- [OTHER] Limitations stated in file: L1/L2 questions derive from public Wikipedia/TriviaQA etc. text in models' training corpora (contamination — L1/L2 scores likely overstated); models are 2023-vintage (numbers do not transfer to 2026-era models); reported scores rest on sampled subsets (2,000/2,243/980), not full 70,592; L3 covers only 6 sports with no NFL-deep scenarios; no betting-markets, fantasy, calibration, or predictive-reasoning question types; budget excluded Llama2-70b.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- [OTHER] LLM-selection/QA harness for GSE's content pipeline (x-poster/kit reply drafts, video scripts): run candidate models on the American-football L2/L3 subsets at temp 0, 5S SP + 5S CoT; a model must clear the incumbent's SportQA-football accuracy before it drafts public copy — no such systematic harness exists today per the file.
+- [TRUST-SIGNAL] INFERENCE: the ~200 GSE-specific multiple-select questions the reader proposes (NFL rules edge cases, PPR edge cases/stat corrections, pick-rationale QA like "why does line move X given injury Y?") reviewed by a domain expert could double as a regression-test set for the content pipeline's factual reliability — a factual trust-signal rather than predictive signal.
+- [OTHER] Contamination warning: L1/L2 accuracy is inflated by training-data overlap — the least-contaminated, hardest signal is L3 American-football multi-hop; evaluate model swaps on that subset, not the headline averages.
+- [OTHER] Reader's improvement experiment: decision-weighted scoring — test whether SportQA L3 score predicts real draft-acceptance rate (point-biserial r > 0.3 on ≥300 drafts); if so, the benchmark becomes a true proxy for GSE's production gate.
+## Engine-actionable? (yes/no + one-line what)
+yes — Clone SportQA, extract the American-football subsets, build the eval harness (~2–3 days), author ~200 GSE-specific L3-style questions, and gate any LLM swap in the content pipeline on matching/beating the incumbent's football accuracy.
