@@ -1,0 +1,24 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/1168-enhanced-or-distorted-wisdom.md
+## What it is (1-2 sentences)
+Deep read of arXiv:2008.10423 (Mavrodiev & Schweitzer 2020, "Enhanced or distorted wisdom of crowds? An agent-based model of opinion formation under social influence"). Brownian-agent opinion dynamics pitting individual conviction beta against social influence alpha, showing social influence enhances crowds only when initial error is large and on the correctable side, and distorts most often; verdict ADAPT as an asymmetric per-game market-blending rule for GSE (blend weight as function of model-market disagreement magnitude and direction).
+## Key metrics/methods (formulas where given, else "not specified")
+- Micro dynamics (eq.1): dx_i/dt = -beta x_i(t) + (1/N) sum_j F_ij(t) + S_i(t), S_i(t) = beta x_i(0) + A xi_i(t) (eq.2).
+- Social coupling: F_ij(t) = w_ij [x_j(t) - x_i(t)]; w_ij = [1/(1+exp(|x_j-x_i|/alpha))]/N_i (eqs.4-5); for 0.2 <= alpha <= 0.8, w_ij proportional to alpha.
+- Full-information (eq.6): dx_i/dt = (1/N) sum_j [w_ij/(1+exp(|x_j-x_i|/alpha))][x_j(t)-x_i(t)] + beta[x_i(0)-x_i(t)] + A xi_i(t).
+- Aggregated-information (eqs.7-8): (1/N) sum F_ij = alpha[<x(t)> - x_i(t)]; dx_i/dt = alpha[<x(t)>-x_i(t)] + beta[x_i(0)-x_i(t)] + A xi_i(t) (mean-field).
+- Macroscopic measures (log scale): E_LT = [ln T - <ln x_LT>]^2 (eq.10); D_LT = Var[ln x_LT] (eq.11); WoC indicator W = max{i | xbar_i <= T <= xbar_{N-i+1}} (truth-centrality within ordered opinions), max [N/2] = 50 for N=100.
+- Analytic anchor: in aggregated regime d<ln x(t)>/dt > 0 (mean can only drift upward).
+- Numerics: N=100 agents; alpha in [0,1], beta in [1,2]; 4th-order Runge-Kutta (full-info) and Euler (aggregated), Delta t = 0.01, t = 3000, noise A = 10^-3. Initial opinions log-normal: mu_ln x = -2.9 and -3.0, sigma^2_ln x = 0.72; three true values ln T = -2.00, -2.90, -3.12. No dataset - pure simulation replicating Lorenz et al. (Swiss-Italian border, true answer 734 km).
+## Data sources named
+None - simulation study only. Reference empirical setup: Lorenz et al. (Swiss-Italian border distance question, true answer 734 km). No code released; method fully replicable from the equations.
+## Findings (numbers and facts, not vibes)
+- Condition (a): initial mean far from truth, correctable side (E(0)=0.80, <ln x(0)>=-2.9, ln T=-2.00): increasing alpha considerably decreases E_LT - social influence HELPS; stronger in full-information; beta little impact.
+- Condition (b): initial mean slightly above truth (<ln x(0)>=-3.0 > ln T=-3.12): increasing alpha increases E_LT - crowd converges to objectively WRONG opinion ("most dangerous case"); stronger full-info; weak-alpha in aggregated regime tolerable.
+- Condition (c): small error, correctable side (E(0)=0.01, <ln x(0)>=-3.0, ln T=-2.90): non-monotonic - low alpha converges to truth (deep blue region), high alpha deteriorates; favorable parameter range small, much smaller in full-information.
+- Diversity: D_LT drastically reduced by alpha in full-information; independent of initial conditions (depends only on alpha, beta, initial variance); low-diversity + high-error = "confident but wrong" regime.
+- W indicator: initial W(0)=43 (cond. a), 46 (cond. b); increasing alpha mostly decreases W_LT; increasing beta mitigates; non-monotonic recovery at low alpha in cond. (b).
+- Core conclusion: social influence enhances WoC only in rare cases; most often the crowd converges farther from truth; conviction beta counterbalances but plays lesser role in full-information. Final mechanism: WoC works w.r.t. the average opinion ONLY under many independent opinions; once agents observe others, revisions respond to generated social influence - even small social influence can distort the aggregate.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- TRUST-SIGNAL: the correctable-side asymmetry gives a directional rule for WHEN to trust the pull-to-consensus - blend toward market only when disagreement is large (pool likely wrong); resist blending when pool and market nearly agree to avoid distorting a good consensus; extends the social-influence thread (briefs 1164/1165/1166/1167) with the only directional WHEN rule so far.
+## Engine-actionable? (yes/no + one-line what)
+Yes — implement per-game adaptive market blending (~1 day): disagreement d = |logit(mean model prob) - logit(market prob)|, market weight 0.5 in top tercile of historical disagreements, 0.1-0.15 in bottom tercile, 0.25-0.3 middle, plus per-model conviction term (beta analog) from trailing-8-week skill; ADOPT if it beats fixed-0.25 blend on 2025 full-season Brier AND the direction test confirms the asymmetry; improvement experiment: discrete PIT rank histogram of component-model probabilities as an overconfidence diagnostic to feedback-control (alpha, beta).

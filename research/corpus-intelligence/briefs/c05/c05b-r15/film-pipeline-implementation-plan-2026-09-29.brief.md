@@ -1,0 +1,38 @@
+# engine/research/2026-09-29/film-pipeline-implementation-plan-2026-09-29.md
+## What it is (1-2 sentences)
+Implementation plan for an automated broadcast-film pipeline re-implementing expired patent architectures (Sportvision telestration, Sharp Labs summarization, Object Prediction Tech vanishing-point) with modern tools — ingest broadcast → play segmentation → replay discrimination → camera calibration → field-anchored telestration → semantic moment search. Two internal outputs: (a) 2–4s telestrated clips for the X video operation, (b) automated charting labels (formations, routes, personnel, play boundaries) as byproduct training data for the variance model, player-signals table, and rankings program. Status: RESEARCH — UNTESTED — nothing approved for build until Phase 0 gate is defined and footage sourcing resolved.
+
+## Key metrics/methods (formulas where given, else "not specified")
+- Phase gates: Phase 0 play prefilter — boundary precision/recall ≥ 0.85 on hand-labeled validation set (3 games), 1–2 weeks; Phase 1 calibration + telestration — homography reprojection error < 2% of field width on validation frames, clips must pass the standing video rule (real footage, 2–4s, telestrated, commentary-led), 3–6 weeks; Phase 2 replay discriminator + moment search — replay-as-play error rate < 1%, top-5 retrieval accuracy on labeled query set, 1–2 weeks; Phase 3 charting labels → engine — label agreement ≥ 0.8 vs hand-charted sample before any model consumes them, ongoing.
+- Per-stage analytics: boundary precision/recall, homography reprojection error, replay-as-play error rate, retrieval accuracy, label agreement vs hand-charted sample; cost: GPU-minutes per game, storage per game; yield: usable clips per game, labeled plays per game.
+- Risk register forecasts: broadcast-grammar variance (Phase 0 recall drops 10–20 points on bad-weather/non-standard broadcasts); calibration drift on fast motion (telestration jitter on SkyCam whip-pans, end-zone cross-field throws); occlusion (LOS pileups, helmets defeat face re-ID); weak-label contamination 10–30% error without QC; compute cost — full-game at 27–32 FPS-equivalent on consumer GPUs is proven; season-scale = 3-hour broadcast × 17 weeks × NCAA in real GPU-hours.
+- Method choices: image-based match-moving (zero stadium hardware, self-recalibrating) replacing instrumented-camera encoders/gyros; neural segmentation masks (players vs field) instead of chroma-keying; multimodal learned boundaries (scoreboard/clock OCR + audio events whistle/crowd + visual models + league feeds, explicit uncertainty); classical geometry as cheap prefilter → learned models (YOLO/pose/trackers) for refinement; track players + field + clock, infer ball events from context (ball "difficult, if not impossible" to track, their words); content pipeline generates weak labels as byproduct, hand-label small validation set for ground truth.
+- Forensics verdict: neither patent family stopped because the problem was unsolvable — Sportvision won (Emmy yellow first-down line, still on air via SMT which acquired Sportvision Oct 2016; filings tapered into the sale; true dead ends only glowing puck + six-radar bat-speed rig, PITCHf/x superseded by Statcast); Sharp Labs died of fee lapses, corporate orphaning, Sharp's 2012–2016 collapse + Foxconn takeover, and handcrafted heuristics superseded by learned methods (their engineers concluded deterministic rules "couldn't cover every situation"); Object Prediction Tech — small-company fee lapse, brittle-geometry limits. Sharp's summarizer demonstrably worked (45-minute game summaries, ESPN interest). Field validated since: nflgsplat (classical geometric front end → deep refinement on consumer RTX 4080); soccer charting real-time on RTX 4060.
+- Build order: G2 classical prefilter → G4 calibration + G1 field-anchored telestration → G3 replay discriminator + #25 semantic moment search → charting weak labels → engine features. Preconditions before Phase 0: (a) footage sourcing resolved; (b) 3-game hand-labeled validation set built. Kill rule: any phase missing its gate twice gets redesigned or killed.
+- Backend: local RTX 4080-class GPU for prototyping; season-scale batch via overnight scheduling or $300/90-day GCP trial; object storage for video + clips; existing Neon gse-postgres for metadata, play index, labels, pgvector embeddings for semantic moment search; no new database. No APIs required for core pipeline (broadcast video in, clips and labels out). Explicitly not needed: stadium hardware, camera encoders, radar, RFID/Zebra access, NGS data, any paid CV API.
+- Patent numbers (Garrett's lookup set): Telestration US7075556B1, US5953077A, US6133946A, US6292130B1, US6229550B1, US6466275B1 (20-year term expiry 2017–2019); Summarization US7499077B2, US7312812B2, US7639275B2, US7474331B2, US8018491B2 (fee lapse); Replay US7474698B2, US7653131B2; Vanishing-point US7609855B2 (filed US20060132487A1). At patents.google.com/patent/<NUMBER>/en. Family/continuation review still owed before build.
+
+## Data sources named
+- Broadcast game footage (source TBD — OPEN QUESTION, no prototype runs until legitimately obtained; transformative short-clip use is doctrine).
+- Hand-labeled validation set: 3+ full games with play boundaries, down/distance, formation tags (built once, reused at every gate).
+- League data feeds (schedules, rosters, official play-by-play) as weak supervision/cross-checks.
+- Scoreboard/clock OCR models; audio event detectors (whistle, crowd) — off-the-shelf components.
+- Companion docs: patent-mining-are-gse-2026-09-29.md (idea report), patent-forensics-2026-09-29.md (why they stopped), second-pass-leverage-review-2026-09-29.md (cross-report synthesis).
+
+## Findings (numbers and facts, not vibes)
+- Two internal outputs only; public site shows projections and rankings per 9/28 public/private doctrine.
+- Phase targets: P/R ≥ 0.85 (3-game validation set); reprojection error < 2% of field width; replay-as-play error < 1%; label agreement ≥ 0.8 before model ingestion; clip output 2–4s.
+- Forecasted weak-label contamination: 10–30% error without QC — weak labels never touch the model below the agreement bar.
+- Compute: RTX 4080-class handles prototyping (nflgsplat proves the tier); prefilter first (cheap) then expensive detectors only on play segments; measure GPU-minutes per game in Phase 0 before Phase 1.
+- Kill rule: a phase missing its gate twice gets redesigned or killed — no sunk-cost drift.
+- Patent-family review (family/continuation check) still owed before any build; observed statuses are assumptions, not legal conclusions.
+
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- Formation/personnel/route weak labels per play → features into variance model + player-signals table + rankings program — SCHEME (automated charting of scheme labels)
+- Ball events inferred from context (players + field + clock) rather than tracked directly — QB-BEHAVIOR (contextual inference method for play events)
+- Kill rule (gate missed twice = redesign/kill) and agreement-gated weak-label ingestion — TRUST-SIGNAL (quality-gated label hygiene)
+- Re-implementing validated architectures in the gaps expired claims leave open (automatic generation, segmentation-based compositing, learned boundaries, zero stadium hardware) — OTHER
+- Footage sourcing as unresolved OPEN QUESTION blocking Phase 0 — OTHER (legal/rights precondition)
+
+## Engine-actionable? (yes/no + one-line what)
+Yes — resolve footage sourcing and build the 3-game hand-labeled validation set to unlock Phase 0, then run the G2 classical prefilter to get costed GPU-minutes-per-game and the P/R ≥ 0.85 gate reading.

@@ -1,0 +1,24 @@
+# docs/fable/aws/AWS_SHOW_TEETH_STRATEGY.md
+## What it is (1-2 sentences)
+Updated 2026-07-03: a lawful edge-falsification plan for GSE/FABLE listing 16 testable micro-edge candidates in a matrix (leverage point, data needed, legal status, expected gain, measurement, falsification rule, cost, demo artifact), plus a falsification strategy, cost/legal traps, and an incumbent-pressure posture.
+## Key metrics/methods (formulas where given, else "not specified")
+not specified — no formulas. Named metrics/methods per candidate: stale-vs-fresh calibration split (source freshness decay); post-event probability delta (injury-report timing delta); error before/after transaction windows (roster transaction shock); uncertainty/outcome error by instability bucket (depth-chart instability); held-out split by fatigue buckets (public schedule fatigue); interaction-term replay (travel/body-clock/weather/turf interaction); entropy vs error/correction curve — entropy-monotonic-with-error test (model disagreement entropy); ECE/Brier by shock windows (calibration drift after shocks); dispersion vs model miss rate (book dispersion as uncertainty proxy); event-to-move timing analysis (event timestamp vs market movement); contradiction rate vs later corrections (source contradiction detection); role-change bucket replay (role elasticity after transaction shock); stale-consensus vs current-model calibration (stale consensus penalty); narrative volatility vs uncertainty (public narrative volatility); quality score vs model error (data quality decay); proxy-vs-baseline replay (no-`official NGS` approximation layer).
+## Data sources named
+- Public sources (timestamps, event ids, transactions, depth charts, schedule, venue, weather, turf, public text metadata) — each requiring source-rights review/approval.
+- Internal: model probabilities, model ensemble logs, prediction/outcome windows, approved outcomes, source completeness metrics.
+- Licensed: odds snapshots (license required), consensus probabilities (source/license review), partner aggregates (partner-approved only, Clean Rooms later).
+- All AWS paths deferred ("S3/Athena later", "Lambda later", "Bedrock not needed"); every candidate is $0 to test locally via fixtures/replays.
+## Findings (numbers and facts, not vibes)
+- 16 edge candidates in the matrix; expected marginal gain marked "small, unknown" for most, "medium as no-action gate" only for data quality decay; each has an explicit falsification/kill rule (e.g., reject if no out-of-sample lift after freshness split; reject if entropy is not monotonic with error; reject if proxy adds no robust value).
+- 4 named "what incumbents may miss" edges: source freshness decay, event timing vs market-open snapshots, roster/depth-chart instability after public transactions, model disagreement entropy as uncertainty signal, data-quality decay as a no-action signal.
+- Demo strategy: fixture-only demo is the default; one local replay per candidate only after source rights classified; publish evidence IDs, commands, sample windows, falsification rules; reject candidates that don't beat baseline with a clean split.
+- 4 cost traps, 4 legal traps (including: do not infer official licensed tracking status from approximation features; do not let agents scrape restricted sources or store secrets).
+- Incumbent Pressure Addendum: 6 new operating docs referenced (`AWS_INCUMBENT_PRESSURE_SYSTEM.md`, `AWS_MICRO_EDGE_FACTORY.md`, `AWS_LOCAL_DATA_FACTORY.md`, `AWS_LOCAL_APP_BLUEPRINTS.md`, `AWS_MACHINE_LADDER.md`, `AWS_TECHNIQUE_LEDGER.md`); posture is falsify faster, show no-action intelligence, make agent refusal visible.
+- Falsification Strategy: every candidate must define a baseline, a split, a sample window, and a kill rule.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- TRUST-SIGNAL: 4 of 16 candidates are direct engine signals — model disagreement entropy vs error (uncertainty), calibration drift by shock windows (ECE/Brier), data-quality decay as a no-action gate, stale consensus penalty vs current-model calibration.
+- SCHEME: roster transaction shock, depth-chart instability, role elasticity after transaction shock, and schedule fatigue (rest/travel/body clock/weather/turf) are named replay experiments the engine can run from public data.
+- COACHING: public narrative volatility (text metadata vs uncertainty) is flagged high-review-need and rejected unless it adds safe signal.
+- OTHER: no-action intelligence (data-quality decay as a refusal gate) parallels the public/private doctrine of showing discipline, not just predictions.
+## Engine-actionable? (yes/no + one-line what)
+yes — lift the 16-candidate matrix directly as the engine's falsifiable micro-edge experiment queue (baseline/split/sample-window/kill-rule per candidate), starting with model disagreement entropy and data-quality decay as no-action gates.
