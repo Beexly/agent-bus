@@ -1,0 +1,26 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0691-verifiable-rewards-calibrated-probabilistic-forecasting.md
+## What it is (1-2 sentences)
+Study of whether RL with verifiable rewards can train a calibrated probabilistic forecaster under aleatoric uncertainty, testbed NFL in-game win probability with the betting market as reference ceiling (Singh, Reddy, Chopra, 2026, arXiv:2607.00164v1). Ledger verdict: ADAPT — the empirical-rate-as-teacher calibration trick and the "converging estimators = information ceiling" diagnostic transfer directly to GSE's probability calibration; the RLVR/LLM machinery itself does not (GSE is not training LLM forecasters).
+## Key metrics/methods (formulas where given, else "not specified")
+- Reward: r = 1 − (p − p̂(x))² (Eq. 1), where p̂(x) = state-conditioned empirical win rate (rate target); naive alternative r = 1 − (p − y)² (realized outcome).
+- Empirical-Bayes bucket: p̂ = (w + M·p̂_parent)/(n + M), M = 25 pseudocounts, hierarchical backoff from global rate downward. Teacher bins: score margin (14 bins, edges ±1, ±4, ±7, ±10, ±14, ±21), time remaining (7 bins, edges 2, 5, 10, 15, 30, 45 min), pregame spread (9 bins, edges ±0.5, ±3, ±7, ±10).
+- Base: Qwen2.5-7B-Instruct, no SFT; GRPO (TRL + vLLM rollouts, single NVIDIA L40S 48GB), LoRA rank 16/α=32/dropout 0.05, bfloat16; 250 steps; 8 completions/state at temp 0.9; variants: direct (≤48 tokens) and masked-CoT (≤640 tokens, gradient masked to final answer span).
+- Metrics: Brier (p−y)²; Murphy decomposition (reliability/resolution/uncertainty); ECE and MCE over 10 equal-width bins; paired bootstrap over plays (10⁴ resamples); checkpoint selection by Brier on 2023, reported on 2024.
+- Assumptions: season-disjoint splits remove leakage; market = near-ceiling reference; pregame spread public and pre-kickoff-fixed; market probability audited absent from all 40,246 training prompts (App D).
+## Data sources named
+NFL regular-season play-by-play, 2015–2024, public nflfastR data. Each play = one example: state (score margin, quarter+time, down&distance, field position, possession team, public pregame spread) → outcome (possession team won?). Splits disjoint by season: train 2015–2022 = 40,246 states; selection 2023 = 5,241; test 2024 = 5,185. Market probabilities from Štrumbelj 2014 odds→probability conversion (evaluation only). Code: https://github.com/jasper-research/nfl-rlvr-release; data + adapters: https://doi.org/10.5281/zenodo.21082572. Baselines: untrained Qwen2.5-7B (direct/CoT), zero-shot DeepSeek-V4 via API, empirical-rate teacher, nflverse WP model, GBM on full features, betting market.
+## Findings (numbers and facts, not vibes)
+- Held-out 2024 (n=5,185): Direct RLVR Brier 0.1443 [0.1394, 0.1491], ECE 0.0292, MCE 0.0596, acc 0.784, resolution 0.1058. Masked-CoT: 0.1522 [0.1466, 0.1577], ECE 0.0293. DeepSeek-V4 zero-shot: 0.1438 [0.1392, 0.1483], ECE 0.0430, acc 0.790. Teacher p̂: 0.1432 [0.1384, 0.1480], ECE 0.0437. Market: 0.1355 [0.1307, 0.1403], ECE 0.0273, MCE 0.0824, acc 0.799, resolution 0.1148. Base Qwen direct: 0.2057/0.0569. nflverse WP: 0.1562/0.0188. GBM all features: 0.1584/0.0260.
+- All three static estimators (direct, DeepSeek-V4, teacher) converge ≈0.143–0.144 and trail the market by the same 0.008 — the gap is resolution/information, not calibration.
+- Reward-target ablation (in-training n=128): realized outcome → Brier 0.166, ECE 0.10; ½y+½p̂ blend → 0.181/0.121 (worse on both); empirical rate → 0.154/0.050.
+- Full-completion CoT training: Brier 0.25→0.34, ECE 0.19→0.30 — decalibration from gradient on reasoning tokens, not the reward.
+- Blinded judge: inconsistent completions 22.4% (base) → 4.4% (masked); masked prompt alone (no training) = 6.8%.
+- Direct model better calibrated than its own teacher: ECE 0.029 vs 0.044 (policy smooths the bucketed target). Coarse teacher Brier 0.143 vs market 0.136; adding field position + down did not improve the teacher (2023: 0.1534/0.0099 vs coarse 0.1532/0.0117).
+- Authors' §7 caveat: method works "only where the public state already carries most of the predictive signal, and where outcomes are dense and resolved quickly enough to estimate a reliable empirical rate."
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- Empirical-rate teacher calibration (fit calibrator vs p̂(x) instead of vs binary outcomes): TRUST-SIGNAL
+- Converging-estimators-vs-market diagnostic: if engine, tabular baseline, and teacher converge on the same Brier while trailing closing line by a fixed gap, the residual is live-market information — buy/ingest it instead of spending model capacity: TRUST-SIGNAL
+- ECE/MCE discipline on engine probability outputs: TRUST-SIGNAL
+- Analyst write-up consistency QC via blinded judge ("does the stated pick follow from the analysis"): OTHER
+## Engine-actionable? (yes/no + one-line what)
+Yes — build an empirical-rate teacher table on GSE's historical pick outcomes (probability decile × days-to-kickoff × spread × league, hierarchical empirical-Bayes backoff M=25) and fit the calibrator against teacher rates rather than binary outcomes; ADAPT if test-window ECE drops ≥20% relative with Brier no worse than isotonic-vs-outcomes within 0.002 (~2–4 days, no GPU).

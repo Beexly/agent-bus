@@ -1,0 +1,19 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/1746-optimal-diversification-and-leverage-utility-based.md
+## What it is (1-2 sentences)
+A theory paper (Vladimir Markov, arXiv:2503.07498) deriving joint diversification-across-securities and leverage-fraction optimization in a utility framework — exponential (CARA) utility for weights w*, log-utility GMV for leverage f*, with compound distributions capturing estimation error and non-stationarity — presented as the cleanest theoretical justification for half-Kelly. Verdict: ADAPT — but the binary-betting appendix must be re-derived for discrete sports outcomes and validated on GSE data (no empirical validation in the paper).
+## Key metrics/methods (formulas where given, else "not specified")
+- GMV: w = argmax_w (E[U(X|D)] − (λ/2)·Var[U(X|D)]) (46); Taylor: E[U] ≈ U(μ)+U''(μ)/2·σ²; Var[U] ≈ (U'(μ))²σ² + ½(U''(μ))²σ⁴ (47).
+- Exponential utility under ALD/fat tails: E[−e^{−a w^T r}] = (−1)·e^{−a μ_0^T w + a²/2·w^T Σ_0 w − ln[1 − a² w^T Σ w/2 + a μ_a^T w]} (75); uncertain covariance adds −(α/2)·ln[1 − a²/α·(w^T Σ w)] — logarithmic risk singularity at w^T Σ w = α/a².
+- Leverage: μ = (1−f)r_0 + f μ_r, σ = f σ_r (146); MEU f* = (μ_r − r_0)/(σ_r² γ); γ=1 → full Kelly; γ>1 → fractional Kelly; GMV log-utility argmax solved numerically → endogenously tempered "half-Kelly-like" f*.
+- GBM with uncertain drift: dS_t/S_t = μ_t dt + σ dW_t; μ_t = μ_0 + σ_μ B_t, μ_0 ~ N(μ_p d, σ_p² d²) (112–113); CRRA utility closed forms under lognormal (143–144). Appendices F (GMV binary betting), G (power-utility Kelly), E (practical), C (analytic Σ_0=0 case).
+- Assumptions: single-period myopic (MPC) re-solved each step; compound hyperparameters capture statistical + non-stationary noise; GBM wealth; no transaction costs; no odds-movement.
+## Data sources named
+None — theory paper with illustrative numerical examples only. No real market or betting data. No code.
+## Findings (numbers and facts, not vibes)
+- No empirical numbers. Analytic results: (i) exponential utility generalizes mean-variance (identical under Gaussian returns) while staying tractable for fat-tailed/uncertain-covariance cases; (ii) GMV log-utility leverage tempering endogenously produces half-Kelly-like behavior via the utility-variance penalty — but this is qualitative (no closed-form f*=½; solved numerically).
+- GSE overlap note: GSE has no utility-based sizing (Kelly "mentioned 12×, no paper read"); nothing separates relative allocation across simultaneous Sunday picks (diversification) from absolute bankroll fraction (leverage) — this paper's w*_f = f*·w* is exactly that missing separation; complements ledger 1744 (KellyBoost) and 1745 (β-family); compound-distribution uncertainty dovetails with ledger 1748 (gambling under unknown probabilities).
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- TRUST-SIGNAL: the w*_f = f*·w* separation is the honest staking architecture — relative pick allocation vs absolute bankroll leverage are different decisions and should be labeled/computed separately; GMV's utility-variance penalty is the principled reason fractional Kelly exists (vs an arbitrary ½ multiplier).
+- OTHER: direct sizer architecture — exponential-utility diversification weights (engine probs as μ, bootstrap pick-residual covariance as Σ, inverse-gamma covariance marginalization) × GMV log-utility leverage scalar, long-only + max-weight constraints; improvement: make λ state-dependent on engine calibration error (ECE) so leverage auto-tempers when probabilities are unreliable.
+## Engine-actionable? (yes/no + one-line what)
+Yes — build the two-knob sizer (exponential-utility w* with compound covariance × GMV log-utility f*) from the binary-betting Appendix F formulation, gating on beating half-Kelly independent staking on terminal log growth with max drawdown ≤ half-Kelly's over 2023–2025 and f*/f_Kelly ∈ [0.3, 0.7].

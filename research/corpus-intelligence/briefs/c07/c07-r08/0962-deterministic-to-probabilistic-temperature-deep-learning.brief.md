@@ -1,0 +1,26 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0962-deterministic-to-probabilistic-temperature-deep-learning.md
+## What it is (1-2 sentences)
+Ledger read of arXiv:2406.02141 (Landry, Charantonis & Monteleoni, 2024) on recovering a deterministic weather forecast's uncertainty with deep learning — a Bernstein Quantile Network (BQN) turns a single deterministic forecast into a calibrated probabilistic one (no ensemble needed), with joint multi-lead-time training plus lead-time embeddings. Verdict: ADAPT — directly applicable to GSE's stadium weather pipeline (wind/gust/temp distributions feeding totals models).
+## Key metrics/methods (formulas where given, else "not specified")
+- Uncertainty representations compared: deterministic (RMSE loss); EMOS/DRN (Normal via eq. 1, CRPS loss); LQR/QRN (quantile regression, quantile loss, τ = i/(n+1)); LBQ/BQN (Bernstein polynomial quantile function eq. 2, degree 16, coefficient sorting for monotonicity, sampled at 98 τ values, quantile loss).
+- Q(τ) = Σ_{j=0}^{d} θ_j C(d,j) τ^j (1−τ)^{d−j} (Bernstein quantile function, d=16; sorted θ ⇒ monotone Q).
+- EMOS/DRN: Y_obs ∼ N(θ₁x_nwp + θ₂, exp(θ₃ log σ̂ + θ₄)).
+- CRPS_norm = σ[(y−μ)/σ·(2F((y−μ)/σ)−1) + 2f((y−μ)/σ) − 1/√π]; CRPSS = 1 − CRPS_model/CRPS_baseline.
+- Architecture: MLP (4×256, SiLU, batch norm; station + lead-time embeddings added after the first linear layer = one-hot-equivalent with small memory); NNs trained 5× and parameter-averaged (Vincentization for quantiles); linear per-station baseline (MOS-style).
+- Metrics: CRPS, CRPSS vs naive, RMSE, 5%/95% quantile loss, composite 80% spread, rank histograms (calibration); paired bootstrap (Hamill 1999, 100 resamples) for CI; extremes stratified by NWP-forecast percentile bins.
+## Data sources named
+GDPS (Global Deterministic Prediction System, Environment Canada) deterministic surface-temperature forecasts, 00/12 UTC init, up to 10-day lead, targeting 1,066 METAR stations across Canada and the US; 18 NWP-dependent predictors (albedo, 2-m dew point, geopotential 1000/850/500, MSLP, precip rate, 2-m RH, specific humidity 850/500, temperature 2-m/850/500, U/V wind 10-m/500, wind speed 10-m) + 7 NWP-independent (lead time, day-of-year sin/cos, time of day, lat, lon, elevation). Train 2019–2020 (includes July 2019 GDPS 25→15 km upgrade), test Jan–Nov 2021 (includes Feb 2021 Texas cold wave, June–July 2021 western heat wave — outside training distribution). ENS10 (10-member ECMWF IFS reforecast, 1998–2017) for the ensemble-member ablation. Code: https://github.com/davidlandry93/pp2023/ (PyTorch; public).
+## Findings (numbers and facts, not vibes)
+- CRPS (all stations × lead times): raw 2.925 → naive 1.921 → MOS 2.467 → EMOS 1.700 → DNN 2.315 → DRN 1.633, BQN 1.622 (best), QRN 1.635.
+- CRPSS vs naive: EMOS 0.115, DRN 0.150, BQN 0.156, QRN 0.149. NN BQN ≈ 15–16% CRPS reduction vs naive probabilistic; NN gains over EMOS significant at early leads, shrinking to ~2.5% at late leads. Bias < 0.3 K at long leads.
+- Lead-time conditioning: joint training with Pred+Emb beats per-lead-time partitioning (DRN: 1.655 → 1.634; BQN: 1.641 → 1.622); embedding alone ≈ predictor alone; joint best in central lead times.
+- ENS10 ablation: adding the 2nd ensemble member gives a sharp CRPSS jump even with postprocessing; diminishing returns after; member impact grows with lead time.
+- Calibration: all models flatten central rank histograms vs naive; BQN's Bernstein edges show slight artifacts. Extremes: all models degrade at forecast tails; Feb 2021 Texas cold event was out-of-distribution (CRPSS collapse in low winter percentiles) — the model cannot invent tails it hasn't seen; no extreme-value machinery.
+- Leakage: train/validation split not fully independent (late leads of training days overlap early leads of validation days).
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER (weather lane): build the predictor set (wind speed, gusts, temperature, precip at kickoff lead times) for 30 NFL stadiums from deterministic high-res forecasts (HRRR/NAM) + ASOS/METAR obs; train one BQN (d=16) with stadium + lead-time embeddings on all lead times jointly; pipe per-stadium calibrated quantile functions into the totals/spread weather adjustment model. Effort ~1 week (repurpose the published repo).
+- TRUST-SIGNAL: acceptance gate — ADAPT only if BQN achieves ≥10% relative CRPS improvement over the naive probabilistic baseline on a holdout season AND rank histograms flatten (central-bin deviation from uniformity reduced ≥30%); otherwise fall back to EMOS.
+- OTHER (improvement): add GEFS ensemble members as extra inputs (paper shows the 2nd member is the high-value one) and add an EVT tail model for extreme cold/heat games (the Texas-2021 failure mode).
+- TRUST-SIGNAL: distribution-stationarity caveat — spread-from-deterministic relies on past error distributions resembling the future; stress-test on extreme-weather games.
+## Engine-actionable? (yes/no + one-line what)
+Yes — train a BQN on HRRR-deterministic + ASOS at 30 NFL stadiums (2022–2024) to produce calibrated kickoff wind/gust/temp quantile functions for the totals/spread weather adjustment; gate on ≥10% CRPS gain vs naive baseline on a holdout season.
