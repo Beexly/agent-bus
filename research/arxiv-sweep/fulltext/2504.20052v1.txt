@@ -1,0 +1,1324 @@
+Can Geometry Save Central Views for Sports Field Registration?
+Floriane Magera
+Affiliation:
+EVS Broadcast Equipment
+Affiliation:
+University of Liège, Belgium
+Thomas Hoyoux
+Affiliation:
+EVS Broadcast Equipment
+Martin Castin
+Affiliation:
+EVS Broadcast Equipment
+Olivier Barnich
+Affiliation:
+EVS Broadcast Equipment
+Anthony Cioppa
+Affiliation:
+University of Liège, Belgium
+Marc Van Droogenbroeck
+Affiliation:
+University of Liège, Belgium
+Abstract
+Single-frame sports field registration often serves as the foundation for extracting 3D information from broadcast videos, enabling applications related to sports analytics, refereeing, or fan engagement. As sports fields have rigorous specifications in terms of shape and dimensions of their line, circle and point components, sports field markings are commonly used as calibration targets for this task.
+However, because of the sparse and uneven distribution of field markings, close-up camera views around central areas of the field often depict only line and circle markings. On these views, sports field registration is challenging for the vast majority of existing methods, as they focus on leveraging line field markings and their intersections. It is indeed a challenge to include circle correspondences in a set of linear equations.
+In this work, we propose a novel method to derive a set of points and lines from circle correspondences, enabling the exploitation of circle correspondences for both sports field registration and image annotation.
+In our experiments, we illustrate the benefits of our bottom-up geometric method against top-performing detectors and show that our method successfully complements them, enabling sports field registration in difficult scenarios.
+1
+Introduction
+In the realm of sports analytics, sports field registration methods are key to interpreting the game from the broadcast feeds. Accurately projecting any 3D real-world sport field point onto the 2D image plane enables numerous sport analytics applications. Indeed, extracting statistics about player performances
+Tian2019UseOf
+, actions such as goals, offsides, or fouls
+Held2023VARS
+, or the game state
+Somers2024SoccerNetGameState
+relies on the ability to locate the ball and players on the sports field
+Fujii2025Machine
+.
+An advantageous feature of sports fields is their fixed dimensions
+FIFA2019Handbook
+;
+IIHF2022Official
+;
+FIBA2022Official
+, which makes them convenient calibration targets. However, the sports field markings might be sparsely distributed in some areas, making the single-frame camera calibration particularly challenging, as shown in
+Fig.
+1
+. For this reason, sports field registration,
+i.e
+.
+homography estimation methods, are often considered as a proxy to camera calibration in sports. In fact, only four non-collinear point correspondences are needed to estimate the homography matrix that maps the sports field top-view template to its image, while four to six points are required to estimate the projection matrix of a pinhole camera depending on the
+Perspective-n-Point (PnP)
+solver used
+Kukelova2016Efficient
+.
+Figure 1
+:
+Single-frame camera calibration is challenging when only a limited amount of field markings are visible in the scene. For example, in this image, camera parameters cannot be derived from the line and point correspondences without incorporating priors about the camera. This is why current methods generate virtual keypoints (PnLCalib
+Gutierrez2024Pnlcalib-arxiv
+in yellow) which here, however, are not sufficient to allow for a registration of the sports field. Our geometric approach derives the pink points from the fitted ellipse and the detected center, which allow for the estimation of the homography (blue).
+Nevertheless, four non-collinear point correspondences may not always be found directly in the image, as broadcast cameras often happen to zoom in on an action taking place nearby a mostly isolated circular marking on the sports field, usually around the center circle (as in
+Fig.
+1
+). Fortunately, we show that there are several options to handle those difficult views.
+In this work, we propose a solution that enables the registration of such zoomed-in camera views. For that, we take a geometrical, constructive approach that leverages the properties of circle projections to enable the retrieval of point and line correspondences.
+We will also explore a more difficult case, when only a small part of the circle is visible, by exploiting the constant thickness of the sports field markings on the ground.
+Contributions.
+We summarize our contributions as follows:
+(i)
+We introduce a novel method (relying on three variants depending on image support) to derive the set of primitives –points and lines– that are necessary to estimate camera parameters for the challenging central view case. In this way, we are broadening the spectrum of scenes that can be calibrated.
+(ii)
+Besides enabling the calibration of difficult views, our method offers a precise way to annotate point correspondences along circles.
+Finally,
+(iii)
+we investigate the potential of our method on the SoccerNet dataset
+Cioppa2022Scaling
+and on challenging cases through qualitative and quantitative experiments.
+2
+Related work
+With the recent SoccerNet Game State Recognition challenge
+Somers2024SoccerNetGameState
+and the Roboflow tutorial on soccer analytics
+Skalski2024Camera
+, a range of applications creating a radar view of the game with player tracking has flourished, with varying degrees of accuracy. A common flaw of these solutions is the visible shift of the players’ position when the camera targets the central view of the soccer field, indicating a problem in soccer field registration for central views.
+All single-frame methods for camera calibration in sports heavily rely on the visibility of sports field markings in the camera view. Most methods leverage either the detection or the segmentation of such markings to derive the homography that maps the camera view to the template of the sports field (depicted in
+Fig.
+2
+). Difficulties arise from the fact that sports field markings are typically composed of a sparse collection of heterogeneous primitives, such as points, lines, and circles, unevenly distributed across the playfield. This issue makes camera calibration in sports challenging for narrow-angle camera views, especially for central views where only the halfway line and center circle are visible.
+Figure 2
+:
+Top-view of the soccer field layout, as decomposed into different semantic elements. These elements form a set of markings include points, lines, and circles that can be used to calibrate a camera.
+Over the years, several methods have tried to solve the problems of sports field registration or camera calibration in sports by addressing the potential lack of visible markings in the image, as described hereafter.
+Dictionary-based methods.
+A common approach is to enumerate all plausible camera views of the sports field markings in a dictionary. At detection time, the closest sample from the dictionary is retrieved to initialize the camera parameters and these parameters are later refined based on the field markings detection in the image
+DAmicantonio2024Automated
+;
+Zhang2021AHigh
+;
+Sha2020EndtoEnd
+;
+Chen2019Sports
+;
+Sharma2018Automated
+. These solutions usually assume that the set of camera parameters or homographies encountered in practice are well-known. They also tend to be quite slow in practice, as the size of the dictionary is proportional to the range of cameras to be calibrated
+e.g
+.
+, 450 samples
+Sha2020EndtoEnd
+.
+Regression methods.
+Starting from a first homography estimated with a deep neural network
+Jiang2020Optimizing
+;
+Shi2022Self
+;
+Fani2021Localization-arxiv
+,
+i.e
+.
+learned homography priors, or from explicit camera parameters priors
+Theiner2023TVCalib
+, these methods refine their initial estimate using deep neural networks. While the initial work on which some of these methods build estimates the relative homography between frames
+DeTone2016DeepImage-arxiv
+, a direct sports field registration through homography regression is closer to an
+Absolute Pose Regression (APR)
+task.
+In their work, Sattler
+et al
+.
+Sattler2019Understanding
+show that convolutional neural networks trained to solve the
+APR
+task fail to generalize beyond their training sets, and rather perform pose approximation via image retrieval than actual pose estimation. Given that sports datasets are scarce, consisting of few images, and generally only depict top-tier games, we fear these methods will not generalize well and will only work for top-tier main cameras.
+Virtual augmentation of keypoints.
+Some solutions augment identifiable sports field landmarks with additional virtual keypoints which are then used to train neural networks. These extra keypoints may be:
+(1) a grid of regularly spaced keypoints of the whole sports field plane
+Nie2021Robust
+;
+Chu2022Sports
+;
+Maglo2023Individual
+;
+Claasen2023Video
+, or
+(2) points on sports field circles, typically regularly spaced
+e.g
+.
+, every 45 degrees
+Falaleev2023Sportlight
+;
+Falaleev2024Enhancing
+;
+GutierrezPerez2024NoBells
+;
+Gutierrez2024Pnlcalib-arxiv
+.
+Our work specifically addresses the potential shortcomings of these two approaches. First, those rely on the generalization capabilities of deep neural networks to detect points that do not have anything distinguishable but their location; there is no pattern to be learned for the keypoints mentioned in (1), they correspond to texture-less grass, and for the keypoints mentioned in (2), they correspond to a specific location along a curve, whose appearance is a function of the perspectivity. The ability of a neural network to detect those relies on its ability to grasp the perspectivity of the image, which rather relates to an
+APR
+task than a detection or matching task. We hypothesize that the generalization capabilities of the neural networks detecting virtual keypoints may suffer from the same problem as the above-mentioned regression methods and thus be restricted to top-tier main cameras.
+Second, these approaches need to register the sports field on these images to create annotations, which is always done through homography estimation. And, as previously mentioned, only images already containing a sufficient number of primitives can be annotated, while these additional points are needed the most when we have fewer than four point or line correspondences. There is thus a chicken-and-egg problem here.
+Specific solutions for central views.
+Some previous work directly address circle correspondences in their method:
+Gupta
+et al
+.
+Gupta2011Using
+leverage ellipses through their pole-polar relationship with already found point or line matches, thus enforcing geometric constraints to estimate homographies for hockey rink registration. Alvarez and Caselles
+Alvarez2014Homography
+derive a closed-form solution for homography estimation between a soccer field and an image using correspondences of the center circle, the halfway line, and up to three points belonging to this line.
+Our method is similar in the sense of geometric exploitation of circle correspondences but targets a wider scope than homography estimation: the correspondences that we output also allow camera parameters estimation and keypoint annotation.
+Approximations with the great axis of the ellipse.
+Other similar works make relatively strong assumptions about the type of perspectivity at hand.
+Andrews
+et al
+.
+Andrews2024FootyVision
+derive the vanishing point of the middle line and its parallels, then link it to the extremities of the ellipse great axis to derive additional point and line correspondences. Cuevas
+et al
+.
+Cuevas2020Automatic
+match the great ellipse axis extremities with the circle points in orange as displayed in
+Fig.
+2
+, which is also the approach chosen in the Roboflow tutorial
+Skalski2024Camera
+. However, the projection of the circle center does not necessarily land on the ellipse center. Hence, the matching between the extremities of the great ellipse axis and the orange points in
+Fig.
+2
+is an approximation whose negative effect is depicted in
+Fig.
+3
+.
+Figure 3
+:
+Visualization of the fitted ellipse (purple), its tangents from the great axis extremities (orange), or from the points extracted by our proposed method (green), that come from the line crossing the actual image of the circle center. The green tangents better capture the perspectivity as parallels should intersect at one point on the vanishing line of the supporting plane.
+Generic ellipse-based geometric methods.
+Beyond sports applications, generic solutions for homography estimation or camera calibration with ellipse correspondences have been studied. Chum and Matas
+Chum2012Homography
+linearize ellipse correspondences using a first-order Taylor expansion of the homography mapping around two or more ellipse correspondences.
+Chen and Wu
+Chen2004Camera
+derive the focal length and extrinsic camera parameters from two coplanar circle correspondences.
+Huang
+et al
+.
+Huang2016Homography
+leverage the properties of the common self-polar triangle of separate ellipses to derive homographies. Finally, Huang
+et al
+.
+Huang2015TheCommon
+recover the camera intrinsic parameters by leveraging concentric circles correspondences in three views.
+Inspired by generic solutions using ellipse correspondences, we investigated the use of a fully geometric bottom-up approach to derive point and line correspondences from circle ones, and their application to camera calibration to address the challenging central views in soccer.
+3
+Method
+Preliminaries.
+The goal of our method is to convert a circle correspondence into several point and line correspondences that can be integrated in the direct linear transform (DLT) usually done to estimate a homography or in a
+PnP
+solver to extract camera parameters. Since many solutions to sports field markings segmentation and detection exist in the literature, we take off-the-shelf detectors, which are already capable of segmenting circular markings and detecting remarkable keypoints on sports fields, including the center of these circles if they are an integral part of the markings.
+The sole detection of a circle does not suffice for calibration. Hence, starting from the detection of a circle correspondence, we developed three cases. The first two combine the circle correspondence and the detected projected circle center to:
+Case 1
+(
+Section
+3.1
+) a line correspondence,
+Case 2
+(
+Section
+3.2
+) a point correspondence, and the last one,
+Case 3
+(
+Section
+3.3
+) is a fallback in case of unknown projection of the circle center. In the following, we start by defining the geometrical notions that will be necessary to derive a sufficient amount of linear constraints to estimate the homography.
+Geometric principles in the top-view.
+Let us consider the supporting plane of the sports field
+π
+\pi
+from the 2D projective plane
+ℙ
+2
+\mathbb{P}^{2}
+(notations and equations are taken from
+Hartley2004Multiple
+). In the reference system of
+π
+\pi
+, world geometric elements are described by their 2D homogeneous coordinates. Let
+𝙲
+\mathtt{C}
+be the world circle on the sports field, which is centered at location
+o
+=
+(
+o
+x
+,
+o
+y
+,
+1
+)
+𝖳
+\textbf{\text{o}}=(o_{x},o_{y},1)^{\mathsf{T}}
+, and has a radius
+r
+r
+.
+A point
+x
+expressed in homogeneous coordinates
+(
+x
+,
+y
+,
+1
+)
+𝖳
+(x,y,1)^{\mathsf{T}}
+belongs to the circle if
+x
+𝖳
+​
+𝙲
+​
+x
+=
+0
+​
+,
+\textbf{\text{x}}^{\mathsf{T}}\mathtt{C}\textbf{\text{x}}=0\,\mbox{,}
+(1)
+where the matrix representation of
+𝙲
+\mathtt{C}
+is given by
+𝙲
+=
+[
+1
+0
+−
+o
+x
+0
+1
+−
+o
+y
+−
+o
+x
+−
+o
+y
+o
+x
+2
++
+o
+y
+2
+−
+r
+2
+]
+​
+.
+\mathtt{C}=\begin{bmatrix}1&0&-o_{x}\\
+0&1&-o_{y}\\
+-o_{x}&-o_{y}&o_{x}^{2}+o_{y}^{2}-r^{2}\end{bmatrix}\,\mbox{.}
+(2)
+A useful property of conics is the pole-polar relationship defined by a conic. It allows to map a point
+p
+, the pole, and the
+polar
+(line)
+l
+with respect to conic
+𝙲
+\mathtt{C}
+by
+l
+=
+𝙲
+​
+p
+\textbf{\text{l}}=\mathtt{C}\,\textbf{\text{p}}
+(
+Hartley2004Multiple
+, page 58)
+.
+The polar of the circle’s center is the line at infinity of
+the supporting plane
+π
+\pi
+. Indeed,
+𝙲
+​
+o
+=
+[
+1
+0
+−
+o
+x
+0
+1
+−
+o
+y
+−
+o
+x
+−
+o
+y
+o
+x
+2
++
+o
+y
+2
+−
+r
+2
+]
+​
+(
+o
+x
+o
+y
+1
+)
+=
+(
+0
+0
+−
+r
+2
+)
+=
+−
+r
+2
+​
+(
+0
+0
+1
+)
+=
+−
+r
+2
+​
+l
+inf
+​
+.
+\begin{split}\mathtt{C}\,\textbf{\text{o}}=\begin{bmatrix}1&0&-o_{x}\\
+0&1&-o_{y}\\
+-o_{x}&-o_{y}&o_{x}^{2}+o_{y}^{2}-r^{2}\end{bmatrix}\begin{pmatrix}o_{x}\\
+o_{y}\\
+1\end{pmatrix}\\
+=\begin{pmatrix}0\\
+0\\
+-r^{2}\end{pmatrix}=-r^{2}\begin{pmatrix}0\\
+0\\
+1\end{pmatrix}=-r^{2}\,\textbf{\text{{\text{l}}}}_{\text{inf}}\,\mbox{.}\end{split}
+(3)
+An important property of pole-polar relationships is their preservation through projective transformations. This means that the estimation of the imaged center of the circle in our image is key to deriving the projection of the vanishing line of
+π
+\pi
+in the image.
+Therefore, starting from the ellipse
+𝙴
+=
+𝙷
+−
+T
+​
+𝙲
+​
+𝙷
+−
+1
+\mathtt{E}=\mathtt{H}^{-T}\mathtt{C}\,\mathtt{H}^{-1}
+that corresponds to the projection of the circle, and the projection of its center:
+c
+=
+𝙷
+​
+o
+\textbf{\text{c}}=\mathtt{H}\,\textbf{\text{o}}
+, we estimate the vanishing line:
+l
+vanishing
+=
+𝙴
+​
+c
+​
+.
+\textbf{\text{{\text{l}}}}_{\text{vanishing}}=\mathtt{E}\,\textbf{\text{c}}\,\mbox{.}
+(4)
+In the next subsection, we explain how to derive a sufficient number of correspondences based on one more primitive to estimate a homography matrix.
+3.1
+Case 1: Line correspondence
+Given a known line
+l
+1
+\textbf{\text{l}}_{1}
+detected in the image, we can estimate the
+vanishing point
+v
+linked to all parallels to
+l
+1
+\textbf{\text{l}}_{1}
+by
+v
+=
+l
+1
+×
+l
+vanishing
+​
+.
+\textbf{\text{v}}=\textbf{\text{l}}_{1}\times\textbf{\text{{\text{l}}}}_{\text{vanishing}}\,\mbox{.}
+(5)
+Once that
+v
+is known, it is easy to find the parallel to
+l
+1
+\textbf{\text{l}}_{1}
+passing through the projected circle center
+c
+:
+l
+2
+=
+v
+×
+c
+​
+.
+\textbf{\text{l}}_{2}=\textbf{\text{{\text{v}}}}\times\textbf{\text{c}}\,\mbox{.}
+(6)
+As illustrated in the left part of
+Fig.
+4
+, this line
+l
+2
+\textbf{\text{l}}_{2}
+intersects the ellipse in two points
+a
+and
+b
+, which are our first two point correspondences. Then, we define the polar of
+v
+,
+l
+3
+=
+𝙴
+​
+v
+​
+,
+\textbf{\text{l}}_{3}=\mathtt{E}\,\textbf{\text{v}}\,\mbox{,}
+(7)
+which passes through the projected circle center
+c
+, and intersects the ellipse in two new points
+d
+and
+e
+because
+v
+and
+c
+are conjugates. Furthermore, by definition, the polars
+of
+d
+and
+e
+are tangents to the ellipse and intersect at
+v
+; they are thus parallel to
+l
+1
+\textbf{\text{l}}_{1}
+, and perpendicular
+to
+l
+3
+\textbf{\text{l}}_{3}
+. As the equation of the line
+l
+1
+\textbf{\text{l}}_{1}
+is known in the sports field template, it is
+direct to derive the 2D position of each derived point.
+3.2
+Case 2: Point correspondence
+Given a point correspondence
+x
+, we can derive the line that passes through that point and the projected center of the circle:
+l
+1
+=
+x
+×
+c
+​
+.
+\textbf{\text{l}}_{1}=\textbf{\text{x}}\times\textbf{\text{c}}\,\mbox{.}
+(8)
+As can be seen in the right part of
+Fig.
+4
+, besides intersecting the ellipse in two points
+a
+and
+b
+, the line
+l
+1
+\textbf{\text{l}}_{1}
+is in a pole-polar relationship with a point on the vanishing line of the plane
+v
+=
+𝙴
+​
+l
+1
+​
+.
+\textbf{\text{v}}=\mathtt{E}\,\textbf{\text{l}}_{1}\,\mbox{.}
+(9)
+As
+l
+1
+\textbf{\text{l}}_{1}
+intersects the ellipse
+𝙴
+\mathtt{E}
+in two points, the tangents to these two points
+a
+and
+b
+intersect at
+v
+.
+The point at infinity
+v
+is the vanishing point of the parallels to the tangents of
+a
+and
+b
+, and can be used to retrieve another parallel that passes through the projected circle center :
+l
+2
+=
+v
+×
+c
+​
+,
+\textbf{\text{l}}_{2}=\textbf{\text{v}}\times\textbf{\text{c}}\,\mbox{,}
+(10)
+that intersects the ellipse in two points
+d
+and
+e
+and, as the tangents of
+a
+and
+b
+are parallel to
+l
+2
+\textbf{\text{l}}_{2}
+, the line
+l
+2
+\textbf{\text{l}}_{2}
+is a perpendicular to
+l
+1
+\textbf{\text{l}}_{1}
+. The exact position of the derived points can be easily retrieved from the known position of
+x
+and the circle in the sports field template.
+Figure 4
+:
+Starting either from a line correspondence
+l
+1
+\textbf{\text{l}}_{1}
+(left) or a point correspondence
+x
+(right), we derive the dashed lines and the set of points
+a
+,
+b
+,
+d
+, and
+e
+.
+While this method works for a generic registration case, its application to soccer is very limited, as the only point correspondences available in central views all lie on the middle line. In this instance, the first
+Equation
+8
+deriving a line through the point correspondence and the circle center retrieves the equation of the middle line, and thus the method falls back on the first case of
+Section
+3.1
+. We will thus not investigate this method further in our paper.
+3.3
+Case 3: Unknown center
+In some cases, the detection of the center of the circle might fail, due to occlusion with players, poor markings’ definition in the image, or its absence in the sports field markings. While projective transformations deform a circle into an ellipse, the center of the ellipse is not the projection of the center of the original circle. The estimation of the original center of the circle is not straightforward, even if the ellipse equation is known in the image.
+To recover the imaged center, we leverage the fact that the field markings have a consistent thickness of about ten centimeters and can be considered defining two concentric circles at their interface with the ground.
+Once ellipses are detected in the image, we rely on a result of Huang
+et al.
+Huang2015TheCommon
+to retrieve the imaged center. Let
+𝙲
+1
+\mathtt{C}_{1}
+and
+𝙲
+2
+\mathtt{C}_{2}
+be the concentric circles, and let
+𝙴
+1
+\mathtt{E}_{1}
+and
+𝙴
+2
+\mathtt{E}_{2}
+be their respective images. These circles share a common pole-polar, as their common center maps the vanishing line of the supporting plane
+π
+\pi
+. In their work, Huang
+et al
+.
+showed that the image of the circles’ center
+c
+=
+𝙷
+​
+o
+\textbf{\text{c}}=\mathtt{H}\,\textbf{\text{o}}
+is an eigenvector of the
+𝙴
+2
+−
+1
+​
+𝙴
+1
+{\mathtt{E}_{2}}^{-1}\mathtt{E}_{1}
+matrix.
+By estimating the ellipses’ coefficient matrices
+𝙴
+1
+\mathtt{E}_{1}
+and
+𝙴
+2
+\mathtt{E}_{2}
+, we first derive
+c
+as it is one of the eigenvectors
+of
+𝙴
+2
+−
+1
+​
+𝙴
+1
+{\mathtt{E}_{2}}^{-1}\mathtt{E}_{1}
+. Then,
+l
+vanishing
+\textbf{\text{{\text{l}}}}_{\text{vanishing}}
+is
+obtained as the polar of
+c
+:
+l
+vanishing
+=
+𝙴
+1
+​
+c
+=
+λ
+​
+𝙴
+2
+​
+c
+\textbf{\text{{\text{l}}}}_{\text{vanishing}}=\mathtt{E}_{1}\,\textbf{\text{c}}=\lambda\mathtt{E}_{2}\,\textbf{\text{c}}
+. Subsequently, depending on the support present in the image, we can derive a sufficient number of correspondences by following the methods developed in
+Sections
+3.1
+and
+3.2
+.
+Eventually, for all the aforementioned cases, the ambiguity about left-right and up-down correspondences on the circle are solved based on priors on the camera position. Note that the trapezoid formed by the tangents of the points
+a
+,
+b
+,
+d
+, and
+e
+, has diagonals that intersect the ellipse in the green points from
+Fig.
+2
+. In total, our method gives 8 point correspondences, which can be augmented by 8 lines from their tangents to the ellipse.
+4
+Experiments
+In
+Section
+4.1
+, we will first validate our hypothesis that the previously mentioned virtual augmentation of keypoints method fails to generalize to zoomed-in on the center circle, out-of-domain views. In
+Sections
+4.2
+and
+4.3
+, we assess the quality of our method from a circle and a line correspondence. Finally, in
+Section
+4.4
+, we assess the robustness of the variant of our method that can deal with missing circle center detection. As our method consists of a correspondence extractor, we will combine it with the calibration algorithm of PnLCalib
+Gutierrez2024Pnlcalib-arxiv
+to obtain the final calibrations.
+4.1
+PnLCalib keypoint detector
+A hypothesis on which this work relies is that virtual keypoint neural networks will fail to generalize to out-of-domain (OOD) images. In this experiment, we evaluate the keypoint detector of the best performing camera calibration method on SoccerNet, PnLCalib
+Gutierrez2024Pnlcalib-arxiv
+.
+For this experiment, we gathered an OOD test set of 300 central views of empty, smaller stadiums, with lower viewpoints, without ground truth. We make comparisons with the SoccerNet dataset (SN), which consists of the images of the test sets of the
+sn-calibration
+and
+sn-gamestate
+datasets where i) the central circle is visible, and ii) the number of visible lines is lower than 3; this test set consists of
+8,565
+8{,}565
+images.
+A way to validate the correctness of predicted keypoints without ground truth is to verify the alignment of points that are supposed to belong to the same line.
+There are 8 points predicted by PnLCalib neural network on the center circle, of which we discard the points that are the intersection of the center circle and the middle line (red points in
+Fig.
+2
+). Then, from each pair of opposed predicted points on the circle, we estimate a line. The center of this circle is supposed to belong to this line, and thus we measure the distance between the center and its projection on the line to assess the soundness of the predicted keypoints.
+The results are depicted in
+Fig.
+5
+. While the error distribution appears bounded on the SoccerNet dataset, the out-of-distribution images are more subject to high error rates.
+By construction, our geometric method derives pairs of points on the ellipse that are collinear with the circle center.
+Figure 5
+:
+Distribution of Euclidean distances, in pixels, between the circle center and each line formed by opposed keypoints pairs. Compared to SoccerNet (SN), the out-of-distribution dataset (OOD) shows a significant number of unbounded errors.
+4.2
+Qualitative results
+Starting from the semantic segmentation detector of TVCalib
+Theiner2023TVCalib
+, we estimate the ellipse parameters. The center and the intersection of the center circle with the middle line are estimated thanks to the keypoint detector of PnLCalib
+Gutierrez2024Pnlcalib-arxiv
+. From these detections, we derive point and line correspondences using the method described in
+Section
+3.1
+. A series of results are displayed in
+Fig.
+6
+, while the effect of including these points in a full camera calibration pipeline is depicted in
+Fig.
+7
+. The results shown in
+Figs.
+6
+and
+7
+indicate that, if the initial detector that provides the circle correspondence and the distinguishable keypoints are performing well, our geometric approach gives promising results, enabling to calibrate cameras in challenging cases, or improving the estimated perspectivity as shown in
+Fig.
+7
+.
+Figure 6
+:
+Various results of our method extracting lines and points from the center circle and the middle line correspondences. The images come from either our OOD dataset, or SoccerNet. The few failures are due to poor ellipse fitting or to bad center detection.
+Figure 7
+:
+Top-row: vanilla PnLCalib results on OOD frames. Bottom-row: PnLCalib calibration when our keypoints are included.
+4.3
+Quantitative Results
+The difficulty to showing the benefits of our methods using a quantitative analysis is that, as previously mentioned, it tackles mainly out-of-domain images that are by definition not in the annotated datasets. For the sake of completeness, however, we conducted a quantitative analysis on the SoccerNet dataset. For this setup, given the validation of the predicted keypoint correctness on the SoccerNet dataset of
+Section
+4.1
+, we do not expect our geometric approach to change the results of PnLCalib when we replace their predicted keypoints by our geometric keypoints. The results are reported in
+Table
+1
+, and as expected, no significant change is to be observed with our keypoints.
+JaC
+5
+(
+↑
+)
+\text{JaC}_{5}~(\uparrow)
+[%]
+MRE
+(
+↓
+)
+\text{MRE}~(\downarrow)
+[px]
+CR
+(
+↑
+)
+~(\uparrow)
+[%]
+TVCalib
+Theiner2023TVCalib
+10.2
+28.8
+100
+PnLCalib
+Gutierrez2024Pnlcalib-arxiv
+22.4
+12.8
+79.5
+PnLCalib*
+22.4
+12.9
+79.5
+Table 1
+:
+Jaccard Index for camera calibration at 5 pixels (
+JaC
+5
+\text{JaC}_{5}
+)
+Magera2024AUniversal
+in full-HD frames, Mean Reprojection Error (MRE) in pixels and Completeness Rate (CR) of previous works and PnLCalib* tuned with our geometrically derived keypoints instead of their learned version, evaluated on the central views of SoccerNet test sets.
+4.4
+Unknown center
+We will now assess our method that allows calibration even when the circle center is not detected in the image. In this experimental setup, we assess our method independently of sports field markings detectors.
+Experimental setup.
+We randomly generate plausible views of soccer main cameras. To do so, we sample common camera positions, orientations and focal length values, and keep the images displaying the center circle and the halfway line only. The pinhole parameters of these cameras are then converted to homographies mapping the synthetic image to the top-view soccer field template with the playfield located in the plane
+Z
+=
+0
+Z=0
+. These ground-truth homographies
+𝙷
+\mathtt{H}
+are compared to the estimated homographies
+𝙷
+^
+\hat{\mathtt{H}}
+through the reprojection error of the visible 3D points belonging to the soccer field in the synthetic image.
+Specifically, given a set of 3D visible points
+{
+x
+1
+,
+…
+,
+x
+N
+}
+\{\textbf{x}_{1},...,\,\textbf{x}_{N}\}
+in a synthetic frame, we define the mean reprojection error in the image as:
+MRE
+=
+1
+N
+​
+∑
+i
+N
+‖
+𝙷
+​
+x
+i
+−
+𝙷
+^
+​
+x
+i
+‖
+2
+​
+.
+\text{MRE}=\dfrac{1}{N}\sum_{i}^{N}\left\|\mathtt{H}\,\textbf{x}_{i}-\hat{\mathtt{H}}\textbf{x}_{i}\right\|_{2}\,\mbox{.}
+(a)
+(b)
+Figure 8
+:
+Reprojection errors when points are modified with a Gaussian noise with zero mean and standard deviation
+σ
+\sigma
+. (a) corresponds to an increasing noise applied to ellipse points, and (b) to an increasing noise applied to the circle center estimate.
+Results on synthetic data.
+In our simulations, assuming a field marking thickness of 8 centimeters, we sample 8 points along the inner and outer ellipses corresponding to the central concentric circles. Those points are projected in the full-HD (1080p) image, and a zero-centered Gaussian noise with increasing standard deviation
+σ
+\sigma
+is applied independently to each point. The ellipses are fitted with Fitzgibbon’s method
+Fitzgibbon1995ABuyer
+, then our method is applied to derive the final homography. In our synthetic data experiments, we vary the standard deviation
+σ
+\sigma
+between 0 and 25 pixels for 100 randomly generated cameras. As it can be observed in
+Fig.
+8(a)
+, we find that the level of error seems to linearly follow the noise applied to the ellipse points. In a second experiment, we measure the sensitivity of our method to the location of the circle center. To do so, we apply the same noise to the 2D position of the center.
+Figure
+8(b)
+shows that the reprojection error rises rapidly with this type of noise, hence highlighting the need for a precise center estimation.
+Results on real data.
+The existing sports circular markings detectors do not detect both inner and outer edges of the markings. Usually, they perform semantic segmentation, and neglect the field markings thickness. To detect both edges, we first use the semantic segmentation of the circle by using Theiner’s line segmentation neural network
+Theiner2023TVCalib
+, which determines a rough local area to search for inner and outer ellipses. To estimate those, we apply Canny’s edge detector in the segmented area. We roughly estimate the center of the detected area, and starting from this center, we throw rays that should intersect the detected edges of both ellipses only a few pixels apart. The first detected edges along the rays belong to the candidates for the inner circle, and the second ones belong to the candidates for the outer circle. We use RANSAC to derive the final ellipses’ equations in the image.
+Figure
+9
+shows the results of each intermediate step.
+(a)
+(b)
+(c)
+Figure 9
+:
+Concentric circles detection. (a) displays the semantic segmentation of the “Center circle” class of the soccer field, (b) shows the result of Canny’s detector in the segmented area, and (c) shows inliers points for inner (blue) and outer (red) ellipse points.
+Figure 10
+:
+Circle centers (yellow) detected based on the concentric circles’ detection. The results are poor, as synthetic experiments suggest.
+Finally, examples of the center derived from the two ellipses are displayed in
+Fig.
+10
+. The retrieved centers are too noisy to be used in real-world scenarios. The views, where only a part of the ellipse is visible, excluding the middle line for instance, remain very challenging views to calibrate or register. This is also true for the views where the center keypoint detector fails, for example when the center is occluded or almost invisible due to poor image quality.
+5
+Discussion
+Our contribution to the quality of the annotations of keypoints on circles is obvious, as our method enables to annotate views for which no homography could be derived from points or lines alone. Furthermore, as shown in
+Fig.
+3
+, it considerably improves the geometric consistency compared to great axis annotation.
+The benefits of our method for calibrating cameras are more difficult to measure, as it tackles mainly out-of-domain images that are by definition not in the annotated datasets. Still, our qualitative experiments indicate that our geometric method can retrieve points and lines correspondences that enable camera calibration in difficult scenarios by relying on the generalization capacities of detectors for actual recognizable patterns such as circular field markings or line intersections.
+The main limitations of our method come from the dependence on such robust detectors, which may overfit the few open-source datasets, and from the noise that may arise in ellipse estimation, mainly in the concentric setup where the line thickness is probably insufficient to guarantee a reliable circle center extraction. The cases depicting only a small part of the ellipse require further investigation to enable their calibration.
+6
+Conclusion
+In this paper, we have shown how to better annotate central views in sports by using a geometric approach. Furthermore, while we show that learned keypoint detectors such as the one of PnLCalib
+Gutierrez2024Pnlcalib-arxiv
+perform well to detect keypoints on circular patterns in in-domain scenarios, our geometric approach is effective when the test images are out-of-domain. However, some challenging views remain to be solved for single-frame camera calibration when the central circle center is out of the image or cannot be detected, which we will explore in future work.
+Acknowledgments.
+We are grateful to Quentin Massoz and Olaf Wysocki for their valuable inputs.
+This work was supported by the Service Public de Wallonie (SPW) Recherche, Belgium, under Grant
+N
+o
+\text{N}^{\text{o}}
+8573.
+References
+(1)
+Luis Alvarez and Vicent Caselles.
+Homography estimation using one ellipse correspondence and minimal
+additional information.
+In
+IEEE Int. Conf. Image Process. (ICIP)
+, pages 4842–4846,
+Paris, Fr., Oct. 2014.
+(2)
+Peter Andrews, Njål Borch, and Morten Fjeld.
+FootyVision: Multi-object tracking, localisation, and augmentation
+of players and ball in football video.
+In
+Int. Conf. Multimedia Image Process.
+, volume 15, pages
+15–25, Osaka, Japan, Apr. 2024.
+(3)
+Jianhui Chen and James J. Little.
+Sports camera calibration via synthetic data.
+In
+IEEE/CVF Conf. Comput. Vis. Pattern Recognit. Work. (CVPRW)
+,
+pages 2497–2504, Long Beach, CA, USA, Jun. 2019.
+(4)
+Qian Chen, Haiyuan Wu, and Toshikazu Wada.
+Camera calibration with two arbitrary coplanar circles.
+In
+Eur. Conf. Comput. Vis. (ECCV)
+, volume 3023 of
+Lect.
+Notes Comput. Sci.
+, pages 521–532, 2004.
+(5)
+Yen-Jui Chu, Jheng-Wei Su, Kai-Wen Hsiao, Chi-Yu Lien, Shu-Ho Fan, Min-Chun Hu,
+Ruen-Rone Lee, Chih-Yuan Yao, and Hung-Kuo Chu.
+Sports field registration via keypoints-aware label condition.
+In
+IEEE/CVF Conf. Comput. Vis. Pattern Recognit. Work. (CVPRW)
+,
+pages 3522–3529, New Orleans, LA, USA, Jun. 2022.
+(6)
+Ondrej Chum and Jiri. Matas.
+Homography estimation from correspondences of local elliptical
+features.
+In
+IEEE Int. Conf. Pattern Recognit. (ICPR)
+, pages 3236–3239,
+Tsukuba, Japan, Nov. 2012.
+(7)
+Anthony Cioppa, Adrien Deliège, Silvio Giancola, Bernard Ghanem, and Marc
+Van Droogenbroeck.
+Scaling up SoccerNet with multi-view spatial localization and
+re-identification.
+Sci. Data
+, 9(1):1–9, Jun. 2022.
+(8)
+Paul J. Claasen and Jill P. de Villiers.
+Video-based sequential Bayesian homography estimation for soccer
+field registration.
+arXiv
+, abs/2311.10361, 2023.
+(9)
+Carlos Cuevas, Daniel Quilón, and Narciso García.
+Automatic soccer field of play registration.
+Pattern Recognit.
+, 103, Jul. 2020.
+(10)
+Giacomo D’Amicantonio, Egor Bondarev, and Peter H. N. De.
+Automated camera calibration via homography estimation with GNNs.
+In
+IEEE/CVF Winter Conf. Appl. Comput. Vis. (WACV)
+, pages
+5864–5471, Waikoloa, HI, USA, Jan. 2024.
+(11)
+Daniel DeTone, Tomasz Malisiewicz, and Andrew Rabinovich.
+Deep image homography estimation.
+arXiv
+, abs/1606.03798, 2016.
+(12)
+Nikolay Falaleev.
+Top-1 solution of SoccerNet camera calibration challenge 2023.
+https://github.com/NikolasEnt/soccernet-calibration-sportlight
+,
+Jun. 2023.
+(13)
+Nikolay S. Falaleev and Ruilong Chen.
+Enhancing soccer camera calibration through keypoint exploitation.
+In
+Int. ACM Work. Multimedia Content Anal. Sports (MMSports)
+,
+volume 6, pages 65–73, Melbourne, Victoria, Aust., Oct. 2024.
+(14)
+Mehrnaz Fani, Pascale Berunelle Walters, David A. Clausi, John Zelek, and
+Alexander Wong.
+Localization of ice-rink for broadcast hockey videos.
+arXiv
+, abs/2104.10847, 2021.
+(15)
+FIBA.
+2022 official basketball rules: Basketball rules & basketball
+equipment.
+Technical report, Fédération Internationale de Basketball,
+Mies, Switzerland, 2022.
+(16)
+FIFA.
+Handbook of test methods for virtual offside line assessment.
+Technical report, Fédération Internationale de Football
+Association, Zurich, Switzerland, Jun. 2019.
+(17)
+Andrew W. Fitzgibbon and Robert B. Fisher.
+A buyer’s guide to conic fitting.
+In
+Br. Mach. Vis. Conf. (BMVC)
+, pages 1–10, Swansea, UK, 1995.
+(18)
+Keisuke Fujii.
+Machine Learning in Sports: Open Approach for Next Play
+Analytics
+.
+Springerbriefs Comput. Sci. Springer Nat. Singap., 2025.
+(19)
+Ankur Gupta, James J. Little, and Robert J. Woodham.
+Using line and ellipse features for rectification of broadcast hockey
+video.
+In
+Can. Conf. Comput. Robot. Vis.
+, pages 32–39, St. Johns,
+Canada, May 2011.
+(20)
+Marc Gutiérrez-Pérez and Antonio Agudo.
+No bells, just whistles: Sports field registration by leveraging
+geometric properties.
+In
+IEEE/CVF Conf. Comput. Vis. Pattern Recognit. Work. (CVPRW)
+,
+pages 3325–3334, Seattle, WA, USA, Jun. 2024.
+(21)
+Marc Gutiérrez-Pérez and Antonio Agudo.
+PnLCalib: Sports field registration via points and lines
+optimization.
+arXiv
+, abs/2404.08401, 2024.
+(22)
+Richard Hartley and Andrew Zisserman.
+Multiple View Geometry in Computer Vision
+.
+Cambridge University Press, Cambridge, UK, second edition, 2004.
+(23)
+Jan Held, Anthony Cioppa, Silvio Giancola, Abdullah Hamdi, Bernard Ghanem, and
+Marc Van Droogenbroeck.
+VARS: Video assistant referee system for automated soccer decision
+making from multiple views.
+In
+IEEE/CVF Conf. Comput. Vis. Pattern Recognit. Work. (CVPRW)
+,
+pages 5086–5097, Vancouver, Can., Jun. 2023.
+(24)
+Haifei Huang, Hui Zhang, and Yiu-ming Cheung.
+The common self-polar triangle of concentric circles and its
+application to camera calibration.
+In
+IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR)
+, pages
+4065–4072, Boston, MA, USA, Jun. 2015.
+(25)
+Haifei Huang, Hui Zhang, and Yiu-Ming Cheung.
+Homography estimation from the common self-polar triangle of separate
+ellipses.
+In
+IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR)
+, pages
+1737–1744, Las Vegas, NV, USA, Jun. 2016.
+(26)
+IIHF.
+IIHF Official rule book 2022/23.
+Technical report, International Ice Hockey Federation, Zurich,
+Switzerland, Jul. 2022.
+(27)
+Wei Jiang, Juan Camilo Gamboa Higuera, Baptiste Angles, Weiwei Sun, Mehrsan
+Javan, and Kwang Moo Yi.
+Optimizing through learned errors for accurate sports field
+registration.
+In
+IEEE Winter Conf. Appl. Comput. Vis. (WACV)
+, pages 201–210,
+Snowmass, CO, USA, Mar. 2020.
+(28)
+Zuzana Kukelova, Jan Heller, and Andrew Fitzgibbon.
+Efficient intersection of three quadrics and applications in computer
+vision.
+In
+IEEE Conf. Comput. Vis. Pattern Recognit. (CVPR)
+, pages
+1799–1808, Las Vegas, NV, USA, Jun. 2016.
+(29)
+Floriane Magera, Thomas Hoyoux, Olivier Barnich, and Marc Van Droogenbroeck.
+A universal protocol to benchmark camera calibration for sports.
+In
+IEEE/CVF Conf. Comput. Vis. Pattern Recognit. Work. (CVPRW)
+,
+pages 3335–3346, Seattle, WA, USA, Jun. 2024.
+(30)
+Adrien Maglo, Astrid Orcesi, Julien Denize, and Quoc Cuong Pham.
+Individual locating of soccer players from a single moving view.
+Sensors
+, 23(18):1–28, Sept. 2023.
+(31)
+Xiaohan Nie, Shixing Chen, and Raffay Hamid.
+A robust and efficient framework for sports-field registration.
+In
+IEEE Winter Conf. Appl. Comput. Vis. (WACV)
+, pages
+1935–1943, Waikoloa, HI, USA, Jan. 2021.
+(32)
+Torsten Sattler, Qunjie Zhou, Marc Pollefeys, and Laura Leal-Taixe.
+Understanding the limitations of CNN-based absolute camera pose
+regression.
+In
+IEEE/CVF Conf. Comput. Vis. Pattern Recognit. (CVPR)
+, pages
+3297–3307, Long Beach, CA, USA, Jun. 2019.
+(33)
+Long Sha, Jennifier Hobbs, Panna Felsen, Winyu Wei, Patrick Lucey, and Sujoy
+Ganguly.
+End-to-end camera calibration for broadcast videos.
+In
+IEEE Int. Conf. Comput. Vis. Pattern Recognit. (CVPR)
+, pages
+13627–13636, Seattle, WA, USA, Jun. 2020.
+(34)
+Rahul Anand Sharma, Bharath Bhat, Vineet Gandhi, and C. V. Jawahar.
+Automated top view registration of broadcast football videos.
+In
+IEEE Winter Conf. Appl. Comput. Vis. (WACV)
+, pages 305–313,
+Lake Tahoe, NV, USA, Mar. 2018.
+(35)
+Feng Shi, Paul Marchwica, Juan Camilo Gamboa Higuera, Mike Jamieson, Mehrsan
+Javan, and Parthipan Siva.
+Self-supervised shape alignment for sports field registration.
+In
+IEEE Winter Conf. Appl. Comput. Vis. (WACV)
+, pages
+3768–3777, Waikoloa, HI, USA, Jan. 2022.
+(36)
+Piotr Skalskik.
+Camera calibration in sports with keypoints, Aug. 2024.
+Blog.
+(37)
+Vladimir Somers, Victor Joos, Anthony Cioppa, Silvio Giancola, Seyed Abolfazl
+Ghasemzadeh, Floriane Magera, Baptiste Standaert, Amir M. Mansourian, Xin
+Zhou, Shohreh Kasaei, Bernard Ghanem, Alexandre Alahi, Marc
+Van Droogenbroeck, and Christophe De Vleeschouwer.
+SoccerNet game state reconstruction: End-to-end athlete tracking
+and identification on a minimap.
+In
+IEEE/CVF Conf. Comput. Vis. Pattern Recognit. Work. (CVPRW)
+,
+pages 3293–3305, Seattle, WA, USA, Jun. 2024.
+(38)
+Jonas Theiner and Ralph Ewerth.
+TVCalib: Camera calibration for sports field registration in
+soccer.
+In
+IEEE/CVF Winter Conf. Appl. Comput. Vis. (WACV)
+, pages
+1166–1175, Waikoloa, HI, USA, Jan. 2023.
+(39)
+Changjia Tian, Varuna De Silva, Michael Caine, and Steve Swanson.
+Use of machine learning to automate the identification of basketball
+strategies using whole team player tracking data.
+Appl. Sci.
+, 10(1):1–17, Dec. 2019.
+(40)
+Neng Zhang and Ebroul Izquierdo.
+A high accuracy camera calibration method for sport videos.
+In
+IEEE Int. Conf. Vis. Commun. Image Process. (VCIP)
+, pages
+1–5, Munich, Germany, Dec. 2021.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

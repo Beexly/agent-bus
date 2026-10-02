@@ -1,0 +1,2566 @@
+From Sharp to Blur: Unsupervised Domain Adaptation for 2D Human Pose
+Estimation Under Extreme Motion Blur Using Event Cameras
+Youngho Kim
+Hoonhee Cho
+Kuk-Jin YoonKAIST
+{kmax2001,gnsgnsgml,kjyoon}@kaist.ac.kr
+Abstract
+Human pose estimation is critical for applications such as rehabilitation, sports analytics, and AR/VR systems. However, rapid motion and low-light conditions often introduce motion blur, significantly degrading pose estimation due to the domain gap between sharp and blurred images. Most datasets assume stable conditions, making models trained on sharp images struggle in blurred environments. To address this, we introduce a novel domain adaptation approach that leverages event cameras, which capture high temporal resolution motion data and are inherently robust to motion blur. Using event-based augmentation, we generate motion-aware blurred images, effectively bridging the domain gap between sharp and blurred domains without requiring paired annotations. Additionally, we develop a student-teacher framework that iteratively refines pseudo-labels, leveraging mutual uncertainty masking to eliminate incorrect labels and enable more effective learning. Experimental results demonstrate that our approach outperforms conventional domain-adaptive human pose estimation methods, achieving robust pose estimation under motion blur without requiring annotations in the target domain. Our findings highlight the potential of event cameras as a scalable and effective solution for domain adaptation in real-world motion blur environments. Our project codes are available at
+https://github.com/kmax2001/EvSharp2Blur
+.
+1
+Introduction
+*
+*
+footnotetext:
+The first two authors contributed equally.
+Human pose estimation identifies key body joints or limbs, essential for applications in rehabilitation, sports analytics, and AR/VR systems. Despite the dynamic nature of human motion, most datasets assume stable conditions, providing only clean, well-conditioned data. As a result, models trained on such datasets struggle with motion blur due to the significant domain gap between sharp and blurred images. Conventional cameras rarely capture paired sharp-blurred images, making domain adaptation challenging. While dual-camera setups with beam splitters
+[
+16
+,
+18
+]
+offer precise annotations, they require expertise and are impractical for general user use. Addressing motion blur without such complex systems remains a key challenge in pose estimation.
+Figure 1
+:
+Image-based networks trained on sharp images face performance degradation in blurred images due to the domain gap. In contrast, our method uses event data for blur augmentation and achieves superior performance in the blurred domain through multi-modality adaptation.
+Unlike conventional cameras, event cameras
+[
+22
+,
+77
+]
+operate at a high frame rate, making them resistant to motion blur. In contrast to standard cameras, which capture images at fixed intervals, event cameras detect per-pixel intensity changes, producing sparse but temporally rich data. Previous research has utilized event cameras for motion deblurring
+[
+65
+,
+78
+,
+27
+,
+63
+,
+11
+]
+, image reconstruction
+[
+4
+,
+68
+,
+70
+,
+79
+]
+, and perceptions under low-light conditions
+[
+73
+,
+42
+,
+80
+,
+31
+,
+44
+,
+45
+,
+43
+,
+39
+]
+.
+However, efforts to bridge the motion blur domain gap, particularly in multi-person pose estimation, remain unexplored.
+In this study, we focus on transferring knowledge from a sharp domain with ground-truth annotations to a motion-blurred environment where pose annotations are difficult to obtain. Unsupervised domain adaptation relies on generating reliable pseudo-labels
+[
+73
+,
+83
+,
+14
+]
+in the target domain. However, the large domain gap between sharp and blurred images makes this a challenging task, and traditional cameras alone lead to suboptimal adaptation. To address this, we introduce a novel method for adapting 2D multi-human pose estimation from a sharp domain to a blurred domain using event cameras, which capture continuous motion data over time. Unlike static sharp images that lack motion information, event cameras provide detailed motion data, enabling each time slice to capture the full pixel movement within that period. As illustrated in Fig.
+1
+, we utilize this characteristic to generate motion-aware blurred images through event-based augmentation, using event cameras to bridge the gap between the two domains. By employing these synthesized motion-aware blurred images, we effectively reduce the domain discrepancy, allowing the model to maintain reasonable performance in the target domain even when trained exclusively on the source domain.
+In addition, we focus on the complementary strengths of images and event data. Images capture dense spatial information, effectively preserving semantic details in sharp domains and often helping in blurred domains as well. In contrast, event cameras capture sparse motion cues along moving edges, enabling robust detection even under extreme motion but often suffering from false detections due to their lack of spatial density.
+To leverage the strengths of both modalities, we design a teacher network with a sub-network that takes different types of modalities as input and a refinement module that adaptively utilizes the strengths of each output of sub-networks. This module enables scene-specific pose estimation by balancing the spatial richness of images and the motion-invariant edge features of events, ultimately generating high-quality pseudo-labels for adaptation.
+Additionally, we propose a method that jointly employs a student-teacher framework for pseudo-label generation. We alternately adapt the student and teacher networks to the target domain, with the teacher network leveraging the student network to generate more reliable pseudo-labels for adaptation. In turn, the enhanced teacher network further trains the student network, creating a feedback loop that improves overall performance.
+Our approach, the first to leverage event cameras to bridge the domain gap caused by motion blur, enables effective adaptation from the sharp domain to the blur domain without ground-truth annotations in the blur domain. During the adaptation process, our method minimizes performance degradation in the source domain, ultimately achieving superior results in both the sharp and blur domains.
+2
+Related Works
+Domain-adaptive Human Pose Estimation.
+There are two paradigms in human pose estimation: bottom-up and top-down approaches. The top-down method detects the human first, and then estimates keypoint locations
+[
+7
+,
+61
+,
+66
+,
+53
+,
+19
+,
+69
+,
+51
+]
+, while the bottom-up method detects keypoints first, and then groups them into poses
+[
+6
+,
+9
+,
+52
+,
+62
+,
+56
+,
+29
+,
+30
+,
+40
+]
+Training 2D human pose estimation models requires large labeled datasets, which are labor-intensive and time-consuming. To address this, synthetic datasets are often used
+[
+35
+,
+46
+]
+, but a domain gap remains, limiting generalization across datasets
+[
+23
+,
+58
+]
+. To bridge this gap, data augmentation techniques are commonly applied to mitigate these gaps
+[
+35
+,
+8
+,
+46
+,
+1
+,
+17
+]
+.
+Despite advances in domain adaptation for human pose estimation, little has been explored in the challenging blurry domains. Estimation of pose in blurred images
+[
+82
+]
+is difficult due to the complexities of the augmentation needed to bridge the domain gap. Specifically, generating blur based on motion from a single image requires sophisticated methods that account for object motion, which is particularly challenging. To this end, we propose a novel event-based augmentation method that considers actual motion to address these challenges.
+Pseudo-label Refinement.
+To train on an unlabeled dataset, teacher-student frameworks are often adopted, where teacher networks generate pseudo labels to guide student network training
+[
+41
+,
+2
+,
+72
+,
+73
+,
+28
+,
+74
+,
+84
+,
+15
+,
+20
+,
+12
+]
+. To enhance the reliability of pseudo labels, various refinement techniques has been explored. For example, MixMatch
+[
+2
+]
+applies data augmentation at various levels and aggregates predictions to improve robustness. LEOD
+[
+72
+]
+employs a high confidential threshold to obtain more reliable pseudo labels and utilizes tracking-based post processing to filter out temporally inconsistent and noisy labels. SSPCM
+[
+28
+]
+used pseudo-label correction module that selects only consistent prediction from dual networks. We also propose a learning-based pseudo-label refinement module that leverages outputs from multiple models, each trained on a different modality.
+Figure 2
+:
+Overall framework of the proposed domain-adaptive human pose estimation. The proposed method consists of four sequential stages. Stage 1: Teacher Network Pre-training, Stage 2: Student Network Training with Pseudo-Labels, and Stages 3 and 4: Mutual Uncertainty Masking for the Teacher and Student Networks.
+G
+​
+T
+GT
+denotes the groud-truth human pose.
+Event-based Human Pose Estimation.
+Event cameras are robust to motion blur and have low latency, which has led to growing attempts to apply them to human pose estimation. Specifically, there have been efforts to estimate dynamic features such as hand pose
+[
+33
+,
+34
+,
+60
+,
+50
+]
+, leveraging the ability of event cameras to perform well in extreme lighting and blur conditions. Additionally, datasets and approaches for whole-body pose estimation
+[
+85
+,
+3
+,
+75
+,
+76
+,
+49
+,
+48
+]
+are emerging. Recently, the first RGB and event dataset
+[
+16
+]
+, including pose annotations for multi-human poses, has emerged, encompassing extreme blur and low-light conditions. Building on these recent efforts using event cameras to tackle the blur domain, we are the first to attempt bridging the gap between sharp and blur domains in multi-human pose estimation.
+Event-based Domain Adaptation.
+Event cameras have varying distributions depending on the illumination and the device, and approaches for adapting models to these changing distributions
+[
+32
+,
+57
+,
+14
+,
+36
+,
+26
+]
+have been continually proposed. Additionally, there have been efforts
+[
+67
+,
+10
+,
+64
+,
+47
+,
+83
+,
+5
+]
+to adapt from the image domain to the event domain to compensate for the lack of sensor data, as well as approaches to adapt perception models for low-light conditions
+[
+73
+]
+. As another new challenge, we use event cameras as a bridge between motion blur and sharp domains, and for the first time, we attempt to adapt to the blur domain using annotations only from the sharp domain.
+3
+Methods
+3.1
+Problem Definition and Overall Framework
+Domain adaptive 2D human pose estimation aims to achieve high performance on a target domain with a different data distribution, using only labeled source domain data. We assume the source domain consists of sharp images,
+S
+s
+​
+r
+​
+c
+S^{src}
+, with annotations, while the target domain contains blur images,
+B
+t
+​
+g
+​
+t
+B^{tgt}
+, without annotations.
+Event data is present in both domains, with
+E
+s
+​
+r
+​
+c
+E^{src}
+representing events from the source domain and
+E
+t
+​
+g
+​
+t
+E^{tgt}
+from the target domain. Each image corresponds to a single frame, and our goal is to address multi-human 2D pose estimation.
+Our network structure follows DEKR
+[
+24
+]
+. Each network simultaneously outputs a center heatmap
+ℋ
+𝒞
+\mathcal{H_{C}}
+, offset
+𝒪
+\mathcal{O}
+, and keypoint heatmaps
+ℋ
+k
+\mathcal{H}_{k}
+, where
+k
+k
+represents the index of each keypoint. The center heatmap detects the human’s center whose location is the local argmax of the center heatmap. Offsets, defined as
+𝒪
+=
+{
+p
+c
+i
+−
+p
+1
+i
+,
+p
+c
+i
+−
+p
+2
+i
+,
+…
+,
+p
+c
+i
+−
+p
+k
+i
+,
+…
+,
+p
+c
+i
+−
+p
+K
+i
+}
+\mathcal{O}=\{{p_{c}^{i}-p_{1}^{i},p_{c}^{i}-p_{2}^{i},\dots,p_{c}^{i}-p^{i}_{k},\dots,p_{c}^{i}-p^{i}_{K}}\}
+, are displacement of
+each the human’s center
+p
+c
+i
+p_{c}^{i}
+from keypoints location
+p
+k
+i
+{p^{i}_{k}}
+where
+p
+k
+i
+∈
+R
+2
+{p^{i}_{k}}\in{R^{2}}
+represents the 2D location of the
+k
+k
+-th keypoints for the
+i
+i
+-th person. The keypoint heatmap is used for scoring and ranking the regressed poses by averaging the heat value on each keypoint location.
+Following
+[
+24
+]
+, supervised loss for heatmap and offset is defined as
+ℒ
+g
+=
+L
+ℋ
++
+λ
+g
+⋅
+L
+𝒪
+\mathcal{L}_{g}=L_{\mathcal{H}}+\lambda_{g}\cdot L_{\mathcal{O}}
+(1)
+L
+ℋ
+L_{\mathcal{H}}
+means a MSE loss of the predicted heatmap and
+L
+𝒪
+L_{\mathcal{O}}
+means a smooth L1 loss of the offset map.
+λ
+g
+\lambda_{g}
+is a hyper-parameter and set as 0.03 in our experiment.
+As shown in Fig.
+2
+, our overall training process is divided into four main stages.
+(1) Teacher Network Pretraining:
+We train a high-capacity teacher network that leverages multi-modal learning. To ensure superior performance on the target domain using only source domain data, we propose event-based augmentation techniques.
+(2) Student Network Training with Pseudo-Labels:
+Using the pretrained teacher network, we generate pseudo-labels to train the student network
+𝒮
+\mathcal{S}
+. The goal is to enable
+𝒮
+\mathcal{S}
+to learn effectively from both the source and target domains.
+(3) Mutual Uncertainty Masking for Teacher Network:
+The trained student and teacher networks are then used together to mutually mask uncertain predictions, generating more reliable pseudo-labels.
+(4) Mutual Uncertainty Masking for Student Network:
+The enhanced teacher is used again to generate pseudo-labels with student network, further refining the student network’s performance.
+3.2
+Teacher Network Pretraining
+In the target domain, where labels are unavailable, recent studies
+[
+1
+,
+8
+]
+have used teacher networks to generate pseudo-labels for effective training on unlabeled data. A higher-capacity of teacher network and robustness to domain shifts generate better pseudo-labels. We propose a robust teacher network trained with motion-aware blur augmentation using event data to ensure strong performance in the target domain, even when trained solely on the source domain. Additionally, the teacher network incorporates multiple sub-networks that use various modalities, with a refinement network.
+Figure 3
+:
+Motion-aware event-based blur augmentation.
+Motion-aware Event-based Blur Augmentation.
+Our setup deals with the scenario of a single image, similar to the domain-adaptive multi-human pose estimation
+[
+1
+,
+35
+]
+.
+Generating blur from a single image is extremely challenging. As an alternative, one can randomly generate a blur kernel and apply it to the image to simulate blur. However, this approach does not follow the actual principles of motion blur. Since it is not generated based on any motion, it is particularly ineffective in representing blur caused by object movement.
+To solve this problem, we propose the blur augmentation method that considers the actual motion by leveraging event data. Real-world motion blur images
+[
+59
+,
+18
+,
+38
+,
+37
+]
+are formed by the continuous accumulation of pixel information during the exposure time.
+To replicate this, we compute pixel movement from events and shift pixels accordingly. For this, we train an event-based optical flow network with a self-supervised loss
+[
+21
+,
+54
+,
+13
+]
+.
+As shown in Fig.
+3
+, we estimate motion by slicing the event data during a time duration longer than the exposure time of the sharp image, with the center timestamp of the sharp image serving as a reference.
+We divide the event slice set into
+2
+​
+N
+E
+2N_{E}
+segments over
+Δ
+​
+τ
+\Delta\tau
+and estimate the flow for each slice:
+{
+u
+(
+t
+​
+Δ
+​
+τ
+)
+∣
+t
+=
+−
+N
+E
+,
+…
+,
+N
+E
+}
+,
+\left\{u^{(t\Delta\tau)}\mid t=-N_{E},\dots,N_{E}\right\},
+based on the corresponding event sequences:
+{
+ε
+(
+0
+:
+t
+​
+Δ
+​
+τ
+)
+∣
+t
+=
+−
+N
+E
+,
+…
+,
+N
+E
+}
+.
+\left\{\varepsilon^{(0:t\Delta\tau)}\mid t=-N_{E},\dots,N_{E}\right\}.
+The estimated flows are then used for forward warping on a sharp reference image to generate the warped images:
+{
+W
+(
+t
+​
+Δ
+​
+τ
+)
+∣
+t
+=
+−
+N
+E
+,
+…
+,
+N
+E
+}
+.
+\left\{W^{(t\Delta\tau)}\mid t=-N_{E},\dots,N_{E}\right\}.
+Forward warping often introduces holes, so instead of averaging across all images, we handle these gaps as follows:
+B
+~
+s
+​
+r
+​
+c
+​
+(
+x
+,
+y
+)
+=
+∑
+t
+W
+t
+​
+(
+x
+,
+y
+)
+⋅
+δ
+t
+​
+(
+x
+,
+y
+)
+∑
+δ
+t
+​
+(
+x
+,
+y
+)
++
+ϵ
+\tilde{B}^{src}(x,y)=\frac{\sum_{t}W_{t}(x,y)\cdot\delta_{t}(x,y)}{\sum\delta_{t}(x,y)+\epsilon}
+(2)
+where
+W
+t
+​
+(
+x
+,
+y
+)
+W_{t}(x,y)
+denotes the intensity of the
+t
+t
+-th warped image at location
+(
+x
+,
+y
+)
+(x,y)
+. If the
+t
+t
+-th sharp image contains a hole at
+(
+x
+,
+y
+)
+(x,y)
+, then
+δ
+t
+​
+(
+x
+,
+y
+)
+=
+0
+\delta_{t}(x,y)=0
+; otherwise,
+δ
+t
+​
+(
+x
+,
+y
+)
+=
+1
+\delta_{t}(x,y)=1
+. The small constant
+ϵ
+\epsilon
+prevents division by zero.
+This process still generates a discrete blur image. To make it more realistic, we apply a blur translation loss
+[
+55
+]
+to the generated blur in order to reduce the distribution gap between discrete and continuous blurry images.
+Multi-modal teacher network.
+Event and image data have distinct characteristics. Event-based networks are robust to motion blur, maintaining performance across domains. In contrast, image-based networks are highly sensitive to motion blur but capture rich intensity information. When trained with annotated blur images and combined with event data, network using both image and event outperforms purely image- and event-based approaches.
+To leverage the advantages of each modality, we design the overall teacher network,
+𝒯
+ℳ
+\mathcal{T}_{\mathcal{M}}
+, as a structure composed of sub-teacher networks, each based on different modalities. They are constructed based on
+[
+24
+,
+16
+]
+, where
+ℳ
+\mathcal{M}
+∈
+\in
+{
+I
++
+E
+,
+E
+}
+\{I+E,E\}
+means the modality of the input of the network. As shown in Stage 1 of Fig.
+2
+, our teacher network consists of two sub-networks: an only event-based network,
+𝒯
+E
+\mathcal{T}_{E}
+, and an image-event fusion network,
+𝒯
+I
++
+E
+\mathcal{T}_{I+E}
+. To combine the results of these two networks, we use an additional refinement network,
+𝒯
+R
+\mathcal{T}_{R}
+. The refinement network generates the final heatmap and offset using image and event inputs, along with those from each sub-network. Since the teacher network is used only during training, we enhance results by providing additional guidance. Specifically, the refinement network receives the magnitude of optical flow, computed from events. The refinement network,
+𝒯
+R
+\mathcal{T}_{R}
+, concatenates all inputs along the channel dimension and fuses them through a channel attention mechanism
+[
+81
+,
+63
+]
+.
+To ensure effective adaptation of the teacher network to the blur domain, Stage 1 excludes sharp images. Instead, the teacher network is trained with synthesized blur images generated through augmentation, using source domain annotations and supervised by
+ℒ
+g
+\mathcal{L}_{g}
+(Eq. (
+1
+)) during this process.
+3.3
+Student Network Training with Pseudo-Labels
+In Stage 2, the goal is to train the student network using the accurate annotations from the source domain and pseudo-labels from teacher network in the target domain.
+The student network takes image and event data as inputs and has the same architecture as
+𝒯
+I
++
+E
+\mathcal{T}_{I+E}
+.
+Using the teacher network trained in Stage 1, which is partially adapted to the blur domain through augmentation and takes advantages of multi-modal data through refinement, we generate pseudo-labels for the target dataset.
+Firstly, we estimate center location from center heatmap,
+ℋ
+c
+𝒯
+\mathcal{H}_{c}^{\mathcal{T}}
+and generate each pose
+P
+i
+𝒯
+P_{i}^{\mathcal{T}}
+=
+{
+p
+k
+i
+,
+p
+c
+i
+}
+k
+∈
+{
+1
+,
+.
+.
+,
+K
+}
+\{p^{i}_{k},p^{i}_{c}\}_{k\in\{1,..,K\}}
+using offset,
+𝒪
+k
+𝒯
+\mathcal{O}_{k}^{\mathcal{T}}
+of each keypoint.
+p
+k
+i
+p^{i}_{k}
+means keypoint location of
+k
+k
+-th keypoint of
+i
+i
+-th pose. Poses,
+{
+P
+i
+}
+\{P_{i}\}
+, which is set of each pose are then filtered out based on non-maximum suppression (NMS)
+[
+25
+]
+.
+However, the performance can degrade significantly when noisy or incorrect labels are provided during training. To avoid this, we introduce pixel-wise masking,
+M
+M
+, to calculate the loss function. By averaging keypoint heatmap values on each keypoint, we calculate confidence score of each pseudo pose as follows:
+C
+⁡
+(
+P
+i
+)
+=
+ℋ
+c
+𝒯
+​
+(
+p
+c
+i
+)
+∗
+∑
+k
+=
+1
+K
+ℋ
+k
+𝒯
+​
+(
+p
+k
+i
+)
+/
+K
+C(P_{i})=\mathcal{H}^{\mathcal{T}}_{c}(p^{i}_{c})*\sum^{K}_{k=1}{\mathcal{H}^{\mathcal{T}}_{k}(p^{i}_{k})}/K
+(3)
+Masking is applied when the confidence score is below
+t
+​
+h
+th
+, and the confidence-based heatmap mask
+M
+ℋ
+M^{\mathcal{H}}
+is defined as:
+d
+k
+​
+(
+x
+,
+y
+)
+ℋ
+:=
+{
+i
+|
+(
+x
+,
+y
+)
+∈
+n
+​
+e
+​
+a
+​
+r
+​
+(
+p
+k
+i
+)
+}
+d_{k}{(x,y)}^{\mathcal{H}}:=\{i|(x,y)\in near(p^{i}_{k})\}\\
+(4)
+M
+k
+​
+(
+x
+,
+y
+)
+ℋ
+=
+∏
+i
+∈
+d
+k
+​
+(
+x
+,
+y
+)
+ℋ
+m
+,
+m
+=
+{
+1
+,
+C
+⁡
+(
+P
+i
+)
+≥
+t
+​
+h
+0
+,
+e
+​
+l
+​
+s
+​
+e
+M_{k}(x,y)^{\mathcal{H}}=\prod_{i\in d_{k}(x,y)^{\mathcal{H}}}m,\ m=\begin{cases}1,&\ C(P_{i})\geq th\\
+0,&else\end{cases}
+(5)
+If
+d
+k
+​
+(
+x
+,
+y
+)
+ℋ
+=
+∅
+d_{k}(x,y)^{\mathcal{H}}=\emptyset
+, the pixel
+(
+x
+,
+y
+)
+(x,y)
+is considered as a background and
+M
+k
+​
+(
+x
+,
+y
+)
+ℋ
+M_{k}(x,y)^{\mathcal{H}}
+is set to 0.1, following previous work
+[
+24
+]
+.
+The mask
+M
+k
+​
+(
+x
+,
+y
+)
+ℋ
+M_{k}(x,y)^{\mathcal{H}}
+filters out where unreliable pseudo pose lies not to calculate loss of the keypoint
+k
+k
+at
+(
+x
+,
+y
+)
+(x,y)
+. This helps to exclude unreliable pixels from both the heatmap and offset, ensuring stable training in the target domain.
+M
+k
+​
+(
+x
+,
+y
+)
+𝒪
+M_{k}(x,y)^{\mathcal{O}}
+is defined below.
+M
+k
+​
+(
+x
+,
+y
+)
+𝒪
+=
+1
+min
+⁡
+(
+Z
+i
+)
+M_{k}(x,y)^{\mathcal{O}}={1\over{\min(Z_{i})}}
+(6)
+Z
+i
+Z_{i}
+=
+{
+H
+i
+2
++
+W
+i
+2
+|
+(
+x
+,
+y
+)
+∈
+n
+​
+e
+​
+a
+​
+r
+​
+(
+p
+c
+i
+)
+}
+\{\sqrt{H^{2}_{i}+W^{2}_{i}}|(x,y)\in near(p_{c}^{i})\}
+is the set of the size of the corresponding person instance, and
+H
+i
+H_{i}
+and
+W
+i
+W_{i}
+are the height and width of the instance box
+[
+24
+]
+. If
+Z
+i
+=
+∅
+Z_{i}=\emptyset
+,
+M
+k
+​
+(
+x
+,
+y
+)
+𝒪
+=
+0
+M_{k}(x,y)^{\mathcal{O}}=0
+.
+To compute the loss during student network training with the mask applied, where
+𝒪
+\mathcal{O}
+,
+ℋ
+\mathcal{H}
+are offset prediction and heatmap prediction of student network, we use the following approach:
+L
+ℋ
+=
+M
+ℋ
+∗
+‖
+ℋ
+−
+ℋ
+𝒯
+‖
+2
+2
+L_{\mathcal{H}}=M^{\mathcal{H}}*||\mathcal{H}-\mathcal{H}^{\mathcal{T}}||^{2}_{2}
+(7)
+L
+𝒪
+=
+M
+𝒪
+∗
+Smooth
+L
+1
+​
+(
+𝒪
+−
+𝒪
+k
+𝒯
+)
+L_{\mathcal{O}}=M^{\mathcal{O}}*\text{Smooth}_{L_{1}}(\mathcal{O}-\mathcal{O}_{k}^{\mathcal{T}})
+(8)
+3.4
+Mutual Uncertainty Masking
+Teacher Network Training.
+Through Stages 1 and 2, we obtain a student network partially adapted to the target domain by using pseudo-labels generated by teacher network. These pseudo-labels depend on the performance of the teacher network so using a higher-performing teacher network can generate higher-quality pseudo-labels. However, since the pre-trained teacher network has not seen real blur yet in the target domain, there is still room for performance improvement through adaptation to the target domain.
+In the blur domain, noise often causes false detections and missed detections, making it unreliable to fully trust a single network. Therefore, we propose mutual uncertainty masking, where the confidence scores from both the teacher and student networks are considered to mask out unreliable regions. Specifically, we first generate teacher poses,
+{
+P
+i
+𝒯
+}
+\{P^{\mathcal{T}}_{i}\}
+, from the teacher network and student poses,
+{
+P
+i
+𝒮
+}
+\{P^{\mathcal{S}}_{i}\}
+, from the student network. In Stages 3 and 4, we compute another confidence score,
+C
+′
+​
+(
+P
+i
+)
+C^{\prime}(P_{i})
+, for the poses of each network based on the heatmap of the other network. The equation below calculates the confidence scores using the student network,
+𝒮
+\mathcal{S}
+:
+C
+′
+​
+(
+P
+i
+𝒮
+)
+=
+ℋ
+c
+𝒯
+​
+(
+p
+c
+i
+)
+∗
+∑
+k
+=
+1
+K
+ℋ
+k
+𝒯
+​
+(
+p
+k
+i
+)
+/
+K
+C^{\prime}(P^{\mathcal{S}}_{i})=\mathcal{H}^{\mathcal{T}}_{c}(p^{i}_{c})*\sum^{K}_{k=1}{\mathcal{H}_{k}^{\mathcal{T}}(p^{i}_{k})}/K
+(9)
+C
+⁡
+(
+P
+i
+𝒮
+)
+=
+ℋ
+c
+𝒮
+​
+(
+p
+c
+i
+)
+∗
+∑
+k
+=
+1
+K
+ℋ
+k
+𝒮
+​
+(
+p
+k
+i
+)
+/
+K
+C(P^{\mathcal{S}}_{i})=\mathcal{H}^{\mathcal{S}}_{c}(p^{i}_{c})*\sum^{K}_{k=1}{\mathcal{H}_{k}^{\mathcal{S}}(p^{i}_{k})}/K
+(10)
+For scores of poses by
+𝒯
+\mathcal{T}
+,
+C
+⁡
+(
+P
+i
+𝒯
+)
+C(P_{i}^{\mathcal{T}})
+should be calculated
+with
+ℋ
+c
+𝒯
+\mathcal{H}_{c}^{\mathcal{T}}
+,
+ℋ
+k
+𝒯
+\mathcal{H}_{k}^{\mathcal{T}}
+and
+C
+′
+​
+(
+P
+𝒯
+)
+C^{\prime}(P^{\mathcal{T}})
+should be calculated with
+ℋ
+c
+𝒮
+\mathcal{H}_{c}^{\mathcal{S}}
+,
+ℋ
+k
+𝒮
+\mathcal{H}_{k}^{\mathcal{S}}
+.
+Table 1
+:
+Multi-person pose estimation evaluated on the EHPT-XC dataset.
+To showcase the robustness of method beyond its performance in the target domain, we also report results in the source domain. The methods in top six rows represent oracle networks that leverage annotations from the target domain. ‘
+-
+’ indicates that evaluation was not performed, as the teacher network did not utilize sharp images of the source domain for training. Bold and underline indicate the best and second-best performances among networks trained only on the source domain, respectively.
+Domain
+Training Labels
+Source (Sharp)
+Target ( Blur)
+Average
+Method
+Sharp
+Blur
+mAP@0.5:0.95
+mAR@0.5:0.95
+mAP@0.5:0.95
+mAR@0.5:0.95
+mAP@0.5:0.95
+mAR@0.5:0.95
+Base (I)
+[
+24
+]
+✓
+48.2
+55.8
+36.1
+47.1
+42.2
+51.4
+Base (E)
+[
+24
+]
+✓
+34.5
+45.6
+34.5
+45.6
+34.5
+45.6
+Base (I+E)
+[
+16
+]
+✓
+55.1
+60.6
+54.2
+59.8
+54.6
+60.2
+Base (I)
+[
+24
+]
+✓
+✓
+68.9
+73.4
+53.1
+61.4
+61.0
+67.4
+Base (E)
+[
+24
+]
+✓
+✓
+45.8
+56.1
+45.8
+56.1
+45.8
+56.1
+Base (I+E)
+[
+16
+]
+✓
+✓
+74.5
+77.9
+58.8
+65.1
+66.6
+71.5
+Base (I)
+[
+24
+]
+✓
+62.5
+67.2
+28.6
+32.7
+45.6
+50.0
+Base (E)
+[
+24
+]
+✓
+43.5
+49.7
+43.5
+49.7
+43.5
+49.7
+Base (I+E)
+[
+16
+]
+✓
+67.9
+72.0
+37.5
+40.5
+52.7
+56.2
+DualTeacher (I)
+[
+1
+]
+✓
+45.9
+52.6
+24.4
+29.8
+35.2
+41.2
+DualTeacher (E)
+[
+1
+]
+✓
+33.5
+41.6
+33.5
+41.6
+33.5
+41.6
+DualTeacher (I+E)
+[
+1
+]
+✓
+60.1
+64.7
+34.6
+37.5
+47.4
+51.1
+UDA-HE (I)
+[
+35
+]
+✓
+46.6
+53.4
+18.0
+23.3
+32.3
+38.4
+UDA-HE (E)
+[
+35
+]
+✓
+29.8
+38.5
+29.8
+38.5
+29.8
+38.5
+UDA-HE (I+E)
+[
+35
+]
+✓
+61.8
+66.6
+36.4
+40.6
+49.1
+53.6
+Ours-Teacher
+✓
+-
+-
+52.9
+58.2
+-
+-
+Ours
+✓
+64.2
+68.1
+51.6
+57.5
+57.9
+62.8
+These two sets of poses are combined and passed through non-maximum suppression (NMS) to generate the final poses. For these final poses, both heatmap mask and offset mask are calculated based on the confidence from both networks. If either
+C
+′
+C^{\prime}
+or
+C
+C
+is lower than mutual masking threshold,
+t
+​
+h
+′
+th^{\prime}
+, we mask out that region.
+M
+k
+′
+​
+(
+x
+,
+y
+)
+ℋ
+=
+∏
+i
+∈
+d
+k
+​
+(
+x
+,
+y
+)
+𝒯
+m
+𝒯
+×
+∏
+j
+∈
+d
+k
+​
+(
+x
+,
+y
+)
+𝒮
+m
+𝒮
+\displaystyle M^{\prime}_{k}(x,y)^{\mathcal{H}}=\prod_{i\in d_{k}(x,y)^{\mathcal{T}}}m^{\mathcal{T}}\times\prod_{j\in d_{k}(x,y)^{\mathcal{S}}}m^{\mathcal{S}}
+(11)
+m
+𝒯
+=
+\displaystyle m^{\mathcal{T}}=
+{
+1
+,
+m
+​
+i
+​
+n
+​
+(
+C
+⁡
+(
+P
+i
+𝒯
+)
+,
+C
+′
+​
+(
+P
+i
+𝒯
+)
+)
+≥
+t
+​
+h
+′
+0
+,
+e
+​
+l
+​
+s
+​
+e
+\displaystyle\begin{cases}1,&min(C(P_{i}^{\mathcal{T}}),C^{\prime}(P_{i}^{\mathcal{T}}))\geq th^{\prime}\\
+0,&else\end{cases}
+m
+𝒮
+=
+\displaystyle m^{\mathcal{S}}=
+{
+1
+,
+m
+​
+i
+​
+n
+​
+(
+C
+⁡
+(
+P
+i
+𝒮
+)
+,
+C
+′
+​
+(
+P
+i
+𝒮
+)
+)
+≥
+t
+​
+h
+′
+0
+,
+e
+​
+l
+​
+s
+​
+e
+\displaystyle\begin{cases}1,&min(C(P_{i}^{\mathcal{S}}),C^{\prime}(P_{i}^{\mathcal{S}}))\geq th^{\prime}\\
+0,&else\end{cases}
+We can calculate
+M
+k
+′
+​
+(
+x
+,
+y
+)
+𝒪
+M^{\prime}_{k}(x,y)^{\mathcal{O}}
+in the same way as
+M
+k
+′
+​
+(
+x
+,
+y
+)
+ℋ
+M^{\prime}_{k}(x,y)^{\mathcal{H}}
+, as done in the previous section (Sec.
+3.3
+).
+The mutual mask
+M
+′
+M^{\prime}
+is applied to the final poses to exclude unreliable predictions when calculating the loss,
+ℒ
+s
+\mathcal{L}_{s}
+between pseudo label and prediction, similar to (Eqs. (
+1
+), (
+7
+), and (
+8
+)) in the previous stage. This masking strategy enhances the performance of the teacher network during adaptation to the target domain, improving its ability to handle real blur in the target domain.
+Student Network Training.
+We now proceed to retrain the student network using the teacher network that has been improved and well-adapted to the target domain. As before, we use the mutual uncertainty masking (Eqs. (
+9
+) and (
+11
+)), but this time, instead of training the teacher network with pseudo label, we focus on training the student network. This ensures that the student network benefits from the improved adaptation of the teacher network to the target domain while considering the uncertainties introduced by both networks.
+4
+Experiments
+4.1
+Dataset
+EHPT-XC Dataset
+. The EHPT-XC
+[
+16
+]
+dataset consists of 158 diverse sequences, each containing pixel-wise aligned and temporally synchronized event streams, sharp images and blurry images captured using the triplet camera system.
+The dataset includes 38K 2D keypoints, with 14 keypoints per person, along with bounding boxes and track IDs.
+For the unsupervised domain adaptation setting, we conceptually divide EHPT-XC into three subsets: train-source, train-target, and test. The train-source subset consists of 47 sequences, each containing 100 sharp image-event stream pairs with annotations. The train-target subset contains the images and events data, but with blurry, unlabeled images. The test subset comprises 26 sequences, each providing synchronized sharp images, blurry images, and event streams.
+4.2
+Implementation Details
+The input image size is set to 512
+×
+\times
+512. EHPT-XC dataset training is conducted on 2 TITAN RTX GPUs and batch size is 5. The training times for Stages 1–4 are 8 hours, 12 hours, 12 hours, and 12 hours, respectively.
+The learning rate is 1e-3 during total 100 epochs.
+For blur augmentation, we used
+N
+E
+N_{E}
+=5.
+In addition to motion-aware augmentation, we applied both sharp and blurry images with random rotation(-30
+∼
+\sim
+30), horizontal flip with 0.5 probability, random scale (0.75
+∼
+\sim
+1.5), random translation(-40
+∼
+\sim
+40 pixels) in both x, y directions. During pose estimation, we select top 30 center point locations from center heatmap and filter out center of which heat value is smaller than the keypoint threshold, 0.03 in this experiments. We set keypoints per human,
+K
+=
+14
+K=14
+.
+n
+​
+e
+​
+a
+​
+r
+​
+(
+p
+)
+near(p)
+is set to correspond to a square region with a side length of 8 around the 2D location
+p
+p
+.
+Figure 4
+:
+Comparison of UDA-HE
+[
+35
+]
+, DualTeacher
+[
+1
+]
+, baselines, and our method. The first row represents a scene with minimal blur, while the second and third rows depict scenes with severe blur.
+4.3
+Experimental Results
+We establish a baseline by using the same network architecture as our model while varying only the input modality. For some baseline settings, training was conducted using both sharp images and target-domain labels, which we refer to as the oracle setting. Additionally, to compare our approach with existing domain-adaptive human pose estimation methods, we evaluated DualTeacher
+[
+1
+]
+and UDA-HE
+[
+35
+]
+. Since these are image-based methods, we extend the experiments by incorporating various modalities.
+Since DualTeacher
+[
+1
+]
+’s original augmentation is tailored for low-light conditions, we substituted it with standard augmentations.
+Quantitative Results.
+Table
+1
+presents a quantitative comparison between the baselines, other methods, and our approach.
+Among the baselines, image-based estimation suffers the largest accuracy drop, while event-based estimation is more resilient. The event modality has the smallest domain gap due to its high-resolution motion information, but it underperforms in the sharp domain.
+Domain-adaptive methods
+[
+35
+,
+1
+]
+show improved performance over baselines in both multi-modal and image-based settings. However, since these methods were not originally designed for the blurred domain, the significant data distribution gap leads to sub-optimal performance. In contrast, our approach effectively bridges the domain gap early on through augmentation and a multi-modal teacher network, leveraging pseudo-label refinement to achieve superior results. Notably, our method achieves performance comparable to the multi-modal oracle.
+Qualitative Results.
+Figure
+4
+compares our method against multi-modal baselines and domain-adaptive methods. Baselines without domain adaptation experience significant performance degradation as blur intensifies. While domain-adaptive methods achieve some level of pose estimation, they produce a high number of false positives. In contrast, our approach demonstrates superior performance regardless of the blur intensity, as qualitatively observed.
+Table 2
+:
+Ablation study of the proposed method. MBA denotes the motion-aware event-based blur augmentation. Since Stage 3 trains only the teacher network, we report the results of performing both Stage 3 and Stage 4 together.
+MBA
+Stage 2
+Stage 3 & 4
+Target (Blur)
+mAP
+mAR
+(A)
+37.5
+40.5
+(B)
+✓
+40.4
+46.5
+(C)
+✓
+49.1
+54.3
+(D)
+✓
+✓
+50.4
+55.5
+(E)
+✓
+✓
+✓
+51.6
+57.5
+Figure 5
+:
+Qualitative comparison involving performance of each stage of our methods with baseline (image + event), stage 2 and stage 4 model. Ours refers to the student network.
+Table 3
+:
+Effectiveness of motion-aware event-based blur augmentation. We report the result of the teacher network from Stage 1. Note that teacher network is trained on only source domain.
+Method
+Target (Blur)
+mAP
+mAR
+Baseline
+46.5
+50.4
++ Motion Aug.
+46.7
+51.9
++ Motion Aug. + Blur Translation
+46.9
+52.2
+5
+Ablation Study and Analysis
+Effectiveness of the modules.
+Table
+2
+shows the
+ablation study results for different components, evaluating adaptation performance in the target domain as each proposed module is progressively added. The results confirm that each module and training strategy contributes to overall performance improvement. Notably, combining augmentation with pseudo-label-based learning significantly enhances accuracy, while additional refinement in Stages 3 and 4 further improves final performance.
+The improvement in target domain adaptation through pseudo-label refinement across stages is more clearly illustrated in Fig.
+5
+.
+Effectiveness of the motion-aware augmentations
+As shown in Table
+3
+, compared with baseline, motion augmentation improves mAP by 0.4, and when combined with blur translation, it achieves a total improvement of 1.8.
+Table 4
+:
+Analysis of the teacher network components. The results of the teacher network
+𝒯
+\mathcal{T}
+in Stage 1 are presented.
+Modality
+Target (Blur)
+mAP
+mAR
+w/o.
+𝒯
+R
+\mathcal{T}_{R}
+𝒯
+I
+\mathcal{T}_{I}
+30.5
+37.2
+𝒯
+E
+\mathcal{T}_{E}
+43.5
+49.7
+𝒯
+I
++
+E
+\mathcal{T}_{I+E}
+40.4
+46.5
+w.
+𝒯
+R
+\mathcal{T}_{R}
+𝒯
+I
+\mathcal{T}_{I}
+32.7
+37.0
+𝒯
+E
+\mathcal{T}_{E}
+43.1
+48.8
+𝒯
+I
++
+E
+\mathcal{T}_{I+E}
+39.6
+46.2
+𝒯
+I
++
+E
+\mathcal{T}_{I+E}
++
+𝒯
+E
+\mathcal{T}_{E}
+(Ours)
+46.9
+52.2
+Table 5
+:
+Analysis of the method for merging the outputs of the sub-teacher networks in the teacher network. All methods use
+𝒯
+I
++
+E
+\mathcal{T}_{I+E}
+and
+𝒯
+E
+\mathcal{T}_{E}
+as sub-teachers. The results of the teacher network
+𝒯
+\mathcal{T}
+in Stage 1 are presented.
+Method
+Target (Blur)
+mAP
+mAR
+Mean Heat Map
+45.4
+50.8
+Spatial Attention
+[
+71
+]
+41.9
+48.3
+Refinement Network
+46.9
+52.2
+Analysis of teacher network components.
+The experimental results on the components of the teacher network are presented in Table
+4
+. The results indicate that relying on a single sub-teacher component fails to fully exploit the refinement module, as each modality exhibits strengths and weaknesses depending on the scene conditions.
+Our teacher network consists of a multi-modal (I+E) sub-teacher, an event (E) sub-teacher, and a refinement module, allowing it to leverage the benefits of multi-modal learning while effectively handling noisy labels. As a result, it achieves the highest performance.
+Analysis of the refinement network.
+To refine the final output based on the results of the sub-teacher networks, we design and incorporate a refinement network. As alternatives, one could average the heatmaps from both networks or apply spatial attention
+[
+71
+]
+mechanisms. However, as shown in Table
+5
+, our method, which computes high-representation attention across channels for fusion, achieves the best performance among all approaches.
+Table 6
+:
+Hyper-parameter analysis of the masking threshold.
+t
+​
+h
+th
+and
+t
+​
+h
+′
+th^{\prime}
+denote the thresholds for Stage 2 and Stage 4, respectively.
+Stage 2
+t
+​
+h
+th
+mAP
+mAR
+0.05
+47.2
+52.8
+0.1
+50.4
+55.5
+0.2
+47.7
+52.5
+0.3
+45.7
+51.0
+Stage 4
+t
+​
+h
+′
+th^{\prime}
+mAP
+mAR
+0.05
+49.7
+56.3
+0.1
+51.6
+57.5
+0.2
+49.7
+56.9
+0.3
+50.3
+56.9
+Threshold Analysis.
+Table
+6
+presents the performance variations based on the threshold for training the student network in Stages 2 and 4. Notably, when relying on a single-teacher network, the model becomes more sensitive to threshold selection, leading to performance fluctuations. In contrast, with a dual-network framework, the filtering process produces more reliable pseudo-labels, resulting in greater robustness across a wider range of thresholds.
+Effectiveness of mutual uncertainty masking.
+Figure
+6
+illustrates the effectiveness of mutual uncertainty masking. In many cases, either the teacher or the student network predicts the correct answer while the other produces an incorrect one. Pseudo-labeling based on a single network is vulnerable to such inconsistencies. However, our approach can extract reliable masking even from the student heatmap, effectively filtering out uncertain regions in the teacher heatmap, which has a higher capacity. As a result, the masked pseudo-labels become more accurate, eliminating uncertain areas and improving overall reliability.
+Analysis of using only image data at test time.
+To apply pose estimation at real-world, aligned image-event data can be hard to acquired. So we investigated the performance using only image data at test time. We trained a final student network using only image data with the pseudo labels acquired from the multi-modal teacher network. As shown in Table
+7
+, without event data at test time, our framework shows that the proposed method can achieve better performance from the image-only baseline.
+Table 7
+:
+Performance of image-only student trained with an image+event teacher network at Stage 4.
+Domain
+Training Labels
+Source (Sharp)
+Target ( Blur)
+Average
+Method
+Sharp
+Blur
+mAP
+mAR
+mAP
+mAR
+mAP
+mAR
+Base (I)
+✓
+48.2
+55.8
+36.1
+47.1
+42.2
+51.4
+Base (I)
+✓
+62.5
+67.2
+28.6
+32.7
+45.6
+50.0
+Ours (I)
+✓
+63.2
+68.1
+46.0
+52.7
+54.6
+60.4
+Figure 6
+:
+Pseudo label with mutual uncertainty masking.
+6
+Conclusion
+In this paper, we introduce event cameras for the first time to facilitate domain-adaptive human pose estimation from a sharp domain to a motion-blurred domain. Without relying on target-domain annotations, we propose an effective adaptation strategy leveraging motion-aware event-based blur augmentation and dual network-based mutual uncertainty masking. Our approach successfully bridges the domain gap, achieving performance comparable to that of an oracle model trained with target-domain annotations. Our work highlights the potential of event cameras for robust human pose estimation and their applicability in dynamic environments.
+7
+Acknowledgments.
+This work was supported by the National Research Foundation of Korea(NRF) grant funded by the Korea government(MSIT) (NRF2022R1A2B5B03002636), and by the Institute of Information & communications Technology Planning & Evaluation (IITP) grant funded by the Korea government(MSIT) (No. RS-2024-00457882, AI Research Hub Project).
+References
+Ai et al. [2024]
+Yihao Ai, Yifei Qi, Bo Wang, Yu Cheng, Xinchao Wang, and Robby T Tan.
+Domain-adaptive 2d human pose estimation via dual teachers in extremely low-light conditions.
+In
+European Conference on Computer Vision
+, pages 221–239. Springer, 2024.
+Berthelot et al. [2019]
+David Berthelot, Nicholas Carlini, Ian Goodfellow, Nicolas Papernot, Avital Oliver, and Colin A Raffel.
+Mixmatch: A holistic approach to semi-supervised learning.
+Advances in neural information processing systems
+, 32, 2019.
+Calabrese et al. [2019]
+Enrico Calabrese, Gemma Taverni, Christopher Awai Easthope, Sophie Skriabine, Federico Corradi, Luca Longinotti, Kynan Eng, and Tobi Delbruck.
+Dhp19: Dynamic vision sensor 3d human pose dataset.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition workshops
+, pages 0–0, 2019.
+Cannici and Scaramuzza [2024]
+Marco Cannici and Davide Scaramuzza.
+Mitigating motion blur in neural radiance fields with events and frames.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 9286–9296, 2024.
+Cannici et al. [2021]
+Marco Cannici, Chiara Plizzari, Mirco Planamente, Marco Ciccone, Andrea Bottino, Barbara Caputo, and Matteo Matteucci.
+N-rod: A neuromorphic dataset for synthetic-to-real domain adaptation.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 1342–1347, 2021.
+Cao et al. [2019]
+Zhe Cao, Gines Hidalgo, Tomas Simon, Shih-En Wei, and Yaser Sheikh.
+Openpose: Realtime multi-person 2d pose estimation using part affinity fields.
+IEEE transactions on pattern analysis and machine intelligence
+, 43(1):172–186, 2019.
+Chen et al. [2018]
+Yilun Chen, Zhicheng Wang, Yuxiang Peng, Zhiqiang Zhang, Gang Yu, and Jian Sun.
+Cascaded pyramid network for multi-person pose estimation.
+In
+Proceedings of the IEEE conference on computer vision and pattern recognition
+, pages 7103–7112, 2018.
+Chen et al. [2024]
+Yugan Chen, Lin Zhao, Yalong Xu, Honglei Zu, Xiaoqi An, and Guangyu Li.
+Domain adaptive pose estimation via multi-level alignment.
+In
+2024 IEEE International Conference on Multimedia and Expo (ICME)
+, pages 1–6. IEEE, 2024.
+Cheng et al. [2020]
+Bowen Cheng, Bin Xiao, Jingdong Wang, Honghui Shi, Thomas S Huang, and Lei Zhang.
+Higherhrnet: Scale-aware representation learning for bottom-up human pose estimation.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 5386–5395, 2020.
+Cho et al. [2023a]
+Hoonhee Cho, Jegyeong Cho, and Kuk-Jin Yoon.
+Learning adaptive dense event stereo from the image domain.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 17797–17807, 2023a.
+Cho et al. [2023b]
+Hoonhee Cho, Yuhwan Jeong, Taewoo Kim, and Kuk-Jin Yoon.
+Non-coaxial event-guided motion deblurring with spatial alignment.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 12492–12503, 2023b.
+Cho et al. [2023c]
+Hoonhee Cho, Hyeonseong Kim, Yujeong Chae, and Kuk-Jin Yoon.
+Label-free event-based object recognition via joint learning with image reconstruction from events.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 19866–19877, 2023c.
+Cho et al. [2024a]
+Hoonhee Cho, Jae-Young Kang, and Kuk-Jin Yoon.
+Temporal event stereo via joint learning with stereoscopic flow.
+In
+European Conference on Computer Vision
+, pages 294–314. Springer, 2024a.
+Cho et al. [2024b]
+Hoonhee Cho, Taewoo Kim, Yuhwan Jeong, and Kuk-Jin Yoon.
+Tta-evf: test-time adaptation for event-based video frame interpolation via reliable pixel and sample estimation.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 25701–25711, 2024b.
+Cho et al. [2024c]
+Hoonhee Cho, Sung-Hoon Yoon, Hyeokjun Kweon, and Kuk-Jin Yoon.
+Finding meaning in points: Weakly supervised semantic segmentation for event cameras.
+In
+European Conference on Computer Vision
+, pages 266–286. Springer, 2024c.
+Cho et al. [2025]
+Hoonhee Cho, Taewoo Kim, Yuhwan Jeong, and Kuk-Jin Yoon.
+A benchmark dataset for event-guided human pose estimation and tracking in extreme conditions.
+Advances in Neural Information Processing Systems
+, 37:134826–134840, 2025.
+Crescitelli et al. [2020]
+Viviana Crescitelli, Atsutake Kosuge, and Takashi Oshima.
+Poison: Human pose estimation in insufficient lighting conditions using sensor fusion.
+IEEE Transactions on Instrumentation and Measurement
+, 70:1–8, 2020.
+Duan et al. [2023]
+Peiqi Duan, Boyu Li, Yixin Yang, Hanyue Lou, Minggui Teng, Yi Ma, and Boxin Shi.
+Eventaid: Benchmarking event-aided image/video enhancement algorithms with real-captured hybrid dataset.
+arXiv preprint arXiv:2312.08220
+, 2023.
+Fang et al. [2017]
+Hao-Shu Fang, Shuqin Xie, Yu-Wing Tai, and Cewu Lu.
+Rmpe: Regional multi-person pose estimation.
+In
+Proceedings of the IEEE international conference on computer vision
+, pages 2334–2343, 2017.
+Fang et al. [2018]
+Hao-Shu Fang, Guansong Lu, Xiaolin Fang, Jianwen Xie, Yu-Wing Tai, and Cewu Lu.
+Weakly and semi supervised human body part parsing via pose-guided knowledge transfer.
+arXiv preprint arXiv:1805.04310
+, 2018.
+Gallego et al. [2018]
+Guillermo Gallego, Henri Rebecq, and Davide Scaramuzza.
+A unifying contrast maximization framework for event cameras, with applications to motion, depth, and optical flow estimation.
+In
+Proceedings of the IEEE conference on computer vision and pattern recognition
+, pages 3867–3876, 2018.
+Gallego et al. [2020]
+Guillermo Gallego, Tobi Delbrück, Garrick Orchard, Chiara Bartolozzi, Brian Taba, Andrea Censi, Stefan Leutenegger, Andrew J Davison, Jörg Conradt, Kostas Daniilidis, et al.
+Event-based vision: A survey.
+IEEE transactions on pattern analysis and machine intelligence
+, 44(1):154–180, 2020.
+Ganin and Lempitsky [2015]
+Yaroslav Ganin and Victor Lempitsky.
+Unsupervised domain adaptation by backpropagation.
+In
+International conference on machine learning
+, pages 1180–1189. PMLR, 2015.
+Geng et al. [2021]
+Zigang Geng, Ke Sun, Bin Xiao, Zhaoxiang Zhang, and Jingdong Wang.
+Bottom-up human pose estimation via disentangled keypoint regression.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 14676–14686, 2021.
+Hosang et al. [2017]
+Jan Hosang, Rodrigo Benenson, and Bernt Schiele.
+Learning non-maximum suppression.
+In
+Proceedings of the IEEE conference on computer vision and pattern recognition
+, pages 4507–4515, 2017.
+Hu et al. [2020]
+Yuhuang Hu, Tobi Delbruck, and Shih-Chii Liu.
+Learning to exploit multiple vision modalities by using grafted networks.
+In
+European Conference on Computer Vision
+, pages 85–101. Springer, 2020.
+Huang et al. [2023a]
+Kunping Huang, Sen Zhang, Jing Zhang, and Dacheng Tao.
+Event-based simultaneous localization and mapping: A comprehensive survey.
+ArXiv
+, abs/2304.09793, 2023a.
+Huang et al. [2023b]
+Linzhi Huang, Yulong Li, Hongbo Tian, Yue Yang, Xiangang Li, Weihong Deng, and Jieping Ye.
+Semi-supervised 2d human pose estimation driven by position inconsistency pseudo label correction module.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 693–703, 2023b.
+Insafutdinov et al. [2016]
+Eldar Insafutdinov, Leonid Pishchulin, Bjoern Andres, Mykhaylo Andriluka, and Bernt Schiele.
+Deepercut: A deeper, stronger, and faster multi-person pose estimation model.
+In
+Computer Vision–ECCV 2016: 14th European Conference, Amsterdam, The Netherlands, October 11-14, 2016, Proceedings, Part VI 14
+, pages 34–50. Springer, 2016.
+Iqbal and Gall [2016]
+Umar Iqbal and Juergen Gall.
+Multi-person pose estimation with local joint-to-person associations.
+In
+Computer Vision–ECCV 2016 Workshops: Amsterdam, The Netherlands, October 8-10 and 15-16, 2016, Proceedings, Part II 14
+, pages 627–642. Springer, 2016.
+Jeong et al. [2024]
+Yuhwan Jeong, Hoonhee Cho, and Kuk-Jin Yoon.
+Towards robust event-based networks for nighttime via unpaired day-to-night event translation.
+In
+European Conference on Computer Vision
+, pages 286–306. Springer, 2024.
+Jian and Rostami [2023]
+Dayuan Jian and Mohammad Rostami.
+Unsupervised domain adaptation for training event-based networks using contrastive learning and uncorrelated conditioning.
+In
+Proceedings of the IEEE/CVF international conference on computer vision
+, pages 18721–18731, 2023.
+Jiang et al. [2024a]
+Jianping Jiang, Jiahe Li, Baowen Zhang, Xiaoming Deng, and Boxin Shi.
+Evhandpose: Event-based 3d hand pose estimation with sparse supervision.
+IEEE Transactions on Pattern Analysis and Machine Intelligence
+, 2024a.
+Jiang et al. [2024b]
+Jianping Jiang, Xinyu Zhou, Bingxuan Wang, Xiaoming Deng, Chao Xu, and Boxin Shi.
+Complementing event streams and rgb frames for hand mesh reconstruction.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 24944–24954, 2024b.
+Kim et al. [2022a]
+Donghyun Kim, Kaihong Wang, Kate Saenko, Margrit Betke, and Stan Sclaroff.
+A unified framework for domain adaptive pose estimation.
+In
+European Conference on Computer Vision
+, pages 603–620. Springer, 2022a.
+Kim et al. [2022b]
+Junho Kim, Inwoo Hwang, and Young Min Kim.
+Ev-tta: Test-time adaptation for event-based object recognition.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 17745–17754, 2022b.
+Kim et al. [2024a]
+Taewoo Kim, Hoonhee Cho, and Kuk-Jin Yoon.
+Cross-modal temporal alignment for event-guided video deblurring.
+arXiv preprint arXiv:2408.14930
+, 2024a.
+Kim et al. [2024b]
+Taewoo Kim, Hoonhee Cho, and Kuk-Jin Yoon.
+Frequency-aware event-based video deblurring for real-world motion blur.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 24966–24976, 2024b.
+Kim et al. [2024c]
+Taewoo Kim, Jaeseok Jeong, Hoonhee Cho, Yuhwan Jeong, and Kuk-Jin Yoon.
+Towards real-world event-guided low-light video enhancement and deblurring.
+In
+European Conference on Computer Vision
+, pages 433–451. Springer, 2024c.
+Kreiss et al. [2019]
+Sven Kreiss, Lorenzo Bertoni, and Alexandre Alahi.
+Pifpaf: Composite fields for human pose estimation.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 11977–11986, 2019.
+Lee et al. [2013]
+Dong-Hyun Lee et al.
+Pseudo-label: The simple and efficient semi-supervised learning method for deep neural networks.
+In
+Workshop on challenges in representation learning, ICML
+, page 896. Atlanta, 2013.
+Li et al. [2024]
+Hebei Li, Jin Wang, Jiahui Yuan, Yue Li, Wenming Weng, Yansong Peng, Yueyi Zhang, Zhiwei Xiong, and Xiaoyan Sun.
+Event-assisted low-light video object segmentation.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 3250–3259, 2024.
+Liang et al. [2024]
+Guoqiang Liang, Kanghao Chen, Hangyu Li, Yunfan Lu, and Lin Wang.
+Towards robust event-guided low-light image enhancement: a large-scale real-world event-image dataset and novel approach.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 23–33, 2024.
+Liang et al. [2023]
+Jinxiu Liang, Yixin Yang, Boyu Li, Peiqi Duan, Yong Xu, and Boxin Shi.
+Coherent event guided low-light video enhancement.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 10615–10625, 2023.
+Liu et al. [2024]
+Haoyue Liu, Shihan Peng, Lin Zhu, Yi Chang, Hanyu Zhou, and Luxin Yan.
+Seeing motion at nighttime with an event camera.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 25648–25658, 2024.
+Martínez-González et al. [2018]
+Angel Martínez-González, Michael Villamizar, Olivier Canévet, and Jean-Marc Odobez.
+Investigating depth domain adaptation for efficient human pose estimation.
+In
+Proceedings of the European Conference on Computer Vision (ECCV) Workshops
+, pages 0–0, 2018.
+Messikommer et al. [2022]
+Nico Messikommer, Daniel Gehrig, Mathias Gehrig, and Davide Scaramuzza.
+Bridging the gap between events and frames through unsupervised domain adaptation.
+IEEE Robotics and Automation Letters
+, 7(2):3515–3522, 2022.
+Millerdurai et al. [2024]
+Christen Millerdurai, Hiroyasu Akada, Jian Wang, Diogo Luvizon, Christian Theobalt, and Vladislav Golyanik.
+Eventego3d: 3d human motion capture from egocentric event streams.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 1186–1195, 2024.
+Millerdurai et al. [2025]
+Christen Millerdurai, Hiroyasu Akada, Jian Wang, Diogo Luvizon, Alain Pagani, Didier Stricker, Christian Theobalt, and Vladislav Golyanik.
+Eventego3d++: 3d human motion capture from a head-mounted event camera.
+arXiv preprint arXiv:2502.07869
+, 2025.
+Nehvi et al. [2021]
+Jalees Nehvi, Vladislav Golyanik, Franziska Mueller, Hans-Peter Seidel, Mohamed Elgharib, and Christian Theobalt.
+Differentiable event stream simulator for non-rigid 3d tracking.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 1302–1311, 2021.
+Newell et al. [2016]
+Alejandro Newell, Kaiyu Yang, and Jia Deng.
+Stacked hourglass networks for human pose estimation.
+In
+Computer Vision–ECCV 2016: 14th European Conference, Amsterdam, The Netherlands, October 11-14, 2016, Proceedings, Part VIII 14
+, pages 483–499. Springer, 2016.
+Newell et al. [2017]
+Alejandro Newell, Zhiao Huang, and Jia Deng.
+Associative embedding: End-to-end learning for joint detection and grouping.
+Advances in neural information processing systems
+, 30, 2017.
+Papandreou et al. [2017]
+George Papandreou, Tyler Zhu, Nori Kanazawa, Alexander Toshev, Jonathan Tompson, Chris Bregler, and Kevin Murphy.
+Towards accurate multi-person pose estimation in the wild.
+In
+Proceedings of the IEEE conference on computer vision and pattern recognition
+, pages 4903–4911, 2017.
+Paredes-Vallés and de Croon [2020]
+Federico Paredes-Vallés and Guido CHE de Croon.
+Back to event basics: Self-supervised learning of image reconstruction for event cameras via photometric constancy.
+arXiv preprint arXiv:2009.08283
+, 2020.
+Pham et al. [2024]
+Bang-Dang Pham, Phong Tran, Anh Tran, Cuong Pham, Rang Nguyen, and Minh Hoai.
+Blur2blur: Blur conversion for unsupervised image deblurring on unknown domains.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 2804–2813, 2024.
+Pishchulin et al. [2016]
+Leonid Pishchulin, Eldar Insafutdinov, Siyu Tang, Bjoern Andres, Mykhaylo Andriluka, Peter V Gehler, and Bernt Schiele.
+Deepcut: Joint subset partition and labeling for multi person pose estimation.
+In
+Proceedings of the IEEE conference on computer vision and pattern recognition
+, pages 4929–4937, 2016.
+Planamente et al. [2021]
+Mirco Planamente, Chiara Plizzari, Marco Cannici, Marco Ciccone, Francesco Strada, Andrea Bottino, Matteo Matteucci, and Barbara Caputo.
+Da4event: towards bridging the sim-to-real gap for event cameras using domain adaptation.
+IEEE Robotics and Automation Letters
+, 6(4):6616–6623, 2021.
+Ragab et al. [2022]
+Mohamed Ragab, Emadeldeen Eldele, Zhenghua Chen, Min Wu, Chee-Keong Kwoh, and Xiaoli Li.
+Self-supervised autoregressive domain adaptation for time series data.
+IEEE Transactions on Neural Networks and Learning Systems
+, 35(1):1341–1351, 2022.
+Rim et al. [2020]
+Jaesung Rim, Haeyun Lee, Jucheol Won, and Sunghyun Cho.
+Real-world blur dataset for learning and benchmarking deblurring algorithms.
+In
+Computer Vision–ECCV 2020: 16th European Conference, Glasgow, UK, August 23–28, 2020, Proceedings, Part XXV 16
+, pages 184–201. Springer, 2020.
+Rudnev et al. [2021]
+Viktor Rudnev, Vladislav Golyanik, Jiayi Wang, Hans-Peter Seidel, Franziska Mueller, Mohamed Elgharib, and Christian Theobalt.
+Eventhands: Real-time neural 3d hand pose estimation from an event stream.
+In
+Proceedings of the IEEE/CVF international conference on computer vision
+, pages 12385–12395, 2021.
+Sun et al. [2019]
+Ke Sun, Bin Xiao, Dong Liu, and Jingdong Wang.
+Deep high-resolution representation learning for human pose estimation.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 5693–5703, 2019.
+Sun et al. [2020]
+Ke Sun, Zigang Geng, Depu Meng, Bin Xiao, Dong Liu, Zhaoxiang Zhang, and Jingdong Wang.
+Bottom-up human pose estimation by ranking heatmap-guided adaptive keypoint estimates.
+arXiv preprint arXiv:2006.15480
+, 2020.
+Sun et al. [2022a]
+Lei Sun, Christos Sakaridis, Jingyun Liang, Qi Jiang, Kailun Yang, Peng Sun, Yaozu Ye, Kaiwei Wang, and Luc Van Gool.
+Event-based fusion for motion deblurring with cross-modal attention.
+In
+European conference on computer vision
+, pages 412–428. Springer, 2022a.
+Sun et al. [2022b]
+Zhaoning Sun, Nico Messikommer, Daniel Gehrig, and Davide Scaramuzza.
+Ess: Learning event-based semantic segmentation from still images.
+In
+European Conference on Computer Vision
+, pages 341–357. Springer, 2022b.
+Sun et al. [2024]
+Zhijing Sun, Xueyang Fu, Longzhuo Huang, Aiping Liu, and Zheng-Jun Zha.
+Motion aware event representation-driven image deblurring.
+In
+European Conference on Computer Vision
+, pages 418–435. Springer, 2024.
+Tian et al. [2019]
+Zhi Tian, Hao Chen, and Chunhua Shen.
+Directpose: Direct end-to-end multi-person pose estimation.
+arXiv preprint arXiv:1911.07451
+, 2019.
+Wang et al. [2021]
+Lin Wang, Yujeong Chae, Sung-Hoon Yoon, Tae-Kyun Kim, and Kuk-Jin Yoon.
+Evdistill: Asynchronous events to end-task learning via bidirectional reconstruction-guided cross-modal knowledge distillation.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 608–619, 2021.
+Wang et al. [2024]
+Zipeng Wang, Yunfan Lu, and Lin Wang.
+Revisit event generation model: Self-supervised learning of event-to-video reconstruction with implicit neural representations.
+In
+European Conference on Computer Vision
+, pages 321–339. Springer, 2024.
+Wei et al. [2016]
+Shih-En Wei, Varun Ramakrishna, Takeo Kanade, and Yaser Sheikh.
+Convolutional pose machines.
+In
+Proceedings of the IEEE conference on Computer Vision and Pattern Recognition
+, pages 4724–4732, 2016.
+Weng et al. [2021]
+Wenming Weng, Yueyi Zhang, and Zhiwei Xiong.
+Event-based video reconstruction using transformer.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 2563–2572, 2021.
+Woo et al. [2018]
+Sanghyun Woo, Jongchan Park, Joon-Young Lee, and In So Kweon.
+Cbam: Convolutional block attention module.
+In
+Proceedings of the European conference on computer vision (ECCV)
+, pages 3–19, 2018.
+Wu et al. [2024]
+Ziyi Wu, Mathias Gehrig, Qing Lyu, Xudong Liu, and Igor Gilitschenski.
+Leod: Label-efficient object detection for event cameras.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 16933–16943, 2024.
+Xia et al. [2023]
+Ruihao Xia, Chaoqiang Zhao, Meng Zheng, Ziyan Wu, Qiyu Sun, and Yang Tang.
+Cmda: Cross-modality domain adaptation for nighttime semantic segmentation.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 21572–21581, 2023.
+Xie et al. [2021]
+Rongchang Xie, Chunyu Wang, Wenjun Zeng, and Yizhou Wang.
+An empirical study of the collapsing problem in semi-supervised 2d human pose estimation.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 11240–11249, 2021.
+Xu et al. [2020]
+Lan Xu, Weipeng Xu, Vladislav Golyanik, Marc Habermann, Lu Fang, and Christian Theobalt.
+Eventcap: Monocular 3d capture of high-speed human motions using an event camera.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 4968–4978, 2020.
+Yan et al. [2024]
+Ming Yan, Yan Zhang, Shuqiang Cai, Shuqi Fan, Xincheng Lin, Yudi Dai, Siqi Shen, Chenglu Wen, Lan Xu, Yuexin Ma, et al.
+Reli11d: A comprehensive multimodal human motion dataset and method.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 2250–2262, 2024.
+Yang et al. [2015]
+Minhao Yang, Shih-Chii Liu, and Tobi Delbruck.
+A dynamic vision sensor with 1% temporal contrast sensitivity and in-pixel asynchronous delta modulator for event encoding.
+IEEE Journal of Solid-State Circuits
+, 50(9):2149–2160, 2015.
+Yang et al. [2024]
+Wen Yang, Jinjian Wu, Jupo Ma, Leida Li, and Guangming Shi.
+Motion deblurring via spatial-temporal collaboration of frames and events.
+In
+Proceedings of the AAAI Conference on Artificial Intelligence
+, pages 6531–6539, 2024.
+Yang et al. [2023]
+Yixin Yang, Jin Han, Jinxiu Liang, Imari Sato, and Boxin Shi.
+Learning event guided high dynamic range video reconstruction.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 13924–13934, 2023.
+Yao and Chuah [2024]
+Zhen Yao and Mooi Choo Chuah.
+Event-guided low-light video semantic segmentation.
+arXiv preprint arXiv:2411.00639
+, 2024.
+Zamir et al. [2022]
+Syed Waqas Zamir, Aditya Arora, Salman Khan, Munawar Hayat, Fahad Shahbaz Khan, and Ming-Hsuan Yang.
+Restormer: Efficient transformer for high-resolution image restoration.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 5728–5739, 2022.
+Zhao et al. [2023]
+Yiming Zhao, Denys Rozumnyi, Jie Song, Otmar Hilliges, Marc Pollefeys, and Martin R Oswald.
+Human from blur: Human pose tracking from blurry images.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 14905–14915, 2023.
+Zheng and Wang [2024]
+Xu Zheng and Lin Wang.
+Eventdance: Unsupervised source-free cross-modal adaptation for event-based object recognition.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 17448–17458, 2024.
+Zhuang et al. [2022]
+Jiafan Zhuang, Zilei Wang, and Yuan Gao.
+Semi-supervised video semantic segmentation with inter-frame feature reconstruction.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 3263–3271, 2022.
+Zou et al. [2021]
+Shihao Zou, Chuan Guo, Xinxin Zuo, Sen Wang, Pengyu Wang, Xiaoqin Hu, Shoushun Chen, Minglun Gong, and Li Cheng.
+Eventhpe: Event-based 3d human pose and shape estimation.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 10996–11005, 2021.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

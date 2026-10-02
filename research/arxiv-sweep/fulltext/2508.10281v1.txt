@@ -1,0 +1,1787 @@
+VIFSS: View-Invariant and Figure Skating-Specific Pose Representation Learning for Temporal Action Segmentation
+Ryota Tanaka
+Email:
+tanaka.ryota@g.sp.m.is.nagoya-u.ac.jp
+Affiliation:
+Graduate School of Informatics, Nagoya University, Chikusa-ku, Nagoya, 464-8601, Aichi, Japan
+Tomohiro Suzuki
+Email:
+suzuki.tomohiro@g.sp.m.is.nagoya-u.ac.jp
+Affiliation:
+Graduate School of Informatics, Nagoya University, Chikusa-ku, Nagoya, 464-8601, Aichi, Japan
+Keisuke Fujii
+Email:
+fujii@i.nagoya-u.ac.jp
+Corresponding author:
+Corresponding author
+Affiliation:
+Graduate School of Informatics, Nagoya University, Chikusa-ku, Nagoya, 464-8601, Aichi, Japan
+Affiliation:
+RIKEN Center for Advanced Intelligence Project, 1-5 Yamadaoka, Suita, 565-0871, Osaka, Japan
+Abstract
+Understanding human actions from videos plays a critical role across various domains, including sports analytics. In figure skating, accurately recognizing the type and timing of jumps a skater performs is essential for objective performance evaluation. However, this task typically requires expert-level knowledge due to the fine-grained and complex nature of jump procedures. While recent approaches have attempted to automate this task using Temporal Action Segmentation (TAS), there are two major limitations to TAS for figure skating: the annotated data is insufficient, and existing methods do not account for the inherent three-dimensional aspects and procedural structure of jump actions.
+In this work, we propose a new TAS framework for figure skating jumps that explicitly incorporates both the three-dimensional nature and the semantic procedure of jump movements. First, we propose a novel View-Invariant, Figure Skating-Specific pose representation learning approach (VIFSS) that combines contrastive learning as pre-training and action classification as fine-tuning. For view-invariant contrastive pre-training, we construct FS-Jump3D, the first publicly available 3D pose dataset specialized for figure skating jumps. Second, we introduce a fine-grained annotation scheme that marks the “entry (preparation)” and “landing” phases, enabling TAS models to learn the procedural structure of jumps.
+Extensive experiments demonstrate the effectiveness of our framework. Our method achieves over 92% F1@50 on
+element-level
+TAS, which requires recognizing both jump types and rotation levels. Furthermore, we show that view-invariant contrastive pre-training is particularly effective when fine-tuning data is limited, highlighting the practicality of our approach in real-world scenarios.
+Keywords:
+computer vision , temporal action segmentation , 3D human pose , contrastive learning , sports , dataset
+†
+†
+graphicalabstract:
+†
+†
+highlights:
+We introduce a new framework for temporal action segmentation using VIFSS (View-Invariant and Figure Skating-Specific) pose representations.
+We construct FS-Jump3D, the first publicly available 3D pose dataset for figure skating jumps.
+We propose a fine-grained annotation strategy to capture precise jump procedures.
+Our VIFSS approach achieves superior performance on figure skating TAS tasks over 2D pose and 3D pose features.
+1
+Introduction
+Understanding human actions from videos is a fundamental task with wide-ranging applications, from sports
+(
+Suzuki et al. 2024
+;
+Tanaka et al. 2023a
+)
+to autonomous driving
+(
+Hashimoto et al. 2015
+)
+, surveillance
+(
+Dave et al. 2022
+)
+, and elderly care
+(
+Kim et al. 2022
+)
+. In the sports domain, video data plays a critical role in applications such as replay judgment
+(
+Spitz et al. 2021
+)
+, automatic judgment
+(
+Suzuki et al. 2024
+;
+Tanaka et al. 2023a
+)
+, and providing feedback during training
+(
+Mateus et al. 2025
+)
+. In particular, figure skating presents a unique challenge due to the increasing technical complexity of jump elements, making video utilization indispensable.
+Currently, figure skating judging relies heavily on manual annotation by technical specialists and replay operators, who identify and record jump types and timings during performances, respectively. This process requires expert knowledge and a non-negligible amount of time and effort. To address these challenges, this study proposes an automated pipeline system that recognizes the type and timing of figure skating jumps from broadcast videos by Temporal Action Segmentation (TAS).
+TAS
+(
+Ding et al. 2022
+)
+aims to segment untrimmed video into frame-wise action labels. Existing benchmark datasets for TAS mainly consist of video recordings of procedural activities, such as cooking
+(
+Kuehne et al. 2014
+;
+Stein and McKenna 2013
+;
+Damen et al. 2022
+;
+Fathi et al. 2011
+)
+, or assembling furniture or toys
+(
+Bansal et al. 2022
+;
+Sener et al. 2022
+;
+Ben-Shabat et al. 2021
+;
+Ragusa et al. 2021
+)
+. These datasets annotate fine-grained actions at the frame level, e.g., “take cup” and “open fridge”, and TAS models are trained to understand these procedural transitions. A widely used and successful approach divides the TAS task into two stages: extracting temporal features and segmenting the actions based on those features
+(
+Lu and Elhamifar 2024
+;
+Farha and Gall 2019
+;
+Li et al. 2023
+)
+. The quality of the extracted features greatly influences segmentation performance, making feature selection a key consideration.
+In standard TAS tasks, visual cues from objects or tools often help recognize actions. Consequently, image-based features such as I3D
+(
+Carreira and Zisserman 2017
+)
+, extracted using 3D-CNNs, are frequently adopted. However, previous studies on understanding figure skating actions
+(
+Liu et al. 2021
+;
+Hong et al. 2021
+)
+have suggested that 2D poses or embedded pose representations may be more informative than image-based features. This reflects the nature of figure skating as a motion-centric task, where recognizing human movement is more important than the appearance of objects or backgrounds.
+Nevertheless, figure skating actions are inherently three-dimensional and captured from a variety of viewpoints in broadcast footage. Leveraging 3D pose information to construct view-invariant pose representations offers promising potential for this task. However, no prior work has examined the effectiveness of 3D pose-based representations for TAS. Furthermore, existing TAS studies on figure skating
+(
+Liu et al. 2021
+;
+Gan et al. 2024
+)
+, as illustrated in Figure
+1
+(a), do not account for entry (preparation) or landing phases in the annotation of jumps. Since TAS models are designed to learn sequential action procedures, explicitly labeling the full jump procedure, including the transition from entry to landing, may contribute to effective learning.
+Figure 1
+:
+Overview of the proposed TAS framework.
+(a) We propose a novel annotation strategy that explicitly models the sequential structure of jump procedures.
+(b-1) To capture the three-dimensional and domain-specific characteristics of figure skating jumps, we construct FS-Jump3D, the first open 3D pose dataset dedicated to figure skating.
+(b-2) We introduce a two-stage pose representation learning framework, consisting of view-invariant contrastive pre-training and domain-specific fine-tuning via jump action classification.
+Finally, we evaluate the effectiveness of the learned pose embeddings as input to TAS models, combined with the proposed annotation scheme.
+In this paper, we propose a new TAS framework that utilizes a View-Invariant and Figure Skating-Specific (VIFSS) pose representation learning method, which captures the three-dimensional nature of figure skating movements, as illustrated in Figure
+1
+.
+First, this study addresses the above issues by proposing a new annotation strategy for figure skating TAS tasks that incorporates detailed jump procedures. We also investigate the utility of view-invariant and figure skating-specific 3D pose representations as input for the TAS model.
+To address the challenges of incorporating the three-dimensional nature of figure skating motions into TAS, we introduce VIFSS that utilizes pose embedding features instead of directly using estimated 2D or 3D joint coordinates. While raw joint coordinates can represent motion geometrically, they often lack robustness to viewpoint variations and may hinder generalization across diverse domains. To overcome these limitations, we propose a two-stage learning approach. First, we pre-train a pose encoder using contrastive learning on 3D pose datasets to acquire view-invariant representations. Then, we fine-tune the encoder via action classification tailored to the figure skating domain. By combining view-invariant pre-training with domain-specific fine-tuning, our method enables more effective and flexible representation learning for TAS in figure skating, particularly under conditions of limited annotation and diverse viewpoints.
+Although contrastive learning for pose representation has the advantage of not requiring explicit 3D pose datasets, relying only on synchronized multi-view videos, existing 3D pose datasets can further accelerate and enhance the learning process. However, most 3D pose datasets mainly focus on everyday activities such as walking or talking
+(
+Ionescu et al. 2013
+;
+Joo et al. 2015
+;
+Von Marcard et al. 2018
+;
+Sigal et al. 2010
+)
+, while sports-specific 3D pose datasets
+(
+Ingwersen et al. 2023
+;
+Nibali et al. 2021
+;
+Suzuki et al. 2025
+)
+remain limited. Moreover, to the best of our knowledge, there is no publicly available 3D pose dataset capturing figure skating movements. To address this gap, we construct FS-Jump3D, a first open-source 3D pose dataset for figure skating jumps, using markerless motion capture. By integrating FS-Jump3D with other 3D pose datasets
+(
+Ionescu et al. 2013
+;
+Mehta et al. 2017
+;
+Li et al. 2021
+)
+within a unified training framework, we enable efficient learning of pose representations for the complex and dynamic motions of figure skating.
+The aim of this study is to enable TAS for figure skating jumps with fine-grained detection of take-off and landing timings.
+The key contributions of this work are as follows:
+1.
+We propose a two-stage learning framework called VIFSS for TAS, which combines contrastive pre-training with action classification fine-tuning to achieve view-invariant and domain-specialized embeddings for figure skating.
+2.
+We construct two datasets essential for learning the characteristics of figure skating: (i) FS-Jump3D, a 3D pose dataset of figure skating jumps, and (ii) a fine-grained TAS annotation set that captures jump procedures and the precise timings of take-off and landing.
+3.
+We conduct comprehensive experiments to validate the effectiveness of the proposed approach on figure skating TAS tasks.
+The FS-Jump3D dataset is publicly available to support research in figure skating and the analysis of complex sports motions. We also release the jump procedure-aware TAS annotations and the full project code for the proposed two-stage pose representation learning framework. We extend our previous conference workshop paper
+(
+Tanaka et al. 2024
+)
+by enhancing TAS performance through a novel VIFSS approach and conducting comprehensive experiments with detailed analysis.
+2
+Related work
+2.1
+Video Understanding in Sports
+In all types of sports, it is essential to quantitatively evaluate athletes’ performance. Accordingly, various research tasks have been proposed to understand human motion in sports videos, including action prediction
+(
+Honda et al. 2022
+;
+Kaneko et al. 2024
+;
+Ibh et al. 2024
+)
+, action recognition (classification)
+(
+Held et al. 2023
+;
+Zhu et al. 2022
+;
+Deyzel and Theart 2023
+;
+Chappa et al. 2023
+;
+Askari et al. 2023
+;
+Askari et al. 2024
+;
+Ibh et al. 2023
+;
+Nonaka et al. 2024
+)
+, temporal action detection
+(
+Nonaka et al. 2022
+;
+Santra et al. 2025
+;
+Giancola et al. 2023
+;
+Cabado et al. 2024
+;
+Xarles et al. 2024
+)
+, action quality assessment
+(
+Pirsiavash et al. 2014
+;
+Parmar and Morris 2019a
+;
+Parmar and Morris 2019b
+;
+Okamoto and Parmar 2024
+)
+, and TAS
+(
+Liu et al. 2021
+;
+Gan et al. 2024
+)
+.
+Traditional approaches to these tasks have leveraged image features extracted through convolutional neural networks or optical flow
+(
+Carreira and Zisserman 2017
+;
+Giancola et al. 2018
+;
+Sanford et al. 2020
+;
+Piergiovanni and Ryoo 2018
+;
+Shim et al. 2018
+)
+. In recent years, however, methods based on object detection
+(
+Redmon et al. 2016
+;
+Jocher et al. 2023
+)
+, object tracking
+(
+Aharon et al. 2022
+;
+Zhang et al. 2022
+)
+, and 2D/3D pose estimation
+(
+Yeung et al. 2024
+;
+Deyzel and Theart 2023
+;
+Ibh et al. 2023
+;
+Ibh et al. 2024
+)
+have become mainstream for extracting spatiotemporal information from video. Unlike image-based features, these approaches are more robust to variations in filming conditions and camera angles, making them particularly useful in the sports domain, where collecting large-scale datasets is often challenging.
+Understanding human actions in sports involves recognizing various elements, including group-level behaviors
+(
+Chappa et al. 2023
+;
+Askari et al. 2023
+;
+Askari et al. 2024
+)
+, individual-level movements with joint dynamics
+(
+Suzuki et al. 2024
+;
+Tanaka et al. 2023a
+)
+, and object trajectories such as balls or other equipment
+(
+Van Zandycke and De Vleeschouwer 2022
+;
+Nakabayashi et al. 2024
+;
+Gossard et al. 2024
+;
+Vandeghen et al. 2022
+;
+Liu and Wang 2022
+)
+. Consequently, advancements in technologies such as object detection, tracking, and pose estimation are expected to significantly improve the accuracy of element recognition and, in turn, enhance the overall performance of downstream video understanding tasks.
+2.2
+Video Understanding in Figure Skating
+In the context of figure skating, a range of tasks has been studied, including action recognition
+(
+Hong et al. 2021
+;
+Liu et al. 2020
+;
+Gan et al. 2024
+)
+, temporal action detection
+(
+Santra et al. 2025
+)
+, action quality assessment
+(
+Pirsiavash et al. 2014
+;
+Xu et al. 2020
+;
+Xia et al. 2022
+)
+, and TAS
+(
+Liu et al. 2021
+;
+Gan et al. 2024
+)
+. Since figure skating is a judged sport that evaluates both technical skills and artistic expression, many studies aim to automate the scoring process. A common approach is to train deep learning models to regress overall scores from performance videos and corresponding judge scores from past competitions
+(
+Pirsiavash et al. 2014
+;
+Xu et al. 2020
+;
+Xia et al. 2022
+)
+. However, these end-to-end methods often lack transparency and interpretability, making it difficult to understand how the models assess technical proficiency or artistic quality.
+Recent studies in automated figure skating scoring have therefore shifted their focus to modeling individual judging components. This includes jump type classification
+(
+Liu et al. 2020
+;
+Hong et al. 2021
+)
+, edge error detection
+1
+1
+1
+Edge error detection evaluates whether the skater uses the correct edge (i.e., blade tilt) during take-off in accordance with the rules. It mainly applies to flip and lutz jumps and affects the base value and execution score of the jump.
+(
+Tanaka et al. 2023b
+;
+Tanaka et al. 2023a
+)
+, and under-rotation detection
+(
+HIROSAWA 2020
+)
+. In addition, TAS, which assigns frame-wise action labels to untrimmed performance videos, has also been studied for recognizing jumps and spins in figure skating.
+Unlike many other sports that emphasize group dynamics or object trajectories, figure skating relies heavily on analyzing the skater’s fine-grained, sequential movements. FSD-10
+(
+Liu et al. 2020
+)
+tackled a classification task of the 10 most frequent jump and spin types using optical flow and 2D pose estimation, showing that focusing on frames with large joint displacements improved model performance. MCFS
+(
+Liu et al. 2021
+)
+addressed TAS for jumps and spins, using 2D pose sequences as input features to improve segmentation accuracy. These studies suggest that pose-based features, particularly those invariant to background or costume, are beneficial for figure skating video understanding.
+While the utility of 2D pose features has been validated, the potential of view-invariant 3D pose-based embeddings remains underexplored. Moreover, jump procedure elements such as preparation and landing phases are crucial for recognizing jump type and timing. However, no existing dataset for figure skating TAS has explicitly annotated such procedures. In this work, we propose a novel annotation method that incorporates jump procedure elements and investigate the effectiveness of using view-invariant pose representations for TAS in figure skating.
+2.3
+3D Pose Estimation and Pose Representation Learning
+View-invariant pose representation can be achieved through two major approaches: directly estimating 3D poses or learning latent embeddings of poses.
+For 3D pose estimation, there are two common approaches: one that directly estimates 3D poses from images, and another that lifts estimated 2D poses to 3D, known as 2D-to-3D lifting. With recent advances in 2D pose estimation, the latter approach has received more attention, allowing researchers to focus solely on the 2D-to-3D extension. This approach has demonstrated strong performance in recent works. Methods such as SimpleBaseline
+(
+Martinez et al. 2017
+)
+, SemGCN
+(
+Zhao et al. 2019
+)
+, and JointFormer
+(
+Lutz et al. 2022
+)
+propose 3D pose estimation models based on 2D-to-3D lifting from a single frame. In contrast, MotionBERT
+(
+Zhu et al. 2023
+)
+and MotionAGFormer
+(
+Mehraban et al. 2024
+)
+incorporate temporal modeling from multiple consecutive frames for 2D-to-3D lifting. While these temporal models enable more accurate 3D pose estimation, they often suffer from slower processing speeds and are limited to fixed-length frame sequences as input.
+In pose representation learning, which aims to embed poses into a latent space, most methods similarly take 2D poses as input. Pr-VIPE
+(
+Sun et al. 2020
+;
+Liu et al. 2022
+)
+introduces a triplet loss-based framework to learn a latent space that captures pose similarity in a view-invariant manner. The resulting pose embeddings, produced by the encoder from 2D pose inputs, are effective for downstream tasks such as action recognition and video alignment. CV-MIM
+(
+Zhao et al. 2021
+)
+proposes a contrastive learning approach based on mutual information maximization to disentangle pose-dependent and view-dependent representations from 2D poses. While this method excels at capturing both pose-specific and viewpoint-specific features, a limitation is that it does not explicitly use viewpoint labels during training. As a result, it remains unclear whether the learned view-dependent features accurately reflect viewpoint similarity across different views.
+2.4
+3D Pose Datasets
+Most existing 3D human pose datasets, such as Human3.6M
+(
+Ionescu et al. 2013
+)
+, 3DPW
+(
+Von Marcard et al. 2018
+)
+, MPI-INF-3DHP
+(
+Mehta et al. 2017
+)
+, and HumanEva-I
+(
+Sigal et al. 2010
+)
+, rely on optical marker-based motion capture systems and primarily contain daily activities such as walking and waving. While these systems offer high-precision tracking, they can constrain natural body movements, making them less suitable for capturing the complex dynamics of sports.
+To address this limitation, several recent datasets have adopted markerless motion capture systems to record more dynamic activities, including soccer kicks and baseball pitches
+(
+Ingwersen et al. 2023
+)
+, jumping and catching
+(
+Nibali et al. 2021
+)
+, and dance performances
+(
+Li et al. 2021
+)
+. These datasets have broadened the applicability of 3D pose estimation models to high-motion scenarios that were not represented in conventional datasets.
+Despite these advances, no public dataset currently exists for figure skating—a sport performed exclusively in the unique environment of an ice rink. On ice, skaters harness inertial and centrifugal forces to execute highly complex and dynamic movements that differ significantly from those in other sports. Existing datasets are therefore insufficient for modeling or estimating figure skating-specific poses.
+To fill this gap, we introduce FS-Jump3D, the first 3D pose dataset dedicated to figure skating jumps. Captured on ice using a hardware-synchronized multi-camera setup and a markerless motion capture system, FS-Jump3D provides high-fidelity 3D jump motion data from expert skaters. For a detailed comparison of dataset characteristics, please refer to Table 1 in the previous conference paper
+(
+Tanaka et al. 2024
+)
+.
+3
+Methods
+This study aims to perform TAS of figure skating jumps using VIFSS (View-Invariant and Figure Skating-Specific) pose representations as input features. Prior research
+(
+Liu et al. 2021
+)
+has demonstrated that pose-based methods using 2D keypoints outperform image-based approaches, as they are less sensitive to variations in appearance, such as costumes or background. However, figure skating motions are inherently three-dimensional, and 2D poses, being projections of 3D body configurations onto the image plane, can vary significantly depending on the camera viewpoint. The direct 3D pose-based approaches face two key challenges: (1) TAS performance is highly sensitive to the quality of 3D pose estimation, and (2) simple coordinate-based representations may lack the capacity to capture complex motion dynamics.
+To address these challenges, we propose a method that employs contrastive learning with a 3D pose dataset to pre-train a pose encoder that extracts view-invariant pose embeddings. The pre-trained encoder is subsequently fine-tuned on a figure skating-specific action classification task, and the resulting pose embeddings serve as input features for the downstream TAS task. An overview of the proposed pose representation learning pipeline is illustrated in Figure
+2
+.
+Figure 2
+:
+Overview of the proposed pose representation learning pipeline tailored for figure skating. In the first stage, contrastive learning is applied to a 3D pose dataset (FS-Jump3D and
+(
+Ionescu et al. 2013
+;
+Mehta et al. 2017
+;
+Li et al. 2021
+)
+) to pre-train a pose encoder that maps similar poses from different viewpoints close in the latent space. In the second stage, the pre-trained encoder is fine-tuned on the SkatingVerse
+Gan et al. 2024
+action classification dataset to specialize the pose representations for figure skating movements.
+View-invariant pose representation learning via contrastive learning requires a suitable 3D pose dataset. However, most existing datasets
+(
+Ionescu et al. 2013
+;
+Mehta et al. 2017
+;
+Von Marcard et al. 2018
+;
+Sigal et al. 2010
+)
+focus on everyday activities and lack the domain-specific complex and dynamic motions of figure skating, which are driven by inertial and centrifugal forces. To the best of our knowledge, there are no publicly available 3D pose datasets tailored for figure skating. To address this limitation, we introduce FS-Jump3D, a 3D pose dataset capturing elite-level figure skating jumps, including triple rotations, recorded on ice using markerless motion capture.
+We further propose a novel annotation strategy for TAS that considers the procedural structure of figure skating jumps. Since TAS models are typically designed to learn the procedures of human actions, annotating the preparation and landing phases of figure skating jumps can guide the model to better capture motion sequences of jumps.
+The proposed TAS framework using VIFSS pose features is built upon the newly constructed FS-Jump3D dataset and a novel annotation scheme that accounts for the procedural structure of figure skating jumps. Accordingly, Section
+3.1
+introduces the FS-Jump3D dataset. Section
+3.2
+then presents our jump-specific TAS annotation method. Finally, Section
+3.3
+describes the VIFSS pose features learned via a two-stage framework consisting of view-invariant contrastive pre-training and figure skating-specific fine-tuning.
+3.1
+FS-Jump3D Dataset
+To capture the complex and dynamic motions of figure skating jumps, we construct a 3D pose dataset, FS-Jump3D, using a markerless motion capture system (Theia3D, Theia). Data collection is performed using 12 hardware-synchronized motion capture cameras (Miqus Video, Qualisys) installed around the ice skating rink. This configuration enables wide-area coverage, capturing not only the airborne phase of jumps but also the entry (preparation) and landing motions essential for TAS tasks. The markerless setup allows skaters to perform high-difficulty jumps, including triple jumps, without movement restrictions, while maintaining millimeter-level accuracy. We recorded jump data from four experienced figure skaters (referred to as Skaters A to D), each performing 10 trials for all six types of jumps. As a result, the FS-Jump3D dataset comprises 253 jump sequences, each containing synchronized footage from 12 camera views and the corresponding 3D pose data. Each pose consists of the 3D coordinates of 83 joints (head: 16, torso: 16, arms: 30, legs: 34), enabling detailed biomechanical analysis. For additional details on FS-Jump3D, we refer readers to the previous paper
+(
+Tanaka et al. 2024
+)
+.
+3.2
+Fine-Grained and Jump Procedure-Aware Annotation
+For the TAS dataset, we use broadcast footage of men’s and women’s short programs from the Olympic Games and World Championships, as adopted in prior work on jump classification in figure skating
+(
+Hong et al. 2021
+)
+and action spotting
+(
+Santra et al. 2025
+)
+. This dataset comprises a total of 371 broadcast videos.
+A limitation of previous studies on TAS in figure skating
+(
+Liu et al. 2021
+;
+Gan et al. 2024
+)
+is that their annotation strategy does not consider the procedural phases of a jump (i.e., preparation and landing movements). Specifically, in these TAS datasets, only a single action label (e.g., “2Axel”) is annotated for a few frames before take-off and after landing. Such annotations obscure the exact timing of take-off and landing, and lack the information to facilitate the TAS model’s understanding of the sequential structure of jump motions. In figure skating, each type of jump has a distinctive preparatory movement to generate rotation and elevation. This makes the preparation phase essential for jump classification. Likewise, landing movements provide important cues for detecting the moment of landing.
+To address this issue, we propose a novel annotation scheme that segments a figure skating jump into three phases:
+1.
+entry:
+The preparatory movements leading up to take-off.
+2.
+jump:
+The airborne phase from take-off to landing.
+3.
+landing:
+The movements immediately after landing.
+The entry phase includes frames starting from three steps before take-off, where a ‘‘step’’ is defined by changes such as turns or the skating leg switch. The landing phase begins at the frame where the skate blade first contacts the ice and continues while the skater maintains a sustained glide using the back outside edge
+2
+2
+2
+A proper landing posture in figure skating is characterized by a stable and flowing exit on the back outside edge.
+. The entry labels are unique for each of the six jump types (e.g., “Axel entry,” “Salchow entry”), whereas the landing label is common across all jump types.
+Following prior work
+(
+Liu et al. 2021
+;
+Gan et al. 2024
+)
+, we define a hierarchical label structure to control task difficulty in figure skating TAS, consisting of
+Set-level
+and
+Element-level
+annotations. At the Set-level, each jump is assigned one of six labels based on its type (e.g., “Axel,” “Salchow”). The Element-level provides finer granularity with 23 labels that consider both jump type and the number of rotations (e.g., “3 Axel,” “4 Salchow”). The Element-level task is more challenging, as it requires recognizing not only the jump type but also the number of rotations.
+Combining the jump phase labels with the hierarchical label structure results in a total of 13 action labels at the Set-level and 30 labels at the Element-level. Frames not associated with any jumps (e.g., spins, step sequences) are annotated with the label “NONE”.
+3.3
+View-Invariant and Figure Skating-Specific Pose Representation Learning
+Prior work in figure skating action recognition
+(
+Hong et al. 2021
+)
+and TAS
+(
+Liu et al. 2021
+)
+has demonstrated that using estimated 2D human poses as input leads to better performance than raw image features such as those extracted by I3D
+(
+Carreira and Zisserman 2017
+)
+. While 2D poses are robust to variations in background and costume, they are sensitive to changes in camera viewpoint and angle.
+To mitigate this issue, the previous work
+(
+Tanaka et al. 2024
+)
+proposed a method that utilizes estimated 3D pose coordinates as input for TAS in figure skating. While this approach showed some performance gains (at Set-level), the accuracy of 3D pose estimation remains a bottleneck, implying that simple 3D coordinate-based representations are insufficient for fully capturing the complexity of figure skating motions.
+To overcome these challenges, we propose a view-invariant and domain-specific pose encoder, using a 3D pose dataset for pre-training and an action classification dataset for fine-tuning, as illustrated in Figure
+2
+. The training of this pose encoder consists of two main stages:
+1.
+Pre-training with contrastive learning
+to obtain view-invariant pose embeddings.
+2.
+Fine-tuning on figure skating action classification
+to adapt the pose encoder for figure skating-specific motions.
+In the pre-training stage, we adopt a contrastive learning framework that takes pairs of 2D poses captured of the same underlying 3D pose from different viewpoints. The goal is to learn pose embeddings that reflect multi-view similarity. In the fine-tuning stage, we optimize the pre-trained pose encoder for the figure skating action classification task, enhancing the encoder’s ability to capture figure skating motions.
+The following subsections provide a detailed description of the methodology for learning view-invariant and domain-specific pose embeddings proposed in this work.
+3.3.1
+Pre-training a Pose Encoder via Contrastive Learning
+Inspired by prior work such as Pr-VIPE
+(
+Sun et al. 2020
+;
+Liu et al. 2022
+)
+and CV-MIM
+(
+Zhao et al. 2021
+)
+, we adopt a contrastive learning framework to learn view-invariant pose representations. In contrastive learning, as exemplified by SimCLR
+(
+Chen et al. 2020
+)
+and BYOL
+(
+Grill et al. 2020
+)
+, different augmentations are applied to the same sample to create an “anchor” and a corresponding “positive” that share semantic similarity. The encoder is trained to map these pairs to nearby points in the embedding space. While image-based tasks typically use augmentations like masking, rotation, flipping, or jittering, we adapt this strategy for 3D human pose data. Specifically, we generate multiple 2D projections of 3D poses using virtual cameras at random viewpoints. These multi-view 2D poses are treated as anchor-positive pairs for training.
+Pose Encoder and 3D Pose Datasets
+For the pose encoder, we adopt Jointformer
+(
+Lutz et al. 2022
+)
+, a transformer-based 3D human pose estimator designed for the per-frame 2D-to-3D lifting. In addition to our FS-Jump3D dataset, we incorporate several major 3D human pose datasets: Human3.6M
+(
+Ionescu et al. 2013
+)
+, MPI-INF-3DHP
+(
+Mehta et al. 2017
+)
+, and AIST++
+(
+Li et al. 2021
+)
+. Human3.6M contains indoor recordings of everyday activities, while MPI-INF-3DHP includes both indoor daily motions and outdoor activities. AIST++ is a large-scale indoor dance motion dataset. Figure skating involves not only jumps but also a wide variety of motions. To improve the generalizability of the pose encoder and ensure it is adaptable to figure skating, we utilize a cross-dataset training strategy to expose the encoder to a diverse range of human poses.
+Data Preprocessing
+As a preprocessing step for 3D pose datasets, we first standardized the keypoint definitions used to represent poses by aligning the number, spatial locations, and ordering of joint keypoints across datasets. Next, we apply alignment and normalization procedures to define consistent virtual camera directions for each 3D pose. Finally, we perform random augmentation during the loading of the training dataset to construct 2D pose pairs for contrastive learning.
+For 3D pose alignment, we first align the gravity direction of the 3D pose to the global
+z
+z
+-axis by estimating a ground plane via RANSAC
+(
+Fischler and Bolles 1981
+)
+as illustrated in Figure
+3
+. We detect the lowest
+z
+z
+-coordinate in each pose and assume that 50% of these lowest points correspond to actual contact points, while the remaining 50% are treated as outliers. A ground plane is then estimated using RANSAC based on this assumption. The 3D pose is rotated so that its estimated ground plane aligns with the global
+x
+​
+y
+xy
+-plane. Subsequently, we further rotate each pose around the
+z
+z
+-axis so that all poses face the same direction, as shown in Figure
+4
+: the left hip joint is aligned to the positive
+x
+x
+-axis and the right hip joint to the negative
+x
+x
+-axis.
+Normalization involves centering each pose at the mid-hip joint and rescaling the pose such that the sum of the distances from the mid-hip to the chest and from the chest to the neck equals 0.4. As a result, the centralized 3D joint coordinates are scaled to almost lie within an absolute value of 1.
+Data augmentation includes random 2D projections using virtual cameras, horizontal flipping, jittering, and masking. The virtual camera is positioned relative to the origin-centered 3D pose, with its azimuth angle sampled uniformly from
+±
+180
+∘
+\pm 180^{\circ}
+, elevation from
+±
+30
+∘
+\pm 30^{\circ}
+, and distance from the range
+[
+5
+,
+10
+]
+[5,10]
+.
+A 2D pose is generated by perspective projection from this virtual viewpoint. Horizontal flipping is performed by multiplying the
+x
+x
+-coordinates of the 3D joints by
+−
+1
+-1
+prior to projection. Jittering adds zero-mean Gaussian noise with a variance of
+0.01
+0.01
+to each 2D joint. Masking randomly sets 1% of the 2D joint coordinates to
+(
+0
+,
+0
+)
+(0,0)
+per frame. These augmentations enhance data diversity and promote learning of robust latent representations, improving resilience to noise in real-world 2D pose estimates.
+Figure 3
+:
+Ground plane alignment with RANSAC. We perform ground plane alignment across all 3D pose datasets such that the
+z
+z
+-axis of the world coordinate system is aligned with the gravity direction, using plane detection based on RANSAC.
+Figure 4
+:
+Pose alignment. For all 3D pose datasets, we align each pose in every frame so that it consistently faces the same direction throughout the sequence.
+Figure 5
+:
+Random virtual camera arrangement. The virtual camera is positioned relative to the root joint (i.e., the origin) of the aligned and normalized 3D pose. The camera position is randomly sampled from a spherical coordinate range: the azimuth angle from
+±
+180
+∘
+\pm 180^{\circ}
+, the elevation angle from
+±
+30
+∘
+\pm 30^{\circ}
+, and the distance from the origin from the range
+[
+5
+,
+10
+]
+[5,10]
+. The virtual camera is always assumed to be oriented toward the root joint.
+Objective Function
+Inspired by CV-MIM
+(
+Zhao et al. 2021
+)
+, which learns view-invariant pose representations, we propose a simplified objective function that not only acquires such invariant features but also explicitly learns view-dependent features necessary for recognizing rotations in figure skating.
+Let the 2D pose input be
+x
+∈
+ℝ
+2
+×
+N
+x\in\mathbb{R}^{2\times N}
+with
+N
+N
+joints, and the encoder output be an embedding
+z
+∈
+ℝ
+d
+z\in\mathbb{R}^{d}
+. The embedding is composed of a pose-invariant component
+z
+pose
+∈
+ℝ
+d
+pose
+z_{\text{pose}}\in\mathbb{R}^{d_{\text{pose}}}
+and a view-dependent component
+z
+view
+∈
+ℝ
+d
+view
+z_{\text{view}}\in\mathbb{R}^{d_{\text{view}}}
+, such that
+d
+=
+d
+pose
++
+d
+view
+d=d_{\text{pose}}+d_{\text{view}}
+.
+Given an anchor pose and its positive pair, let
+z
+z
+and
+z
+′
+z^{\prime}
+be their respective embeddings. To enforce view-invariant representation learning, we define the pose loss
+ℒ
+pose
+\mathcal{L}_{\text{pose}}
+using the Barlow Twins loss
+(
+Zbontar et al. 2021
+)
+:
+ℒ
+pose
+=
+BarlowTwins
+​
+(
+z
+pose
+,
+z
+pose
+′
+)
+\mathcal{L}_{\text{pose}}=\text{BarlowTwins}(z_{\text{pose}},z^{\prime}_{\text{pose}})
+The Barlow Twins loss reduces redundancy between anchor and positive embeddings, encouraging diverse and uncorrelated features without relying on negative samples, thus improving computational efficiency.
+To learn view-dependent features, we define a view loss
+ℒ
+view
+\mathcal{L}_{\text{view}}
+. Let
+v
+c
+v_{\text{c}}
+and
+v
+c
+′
+v^{\prime}_{\text{c}}
+denote unit vectors from the origin (mid-hip point) to the virtual cameras for the anchor and positive views, respectively. The loss is defined using cosine similarity and mean squared error (MSE) as:
+ℒ
+view
+=
+MSE
+​
+(
+cossim
+​
+(
+z
+view
+,
+z
+view
+′
+)
+,
+cossim
+​
+(
+v
+c
+,
+v
+c
+′
+)
+)
+\mathcal{L}_{\text{view}}=\text{MSE}(\text{cossim}(z_{\text{view}},z^{\prime}_{\text{view}}),\text{cossim}(v_{\text{c}},v^{\prime}_{\text{c}}))
+This formulation incorporates virtual camera direction, consistently defined with respect to normalized and aligned 3D poses, into the learning objective. It encourages the model to capture features that are sensitive to viewpoint variations, which are typically neglected in conventional pose representation learning.
+Finally, to prevent the learned embeddings from collapsing to trivial solutions and to encourage diversity in the embedding space, we introduce a regularization term
+ℒ
+R
+\mathcal{L}_{\text{R}}
+. This term consists of two components: a variance loss that adjusts the output feature variance to a target value
+σ
+target
+2
+\sigma_{\text{target}}^{2}
+, and a KL divergence loss that regularizes the output distribution toward a uniform distribution:
+ℒ
+R
+=
+VarianceLoss
+​
+(
+z
+)
++
+VarianceLoss
+​
+(
+z
+′
+)
++
+KLUniformLoss
+​
+(
+z
+)
++
+KLUniformLoss
+​
+(
+z
+′
+)
+\mathcal{L}_{\text{R}}=\text{VarianceLoss}(z)+\text{VarianceLoss}(z^{\prime})+\text{KLUniformLoss}(z)+\text{KLUniformLoss}(z^{\prime})
+The two losses are defined as follows:
+VarianceLoss
+​
+(
+z
+)
+=
+1
+d
+​
+∑
+i
+=
+1
+d
+(
+σ
+i
+2
+​
+(
+z
+)
+−
+σ
+target
+2
+)
+2
+\text{VarianceLoss}(z)=\frac{1}{d}\sum_{i=1}^{d}\left(\sigma_{i}^{2}(z)-\sigma_{\text{target}}^{2}\right)^{2}
+KLUniformLoss
+​
+(
+z
+)
+=
+1
+d
+​
+∑
+i
+=
+1
+d
+(
+z
+i
+​
+log
+⁡
+z
+i
++
+(
+1
+−
+z
+i
+)
+​
+log
+⁡
+(
+1
+−
+z
+i
+)
+)
+\text{KLUniformLoss}(z)=\frac{1}{d}\sum_{i=1}^{d}\left(z_{i}\log z_{i}+(1-z_{i})\log(1-z_{i})\right)
+In our experiments, we set
+σ
+target
+2
+=
+1.0
+\sigma_{\text{target}}^{2}=1.0
+for the variance loss.
+Based on the above, the overall loss function for contrastive learning of the pose encoder is defined as:
+ℒ
+total
+=
+w
+pose
+⋅
+ℒ
+pose
++
+w
+view
+⋅
+ℒ
+view
++
+w
+R
+⋅
+ℒ
+R
+\mathcal{L}_{\text{total}}=w_{\text{pose}}\cdot\mathcal{L}_{\text{pose}}+w_{\text{view}}\cdot\mathcal{L}_{\text{view}}+w_{\text{R}}\cdot\mathcal{L}_{\text{R}}
+where
+w
+pose
+w_{\text{pose}}
+,
+w
+view
+w_{\text{view}}
+, and
+w
+R
+w_{\text{R}}
+are the weights for each loss term. In our implementation, we set
+w
+pose
+=
+1.0
+w_{\text{pose}}=1.0
+,
+w
+view
+=
+10.0
+w_{\text{view}}=10.0
+, and
+w
+R
+=
+1.0
+w_{\text{R}}=1.0
+.
+3.3.2
+Fine-Tuning the Pose Encoder via Action Classification
+After pre-training the pose encoder using contrastive learning to acquire view-invariant pose embeddings, we fine-tune the encoder to specialize in recognizing figure skating motions. This is achieved by training on a figure skating-specific action classification task.
+Action Classification Dataset for Figure Skating
+For the action classification task, we use the SkatingVerse dataset
+(
+Gan et al. 2024
+)
+, which contains annotated video clips of figure skating jumps and spins categorized into 28 action classes. Of these, 23 classes correspond to combinations of six jump types (Axel, Salchow, Toe Loop, Loop, Flip, and Lutz) and four rotation levels (single to quadruple). The remaining five classes include four spin types (Camel Spin, Sit Spin, Upright Spin, and Other Spins), along with a “NONE” class for segments that do not contain jumps or spins.
+The dataset provides annotations for 1,687 official figure skating videos, resulting in 19,993 training clips and 8,586 test clips, each trimmed and labeled according to its specific action.
+Action Classification Model
+To fine-tune the pose encoder for figure skating action classification, we adopt a temporal modeling architecture inspired by a previous study
+(
+Hong et al. 2021
+)
+, which connects a BiGRU-based sequential model to the pre-trained pose encoder. The overall architecture is illustrated in Figure
+6
+.
+Given a sequence of 2D poses estimated from each video frame, the pose encoder outputs a sequence of pose embeddings. These embeddings are fed into a two-layer BiGRU, whose output is aggregated via temporal max pooling. The pooled feature is then passed through a fully connected layer with dropout, followed by a ReLU activation, another dropout layer, and a final fully connected layer to predict probabilities over 28 action classes.
+The pose encoder is initialized with weights pre-trained using view-invariant contrastive learning. The entire model is fine-tuned using cross-entropy loss on the action classification task. This pre-training enables the model to efficiently learn representations tailored for figure skating motion understanding by fine-tuning.
+Figure 6
+:
+Overview of the action classification model using a two-layer BiGRU. The model fine-tunes the pose encoder through training on a figure skating action classification task.
+4
+Experiments
+4.1
+Datasets
+4.1.1
+FS-Jump3D Dataset
+The most distinctive feature of FS-Jump3D is its recording environment. While existing datasets are primarily collected under controlled indoor conditions, such as laboratories, and only a few are captured outdoors, FS-Jump3D was recorded in an ice skating rink, a highly specialized environment. Unlike standard ground conditions, the ice rink enables skaters to execute dynamic and complex actions that utilize inertia and centrifugal force.
+Another key feature is the use of markerless motion capture to record high-performance movements, including triple jumps. Figure skating jumps are extremely sensitive to environmental conditions and carry a risk of falls; thus, to avoid restricting skaters’ natural movement, we adopted a markerless system. This approach allowed us to capture authentic jump data, including mistakes and falls, without compromising the difficulty level of the jumps.
+Furthermore, FS-Jump3D was recorded using twelve dedicated motion capture cameras capable of hardware synchronization. Given the extremely rapid nature of jump movements in figure skating, hardware synchronization was essential to minimize inter-camera temporal misalignment and enable precise spatial reconstruction. The use of twelve cameras also provides sufficient multi-view coverage, which has the potential to mitigate severe occlusions commonly encountered in 2D pose estimation for figure skating.
+4.1.2
+Fine-Grained and Jump Procedure-Aware TAS Annotation Statistics
+We constructed a TAS dataset of figure skating jumps, annotated using our proposed procedure-aware method. The dataset comprises 371 broadcast videos of short programs from international competitions, including the Winter Olympics (2010, 2014, 2018) and the World Figure Skating Championships (2017–2019), which cover both men’s and women’s events.
+On average, each video contains 4,265 frames, of which approximately 382 frames (8.96%) are annotated with action labels, corresponding to the interval from jump entry to landing. This sparsity highlights the inherent challenge of TAS in figure skating broadcasts, where annotated segments constitute only a small portion of the total video.
+Figure
+7
+shows the distribution of jump types in the dataset. At the Set-level (a), toe loops are the most frequent, likely due to their occurrence as both standalone jumps and as the second jump in combinations. Axels are the second most frequent, reflecting their status as a required element in both men’s and women’s short programs.
+At the element level (b), the most common jump is the triple toe loop, followed by the triple Lutz, double Axel, and triple Axel. The high frequency of Axels is consistent with their mandatory inclusion, with most women attempting a double Axel and most men attempting a triple Axel. The triple Lutz is also popular due to its high base value. In contrast, more difficult quadruple jumps and downgraded jumps (e.g., popped to singles or doubles) appear less frequently. These statistics reveal a significant class imbalance in element-level annotations and highlight the challenges of TAS in figure skating.
+Figure 7
+:
+Annotation statistics of our TAS dataset for figure skating jumps. Both Set-level and Element-level labels exhibit significant class imbalance.
+To evaluate the effectiveness of our procedure-aware annotation method, we define a baseline called
+Coarse Annotation
+at the Set-level. In this baseline, all entry and landing labels are replaced with the “None” label, leaving only the jump action labels (e.g., “Salchow”, “Axel”) annotated frame by frame. This setup mimics the annotation style of MCFS
+(
+Liu et al. 2021
+)
+, allowing for fair comparison while demonstrating the impact of incorporating detailed jump-procedural phases.
+4.2
+Evaluation Protocol
+4.2.1
+Comparison of Pose Features for TAS Input
+To validate the effectiveness of the proposed approach, we conduct a series of evaluation experiments. First, we assess the impact of the proposed VIFSS pose features on TAS performance by comparing various types of input features. Additionally, we investigate the individual contributions of the FS-Jump3D dataset, the proposed annotation method, and our two-stage pose representation learning framework by evaluating TAS performance under different experimental settings.
+To identify effective input representations for TAS in figure skating jumps, we compare the following four types of pose features, including our proposed method:
+1.
+2D pose features (baseline)
+2.
+3D pose features
+(
+Tanaka et al. 2024
+)
+3.
+VIFSS features (proposed)
+4.
+scratch-FSS features (ablation)
+As a baseline, we employ
+2D pose features
+, which are commonly used in figure skating action recognition
+(
+Liu et al. 2021
+)
+. These are 2D coordinates directly obtained via 2D pose estimation on each video frame. In our implementation, we utilize DWPose
+(
+Yang et al. 2023
+)
+, pre-trained on the COCO-Wholebody dataset and publicly released by the authors, and normalize the obtained 2D joint coordinates.
+The
+3D pose features
+are generated by lifting the estimated 2D poses to 3D and applying view-invariant normalization, aligning all poses to face a consistent direction. We utilize MotionAGFormer
+(
+Mehraban et al. 2024
+)
+for 3D pose estimation, trained on the same dataset used to generate the proposed VIFSS pose features. Additionally, the 3D rotation angles used during pose alignment are normalized and concatenated to the aligned pose coordinates as auxiliary features, enabling the representation to retain global orientation cues that are beneficial for action recognition. For further details on the 3D pose feature processing pipeline, please refer to the preliminary conference paper
+(
+Tanaka et al. 2024
+)
+.
+The proposed
+VIFSS features
+are compared with the
+scratch-FSS features
+used in our ablation study. Here, “VIFSS” indicates that the pose encoder is first pre-trained via contrastive learning to acquire view-invariant representations, followed by fine-tuning on a figure skating-specific action classification task. In contrast, the
+scratch-FSS features
+are extracted from an encoder trained from scratch solely on the action classification task, without the view-invariant pre-training stage. This comparison allows us to quantify the contribution of the proposed pre-training strategy to the quality of the learned pose representations.
+4.2.2
+Evaluation scheme of TAS
+We evaluate the effectiveness of various input feature representations for TAS, using our proposed fine-grained annotation that incorporates detailed jump procedures.
+Following the experimental protocol of prior work
+(
+Hong et al. 2021
+)
+, all footage from the 2018 Winter Olympics and World Figure Skating Championships is designated as the test set. The remaining videos are used for training, with 20% of the training data held out for validation. This split ensures that no footage from the same competition year appears in both the training and test sets, thereby enabling an evaluation of the model’s generalization capability to unseen video conditions, such as variations in camera placement, viewing angles, and video quality.
+To assess the utility of the proposed pose-based features, we adopt FACT
+(
+Lu and Elhamifar 2024
+)
+as the TAS model. FACT is a Transformer-based architecture that leverages cross-attention mechanisms to jointly learn frame-level and action-level representations. It has demonstrated state-of-the-art performance on several benchmark TAS datasets
+(
+Kuehne et al. 2014
+;
+Stein and McKenna 2013
+;
+Fathi et al. 2011
+;
+Damen et al. 2022
+)
+.
+We follow standard evaluation protocols in the TAS literature
+(
+Ding et al. 2022
+)
+, computing frame-wise accuracy and F1@{10, 25, 50, 75, 90} scores. These metrics are calculated over all action segments, excluding the “entry”, “landing”, and “None” labels. Frame-wise accuracy quantifies the proportion of correctly labeled frames. The F1@k metric considers a predicted segment correct if it overlaps with the corresponding ground-truth segment by at least
+k
+% of its length, and computes the harmonic mean of precision and recall at each overlap threshold.
+5
+Results
+This section presents a comprehensive evaluation of our proposed method for TAS of figure skating jumps under various experimental settings.
+In Section
+5.1
+, we compare TAS performance between two annotation granularities: Set-level and Element-level. We then evaluate the effectiveness of our proposed VIFSS pose features against alternative feature types at both annotation levels. Detailed results for each level are discussed in Sections
+5.2
+and
+5.3
+.
+Section
+5.4
+investigates the impact of the FS-Jump3D dataset by comparing view-invariant pre-training with and without its inclusion.
+In Section
+5.5
+, we assess the benefit of our fine-grained, jump procedure-aware annotation scheme by contrasting it with coarse annotations, highlighting its role in improving the model’s understanding of jump dynamics.
+Finally, Section
+5.6
+presents an ablation study quantifying the contribution of view-invariant pre-training under varying supervision levels, with particular emphasis on its advantages in low-data scenarios.
+5.1
+Comparison Between Set-level and Element-level TAS Annotations
+Tables
+1
+report the TAS results for figure skating jumps using different input features, comparing the performance between Set-level and Element-level annotations. A comparison of Tables
+1(a)
+and
+1(b)
+reveals that segmentation at the Element-level is more challenging than at the Set-level. In both settings, the F1@90 scores are substantially lower than the scores for F1@10 to F1@75. In our broadcast video dataset, the average duration of a jump, from take-off to landing, was 16.25 frames. Under the F1@90 metric, a predicted segment is considered correct only if it overlaps with the ground-truth segment by approximately 15 frames, allowing for an error margin of merely 1–2 frames. In contrast, the F1@75 metric requires approximately 12 frames of overlap, allowing for an error margin of roughly four frames (i.e., two frames before and after the jump). Under this F1@75 metrics, our proposed VIFSS features employing two-stage pose representation learning achieve over 90% in both Set-level and Element-level tasks.
+Our annotation scheme enables precise evaluation of take-off and landing timings. While F1@90 serves as an upper bound for model precision, the consistently high F1@75 scores demonstrate the practical effectiveness of the proposed representations.
+Feature
+Acc
+F1@10
+F1@25
+F1@50
+F1@75
+F1@90
+2D pose (Baseline)
+78.55
+85.12
+84.93
+84.17
+81.52
+35.83
+3D pose
+(
+Tanaka et al. 2024
+)
+79.89
+87.13
+86.94
+86.56
+82.36
+33.36
+VIFSS
+89.91
+95.44
+95.44
+94.68
+93.16
+51.71
+scratch-FSS
+86.38
+92.48
+92.29
+91.72
+88.87
+42.44
+(a)
+Set-level TAS results.
+Feature
+Acc
+F1@10
+F1@25
+F1@50
+F1@75
+F1@90
+2D pose (Baseline)
+71.34
+78.97
+78.97
+78.78
+75.74
+35.39
+3D pose
+(
+Tanaka et al. 2024
+)
+70.17
+77.71
+77.33
+76.57
+71.62
+29.52
+VIFSS
+85.82
+92.75
+92.75
+92.56
+90.65
+49.62
+scratch-FSS
+82.72
+89.65
+89.65
+89.65
+86.42
+41.03
+(b)
+Element-level TAS results.
+Table 1
+:
+Comparison of TAS performance at different granularity levels of annotation.
+5.2
+Set-Level TAS Performance
+As shown in Table
+1(a)
+, both the VIFSS and scratch-FSS features outperform the baseline methods in Set-level TAS. Among these, the VIFSS features achieve the highest overall performance. These results indicate that the proposed view-invariant contrastive pre-training effectively mitigates the view-dependent nature of 2D pose features, thereby enhancing downstream action classification performance for figure skating-specific movements. Although the 3D pose features lag behind the proposed pose embeddings, they still surpass the baseline 2D pose features. Overall, these findings demonstrate that learning view-invariant pose representations, particularly the proposed VIFSS features, is effective for identifying both the type and timing of jumps at the Set level.
+5.3
+Element-Level TAS Performance
+Table
+1(b)
+presents the TAS results at the Element-level for each type of input feature. Consistent with the Set-level findings, the pose embedding features, VIFSS and scratch-FSS features, achieve strong performance. Especially, the VIFSS features exceed 92% at F1@50. In contrast, the 3D pose features perform worse than the baseline 2D pose features at the Element-level. This suggests that the proposed two-stage learning framework for pose embeddings is also effective for fine-grained Element-level segmentation. Meanwhile, the 3D pose features appear less suitable for tasks that require precise recognition of complex rotational motion.
+The degradation in the performance of 3D pose features at the Element-level is likely due to limitations in the 3D pose estimation model itself. Specifically, MotionAGFormer
+(
+Mehraban et al. 2024
+)
+, the 3D pose estimator used in this study, is a temporal model that predicts 3D poses from sequences of 2D poses. However, differences in the temporal characteristics of the training and inference data likely affected its performance. The FS-Jump3D training dataset primarily consists of double jumps performed by subjects B and C, and triple jumps by subject A. In contrast, the broadcast videos used for inference mainly contain triple jumps and even quadruple jumps. Moreover, while the FS-Jump3D dataset was downsampled from 60fps to 30fps for training, the broadcast videos were recorded at 25fps. These discrepancies in the number of rotations and frame intervals between training and inference may have led to a decline in the model’s ability to recognize rotational motion.
+Figures
+8(a)
+and
+8(b)
+show examples of successful and failed 3D pose estimations of jump rotations in broadcast videos, respectively. Figure
+8(a)
+presents a double Axel, which was well-represented in the FS-Jump3D training set (performed by subjects A and C), and demonstrates accurate 3D pose estimation of the rotational motion. In contrast, Figure
+8(b)
+shows a quadruple toe loop, which was not included in the training data, resulting in a failure to correctly capture the rotational motion. Similarly, failures were often observed for jumps with unusual arm positions, such as triple jumps performed with both arms raised above the head. These observations suggest that the performance of temporal 3D pose estimation models heavily depends on the diversity of the training 3D pose dataset and that the model’s limitations become a bottleneck for subsequent TAS tasks.
+In contrast, the pose embedding approach demonstrated robustness to such variations. Since the contrastive pre-training stage is designed to learn per-frame pose representations independent of temporal sequences, it is less affected by intra-class variability in jump rotations. Moreover, the fine-tuning stage does not rely on 3D pose annotations, which are often difficult to obtain, making it more practical for domain-specific applications. As a result, the embedding-based approach consistently achieved high performance even for the more demanding Element-level TAS task.
+(a)
+Successful 3D pose estimation of a double Axel in a broadcast video. The rotational motion is accurately reconstructed as a 3D pose sequence.
+(b)
+Failed 3D pose estimation of a quadruple toe loop in a broadcast video. The model fails to capture the rotational motion, likely due to the absence of similar high-speed rotations in the training data.
+Figure 8
+:
+Examples of 3D pose estimation for jump rotations in broadcast videos. (a) shows a successful case, while (b) illustrates a failure likely caused by limitations in training data diversity.
+5.4
+Impact of FS-Jump3D on TAS Performance
+Table
+2
+compares the Set-level TAS performance when the FS-Jump3D dataset is included or excluded from the training process, using both 3D pose features and VIFSS features. The results show that excluding the FS-Jump3D dataset from training for both types of features leads to a degradation in segmentation performance. FS-Jump3D consists of figure skating jump actions captured in a unique environment, an ice rink, which differs significantly from conventional 3D pose datasets. These results indicate that FS-Jump3D plays a crucial role in accurately capturing jump motions in figure skating, underscoring its importance for the TAS task.
+Feature
+Acc
+F1@10
+F1@25
+F1@50
+F1@75
+F1@90
+3D pose
+(
+Tanaka et al. 2024
+)
+79.89
+87.13
+86.94
+86.56
+82.36
+33.36
+3D pose (w/o FS-Jump3D)
+75.76
+83.08
+82.89
+82.51
+77.57
+31.18
+VIFSS
+89.91
+95.44
+95.44
+94.68
+93.16
+51.71
+VIFSS (w/o FS-Jump3D)
+87.53
+93.16
+92.97
+92.78
+91.25
+46.01
+Table 2:
+TAS results on the Set-level with and without the FS-Jump3D dataset.
+5.5
+Comparison Between Proposed and Coarse Annotations
+The proposed annotation method in this study aims to incorporate knowledge about the procedural steps of jumps (entry and landing phases) into the TAS model, thereby helping the model to better recognize the type and timing of jumps. Table
+3
+presents the results of validating the effectiveness of the proposed annotation on the Set-level TAS task. For comparison, a
+Coarse
+annotation was created by replacing all labels related to entry and landing phases in the proposed annotations with a “None” label, leaving only the jump labels as valid action classes.
+The evaluation metric used was F1@50, which is the most commonly adopted metric for TAS.
+The results suggest that introducing procedural steps through the proposed annotation leads to improved TAS performance. In addition to providing the model with a deeper understanding of jump procedures, the proposed annotation might also contribute to performance improvement by assigning meaningful labels to a larger number of frames. Specifically, in the coarse annotation, only 1.50% of all frames are assigned action labels (jump only), whereas in the proposed annotation, 8.96% of frames are labeled with action labels (entry, jump, or landing). This difference in the proportion of action labels suggests that providing meaningful frame-level annotations over a broader time span is an important factor in enhancing TAS performance for figure skating jumps.
+Feature
+Proposed
+Coarse
+2D pose (baseline)
+84.17
+76.42
+3D pose
+(
+Tanaka et al. 2024
+)
+86.56
+72.78
+VIFSS
+94.68
+93.93
+Table 3:
+Comparison between the proposed and coarse annotations based on F1@50 for the Set-level TAS.
+5.6
+Effectiveness of View-Invariant Pre-training
+Figure
+9
+shows the results of an ablation study evaluating the impact of pre-training in our two-stage learning framework for VIFSS features. We compared models with and without contrastive pre-training across both the Set-level and Element-level TAS tasks. For the second-stage fine-tuning, we varied the amount of action classification data to 100%, 50%, 10%, and 1%, and evaluated the performance using F1@50.
+The results demonstrate that incorporating view-invariant contrastive pre-training consistently improves TAS performance at both levels. Notably, the benefit of pre-training becomes more pronounced as the amount of fine-tuning data decreases. In the extreme case of using only 1% of the data, models without pre-training failed to learn meaningful pose embeddings, resulting in near-zero TAS performance. In contrast, models with pre-training achieved over 70% F1@50 at the Set-level and over 60% at the Element-level.
+These findings highlight that view-invariant pre-training is particularly effective in low-data regimes. It enables efficient learning of domain-adaptive pose embeddings for figure skating, even when the annotated fine-tuning data is severely limited.
+(a)
+F1@50 at the Set-level with and without view-invariant pre-training.
+(b)
+F1@50 at the Element-level with and without view-invariant pre-training.
+Figure 9
+:
+Impact of view-invariant pose representation pre-training on TAS performance across different proportions of fine-tuning data. In both annotation levels, pre-training consistently improves TAS performance, with particularly significant gains observed under low-data conditions.
+6
+Conclusion
+In this work, we proposed VIFSS pose features and demonstrated their effectiveness for TAS of figure skating jumps. We also introduced a novel annotation strategy that incorporates jump procedures and constructed FS-Jump3D, the first publicly available 3D pose dataset for figure skating, including triple jumps.
+Extensive experiments showed that pose embeddings derived from a pose encoder pre-trained via contrastive learning and fine-tuned on a figure skating action classification task significantly improve TAS performance at both the Set-level and Element-level. These results suggest that learning latent pose representations with domain-specific supervision offers greater flexibility and accuracy than direct regression of 3D joint coordinates. Furthermore, comparisons with Coarse annotations confirmed the advantages of our procedure-aware annotations in providing richer and more informative supervision signals for TAS. Ablation studies also confirmed that our two-stage VIFSS learning approach powerfully supports domain adaptation, particularly in scenarios with limited annotation.
+Building on the demonstrated efficacy of view-invariant contrastive pre-training and task-specific fine-tuning in figure skating, future work will extend our approach to TAS for other figure skating elements such as spins and step sequences. We also plan to explore its generalizability to TAS tasks in other sports domains, aiming to further validate the robustness and versatility of our proposed method.
+Author contributions
+TS supported the creation and processing of the FS-Jump3D dataset and contributed to the manuscript revision. KF supervised this study and contributed to the manuscript revision. All authors read and approved the final manuscript.
+Acknowledgments
+This work was funded by JSPS Grant Number 21H05300 and 23H03282, and JST PRESTO Grant Number JPMJPR20CA. The funder played no role in study design, data collection, analysis, interpretation of data, or the writing of this manuscript.
+Data and Code Availability
+The TAS dataset annotation and source code for our VIFSS pose representation learning method will be made publicly available at
+https://github.com/ryota-skating/VIFSS
+upon publication.
+Competing interests
+All authors declare no competing interests.
+References
+Aharon et al. (2022)
+Aharon, N., Orfaig, R., Bobrovsky, B.Z., 2022.
+Bot-sort: Robust associations multi-pedestrian tracking.
+ArXiv abs/2206.14651.
+URL:
+https://api.semanticscholar.org/CorpusID:250113384
+.
+Askari et al. (2023)
+Askari, F., Jiang, R., Li, Z., Niu, J., Shi, Y., Clark, J.J., 2023.
+Self-supervised video interaction classification using image representation of skeleton data, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 5229–5238.
+Askari et al. (2024)
+Askari, F., Yared, C., Ramaprasad, R., Garg, D., Hu, A., Clark, J.J., 2024.
+Video interaction recognition using an attention augmented relational network and skeleton data, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3225–3234.
+Bansal et al. (2022)
+Bansal, S., Arora, C., Jawahar, C., 2022.
+My view is the best view: Procedure learning from egocentric videos, in: European Conference on Computer Vision, Springer. pp. 657–675.
+Ben-Shabat et al. (2021)
+Ben-Shabat, Y., Yu, X., Saleh, F., Campbell, D., Rodriguez-Opazo, C., Li, H., Gould, S., 2021.
+The ikea asm dataset: Understanding people assembling furniture through actions, objects and pose, in: 2021 IEEE Winter Conference on Applications of Computer Vision (WACV), pp. 846–858.
+doi:
+10.1109/WACV48630.2021.00089
+.
+Cabado et al. (2024)
+Cabado, B., Cioppa, A., Giancola, S., Villa, A., Guijarro-Berdiñas, B., Padrón, E.J., Ghanem, B., Van Droogenbroeck, M., 2024.
+Beyond the premier: Assessing action spotting transfer capability across diverse domains, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3386–3398.
+Carreira and Zisserman (2017)
+Carreira, J., Zisserman, A., 2017.
+Quo vadis, action recognition? a new model and the kinetics dataset, in: proceedings of the IEEE Conference on Computer Vision and Pattern Recognition, pp. 6299–6308.
+Chappa et al. (2023)
+Chappa, N.V.R., Nguyen, P., Nelson, A.H., Seo, H.S., Li, X., Dobbs, P.D., Luu, K., 2023.
+Spartan: Self-supervised spatiotemporal transformers approach to group activity recognition, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 5158–5168.
+Chen et al. (2020)
+Chen, T., Kornblith, S., Norouzi, M., Hinton, G., 2020.
+A simple framework for contrastive learning of visual representations, in: Proceedings of the 37th International Conference on Machine Learning, JMLR.org. pp. 1597–1607.
+Damen et al. (2022)
+Damen, D., Doughty, H., Farinella, G.M., Furnari, A., Kazakos, E., Ma, J., Moltisanti, D., Munro, J., Perrett, T., Price, W., et al., 2022.
+Rescaling egocentric vision: Collection, pipeline and challenges for epic-kitchens-100.
+International Journal of Computer Vision , 1–23.
+Dave et al. (2022)
+Dave, I., Scheffer, Z., Kumar, A., Shiraz, S., Rawat, Y.S., Shah, M., 2022.
+Gabriellav2: Towards better generalization in surveillance videos for action detection, in: 2022 IEEE/CVF Winter Conference on Applications of Computer Vision Workshops (WACVW), pp. 122–132.
+doi:
+10.1109/WACVW54805.2022.00018
+.
+Deyzel and Theart (2023)
+Deyzel, M., Theart, R.P., 2023.
+One-shot skeleton-based action recognition on strength and conditioning exercises, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 5169–5178.
+Ding et al. (2022)
+Ding, G., Sener, F., Yao, A., 2022.
+Temporal action segmentation: An analysis of modern techniques.
+IEEE Transactions on Pattern Analysis and Machine Intelligence 46, 1011–1030.
+URL:
+https://api.semanticscholar.org/CorpusID:252992530
+.
+Farha and Gall (2019)
+Farha, Y.A., Gall, J., 2019.
+Ms-tcn: Multi-stage temporal convolutional network for action segmentation, in: Proceedings of the IEEE/CVF conference on computer vision and pattern recognition, pp. 3575–3584.
+Fathi et al. (2011)
+Fathi, A., Ren, X., Rehg, J.M., 2011.
+Learning to recognize objects in egocentric activities, in: CVPR 2011, pp. 3281–3288.
+doi:
+10.1109/CVPR.2011.5995444
+.
+Fischler and Bolles (1981)
+Fischler, M.A., Bolles, R.C., 1981.
+Random sample consensus: a paradigm for model fitting with applications to image analysis and automated cartography.
+Commun. ACM 24, 381–395.
+URL:
+https://doi.org/10.1145/358669.358692
+, doi:
+10.1145/358669.358692
+.
+Gan et al. (2024)
+Gan, Z., Jin, L., Cheng, Y., Cheng, Y., Teng, Y., Li, Z., Li, Y., Yang, W., Zhu, Z., Xing, J., Zhao, J., 2024.
+Skatingverse: A large-scale benchmark for comprehensive evaluation on human action understanding.
+IET Computer Vision n/a.
+URL:
+https://ietresearch.onlinelibrary.wiley.com/doi/abs/10.1049/cvi2.12287
+, doi:
+https://doi.org/10.1049/cvi2.12287
+,
+arXiv:https://ietresearch.onlinelibrary.wiley.com/doi/pdf/10.1049/cvi2.12287
+.
+Giancola et al. (2018)
+Giancola, S., Amine, M., Dghaily, T., Ghanem, B., 2018.
+Soccernet: A scalable dataset for action spotting in soccer videos, in: 2018 IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW), pp. 1792–179210.
+doi:
+10.1109/CVPRW.2018.00223
+.
+Giancola et al. (2023)
+Giancola, S., Cioppa, A., Georgieva, J., Billingham, J., Serner, A., Peek, K., Ghanem, B., Van Droogenbroeck, M., 2023.
+Towards active learning for action spotting in association football videos, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 5098–5108.
+Gossard et al. (2024)
+Gossard, T., Krismer, J., Ziegler, A., Tebbe, J., Zell, A., 2024.
+Table tennis ball spin estimation with an event camera, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3347–3356.
+Grill et al. (2020)
+Grill, J.B., Strub, F., Altché, F., Tallec, C., Richemond, P., Buchatskaya, E., Doersch, C., Avila Pires, B., Guo, Z., Gheshlaghi Azar, M., et al., 2020.
+Bootstrap your own latent-a new approach to self-supervised learning.
+Advances in neural information processing systems 33, 21271–21284.
+Hashimoto et al. (2015)
+Hashimoto, Y., Yanlei, G., Hsu, L.T., Shunsuke, K., 2015.
+A probabilistic model for the estimation of pedestrian crossing behavior at signalized intersections, in: 2015 IEEE 18th International Conference on Intelligent Transportation Systems, pp. 1520–1526.
+doi:
+10.1109/ITSC.2015.248
+.
+Held et al. (2023)
+Held, J., Cioppa, A., Giancola, S., Hamdi, A., Ghanem, B., Van Droogenbroeck, M., 2023.
+Vars: Video assistant referee system for automated soccer decision making from multiple views, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 5086–5097.
+HIROSAWA (2020)
+HIROSAWA, S., 2020.
+Action quality assessment of figure skating jumps using machine learning.
+ICE SPORTS RESEARCH 1.
+Honda et al. (2022)
+Honda, Y., Kawakami, R., Yoshihashi, R., Kato, K., Naemura, T., 2022.
+Pass receiver prediction in soccer using video and players’ trajectories, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3503–3512.
+Hong et al. (2021)
+Hong, J., Fisher, M., Gharbi, M., Fatahalian, K., 2021.
+Video pose distillation for few-shot, fine-grained sports action recognition, in: 2021 IEEE/CVF International Conference on Computer Vision (ICCV), pp. 9234–9243.
+doi:
+10.1109/ICCV48922.2021.00912
+.
+Ibh et al. (2024)
+Ibh, M., Graßhof, S., Hansen, D.W., 2024.
+A stroke of genius: Predicting the next move in badminton, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3376–3385.
+Ibh et al. (2023)
+Ibh, M., Grasshof, S., Witzner, D., Madeleine, P., 2023.
+Tempose: A new skeleton-based transformer model designed for fine-grained motion recognition in badminton, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 5199–5208.
+Ingwersen et al. (2023)
+Ingwersen, C.K., Mikkelstrup, C.M., Jensen, J.N., Hannemose, M.R., Dahl, A.B., 2023.
+Sportspose-a dynamic 3d sports pose dataset, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 5219–5228.
+Ionescu et al. (2013)
+Ionescu, C., Papava, D., Olaru, V., Sminchisescu, C., 2013.
+Human3. 6m: Large scale datasets and predictive methods for 3d human sensing in natural environments.
+IEEE transactions on pattern analysis and machine intelligence 36, 1325–1339.
+Jocher et al. (2023)
+Jocher, G., Chaurasia, A., Qiu, J., 2023.
+Ultralytics YOLO.
+https://github.com/ultralytics/ultralytics
+.
+Version 8.0.0. Licensed under AGPL-3.0.
+Joo et al. (2015)
+Joo, H., Liu, H., Tan, L., Gui, L., Nabbe, B., Matthews, I., Kanade, T., Nobuhara, S., Sheikh, Y., 2015.
+Panoptic studio: A massively multiview system for social motion capture, in: Proceedings of the IEEE International Conference on Computer Vision, pp. 3334–3342.
+Kaneko et al. (2024)
+Kaneko, T., Kawakami, R., Naemura, T., Inoue, N., 2024.
+Augmenting pass prediction via imitation learning in soccer simulations, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3194–3203.
+Kim et al. (2022)
+Kim, M., Jiang, X., Lauter, K., Ismayilzada, E., Shams, S., 2022.
+Secure human action recognition by encrypted neural network inference.
+Nature Communications 13.
+URL:
+http://dx.doi.org/10.1038/s41467-022-32168-5
+, doi:
+10.1038/s41467-022-32168-5
+.
+Kuehne et al. (2014)
+Kuehne, H., Arslan, A., Serre, T., 2014.
+The language of actions: Recovering the syntax and semantics of goal-directed human activities, in: Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 780–787.
+Li et al. (2021)
+Li, R., Yang, S., Ross, D.A., Kanazawa, A., 2021.
+Ai choreographer: Music conditioned 3d dance generation with aist++.
+2021 IEEE/CVF International Conference on Computer Vision (ICCV) , 13381–13392URL:
+https://api.semanticscholar.org/CorpusID:236882798
+.
+Li et al. (2023)
+Li, S., Farha, Y.A., Liu, Y., Cheng, M.M., Gall, J., 2023.
+Ms-tcn++: Multi-stage temporal convolutional network for action segmentation.
+IEEE Trans. Pattern Anal. Mach. Intell. 45, 6647–6658.
+URL:
+https://doi.org/10.1109/TPAMI.2020.3021756
+, doi:
+10.1109/TPAMI.2020.3021756
+.
+Liu and Wang (2022)
+Liu, P., Wang, J.H., 2022.
+Monotrack: Shuttle trajectory reconstruction from monocular badminton video, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3513–3522.
+Liu et al. (2020)
+Liu, S., Liu, X., Huang, G., Qiao, H., Hu, L., Jiang, D., Zhang, A., Liu, Y., Guo, G., 2020.
+Fsd-10: A fine-grained classification dataset for figure skating.
+Neurocomputing 413, 360–367.
+URL:
+https://www.sciencedirect.com/science/article/pii/S0925231220310973
+, doi:
+https://doi.org/10.1016/j.neucom.2020.06.108
+.
+Liu et al. (2021)
+Liu, S., Zhang, A., Li, Y., Zhou, J., Xu, L., Dong, Z., Zhang, R., 2021.
+Temporal segmentation of fine-gained semantic action: A motion-centered figure skating dataset.
+Proceedings of the AAAI Conference on Artificial Intelligence 35, 2163–2171.
+URL:
+https://ojs.aaai.org/index.php/AAAI/article/view/16314
+, doi:
+10.1609/aaai.v35i3.16314
+.
+Liu et al. (2022)
+Liu, T., Sun, J.J., Zhao, L., Zhao, J., Yuan, L., Wang, Y., Chen, L.C., Schroff, F., Adam, H., 2022.
+View-invariant, occlusion-robust probabilistic embedding for human pose.
+International Journal of Computer Vision 130, 111–135.
+doi:
+10.1007/s11263-021-01529-w
+.
+Lu and Elhamifar (2024)
+Lu, Z., Elhamifar, E., 2024.
+Fact: Frame-action cross-attention temporal modeling for efficient action segmentation, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 18175–18185.
+Lutz et al. (2022)
+Lutz, S., Blythman, R., Ghosal, K., Moynihan, M., Simms, C., Smolic, A., 2022.
+Jointformer: Single-Frame Lifting Transformer with Error Prediction and Refinement for 3D Human Pose Estimation , in: 2022 26th International Conference on Pattern Recognition (ICPR), IEEE Computer Society, Los Alamitos, CA, USA. pp. 1156–1163.
+URL:
+https://doi.ieeecomputersociety.org/10.1109/ICPR56361.2022.9956366
+, doi:
+10.1109/ICPR56361.2022.9956366
+.
+Martinez et al. (2017)
+Martinez, J., Hossain, R., Romero, J., Little, J.J., 2017.
+A simple yet effective baseline for 3d human pose estimation, in: Proceedings of the IEEE international conference on computer vision, pp. 2640–2649.
+Mateus et al. (2025)
+Mateus, N., Abade, E., Coutinho, D., Gómez, M., Peñas, C., Sampaio, J., 2025.
+Empowering the sports scientist with artificial intelligence in training, performance, and health management.
+Sensors 25.
+URL:
+https://www.mdpi.com/1424-8220/25/1/139
+, doi:
+10.3390/s25010139
+.
+Mehraban et al. (2024)
+Mehraban, S., Adeli, V., Taati, B., 2024.
+Motionagformer: Enhancing 3d human pose estimation with a transformer-gcnformer network, in: Proceedings of the IEEE/CVF winter conference on applications of computer vision, pp. 6920–6930.
+Mehta et al. (2017)
+Mehta, D., Rhodin, H., Casas, D., Fua, P., Sotnychenko, O., Xu, W., Theobalt, C., 2017.
+Monocular 3d human pose estimation in the wild using improved cnn supervision, in: 2017 International Conference on 3D Vision (3DV), pp. 506–516.
+doi:
+10.1109/3DV.2017.00064
+.
+Nakabayashi et al. (2024)
+Nakabayashi, T., Higa, K., Yamaguchi, M., Fujiwara, R., Saito, H., 2024.
+Event-based ball spin estimation in sports, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3367–3375.
+Nibali et al. (2021)
+Nibali, A., Millward, J., He, Z., Morgan, S., 2021.
+ASPset: An outdoor sports pose video dataset with 3D keypoint annotations.
+Image and Vision Computing , 104196URL:
+https://www.sciencedirect.com/science/article/pii/S0262885621001013
+, doi:
+https://doi.org/10.1016/j.imavis.2021.104196
+.
+Nonaka et al. (2024)
+Nonaka, N., Fujihira, R., Koshiba, T., Maeda, A., Seita, J., 2024.
+Rugby scene classification enhanced by vision language model, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3256–3266.
+Nonaka et al. (2022)
+Nonaka, N., Fujihira, R., Nishio, M., Murakami, H., Tajima, T., Yamada, M., Maeda, A., Seita, J., 2022.
+End-to-end high-risk tackle detection system for rugby, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3550–3559.
+Okamoto and Parmar (2024)
+Okamoto, L., Parmar, P., 2024.
+Hierarchical neurosymbolic approach for comprehensive and explainable action quality assessment, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3204–3213.
+Parmar and Morris (2019a)
+Parmar, P., Morris, B., 2019a.
+Action quality assessment across multiple actions, in: 2019 IEEE Winter Conference on Applications of Computer Vision (WACV), pp. 1468–1476.
+doi:
+10.1109/WACV.2019.00161
+.
+Parmar and Morris (2019b)
+Parmar, P., Morris, B.T., 2019b.
+What and how well you performed? a multitask learning approach to action quality assessment, in: 2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), pp. 304–313.
+doi:
+10.1109/CVPR.2019.00039
+.
+Piergiovanni and Ryoo (2018)
+Piergiovanni, A., Ryoo, M.S., 2018.
+Fine-grained activity recognition in baseball videos, in: 2018 IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW), pp. 1821–18218.
+doi:
+10.1109/CVPRW.2018.00226
+.
+Pirsiavash et al. (2014)
+Pirsiavash, H., Vondrick, C., Torralba, A., 2014.
+Assessing the quality of actions, in: Fleet, D., Pajdla, T., Schiele, B., Tuytelaars, T. (Eds.), Computer Vision – ECCV 2014, Springer International Publishing, Cham. pp. 556–571.
+Ragusa et al. (2021)
+Ragusa, F., Furnari, A., Livatino, S., Farinella, G.M., 2021.
+The meccano dataset: Understanding human-object interactions from egocentric videos in an industrial-like domain, in: 2021 IEEE Winter Conference on Applications of Computer Vision (WACV), pp. 1568–1577.
+doi:
+10.1109/WACV48630.2021.00161
+.
+Redmon et al. (2016)
+Redmon, J., Divvala, S., Girshick, R., Farhadi, A., 2016.
+You only look once: Unified, real-time object detection, in: Proceedings of the IEEE conference on computer vision and pattern recognition, pp. 779–788.
+Sanford et al. (2020)
+Sanford, R., Gorji, S., Hafemann, L.G., Pourbabaee, B., Javan, M., 2020.
+Group activity detection from trajectory and video data in soccer, in: 2020 IEEE/CVF Conference on Computer Vision and Pattern Recognition Workshops (CVPRW), pp. 3932–3940.
+doi:
+10.1109/CVPRW50498.2020.00457
+.
+Santra et al. (2025)
+Santra, S., Chudasama, V., Wasnik, P., Balasubramanian, V.N., 2025.
+Precise event spotting in sports videos: Solving long-range dependency and class imbalance, in: Proceedings of the Computer Vision and Pattern Recognition Conference, pp. 3163–3172.
+Sener et al. (2022)
+Sener, F., Chatterjee, D., Shelepov, D., He, K., Singhania, D., Wang, R., Yao, A., 2022.
+Assembly101: A large-scale multi-view video dataset for understanding procedural activities, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition, pp. 21096–21106.
+Shim et al. (2018)
+Shim, M., Kim, Y.H., Kim, K., Kim, S.J., 2018.
+Teaching machines to understand baseball games: Large-scale baseball video database for multiple video understanding tasks, in: Ferrari, V., Hebert, M., Sminchisescu, C., Weiss, Y. (Eds.), Computer Vision – ECCV 2018, Springer International Publishing, Cham. pp. 420–437.
+Sigal et al. (2010)
+Sigal, L., Balan, A.O., Black, M.J., 2010.
+Humaneva: Synchronized video and motion capture dataset and baseline algorithm for evaluation of articulated human motion.
+International journal of computer vision 87, 4–27.
+Spitz et al. (2021)
+Spitz, J., Wagemans, J., Memmert, D., Williams, A.M., Helsen, W.F., 2021.
+Video assistant referees (var): The impact of technology on decision making in association football referees.
+Journal of Sports Sciences 39, 147–153.
+URL:
+https://doi.org/10.1080/02640414.2020.1809163
+, doi:
+10.1080/02640414.2020.1809163
+,
+arXiv:https://doi.org/10.1080/02640414.2020.1809163
+. pMID: 32794432.
+Stein and McKenna (2013)
+Stein, S., McKenna, S.J., 2013.
+Combining embedded accelerometers with computer vision for recognizing food preparation activities, in: Proceedings of the 2013 ACM international joint conference on Pervasive and ubiquitous computing, pp. 729–738.
+Sun et al. (2020)
+Sun, J.J., Zhao, J., Chen, L.C., Schroff, F., Adam, H., Liu, T., 2020.
+View-invariant probabilistic embedding for human pose, in: European Conference on Computer Vision, Springer. pp. 53–70.
+Suzuki et al. (2024)
+Suzuki, T., Takeda, K., Fujii, K., 2024.
+Automatic detection of faults in simulated race walking from a fixed smartphone camera.
+International Journal of Computer Science in Sport 23, 22–36.
+URL:
+https://doi.org/10.2478/ijcss-2024-0002
+, doi:
+doi:10.2478/ijcss-2024-0002
+.
+Suzuki et al. (2025)
+Suzuki, T., Tanaka, R., Yeung, C., Fujii, K., 2025.
+Athleticspose: Authentic sports motion dataset on athletic field and evaluation of monocular 3d pose estimation ability.
+URL:
+https://arxiv.org/abs/2507.12905
+,
+arXiv:2507.12905
+.
+Tanaka et al. (2024)
+Tanaka, R., Suzuki, T., Fujii, K., 2024.
+3d pose-based temporal action segmentation for figure skating: A fine-grained and jump procedure-aware annotation approach, in: Proceedings of the 7th ACM International Workshop on Multimedia Content Analysis in Sports, Association for Computing Machinery, New York, NY, USA. p. 17–26.
+URL:
+https://doi.org/10.1145/3689061.3689077
+, doi:
+10.1145/3689061.3689077
+.
+Tanaka et al. (2023a)
+Tanaka, R., Suzuki, T., Takeda, K., Fujii, K., 2023a.
+Automatic edge error judgment in figure skating using 3d pose estimation from a monocular camera and imus, in: Proceedings of the 6th International Workshop on Multimedia Content Analysis in Sports, pp. 41–48.
+Tanaka et al. (2023b)
+Tanaka, R., Suzuki, T., Takeda, K., Fujii, K., 2023b.
+Automatic edge error judgment in figure skating using 3d pose estimation from inertial sensors, in: 2023 IEEE 12th Global Conference on Consumer Electronics (GCCE), IEEE. pp. 1099–1100.
+Van Zandycke and De Vleeschouwer (2022)
+Van Zandycke, G., De Vleeschouwer, C., 2022.
+3d ball localization from a single calibrated image, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3472–3480.
+Vandeghen et al. (2022)
+Vandeghen, R., Cioppa, A., Van Droogenbroeck, M., 2022.
+Semi-supervised training to improve player and ball detection in soccer, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3481–3490.
+Von Marcard et al. (2018)
+Von Marcard, T., Henschel, R., Black, M.J., Rosenhahn, B., Pons-Moll, G., 2018.
+Recovering accurate 3d human pose in the wild using imus and a moving camera, in: Proceedings of the European conference on computer vision (ECCV), pp. 601–617.
+Xarles et al. (2024)
+Xarles, A., Escalera, S., Moeslund, T.B., Clapés, A., 2024.
+T-deed: Temporal-discriminability enhancer encoder-decoder for precise event spotting in sports videos, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3410–3419.
+Xia et al. (2022)
+Xia, J., Zhuge, M., Geng, T., Fan, S., Wei, Y., He, Z., Zheng, F., 2022.
+Audio-visual mlp for scoring sport.
+ArXiv abs/2203.03990.
+URL:
+https://api.semanticscholar.org/CorpusID:247597113
+.
+Xu et al. (2020)
+Xu, C., Fu, Y., Zhang, B., Chen, Z., Jiang, Y.G., Xue, X., 2020.
+Learning to score figure skating sport videos.
+IEEE Transactions on Circuits and Systems for Video Technology 30, 4578–4590.
+doi:
+10.1109/TCSVT.2019.2927118
+.
+Yang et al. (2023)
+Yang, Z., Zeng, A., Yuan, C., Li, Y., 2023.
+Effective whole-body pose estimation with two-stages distillation, in: Proceedings of the IEEE/CVF International Conference on Computer Vision, pp. 4210–4220.
+Yeung et al. (2024)
+Yeung, C., Ide, K., Fujii, K., 2024.
+Autosoccerpose: Automated 3d posture analysis of soccer shot movements, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3214–3224.
+Zbontar et al. (2021)
+Zbontar, J., Jing, L., Misra, I., LeCun, Y., Deny, S., 2021.
+Barlow twins: Self-supervised learning via redundancy reduction, in: International conference on machine learning, PMLR. pp. 12310–12320.
+Zhang et al. (2022)
+Zhang, Y., Sun, P., Jiang, Y., Yu, D., Weng, F., Yuan, Z., Luo, P., Liu, W., Wang, X., 2022.
+Bytetrack: Multi-object tracking by associating every detection box, in: Computer Vision – ECCV 2022: 17th European Conference, Tel Aviv, Israel, October 23–27, 2022, Proceedings, Part XXII, Springer-Verlag, Berlin, Heidelberg. p. 1–21.
+doi:
+10.1007/978-3-031-20047-2\_1
+.
+Zhao et al. (2019)
+Zhao, L., Peng, X., Tian, Y., Kapadia, M., Metaxas, D.N., 2019.
+Semantic graph convolutional networks for 3d human pose regression, in: 2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), pp. 3420–3430.
+doi:
+10.1109/CVPR.2019.00354
+.
+Zhao et al. (2021)
+Zhao, L., Wang, Y., Zhao, J., Yuan, L., Sun, J.J., Schroff, F., Adam, H., Peng, X., Metaxas, D., Liu, T., 2021.
+Learning view-disentangled human pose representation by contrastive cross-view mutual information maximization, in: 2021 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR), pp. 12788–12797.
+doi:
+10.1109/CVPR46437.2021.01260
+.
+Zhu et al. (2022)
+Zhu, K., Wong, A., McPhee, J., 2022.
+Fencenet: Fine-grained footwork recognition in fencing, in: Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR) Workshops, pp. 3589–3598.
+Zhu et al. (2023)
+Zhu, W., Ma, X., Liu, Z., Liu, L., Wu, W., Wang, Y., 2023.
+Motionbert: A unified perspective on learning human motion representations, in: Proceedings of the IEEE/CVF international conference on computer vision, pp. 15085–15099.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►
