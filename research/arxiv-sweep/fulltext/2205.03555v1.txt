@@ -1,0 +1,2528 @@
+Multi-Target Active Object Tracking with Monte Carlo Tree Search
+and Target Motion Modeling
+Zheng Chen
+Jian Zhao
+Mingyu Yang
+Wengang Zhou
+Houqiang Li
+Abstract
+In this work, we are dedicated to multi-target active object tracking (AOT), where there are multiple targets as well as multiple cameras in the environment. The goal is maximize the overall target coverage of all cameras. Previous work makes a strong assumption that each camera is fixed in a location and only allowed to rotate, which limits its application. In this work, we relax the setting by allowing all cameras to both move along the boundary lines and rotate. In our setting, the action space becomes much larger, which leads to much higher computational complexity to identify the optimal action. To this end, we propose to leverage the action selection from multi-agent reinforcement learning (MARL) network to prune the search tree of Monte Carlo Tree Search (MCTS) method, so as to find the optimal action more efficiently. Besides, we model the motion of the targets to predict the future position of the targets, which makes a better estimation of the future environment state in the MCTS process. We establish a multi-target 2D environment to simulate the sports games, and experimental results demonstrate that our method can effectively improve the target coverage.
+1
+Introduction
+Traditional visual object tracking (VOT) task
+Henriques et al. 2014
+;
+Nam and Han 2016
+aims to estimate a bounding box of the interested target in a series of frames. In this task, the video data is pre-captured, and the tracking precision will be degraded when the target is occluded or moves beyond the field of view. To avoid this problem, AOT controls the adjustment of the camera according to the visual scene to ensure that the target is in the field of view. AOT has many applications in practical scenarios, such as unmanned aerial vehicles (UAV), intelligent robots, sports events,
+etc
+.
+In AOT, the targets to be tracked may be single or multiple, and the corresponding performance shall be evaluated with different metrics. For single-target AOT task, we evaluate the tracking performance by checking whether the target is tracked by the camera and the location of the target in the camera observation
+Luo et al. 2018
+. However, in multi-target AOT task, since multiple targets are scattered throughout the environment, it is difficult to use conventional evaluation indicators to define the tracking performance. To this end, a new metric,
+i.e.
+, target coverage
+Guvensan and
+Yavuz 2011
+, is used to evaluate the tracking performance, which is also reasonable in practical application. For example, in a football game, we expect that the cameras around the field can cover as many players as possible. In this work, we focus on the multi-target situation, and try to maximize the overall target coverage.
+Figure 1:
+Overview of the 2D environment. The black rectangle represents the range of the sports field. The blue points indicate the players (targets). The gray points denote the cameras. The green sectors refer to the range of the camera’s field of view. The camera can move along the sports field and rotate.
+Previous work
+Li et al. 2018
+with multiple targets finds the points that are not easy to be covered in the environment, and designs a cooperation mechanism to reduce the overlaps between cameras. In
+Zhang et al. 2016
+, the ares is divided into different cells to transform the coverage problem into cell coverage problems. However, these methods assume the cameras are fixed in location. When the location of camera is variable, these traditional methods will encounter difficulties. In
+Xu et al. 2020
+, multi-agent reinforcement learning is firstly introduced to solve the multi-target AOT problem. It assigns the targets to each camera according to the position of the cameras and targets, and then control the camera to cover the assigned targets. However, this method uses the information of God’s perspective, that is, it uses the position information of the target which is actually unavailable in the field of view of any camera.
+Our work solves the shortcomings of previous work mentioned above, and proposes a Monte Carlo tree search and target motion modeling method to improve the target coverage. Since targets do not take Brownian motion in the real-word situation,
+i.e.
+, the motion of targets in the adjacent time period has a strong correlation. Inspired by this, we predict the target position according to the previous information, then we use MCTS to search future states of the environment, in order to find the best action of the cameras. Since the joint action space of multiple cameras is large, we use the action output of the multi-agent reinforcement learning network to prune the search tree, which greatly improves the efficiency of tree search. In our work, the input of MARL network contains the target information in the field of view of all cameras and the position information of cameras, which is called centralized information. In addition, we allow the cameras to move in location which can not be achieved in traditional methods.
+To verify the effectiveness of our method, we build a 2D environment to simulate the scenes of sports games (
+e.g.
+, football, basketball, and volleyball). In our environment, cameras can obtain their posture and the coordinates of targets in the field of view. Besides, we control the location and rotation of the camera to maximize the target coverage. The schematic diagram of the environment is shown in Figure
+1
+.
+In summary, our main contributions are three-fold:
+•
+We generalize the multi-target AOT problem by increasing the cameras’ degrees of freedom in multiple targets AOT. Such a camera setting is also closer to the scenario of live sports field pickup in the real-world situation.
+•
+We propose a MARL network to predict the action of cameras in a centralized setting, which makes full use of the information between cameras.
+•
+We model the regularity of target motion to predict the future state of the environment, and integrate it with MCTS method to obtain a better action based on future information.
+2
+Related Work
+In this section, we briefly review the recent works on active object tracking from two different aspects: single-target and multi-target.
+2.1
+Single-target Active Object Tracking
+The development of deep reinforcement learning
+Mnih et al. 2013
+;
+Hessel et al. 2018
+provides a foundation for active object tracking tasks. Different from supervised learning, reinforcement learning doesn’t need labelled data, and only rewards are used to describe the quality of action in a state. Thus reinforcement learning is mainly committed to finding the optimal policy to maximize the cumulative reward, which is produced in the interaction between agent and environment.
+The first active object tracking work
+Luo et al. 2018
+trains deep reinforcement learning network through end-to-end method. It takes the raw frames of the camera as the input of the network, and outputs the discrete action of the camera through the processing of convolutional layer and LSTM. It adopts two types of virtual environments ViZDoom
+Kempka et al. 2016
+and Unreal Engine with UnrealCV
+Qiu et al. 2017
+for simulated training and testing. The experiment uses accumulated reward (AR) and episode length (EL) metrics to show the great performance of the end-to-end method. In the follow-up work,
+Zhong et al. 2018
+adds the adversarial mechanism in the process of network training, which let the tracker and target train under a zero sum reward. The target no longer moves according to the preset rules, but tries to escape the tracker as far as possible. In the face of more challenging target, the final trained tracker has better robustness.
+Xi et al. 2021
+considers the distractors in the environment. To address this issue, they introduce an attention mechanism to make the network focus on the target of interest. CMC-AOT
+Li et al. 2020
+considers the case that multiple cameras cooperate to track a single target in active object tracking. CMC-AOT builds vision-based controller and pose-based controller, and the cameras select different controllers to perform their actions according to whether they can observe the target or not. Different from the above works, our work is dedicated to solving the problem of multiple cameras and multiple targets.
+2.2
+Multi-target Active Object Tracking
+When there are multiple freely moving targets in the environment, it is impossible for one camera to track all targets at the same time. Therefore, accumulated reward and episode length are no longer applicable. At this time, we are more concerned about the target coverage. For the case of multiple cameras, we use multi-agent reinforcement learning instead of the original reinforcement learning. Recently, multi-agent reinforcement learning has attracted substantial attention in many applications, such as multi-object tracking
+Rosello and
+Kochenderfer 2018
+, traffic light control
+Torabi et al. 2020
+;
+Ma and Wu 2020
+;
+Singh et al. 2020
+, real-time game
+Vinyals et al. 2019
+and so on.
+Previous multi-target active object tracking work
+Xu et al. 2020
+proposes a novel HiT-MAC framework which maximizes target coverage while reducing the energy consumption. HiT-MAC first uses the coordinator to assign the targets to each camera, and then uses the executor to control each camera to track the assigned targets. However, in their setting, the locations of cameras are immutable, and the coordinator uses the location information of all targets, even those not in the field of view of any camera. Our work gives the camera freedom to move in location, and avoids using the target location information that is not within the visual range of the camera. At the same time, we further optimize the camera action by predicting the future location of the targets.
+Figure 2:
+The tracking pipeline of our method. Our method consists of MCTS module, position prediction module, and MARL module.
+𝒐
+t
+\boldsymbol{o}_{t}
+denotes the centralized observations. In time step
+t
+t
+, position prediction module estimate the environment state
+𝒔
+t
+,
+𝒔
+t
++
+1
+,
+⋯
+\boldsymbol{s}_{t},\boldsymbol{s}_{t+1},\cdots
+. Based on the estimated future environment state, MCTS module finds the optimal action by searching the camera action. The output of MARL module
+𝒂
+t
+n
+​
+e
+​
+t
+\boldsymbol{a}^{net}_{t}
+helps to remove unnecessary branches (gray nodes in the figure) in the search tree, so that we can obtain the final action
+𝒂
+t
+m
+​
+c
+​
+t
+​
+s
+\boldsymbol{a}^{mcts}_{t}
+of cameras more efficiently.
+3
+Method
+Our method includes three modules,
+i.e.,
+Monte Carlo tree search (MCTS), position prediction, and multi-agent reinforcement learning (MARL). MCTS module is the main part of our method. It searches the camera action according to the current and future environment state, so as to obtain the optimal action of the camera. The position prediction module uses the current and history observation states to predict the future environment states, which provides a basis for Monte Carlo tree search. The action output by MARL module prunes the search tree, which improves the search efficiency. The relationship of the three modules is shown in Figure
+2
+. In the following, we first introduce the 2D environment, then discuss each module in detail.
+3.1
+2D Environment
+In order to simulate the scenes of sports games, we set the field as a rectangle. As shown in Figure
+1
+, the cameras are set at the boundary and allowed to move along the boundary lines and rotate. The moving range of targets is limited to the rectangle. We use
+n
+n
+and
+m
+m
+to represent the number of cameras and targets in the environment, respectively.
+State Space
+The environment state
+𝒔
+t
+\boldsymbol{s}_{t}
+in time step
+t
+t
+includes the posture of all cameras and targets. The posture of the
+i
+i
+-th camera
+c
+t
+,
+i
+c_{t,i}
+can be represented as the tuple
+c
+t
+,
+i
+=
+(
+α
+t
+,
+i
+,
+x
+t
+,
+i
+c
+,
+y
+t
+,
+i
+c
+)
+c_{t,i}=(\alpha_{t,i},x^{c}_{t,i},y^{c}_{t,i})
+, where
+α
+t
+,
+i
+\alpha_{t,i}
+refers to the rotation of the
+i
+i
+-th camera, and
+(
+x
+t
+,
+i
+c
+,
+y
+t
+,
+i
+c
+)
+(x^{c}_{t,i},y^{c}_{t,i})
+indicates the location of the
+i
+i
+-th camera. Similarly, the posture of the
+j
+j
+-th target can be represented as the tuple
+p
+t
+,
+j
+=
+(
+x
+t
+,
+j
+p
+,
+y
+t
+,
+j
+p
+)
+p_{t,j}=(x^{p}_{t,j},y^{p}_{t,j})
+.
+Observation Space
+In time step
+t
+t
+, the
+i
+i
+-th camera’s observation
+𝒐
+t
+,
+i
+\boldsymbol{o}_{t,i}
+consists of the posture of the
+i
+i
+-th camera
+c
+t
+,
+i
+c_{t,i}
+and the relative position between the
+i
+i
+-th camera and all targets. The position relationship between the
+i
+i
+-th camera and the
+j
+j
+-th target can be represented as the tuple
+c
+​
+p
+t
+,
+i
+​
+j
+=
+(
+d
+t
+,
+i
+​
+j
+,
+sin
+⁡
+θ
+t
+,
+i
+​
+j
+,
+cos
+⁡
+θ
+t
+,
+i
+​
+j
+)
+cp_{t,ij}=(d_{t,ij},\sin\theta_{t,ij},\cos\theta_{t,ij})
+, where
+d
+t
+,
+i
+​
+j
+d_{t,ij}
+and
+θ
+t
+,
+i
+​
+j
+\theta_{t,ij}
+refer to the distance and angle between the
+i
+i
+-th camera and the
+j
+j
+-th target, respectively. In most cases, a single camera will not observe all targets. For unobserved targets, the tuple
+c
+​
+p
+t
+,
+i
+​
+j
+cp_{t,ij}
+will be filled with
+−
+1
+-1
+. The observation of the
+i
+i
+-th camera can be written as
+𝒐
+t
+,
+i
+=
+(
+c
+t
+,
+i
+,
+c
+​
+p
+t
+,
+i
+​
+1
+,
+c
+​
+p
+t
+,
+i
+​
+2
+,
+⋯
+,
+c
+​
+p
+t
+,
+i
+​
+m
+)
+\boldsymbol{o}_{t,i}=(c_{t,i},cp_{t,i1},cp_{t,i2},\cdots,cp_{t,im})
+. The observations of all cameras are combined as the centralized observation
+𝒐
+t
+=
+(
+𝒐
+t
+,
+1
+,
+𝒐
+t
+,
+2
+,
+⋯
+,
+𝒐
+t
+,
+n
+)
+\boldsymbol{o}_{t}=(\boldsymbol{o}_{t,1},\boldsymbol{o}_{t,2},\cdots,\boldsymbol{o}_{t,n})
+.
+Action Space
+The joint action
+𝒂
+t
+\boldsymbol{a}_{t}
+in time step
+t
+t
+includes the action options
+a
+t
+,
+i
+a_{t,i}
+of all cameras in the environment,
+i.e.
+,
+𝒂
+t
+=
+(
+a
+t
+,
+1
+,
+a
+t
+,
+2
+,
+⋯
+,
+a
+t
+,
+n
+)
+\boldsymbol{a}_{t}=(a_{t,1},a_{t,2},\cdots,a_{t,n})
+. Each camera in the environment is constrained to move at the edge of the field and rotate. So there are 9 discrete action options for each camera.
+3.2
+Position Prediction by Target Motion Modeling
+In position prediction module, we attempt to predict the current environment state
+𝒔
+t
+\boldsymbol{s}_{t}
+and the future environment state
+𝒔
+t
++
+1
+,
+𝒔
+t
++
+2
+,
+⋯
+,
+𝒔
+t
++
+D
+\boldsymbol{s}_{t+1},\boldsymbol{s}_{t+2},\cdots,\boldsymbol{s}_{t+D}
+, where
+D
+D
+denotes the search depth of MCTS module. However, in time step
+t
+t
+, we can only obtain the centralized observation
+𝒐
+t
+\boldsymbol{o}_{t}
+. First of all, we estimate
+𝒔
+t
+\boldsymbol{s}_{t}
+with
+𝒐
+t
+\boldsymbol{o}_{t}
+.
+Current State Estimation
+Since centralized observation
+𝒐
+t
+\boldsymbol{o}_{t}
+contains the posture of cameras
+c
+t
+,
+i
+c_{t,i}
+and the relative position between target and camera
+c
+​
+p
+t
+,
+i
+​
+j
+cp_{t,ij}
+, for the target within the field of view, we calculate its position as follows,
+{
+x
+t
+,
+j
+p
+=
+x
+t
+,
+i
+c
++
+d
+t
+,
+i
+​
+j
+​
+sin
+⁡
+(
+α
+t
+,
+i
++
+θ
+t
+,
+i
+​
+j
+)
+y
+t
+,
+j
+p
+=
+y
+t
+,
+i
+c
++
+d
+t
+,
+i
+​
+j
+​
+cos
+⁡
+(
+α
+t
+,
+i
++
+θ
+t
+,
+i
+​
+j
+)
+.
+\left\{\begin{aligned} x^{p}_{t,j}&=x^{c}_{t,i}+d_{t,ij}\sin(\alpha_{t,i}+\theta_{t,ij})\\
+y^{p}_{t,j}&=y^{c}_{t,i}+d_{t,ij}\cos(\alpha_{t,i}+\theta_{t,ij})\end{aligned}\right..
+(1)
+So far, the estimated
+𝒔
+~
+t
+\tilde{\boldsymbol{s}}_{t}
+contains the position of all cameras and the target within the field of view. Similarly, we may estimate the historical state
+𝒔
+~
+t
+−
+1
+\tilde{\boldsymbol{s}}_{t-1}
+according to
+𝒐
+t
+−
+1
+\boldsymbol{o}_{t-1}
+.
+Figure 3:
+Overview of our prediction method. The blue solid points denotes the predicted target position in time step
+t
++
+1
+t+1
+, and the hollow points with dotted border denotes the target position in previous time steps. Since some targets are not observed in previous time steps, we don’t mark these targets in the figure, for example, target 3 and 7.
+Future State Estimation
+Due to the future centralized observations are not available, we use the
+𝒔
+~
+t
+−
+1
+\tilde{\boldsymbol{s}}_{t-1}
+and
+𝒔
+~
+t
+\tilde{\boldsymbol{s}}_{t}
+to estimate the
+𝒔
+~
+t
++
+1
+\tilde{\boldsymbol{s}}_{t+1}
+.
+We assume that the target moves in a uniform straight line in a short period of time. This assumption is
+reasonable because the motion pattern of a target will have a great correlation with its motion pattern of the previous time. Therefore, if a target’s position in time step
+t
+t
+is
+(
+x
+t
+p
+,
+y
+t
+p
+)
+(x^{p}_{t},y^{p}_{t})
+and its position in last time step
+t
+−
+1
+t-1
+is
+(
+x
+t
+−
+1
+p
+,
+y
+t
+−
+1
+p
+)
+(x^{p}_{t-1},y^{p}_{t-1})
+, then its position in time step
+t
++
+t
+0
+t+t_{0}
+can be estimated as,
+{
+x
+~
+t
++
+t
+0
+p
+=
+x
+t
+p
++
+t
+0
+​
+(
+x
+t
+p
+−
+x
+t
+−
+1
+p
+)
+y
+~
+t
++
+t
+0
+p
+=
+y
+t
+p
++
+t
+0
+​
+(
+y
+t
+p
+−
+y
+t
+−
+1
+p
+)
+.
+\left\{\begin{aligned} \tilde{x}^{p}_{t+t_{0}}&=x^{p}_{t}+t_{0}(x^{p}_{t}-x^{p}_{t-1})\\
+\tilde{y}^{p}_{t+t_{0}}&=y^{p}_{t}+t_{0}(y^{p}_{t}-y^{p}_{t-1})\end{aligned}\right..
+(2)
+In Equation
+2
+,
+t
+0
+t_{0}
+should not be too large, because it only conforms to this equation in a short time period.
+However, there are times when some targets are not covered by any camera, and we can’t get their location even if we use centralized information. For example, we only know their location in time step
+t
+t
+. In this case, we have no idea of the target’s moving speed and direction, so we consider that the position of the target in time step
+t
++
+t
+0
+t+t_{0}
+is the same as that in time step
+t
+t
+.
+Similarly, if we only know the position of time step
+t
+−
+1
+t-1
+, we also can directly use it as the position estimation of time step
+t
++
+t
+0
+t+t_{0}
+. If a target is not covered at any time in history, we will not predict the location of this target. The specific process can refer to Figure
+3
+. Since we can observe the positions of target 2, 4, and 5 in time step
+t
+−
+1
+t-1
+and
+t
+t
+, then we estimate their positions use Equation
+2
+, and we can only observe the positions of target 1, 6, and 8 in time step either
+t
+−
+1
+t-1
+or
+t
+t
+, so we estimate their positions use their historical positions. However, target 3 and 7 can not be observed in any time step, we don’t give their positions in the future prediction.
+3.3
+Multi-agent Reinforcement Learning
+Considering each camera as an agent, our environment can be formulated as a partially observable Markov decision process (POMDP) model, which is defined as
+(
+𝒮
+,
+𝒪
+,
+𝒜
+,
+R
+,
+P
+,
+Z
+,
+γ
+)
+(\mathcal{S},\mathcal{O},\mathcal{A},R,P,Z,\gamma)
+, where
+𝒮
+,
+𝒪
+,
+𝒜
+,
+R
+,
+P
+,
+Z
+,
+γ
+\mathcal{S},\mathcal{O},\mathcal{A},R,P,Z,\gamma
+represent the environment state space, observation space, action space, reward function, probability transfer function of the states, observation function, and discount factor, respectively.
+In each time step
+t
+t
+, the
+i
+i
+-th camera obtains its observation
+𝒐
+t
+,
+i
+∈
+𝒪
+\boldsymbol{o}_{t,i}\in\mathcal{O}
+from the global environment state
+𝒔
+t
+∈
+𝒮
+\boldsymbol{s}_{t}\in\mathcal{S}
+with the probability
+Z
+⁡
+(
+𝒐
+t
+,
+i
+|
+𝒔
+t
+)
+Z(\boldsymbol{o}_{t,i}|\boldsymbol{s}_{t})
+. The joint action
+𝒂
+t
+∈
+𝒜
+\boldsymbol{a}_{t}\in\mathcal{A}
+is drawn from the policy
+π
+⁡
+(
+𝒂
+t
+|
+𝒐
+t
+)
+\pi(\boldsymbol{a}_{t}|\boldsymbol{o}_{t})
+. After agents take the joint action
+𝒂
+t
+\boldsymbol{a}_{t}
+, the environment receives a reward
+r
+t
+=
+R
+⁡
+(
+𝒔
+t
+,
+𝒂
+t
+)
+r_{t}=R(\boldsymbol{s}_{t},\boldsymbol{a}_{t})
+, which includes the individual reward for each agent and the team reward. Meanwhile, the environment state updates according to the probability transfer function
+P
+⁡
+(
+𝒔
+t
++
+1
+|
+𝒔
+t
+,
+𝒂
+t
+)
+P(\boldsymbol{s}_{t+1}|\boldsymbol{s}_{t},\boldsymbol{a}_{t})
+. Our goal is to maximize the expected accumulated reward
+𝔼
+⁡
+[
+∑
+t
+=
+1
+T
+γ
+t
+​
+r
+t
+]
+\mathbb{E}[\sum_{t=1}^{T}{\gamma^{t}r_{t}}]
+.
+Reward Function
+The reward function describes the goal of reinforcement learning. An effective reward function is very important for network learning. In this work, we divide the reward into team reward
+R
+t
+R^{t}
+and individual reward
+R
+i
+p
+R^{p}_{i}
+. Team reward describes the common goal of all cameras, that is, target coverage. We use
+I
+i
+​
+j
+I_{ij}
+to indicate whether the
+j
+j
+-th target is in the field of view of the
+i
+i
+-th camera. If yes,
+I
+i
+​
+j
+=
+1
+I_{ij}=1
+, otherwise,
+I
+i
+​
+j
+=
+0
+I_{ij}=0
+.
+n
+n
+and
+m
+m
+represent the number of cameras and targets in the environment, respectively. Then, the team reward can be written as,
+R
+t
+=
+1
+m
+​
+∑
+j
+=
+1
+m
+min
+⁡
+{
+1
+,
+∑
+i
+=
+1
+n
+I
+i
+​
+j
+}
+.
+R^{t}=\frac{1}{m}\sum_{j=1}^{m}{\min{\{1,\sum_{i=1}^{n}{I_{ij}}\}}}.
+(3)
+Different from team reward, individual reward pays more attention to the contribution of each camera to the target coverage. In order to maximize the overall target coverage, we expect each camera to cover different targets. Therefore, we take the ratio of the target covered by a single camera to the total number of targets as individual reward, and the targets covered by other cameras are not included. The
+i
+i
+-th camera’s individual reward can be written as,
+R
+i
+p
+=
+1
+m
+​
+∑
+j
+=
+1
+m
+I
+i
+​
+j
+​
+max
+⁡
+{
+0
+,
+2
+−
+∑
+i
+=
+1
+n
+I
+i
+​
+j
+}
+.
+R^{p}_{i}=\frac{1}{m}\sum_{j=1}^{m}{I_{ij}\max{\{0,2-\sum_{i=1}^{n}{I_{ij}}\}}}.
+(4)
+Finally, the total reward
+R
+i
+R_{i}
+consists of team reward and every camera’s individual reward, so it can be written as,
+R
+i
+=
+λ
+​
+R
+t
++
+(
+1
+−
+λ
+)
+​
+R
+i
+p
+.
+R_{i}=\lambda R^{t}+(1-\lambda)R^{p}_{i}.
+(5)
+Figure 4:
+The network structure of the
+i
+i
+-th agent. The input of the network is the centralized observation
+𝒐
+t
+\boldsymbol{o}_{t}
+, where the observation of the
+i
+i
+-th camera
+𝒐
+t
+,
+i
+\boldsymbol{o}_{t,i}
+is ranked first, followed by others. The output of the network is the action of the
+i
+i
+-th camera
+a
+t
+,
+i
+a_{t,i}
+.
+Network Structure
+We use the Q-Learning algorithm to train our model
+Samvelyan et al. 2019
+. In our setting, the network includes 5 fully connected layers (FC) and a gated recurrent unit (GRU) which is shown in Figure
+4
+. All agents share network parameters, and we adjust the order of the observation to indicate different agent action from the network. For example, the
+i
+i
+-th agent action
+a
+t
+,
+i
+a_{t,i}
+in time step
+t
+t
+is sampled from
+π
+(
+⋅
+|
+{
+𝒐
+t
+,
+i
+,
+𝒐
+t
+,
+1
+,
+⋅
+,
+𝒐
+t
+,
+i
+−
+1
+,
+𝒐
+t
+,
+i
++
+1
+,
+⋯
+,
+𝒐
+t
+,
+n
+}
+)
+\pi(\cdot|\{\boldsymbol{o}_{t,i},\boldsymbol{o}_{t,1},\cdot,\boldsymbol{o}_{t,i-1},\boldsymbol{o}_{t,i+1},\cdots,\boldsymbol{o}_{t,n}\})
+.
+3.4
+Monte Carlo Tree Search
+According to the setting of our 2D environment, each camera has 9 discrete action options. In a time step, the number of joint actions of
+n
+n
+cameras in the environment has reached
+9
+n
+9^{n}
+. If we search all actions, the branches of the search tree will be very large, which also leads to low search efficiency. To this end, we first prune the search tree using the action of multi-agent reinforcement learning network
+𝒂
+t
+n
+​
+e
+​
+t
+\boldsymbol{a}^{net}_{t}
+. We assume that the optimal action
+𝒂
+t
+m
+​
+c
+​
+t
+​
+s
+\boldsymbol{a}^{mcts}_{t}
+only has one camera’s action different from
+𝒂
+t
+n
+​
+e
+​
+t
+\boldsymbol{a}^{net}_{t}
+. Based on this assumption, the number of child nodes of the search tree reduces to
+8
+​
+n
++
+1
+8n+1
+. This search space is acceptable, and our experiments show that we can find a better action under this assumption.
+Similar to the traditional MCTS method, each search step including selection, expansion, simulation, and backpropagation, and tree node in the search tree stores two vectors
+N
+⁡
+(
+s
+,
+a
+)
+N(s,a)
+and
+V
+⁡
+(
+s
+,
+a
+)
+V(s,a)
+, which represent the number of visit times and action value, respectively. In most case, when a tree node is created,
+N
+⁡
+(
+s
+,
+a
+)
+N(s,a)
+and
+V
+⁡
+(
+s
+,
+a
+)
+V(s,a)
+will be initialized to 0, but in our method, we have
+𝒂
+t
+n
+​
+e
+​
+t
+\boldsymbol{a}^{net}_{t}
+as a priori knowledge. Thus we initialize
+N
+⁡
+(
+s
+,
+a
+)
+N(s,a)
+as follows,
+{
+V
+⁡
+(
+s
+,
+a
+i
+​
+j
+)
+=
+q
+i
+​
+j
+max
+k
+⁡
+q
+i
+​
+k
+V
+⁡
+(
+s
+,
+a
+0
+)
+=
+1
+,
+\left\{\begin{aligned} V(s,a_{ij})&=\frac{q_{ij}}{\max\limits_{k}{q_{ik}}}\\
+V(s,a_{0})&=1\end{aligned}\right.,
+(6)
+where
+a
+0
+a_{0}
+indicates the action from MARL network,
+a
+i
+​
+j
+a_{ij}
+denotes the action of the
+i
+i
+-th camera is changed to
+j
+j
+, and
+q
+i
+​
+j
+q_{ij}
+represents the q-value of the
+i
+i
+-th camera with action
+j
+j
+, which can be obtained from the output of the MARL network.
+When a node is expanded, we use the MARL network rollout to the depth
+D
+D
+. Since the prediction of the target location is only available for a short time period, the value of
+D
+D
+should not be too large. After simulation, in our task, we will generate rewards
+r
+i
+r_{i}
+in each step of the exploration process. When updating the action value of a node, we are concerned about the average value of rewards of all nodes after this node. We assume that after the node to be updated, the reward sequence generated by our search is
+r
+i
++
+1
+,
+r
+i
++
+2
+,
+⋯
+,
+r
+i
++
+k
+r_{i+1},r_{i+2},\cdots,r_{i+k}
+, then the average reward
+r
+r
+can be written as,
+r
+=
+1
+k
+​
+∑
+j
+=
+1
+k
+r
+i
++
+j
+.
+r=\frac{1}{k}\sum_{j=1}^{k}{r_{i+j}}.
+(7)
+Then the
+N
+⁡
+(
+s
+,
+a
+)
+N(s,a)
+and
+V
+⁡
+(
+s
+,
+a
+)
+V(s,a)
+are updated as follows,
+{
+N
+⁡
+(
+s
+,
+a
+)
+←
+N
+⁡
+(
+s
+,
+a
+)
++
+1
+V
+⁡
+(
+s
+,
+a
+)
+←
+V
+⁡
+(
+s
+,
+a
+)
++
+r
+−
+V
+⁡
+(
+s
+,
+a
+)
+N
+⁡
+(
+s
+,
+a
+)
++
+1
+.
+\left\{\begin{aligned} N(s,a)&\leftarrow N(s,a)+1\\
+V(s,a)&\leftarrow V(s,a)+\frac{r-V(s,a)}{N(s,a)+1}\end{aligned}\right..
+(8)
+After
+T
+T
+search steps, we select the action with largest
+N
+⁡
+(
+s
+,
+a
+)
+N(s,a)
+as the cameras final action,
+𝒂
+t
+m
+​
+c
+​
+t
+​
+s
+=
+arg
+⁡
+max
+a
+⁡
+N
+⁡
+(
+s
+,
+a
+)
+.
+\boldsymbol{a}^{mcts}_{t}=\mathop{\arg\max}\limits_{a}N(s,a).
+(9)
+4
+Experiments
+4.1
+Experiment Setup
+Environment Setting
+As shown in Figure
+1
+, in our 2D environment, the field of view of each camera can be represented by a sector centered on the camera. In our experiment, the visual angle (
+i.e.,
+the center angle of the sector) and visual distance (
+i.e.,
+the radius of the sector) are set as 800 and
+90
+∘
+90^{\circ}
+, respectively. In each time step, the unit step of camera movement is 10 and the unit angle of rotation is
+5
+∘
+5^{\circ}
+. In order to explore the influence of the number of targets and cameras and the size of the sports field on the experimental results, we set 6 different environments according to the parameters shown in Table
+1
+.
+Table 1:
+Parameter of different environments.
+n
+n
+refers to the number of cameras,
+m
+m
+refers to the number of targets.
+env name
+n
+n
+m
+m
+sports field size
+V
+​
+o
+​
+l
+​
+l
+​
+e
+​
+y
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+A
+Volleyball\_A
+6
+12
+2400
+×
+\times
+1200
+B
+​
+a
+​
+s
+​
+k
+​
+e
+​
+t
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+A
+Basketball\_A
+6
+10
+2240
+×
+\times
+1200
+F
+​
+o
+​
+o
+​
+t
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+A
+Football\_A
+6
+22
+2100
+×
+\times
+1360
+V
+​
+o
+​
+l
+​
+l
+​
+e
+​
+y
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+B
+Volleyball\_B
+4
+12
+2400
+×
+\times
+1200
+B
+​
+a
+​
+s
+​
+k
+​
+e
+​
+t
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+B
+Basketball\_B
+4
+10
+2240
+×
+\times
+1200
+F
+​
+o
+​
+o
+​
+t
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+B
+Football\_B
+4
+22
+2100
+×
+\times
+1360
+Target Movement
+In our environment, all targets have their moving goals and they move toward the goals with random speed between
+v
+v
+and
+1.2
+​
+v
+1.2v
+.
+v
+v
+is sampled from a uniform distribution. In our experiment, the upper and lower bound of the uniform distribution are set to 50 and 100, respectively. When a target is close to the goal, the environment will generate a new goal for the target.
+Environment Initialization
+We have tried to initialize the camera location in three different ways: (1) Random: cameras randomly initialize around the sports fields. (2) Part: divide the sports fields edge into
+n
+n
+segments, and each camera is randomly initialized in each segment. (3) Fix: cameras initialize at
+n
+n
+fixed points. In the first method, cameras are likely to be initialized in close locations. In order to cover more targets, cameras will spend much time moving away from each other. However, for the second method, if there are near parts between segments, it can not completely solve the above problem. Through experiments in three environments, we find that the third method can obtain the highest target coverage. The experiment result is shown in Table
+2
+. In the following experiments, we all use the third method to initialize the camera location, and the visual angle of cameras and the position of the target we are randomly initialized.
+Table 2:
+Target coverage (
+%
+\%
+) results with different camera initialization methods.
+env name
+random
+part
+fix
+V
+​
+o
+​
+l
+​
+l
+​
+e
+​
+y
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+A
+Volleyball\_A
+77.8
+±
+\pm
+6.9
+83.0
+±
+\pm
+6.4
+86.1
+±
+\pm
+4.1
+B
+​
+a
+​
+s
+​
+k
+​
+e
+​
+t
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+A
+Basketball\_A
+71.8
+±
+\pm
+11.3
+82.5
+±
+\pm
+9.4
+85.7
+±
+\pm
+4.8
+F
+​
+o
+​
+o
+​
+t
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+A
+Football\_A
+67.7
+±
+\pm
+11.6
+79.6
+±
+\pm
+5.4
+86.6
+±
+\pm
+3.4
+Table 3:
+Target coverage (
+%
+\%
+) result in different environments. We demonstrate the impact of each module on the experimental results through ablation study, and compare our results with HiT-MAC. The best result in each environment is shown in bold.
+random
+MARL action
+MARL random
+Ours-
+Ours
+HiT-MAC
+MARL
+×
+\times
+✓
+\checkmark
+✓
+\checkmark
+✓
+\checkmark
+✓
+\checkmark
+✓
+\checkmark
+prediction
+×
+\times
+×
+\times
+×
+\times
+×
+\times
+✓
+\checkmark
+×
+\times
+MCTS
+×
+\times
+×
+\times
+×
+\times
+✓
+\checkmark
+✓
+\checkmark
+×
+\times
+V
+​
+o
+​
+l
+​
+l
+​
+e
+​
+y
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+A
+Volleyball\_A
+40.4
+±
+\pm
+19.1
+86.1
+±
+\pm
+4.1
+85.3
+±
+\pm
+4.3
+88.5
+±
+\pm
+3.9
+90.4
+±
+\mathbf{\pm}
+4.1
+76.2
+±
+\pm
+13.0
+B
+​
+a
+​
+s
+​
+k
+​
+e
+​
+t
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+A
+Basketball\_A
+34.6
+±
+\pm
+21.4
+85.7
+±
+\pm
+4.8
+84.1
+±
+\pm
+5.4
+88.6
+±
+\pm
+4.3
+89.7
+±
+\mathbf{\pm}
+4.1
+79.1
+±
+\pm
+13.6
+F
+​
+o
+​
+o
+​
+t
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+A
+Football\_A
+33.6
+±
+\pm
+17.0
+86.6
+±
+\pm
+3.4
+84.4
+±
+\pm
+4.4
+89.0
+±
+\pm
+3.2
+90.7
+±
+\mathbf{\pm}
+3.1
+84.9
+±
+\pm
+6.5
+V
+​
+o
+​
+l
+​
+l
+​
+e
+​
+y
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+B
+Volleyball\_B
+11.3
+±
+\pm
+7.8
+56.9
+±
+\pm
+12.9
+52.5
+±
+\pm
+12.4
+59.1
+±
+\pm
+13.5
+59.9
+±
+\mathbf{\pm}
+13.7
+51.6
+±
+\pm
+7.2
+B
+​
+a
+​
+s
+​
+k
+​
+e
+​
+t
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+B
+Basketball\_B
+12.0
+±
+\pm
+9.2
+60.8
+±
+\pm
+12.0
+56.4
+±
+\pm
+11.1
+62.8
+±
+\pm
+11.6
+64.3
+±
+\mathbf{\pm}
+12.7
+50.4
+±
+\pm
+10.0
+F
+​
+o
+​
+o
+​
+t
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+B
+Football\_B
+14.1
+±
+\pm
+10.6
+61.5
+±
+\pm
+8.3
+57.1
+±
+\pm
+9.9
+64.4
+±
+\pm
+8.5
+65.5
+±
+\mathbf{\pm}
+9.1
+54.9
+±
+\pm
+6.1
+Hyper Parameters
+For the learning of the multi-agent reinforcement learning network, the learning rate
+η
+\eta
+, discount factor
+γ
+\gamma
+, team reward weight
+λ
+\lambda
+are 0.0005, 0.99, and 0.1, respectively. For the Monte Carlo tree search, the search depth
+D
+D
+, simulation steps
+T
+T
+are 3 and 100, respectively. We train the MARL model and test the environment with NVIDIA GeForce RTX 2080Ti GPU.
+Figure 5:
+Contribution of camera’s degree of freedom in position to target coverage (
+%
+\%
+) in
+V
+​
+o
+​
+l
+​
+l
+​
+e
+​
+y
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+A
+Volleyball\_A
+environment.
+4.2
+Experimental Results
+In order to prove the effectiveness of our method, we conduct corresponding ablation experiments in each environment. Table
+3
+shows the performance of the model under different settings. Starting from the second column of the Table
+3
+, “random” indicates the action is random choose from the action space, without learning at all. “MARL action” indicates we use the output of the MARL network
+𝒂
+t
+n
+​
+e
+​
+t
+\boldsymbol{a}^{net}_{t}
+as the final action, without position prediction and MCTS. In our MCTS method, we assume that the optimal action only has one camera’s action different from
+𝒂
+t
+n
+​
+e
+​
+t
+\boldsymbol{a}^{net}_{t}
+, so we try to find the best action in
+8
+​
+n
++
+1
+8n+1
+actions. “MARL random” indicates after we get the
+𝒂
+t
+n
+​
+e
+​
+t
+\boldsymbol{a}^{net}_{t}
+from MARL network, we randomly choose an action as final action from
+8
+​
+n
++
+1
+8n+1
+actions without MCTS. “Ours-” removes the position prediction module, we assume the future environment state is same as current environment state, then use MCTS to find the final action. “Ours” includes all modules: MARL, position prediction, and MCTS. The last column shows the performance of HiT-MAC
+Xu et al. 2020
+. According to the Table
+3
+, we can see our method performs best and each module contributes to the target coverage.
+In addition, we compare our method with the case where the camera cannot move in location. As shown in Figure
+5
+, the camera has higher degrees of freedom achieves higher target coverage. And Figure
+6
+shows the initialization of
+V
+⁡
+(
+s
+,
+a
+)
+V(s,a)
+in MCTS can effectively improve the target coverage. Figure
+7
+shows impact of different team reward weight
+λ
+\lambda
+on target coverage in the
+F
+​
+o
+​
+o
+​
+t
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+A
+Football\_A
+environment.
+Figure 6:
+Performance improvement of target coverage (
+%
+\%
+) by the initialization of
+V
+⁡
+(
+s
+,
+a
+)
+V(s,a)
+in MCTS.
+Figure 7:
+The impact of team reward weight
+λ
+\lambda
+on target coverage (
+%
+\%
+) in
+F
+​
+o
+​
+o
+​
+t
+​
+b
+​
+a
+​
+l
+​
+l
+​
+_
+​
+A
+Football\_A
+environment.
+5
+Conclusion
+In this work, we propose a novel multi-target active tracking method with MCTS. Based on the prediction of the future position for the targets, we obtain the optimal action through MCTS method. Meanwhile, we use the action from MARL network to prune the search tree, which greatly reduced the search space of MCTS method. In future work, we will use a more accurate model to estimate the target position, which makes the search results more reliable.
+References
+Guvensan and
+Yavuz [2011]
+M Amac Guvensan and A Gokhan Yavuz.
+On coverage issues in directional sensor networks: A survey.
+Ad Hoc Networks
+, 9(7):1238–1255, 2011.
+Henriques
+et al.
+[2014]
+João F Henriques, Rui Caseiro, Pedro Martins, and Jorge Batista.
+High-speed tracking with kernelized correlation filters.
+IEEE Transactions on Pattern Analysis and Machine Intelligence
+(TPAMI)
+, 37(3):583–596, 2014.
+Hessel
+et al.
+[2018]
+Matteo Hessel, Joseph Modayil, Hado Van Hasselt, Tom Schaul, Georg Ostrovski,
+Will Dabney, Dan Horgan, Bilal Piot, Mohammad Azar, and David Silver.
+Rainbow: Combining improvements in deep reinforcement learning.
+In
+Proceedings of the AAAI Conference on Artificial Intelligence
+(AAAI)
+, 2018.
+Kempka
+et al.
+[2016]
+Michał Kempka, Marek Wydmuch, Grzegorz Runc, Jakub Toczek, and Wojciech
+Jaśkowski.
+Vizdoom: A doom-based ai research platform for visual reinforcement
+learning.
+In
+Proceedings of Conference on Computational Intelligence and
+Games (CIG)
+, pages 1–8. IEEE, 2016.
+Li
+et al.
+[2018]
+Wei Li, Changxin Huang, Chao Xiao, and Songchen Han.
+A heading adjustment method in wireless directional sensor networks.
+Computer Networks
+, 133:33–41, 2018.
+Li
+et al.
+[2020]
+Jing Li, Jing Xu, Fangwei Zhong, Xiangyu Kong, Yu Qiao, and Yizhou Wang.
+Pose-assisted multi-camera collaboration for active object tracking.
+In
+Proceedings of the AAAI Conference on Artificial Intelligence
+(AAAI)
+, volume 34, pages 759–766, 2020.
+Luo
+et al.
+[2018]
+Wenhan Luo, Peng Sun, Fangwei Zhong, Wei Liu, Tong Zhang, and Yizhou Wang.
+End-to-end active object tracking via reinforcement learning.
+In
+Proceedings of the International Conference on Machine
+Learning (ICML)
+, pages 3286–3295, 2018.
+Ma and Wu [2020]
+Jinming Ma and Feng Wu.
+Feudal multi-agent deep reinforcement learning for traffic signal
+control.
+In
+Proceedings of the International Conference on Autonomous
+Agents and Multiagent Systems (AAMAS)
+, pages 816–824, 2020.
+Mnih
+et al.
+[2013]
+Volodymyr Mnih, Koray Kavukcuoglu, David Silver, Alex Graves, Ioannis
+Antonoglou, Daan Wierstra, and Martin Riedmiller.
+Playing atari with deep reinforcement learning.
+arXiv preprint arXiv:1312.5602
+, 2013.
+Nam and Han [2016]
+Hyeonseob Nam and Bohyung Han.
+Learning multi-domain convolutional neural networks for visual
+tracking.
+In
+Proceedings of the IEEE Conference on Computer Vision and
+Pattern Recognition (CVPR)
+, pages 4293–4302, 2016.
+Qiu
+et al.
+[2017]
+Weichao Qiu, Fangwei Zhong, Yi Zhang, Siyuan Qiao, Zihao Xiao, Tae Soo Kim, and
+Yizhou Wang.
+Unrealcv: Virtual worlds for computer vision.
+In
+Proceedings of the ACM international conference on
+Multimedia
+, pages 1221–1224, 2017.
+Rosello and
+Kochenderfer [2018]
+Pol Rosello and Mykel J Kochenderfer.
+Multi-agent reinforcement learning for multi-object tracking.
+In
+Proceedings of the International Conference on Autonomous
+Agents and MultiAgent Systems (AAMAS)
+, pages 1397–1404, 2018.
+Samvelyan
+et al.
+[2019]
+Mikayel Samvelyan, Tabish Rashid, Christian Schröder de Witt, Gregory
+Farquhar, Nantas Nardelli, Tim GJ Rudner, Chia-Man Hung, Philip HS Torr,
+Jakob N Foerster, and Shimon Whiteson.
+The starcraft multi-agent challenge.
+In
+Proceedings of the International Conference on Autonomous
+Agents and MultiAgent Systems (AAMAS)
+, 2019.
+Singh
+et al.
+[2020]
+Arambam James Singh, Akshat Kumar, and Hoong Chuin Lau.
+Hierarchical multiagent reinforcement learning for maritime traffic
+management.
+In
+Proceedings of the International Conference on Autonomous
+Agents and Multiagent Systems (AAMAS)
+, pages 1278–1286, 2020.
+Torabi
+et al.
+[2020]
+Behnam Torabi, Rym Zalila-Wenkstern, Robert Saylor, and Patrick Ryan.
+Deployment of a plug-in multi-agent system for traffic signal timing.
+In
+Proceedings of the International Conference on Autonomous
+Agents and MultiAgent Systems (AAMAS)
+, pages 1386–1394, 2020.
+Vinyals
+et al.
+[2019]
+Oriol Vinyals, Igor Babuschkin, Junyoung Chung, Michael Mathieu, Max Jaderberg,
+Wojciech M Czarnecki, Andrew Dudzik, Aja Huang, Petko Georgiev, Richard
+Powell, et al.
+Alphastar: Mastering the real-time strategy game starcraft ii.
+DeepMind blog
+, 2, 2019.
+Xi
+et al.
+[2021]
+Mao Xi, Yun Zhou, Zheng Chen, Wengang Zhou, and Houqiang Li.
+Anti-distractor active object tracking in 3d environments.
+IEEE Transactions on Circuits and Systems for Video Technology
+(TCSVT)
+, 2021.
+Xu
+et al.
+[2020]
+Jing Xu, Fangwei Zhong, and Yizhou Wang.
+Learning multi-agent coordination for enhancing target coverage in
+directional sensor networks.
+In
+Proceedings of the International Conference on Neural
+Information Processing Systems (NeurIPS)
+, 2020.
+Zhang
+et al.
+[2016]
+Guanglin Zhang, Shan You, Jiajie Ren, Demin Li, and Lin Wang.
+Local coverage optimization strategy based on voronoi for directional
+sensor networks.
+Sensors
+, 16(12):2183, 2016.
+Zhong
+et al.
+[2018]
+Fangwei Zhong, Peng Sun, Wenhan Luo, Tingyun Yan, and Yizhou Wang.
+Ad-vat: An asymmetric dueling mechanism for learning visual active
+tracking.
+In
+Proceedings of the International Conference on Learning
+Representations (ICLR)
+, 2018.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

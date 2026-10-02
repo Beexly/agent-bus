@@ -1,0 +1,1474 @@
+Computing an Optimal Pitching Strategy in a Baseball At-Bat
+Connor Douglas
+Everett Witt
+Mia Bendy
+Yevgeniy Vorobeychik
+Affiliation:
+Washington University in St. Louis,
+Periwinkle Trading LLC,
+Capital One{c.douglas,everett.witt,mia.bendy,yvorobeychik}@wustl.edu
+Abstract
+The field of quantitative analytics has transformed the world of sports over the last decade. To date, these analytic approaches are statistical at their core, characterizing what is and what was, while using this information to drive decisions about what to do in the future. However, as we often view team sports, such as soccer, hockey, and baseball, as pairwise win-lose encounters, it seems natural to model these as zero-sum games. We propose such a model for one important class of sports encounters: a baseball at-bat, which is a matchup between a pitcher and a batter. Specifically, we propose a novel model of this encounter as a zero-sum stochastic game, in which the goal of the batter is to get on base, an outcome the pitcher aims to prevent. The value of this game is the on-base percentage (i.e., the probability that the batter gets on base). In principle, this stochastic game can be solved using classical approaches. The main technical challenges lie in predicting the distribution of pitch locations as a function of pitcher intention, predicting the distribution of outcomes if the batter decides to swing at a pitch, and characterizing the level of patience of a particular batter. We address these challenges by proposing novel pitcher and batter representations as well as a novel deep neural network architecture for outcome prediction. Our experiments using Kaggle data from the 2015 to 2018 Major League Baseball seasons demonstrate the efficacy of the proposed approach.
+1
+Introduction
+Baseball is one of the most popular team sports in the U.S., with Major League Baseball (MLB) bringing in over $10 billion in revenue in 2019
+(
+Statista 2020
+)
+.
+Moreover, baseball has considerable global popularity as well, particularly in Latin America, Japan, and South Korea.
+With such a large market, teams look to gain a competitive edge, and to this end
+they leverage complex statistical models generated from increasingly abundant baseball data.
+Yet, the scope of baseball analytics has been limited primarily to statistical and machine learning approaches, rather than game-theoretic reasoning
+(
+Alcorn 2017
+;
+Koseler and Stephan 2017
+)
+.
+There have been several proposals for strategic analysis of sports competitions outside of baseball, such as tennis and soccer.
+Walker and Wooders 2001
+study a game-theoretic model of server-receiver interaction in tennis, but focus largely on indirectly evaluating the extent to which players act according to a mixed-strategy Nash equilibrium.
+Azar and Bar-Eli 2011
+consider a simple one-shot game-theoretic model of a soccer penalty kick, and several recent efforts consider a game-theoretic model of both tactical and strategic decisions in an actual soccer match
+(
+Beal et al. 2020
+;
+Beal et al. 2021
+)
+.
+The latter, however, side-step complete strategic reasoning by estimating opponent strategies from historical data and then optimizing the strategy for a target team.
+We present the first (to our knowledge) game-theoretic model of strategic interactions in a baseball game.
+Our focus is a baseball at-bat, an encounter between a pitcher and a batter.
+In an at-bat, a pitcher throws a series of pitches to a batter.
+Every at-bat ends in one of two ways: 1) the batter is out (and, in our model, the pitcher wins), for example, after receiving the third strike, or 2) the batter gets on-base, for example, by hitting a home run.
+In modeling an at-bat, we assume that the goal of the batter is solely to get on base, while the pitcher aims to get the batter out.
+This focus on the on-base-percentage (OBP) is clearly restrictive (in not accounting, say, for the difference between walks and home runs), but is nevertheless an important element of baseball analytics
+(
+Albert 2002
+;
+Lewis 2004
+)
+.
+We model an at-bat as a stochastic game in which the count (of balls and strikes) serves as the state, the pitcher’s actions amount to which pitch to throw and where, while the batter decides whether to swing or take (not swing at) the pitch.
+This model introduces two principal conceptual and technical challenges.
+The first is that the pitcher and batter decisions are not, in fact, concurrent: the batter does get to observe the pitch as it leaves the pitcher’s hand and as it travels towards home plate.
+On the other hand, the relevant observation window is so short (usually less than half a second) that the batter has little ability to deliberate upon their decision.
+The particularly salient issue here is that no batter will swing if the pitch is far outside of the strike zone, while when pitches are close, batters vary significantly in their swing propensity (what is often called a batter’s “patience” or “eye”).
+The second challenge is that our model governs the pitcher’s intent about where the pitch is thrown.
+However, pitching data documents only where the pitches
+ended up
+; we observe nothing explicit about intent.
+One way to deal with the challenge of observability is to move to a full-blown partially-observable stochastic game (POSG) model.
+However, POSGs are notoriously difficult to solve.
+We propose instead to add an explicit element to our model that allows us to both capture the most salient nature of this partial observability while keeping the main stochastic game structure.
+Specifically, we use data to learn a batter-specific probability that a batter swings at (relatively) borderline pitches outside the strike zone, and when this is sufficiently high, “override” a batter’s decision to swing prescribed by the model by modifying the associated transition to always result in a ball.
+We address the second challenge by first decomposing the distribution of outcomes given the pitcher’s actions, conditional on the batter swinging, into two parts: 1) distribution of
+actual
+locations given
+intended
+locations, and 2) distribution of outcomes based on actual locations.
+We learn the former by assuming that the error distribution of the pitcher is Gaussian and by taking advantage of counts in which most pitchers aim to throw a strike most of the time.
+For the latter, we propose a novel tensor representation of the pitcher and batter, along with a novel deep neural network architecture, and use historical baseball data to learn the outcome distribution for given pitcher-batter pairs.
+With all the pieces in place, we can solve the resulting stochastic game using standard methods
+(
+Filar and Vrieze 2012
+;
+Littman 1994
+)
+.
+We evaluate the parts of our approach, as well as the final game theoretic equilibrium pitch distribution, using 2015-2018 Kaggle data for Major League Baseball.
+We show that our deep neural network models can successfully capture distributions of outcomes as well as batters’ patience, and demonstrate that the proposed approach yields significantly lower predicted OBP for the batters (i.e., higher utility for the pitcher) than the empirical OBP in most counts.
+Related Work
+With team sports typically being win-lose encounters between a pair of teams, it is natural to model these using the language of game theory.
+Indeed, some individual sports, such as tennis, have a similar two-player win-lose (zero-sum) element.
+Consequently, several approaches to game-theoretic modeling of sports activities have been previously proposed.
+For tennis specifically,
+Walker and Wooders 2001
+studied empirically whether top players at Wimbledon play each point according to a mixed-strategy equilibrium.
+They showed that on the one hand, evidence appears to support this in that the probability of winning a point is similar whether the server serves to the right or the left of the receiver.
+On the other hand, aspects such as that server’s decisions whether to serve to the left or to the right, do not appear to be independent random draws as the game-theoretic model would predict.
+In a more theoretical effort,
+Walker, Wooders, and Amir 2011
+propose a stochastic game model of win-lose encounters in which the pivotal quantity is a score, which determines the nature of each stage game, and stage games have only two possible outcomes determined by which of the two players win.
+This stochastic game model is related to ours, but our model has four possible outcomes in each state, violating one central assumptions of
+Walker, Wooders, and Amir 2011
+; more fundamentally, our model of a baseball at-bat does not fit their general assumed structure of the stochastic game as transitioning through a series of “point games”.
+Moreover, our goals are different: while
+Walker, Wooders, and Amir 2011
+focus on characterizing the structure of equilibria in this game, our goal is to solve it, and infer the structure of the game from data.
+Azar and Bar-Eli 2011
+study whether penalty kick interactions between the kicker and the goalie in soccer are representative of mixed-strategy Nash equilibrium play.
+In this setting, however, there are no environment dynamics, and the game is straightforward to empirically represent.
+Indeed, to the extent that outcome distribution depends on the particular players involved,
+Azar and Bar-Eli 2011
+do not model this.
+In contrast, this, along with the stochastic game model, is a central contribution of our work.
+Beal et al. 2020
+and
+Beal et al. 2021
+study strategic and tactical decision making in a soccer game.
+Their models are a blend of Bayesian and stochastic games, but the ultimate approaches do not investigate solutions to these games as such. Instead, they use data to estimate the strategy of a given opponent and then approach the problem as an optimization problem with several alternative objectives, rather than a game.
+The increasing importance of sports analytics, particularly in baseball, has in turn given rise to a number of machine learning approaches surveyed by
+Koseler and Stephan 2017
+.
+However, the classes of problems investigated in such approaches have been so far typically limited to predicting which pitch will be thrown
+(
+Ganeshapillai and Guttag 2012
+;
+Hoang et al. 2015
+)
+, a player’s batting average or other offensive statistics
+(
+Jiang and Zhang 2010
+;
+Lyle 2007
+)
+, likelihood of catching a baseball
+(
+Das and Das 1994
+)
+, likelihood of winning
+(
+Yang and Swartz 2004
+)
+, and the like.
+There do not appear to be prior approaches to predict the outcomes for a pair of pitcher and batter at the level of resolution of a single pitch, which is one of our main contributions.
+Finally,
+Alcorn 2017
+proposed an approach for real vector embedding of baseball players in the style of word2vec
+(
+Mikolov et al. 2013
+)
+.
+We also learn player embeddings, with the important difference that the embedding by
+Alcorn 2017
+assumes that the set of players is
+static
+, an assumption routinely violated in MLB; in contrast, we make no such assumption.
+Sarris 2018
+discuss approaches for characterizing pitcher control, but to date the focus is predominantly on simple aggregate statistics, such as median error, rather than inferring the full distribution as we do (and which is crucial to our overall approach).
+Finally, more loosely related are the efforts to use computational game theory to solve complex canonical games, such as poker
+(
+Brown and Sandholm 2018
+;
+Brown and Sandholm 2019
+)
+.
+However, aside from the obvious difference in the game structure between poker and baseball, conceptually the key distinction is that in poker and similar games, the game itself, including player actions and payoffs, is entirely specified and common knowledge.
+In contrast, a game-theoretic model of baseball (or a baseball at-bat) as a game is not a priori self-evident and is in fact one of our central contributions.
+2
+Background: the Basics of Baseball
+A (U.S. major league) baseball game is an encounter between two teams and proceeds through a series of nine
+innings
+.
+Each inning is comprised of two
+half-innings
+: the
+top
+half and the
+bottom
+half.
+In the top half-inning, the away team bats, while the home team pitches and defends, and the roles reverse in the bottom half-inning.
+Each half-inning consists of three outs, that is, an inning proceeds until three players on the batting team have registered an out.
+The most basic interaction in baseball is an at-bat, which is a faceoff between a pitcher, who throws a baseball towards the home plate area, and a batter standing near this area
+Figure 1:
+Visual illustration of a strike zone.
+with the aim to “get on base”.
+A central concept in an
+at-bat is a
+strike zone
+(see Figure
+1
+).
+The vertical range of the strike zone starts at just below the batter’s knees and reaches up to the midpoint between the batter’s shoulders and the top of his pants.
+The horizontal range of the zone is the same as the width of the home plate—a white pentagon drawn on the ground with the flat bottom side facing the pitcher.
+While the strike zone clearly depends on the batter, we’ll treat it as a fixed entity for simplicity.
+Any pitch that is in the strike zone when it crosses the home plate is considered a
+strike
+, and when the batter observes, or swings through, strike 3, he is automatically out.
+Conversely, a pitch that is outside the strike zone is called a
+ball
+, and the batter is automatically on base whenever they observe a fourth ball.
+A
+count
+keeps track of the number of balls and strikes in an at-bat, starting at 0-0 (balls-strikes).
+At any point, if a batter swings at a pitch, one of four things can happen: 1) a hit, which happens whenever the ball lands in the field of play, or is a home run (leaves the stadium within the field of play), and cannot be reached by a defensive fielder before the batter reaches first base; 2) an out, which happens whenever the a fielder either catches a hit ball on the fly, or can throw it to first base (i.e., to the defender standing with one foot on first base) prior to the batter stepping on it; 3) a strike, if the batter does not make contact with the baseball; and 4) a foul, if the batter makes contact, but the ball lands behind the field of play.
+Our concern is a particular at-bat, and the goal is to determine the optimal pitching sequence, be it deterministic or stochastic in order to minimize the probability that the batter ends up on base—commonly known as the
+on-base percentage
+or
+OBP
+in baseball parlance.
+3
+A Baseball At-Bat as a Stochastic Game
+Consider an
+at-bat
+, an encounter between a pitcher and a batter.
+We start with a 0-0 count (0 balls, 0 strikes).
+The pitcher then throws a pitch, let’s say, a 95-mph fastball.
+As the fastball zips rapidly towards home plate, we hold our breath as we anticipate one of a number of yet-unrealized possibilities: perhaps the batter takes a strike, perhaps he swings and fouls the pitch off, or, perhaps, he makes hard contact, and the ball clears the fence in deep left field.
+A home run, a base hit, or a walk, all end an at-bat, as does a strikeout.
+However, a ball, a strike, and a foul ball may (in the latter case, will always) continue the at-bat, potentially changing the count.
+For example, a strike or a foul ball in a 0-0 count will always progress the count to 0-1, and if a ball follows, the count progresses again to 1-1.
+On a 3-2 count, a foul ball returns us to the same 3-2 count, while a ball necessarily results in a walk and a (non-foul) strike in an out.
+Since there is no evident private information in an at-bat, it is natural to model it as a zero-sum stochastic game.
+However, a good model is not obvious.
+First, what are the action sets for the players?
+For example, the batter does observe the pitch as it traverses the airspace between the pitcher’s mound and the catcher’s glove, and could use this information (e.g., spin, location, speed of the pitch) to decide whether, and how, to swing.
+Aside from the considerable complexity this introduces, none of this information is available in public baseball data at the level of necessary detail.
+Furthermore, what is state?
+In principle, everything may matter: who is on base, how hard the wind is blowing, the stadium, the entire sequence of pitches that has been thrown in that at-bat, or in the game so far, and even what the batter had for breakfast.
+Again, we clearly need an abstraction that allows us to reason about the interaction, as well as to inform the model based on available data.
+We propose a novel model of a baseball at-bat as the following stochastic game involving two players, a pitcher and a batter.
+First, we consider only two types of outcomes of at-bats: on-base (a hit or a walk) and out.
+Thus, we do not differentiate between a single and a home run.
+Second, we define the actions of the two players as follows.
+For the pitcher, let
+P
+P
+be the set of all pitch types they can throw, and
+L
+L
+the set of possible locations (both in the strike zone, and outside), which we assume to be finite (discretizing the strike zone, and the “non-strike” zone).
+Let
+Z
+s
+⊂
+L
+Z_{s}\subset L
+be the strike zone, and
+Z
+b
+⊂
+L
+Z_{b}\subset L
+be locations outside the strike zone (see Figure
+2
+for a particular discretization of both
+Z
+s
+Z_{s}
+and
+Z
+b
+Z_{b}
+).
+The pitcher’s action space is then
+A
+p
+=
+P
+×
+L
+A_{p}=P\times L
+.
+Figure 2:
+Pitch zone model from the pitcher’s point of view: the orange center is the strike zone, while the blue periphery is outside the strike zone. The numbers are numerical labels for associated discrete zone segments.
+Note that in this context, locations
+l
+∈
+L
+l\in L
+are
+intended
+locations: that is, locations that the pitcher is
+aiming
+for; of course, the pitch may often end up elsewhere, and we will come back to this below.
+For the batter, we define actions simply as binary: whether to swing at the pitch (denoted by
+σ
+\sigma
+), or to take (not swing;
+τ
+\tau
+), that is,
+A
+b
+=
+{
+σ
+,
+τ
+}
+A_{b}=\{\sigma,\tau\}
+.
+There is an important complication here: clearly, sometimes the pitch will be so far out of the zone that no batter would plausibly swing; we come back to this below as well.
+We use
+a
+=
+(
+a
+p
+,
+a
+b
+)
+∈
+A
+p
+×
+A
+b
+a=(a_{p},a_{b})\in A_{p}\times A_{b}
+to denote the action profile (joint actions) of both players.
+Next, we define the state space
+S
+S
+as follows.
+Let
+u
+∈
+U
+≡
+{
+0
+,
+1
+,
+2
+,
+3
+}
+u\in U\equiv\{0,1,2,3\}
+be the number of balls and
+v
+∈
+V
+≡
+{
+0
+,
+1
+,
+2
+}
+v\in V\equiv\{0,1,2\}
+the number of strikes, and let
+b
+b
+represent the state in which the batter is on-base, while
+o
+o
+the state with the batter being out.
+The state space is then
+S
+=
+U
+×
+V
+∪
+b
+∪
+o
+S=U\times V\cup b\cup o
+.
+We denote states by
+s
+∈
+S
+s\in S
+.
+Of course, other things may, and likely do, matter in an at-bat, but the information above is clearly first-order information, and therefore a natural place to start.
+Since the game is zero-sum, it suffices to define the utility function
+u
+⁡
+(
+s
+,
+a
+)
+u(s,a)
+, where
+s
+∈
+S
+s\in S
+and
+a
+∈
+A
+p
+×
+A
+b
+a\in A_{p}\times A_{b}
+just for the batter.
+Moreover, since we only care about on-base or outs,
+u
+⁡
+(
+s
+,
+a
+)
+=
+0
+u(s,a)=0
+for any
+s
+∈
+U
+×
+V
+s\in U\times V
+(active at-bat), and
+u
+⁡
+(
+b
+,
+a
+)
+=
+1
+u(b,a)=1
+while
+u
+⁡
+(
+o
+,
+a
+)
+=
+0
+u(o,a)=0
+.
+Therefore, the expected utility in this game (i.e., probability the batter gets on base) has the natural interpretation as
+on-base percentage (OBP)
+, which the goal of the batter is to maximize and the pitcher’s goal is to minimize.
+Our final task is to define the transition distribution
+T
+s
+​
+s
+′
+a
+T_{ss^{\prime}}^{a}
+in this stochastic game.
+Central to this are two sources of uncertainty conditional on the action choices
+a
+a
+of both players: 1) uncertainty about where the chosen pitch
+p
+∈
+P
+p\in P
+ends up given its intended location
+l
+l
+, and 2) uncertainty about the outcome if the batter chooses to swing, i.e.,
+a
+b
+=
+σ
+a_{b}=\sigma
+.
+Let’s start with pitch location uncertainty.
+Let
+D
+l
+​
+(
+p
+,
+l
+)
+D_{l}(p,l)
+be the distribution over locations
+l
+′
+∈
+L
+l^{\prime}\in L
+where the pitch ends up
+, given that a pitch
+p
+∈
+P
+p\in P
+was aimed at location
+l
+∈
+L
+l\in L
+.
+To deal with outcome uncertainty, first note that if the batter takes, the outcome is fully determined by pitch location: either the pitch is in the strike zone, in which case it’s a strike, or not, and it’s a ball (we ignore here the additional complication of umpire mistakes).
+If the batter swings, there are four possibilities: 1) the batter swings-and-misses (a strike), 2) foul ball, 3) hit, and 4) out after putting the ball in play.
+Let
+Ω
+=
+{
+ω
+s
+,
+ω
+f
+,
+ω
+h
+,
+ω
+o
+}
+\Omega=\{\omega_{s},\omega_{f},\omega_{h},\omega_{o}\}
+be the set of these four outcomes, respectively.
+Let
+D
+ω
+​
+(
+p
+,
+l
+,
+s
+)
+D_{\omega}(p,l,s)
+be the probability distribution over
+Ω
+\Omega
+conditional on the batter swinging, if the pitch is
+p
+p
+and the
+actual
+(not necessarily intended) location of the pitch is
+l
+l
+(it also in general depends on count; hence the explicit dependence on state
+s
+s
+).
+With
+D
+l
+D_{l}
+and
+D
+ω
+D_{\omega}
+in hand, we can now completely define the transition distribution
+T
+s
+​
+s
+′
+a
+T_{ss^{\prime}}^{a}
+.
+If
+a
+b
+=
+τ
+a_{b}=\tau
+, then transition is deterministic and only depends on the count and
+D
+l
+D_{l}
+: 1) if the actual location
+l
+∈
+Z
+s
+l\in Z_{s}
+, the pitch is a strike; then if
+v
+=
+2
+v=2
+,
+s
+′
+=
+o
+s^{\prime}=o
+, and otherwise
+v
+′
+=
+v
++
+1
+v^{\prime}=v+1
+; 2) if
+l
+∈
+Z
+b
+l\in Z_{b}
+(the pitch is a ball), then if
+u
+=
+3
+u=3
+,
+s
+′
+=
+b
+s^{\prime}=b
+, and otherwise
+u
+′
+=
+u
++
+1
+u^{\prime}=u+1
+.
+If the batter swings, transitions are now determined by
+D
+ω
+D_{\omega}
+.
+Thus, if the (stochastic) outcome
+ω
+=
+ω
+s
+\omega=\omega_{s}
+, the transition is exactly the same as if the batter took the strike.
+If
+ω
+=
+ω
+f
+\omega=\omega_{f}
+, then if
+v
+=
+2
+v=2
+,
+v
+′
+=
+2
+v^{\prime}=2
+, and otherwise,
+v
+′
+=
+v
++
+1
+v^{\prime}=v+1
+.
+If
+ω
+=
+ω
+h
+\omega=\omega_{h}
+, then
+s
+′
+=
+b
+s^{\prime}=b
+(if it’s a hit, the batter ends up on base), and, finally, if
+ω
+=
+ω
+o
+\omega=\omega_{o}
+, then
+s
+′
+=
+o
+s^{\prime}=o
+(the batter is out).
+If we are given all of the information above, including
+D
+l
+D_{l}
+and
+D
+ω
+D_{\omega}
+, we can solve this game using the combined value iteration and linear programming approach proposed by
+Littman 1994
+, which we review below.
+The challenge is that not only are these not given explicitly, but
+D
+l
+D_{l}
+is pitcher-specific, and
+D
+ω
+D_{\omega}
+depends on the particular matchup between the pitcher and batter.
+An additional challenge is the following: in our model above, we effectively assumed that the batter decides whether to swing or take
+at the same time
+as the pitch is thrown.
+In practice, batters can partially detect where the pitch will end up, a characteristic commonly referred to as a batter’s
+patience
+(their propensity to swing at pitches outside the strike zone).
+Moreover, patience is certainly batter-specific: some batters are far more patient than others, and this is a crucial aspect to capture.
+We model this feature by introducing a binary patience function
+G
+⁡
+(
+l
+)
+G(l)
+for
+l
+∈
+Z
+b
+l\in Z_{b}
+, where
+G
+⁡
+(
+l
+)
+=
+0
+G(l)=0
+means that the batter will in fact take that pitch
+even if they intended to swing initially
+, while
+G
+⁡
+(
+l
+)
+=
+1
+G(l)=1
+means that the batter will proceed with swinging.
+Of course, this, too, is not give a priori.
+Next, we describe in detail how we can use baseball data to arrive at estimates of
+D
+l
+D_{l}
+,
+D
+ω
+D_{\omega}
+, and
+G
+G
+.
+We then put everything together in solving the resulting stochastic game.
+4
+Solution Approach
+We now describe our approach to computing an equilibrium of the stochastic game representing a baseball at-bat, given a specific pair of pitcher and batter.
+We start by describing in detail how we learn the aspects of the game model that determine the state transition distribution from past data of baseball at-bats.
+Subsequently, we describe how we solve the stochastic game using the well-known solution approach that combines linear programming with value iteration.
+4.1
+Predicting Outcomes
+The first missing piece of the game model that must be inferred from data is the distribution
+D
+ω
+​
+(
+p
+,
+l
+,
+s
+)
+D_{\omega}(p,l,s)
+that predicts outcomes for a pitch
+p
+p
+that is thrown (whether intended to or not) at location
+l
+l
+in state (count)
+s
+s
+.
+One of the central aspects of the game model is that this distribution also clearly depends on who is pitching, and who is batting.
+Let
+x
+p
+x_{p}
+and
+x
+b
+x_{b}
+represent the pitcher and batter, respectively; our goal, more precisely, is to learn
+D
+ω
+​
+(
+p
+,
+l
+,
+s
+,
+x
+p
+,
+x
+b
+)
+D_{\omega}(p,l,s;x_{p},x_{b})
+.
+A naive idea is to represent the batter by either their batting average, on-base percentage, slugging percentage, or another of a myriad 1-dimensional attributes from baseball analytics, or even by concatenating several of these.
+Similarly, one can represent a pitcher just using, say, their earned-run average.
+However, such simplistic representations lose a great deal of information.
+For example, it is often conventional to talk about some batters as, say, “good low-ball hitters”, others as “good fastball hitters”, and so on—clearly capturing information that is not simply reflected in simple aggregate statistics.
+We therefore propose a novel representation of batters, and a novel representation of pitchers, aiming to capture as much readily available information about their past experience as possible, thereby avoiding making specific assumptions about them a priori.
+Figure 3:
+Pitcher and batter tensor visualizations. Both pitcher and batter tensors are of the shape (5,5,12) where the first two dimensions are used to physically represent the zone location. The final dimension is comprised of layers of statistics for each pitch type (pitch type thrown in the case of a pitcher and pitch type faced in the case of a batter).
+Let’s start with batters.
+We represent batters using a 3D tensor (Figure
+3
+) in which 2 dimensions correspond to the orientation of the (strike and ball) zone
+Z
+Z
+(height and width; see Figure
+2
+, but with zones 10, 12, 13, 15 split up into 3 each to correspond to a matrix, but with associated matrix entries taking on identical values) from the pitcher’s perspective.
+We then associate each pitch with a pair of slices in the third dimension: one for the relatively frequency of swinging at that pitch, and another for batting average if that pitch was thrown in the associated location.
+Now, the pitchers.
+We represent pitchers, just as batters (Figure
+3
+), using a 3D tensor with 2 dimensions corresponding to the zone.
+We then associate each pitch with a pair of slices in the third dimension: one for the relative frequency of throwing that pitch in the particular location in the zone;
+consequently, the sum of the entries over the zone and all pitches is 1; and the second for the average velocity of the associated pitch.
+Input pitch type and location are represented by tensors with a similar shape, (5,5,6), to pitchers and batters, but use a one-hot encoding,
+with a 1 in the position corresponding to the pitch and its location, and 0s elsewhere.
+Finally, we represent count
+s
+s
+by two integers, one for the number of balls, and the other for the number of strikes.
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+\midarrow
+Figure 4:
+Deep neural network architecture for predicting at-bat outcomes. Input tensors are in blue, conv layers in yellow, max-pooling in red, and fully-connected layers in purple. The circle concatenates the fully connected “embedding” layers. Final softmax layer is in dark purple. All convolutional layer activations are ReLU, while activations in Fc (fully-connected) layers are sigmoid.
+Next, we propose a novel deep convolutional neural network architecture for predicting outcomes shown in Figure
+4
+.
+While the primary innovation is in our representation of batter and pitcher as inputs which we described above, it is not a priori self-evident how to combine them into a single neural network architecture.
+This problem is reminiscent of sensor fusion
+(
+Feng et al. 2021
+)
+, where the architecture is often intricate, and the ideas do not necessarily transfer here.
+What we opt for is essentially a
+late fusion
+architecture.
+Specifically, as illustrated in Figure
+4
+, we first create separate convolutional architectures separately for the pitcher, batter, and pitch, which (after convolutional layers) ultimately embed each into real vectors.
+These are then concatenated with the pitch vector
+z
+z
+and the count representation
+s
+s
+, with the resulting vector passed through several fully connected layers and, eventually, through the softmax layer to obtain the probability distribution over the four outcomes.
+4.2
+Learning Pitcher Control
+A typical dataset of baseball at-bats consists of pitches thrown and documentation about where they ended up upon crossing the home plate, whether the batter swung, and the outcome.
+What is conspicuously missing from such data is
+the intended location of the pitch
+.
+Given this state of affairs, it appears at first hopeless to get any handle on the distribution
+D
+l
+D_{l}
+of actual pitch locations, given expected locations.
+However, we now leverage some baseball conventional wisdom—imperfect, to be sure, but generally quite reasonable—that in certain counts the pitcher just wants to throw a strike.
+In particular, suppose that we have a 3-0 count.
+If the pitcher fails to throw a strike, and the batter does not swing, the batter is automatically on base.
+It is, therefore, generally expected that a pitcher intends to throw a strike.
+Now,
+where
+in the strike zone the strike would be thrown remains uncertain, but here we add another reasonable assumption: if the pitcher aims to throw a strike, they will typically aim at the same part of the zone.
+The final crucial assumption we make is that the spatial distribution of the
+error
+(in 2 vertical dimensions of the strike zone) is zero-mean Gaussian, and only depends on the pitch type (but not, for example, count).
+With the assumptions above, if we aggregate pitches thrown on 3-0 count for a particular pitcher, we can estimate a mean and the co-variance matrix Gaussian distribution, which in this case consists of 5 parameters for each pitch type
+p
+p
+:
+(
+μ
+x
+p
+,
+μ
+y
+p
+,
+σ
+x
+p
+,
+σ
+y
+p
+,
+σ
+x
+​
+y
+p
+)
+p
+∈
+P
+(\mu_{x}^{p},\mu_{y}^{p},\sigma_{x}^{p},\sigma_{y}^{p},\sigma_{xy}^{p})_{p\in P}
+, where
+x
+x
+is the horizontal and
+y
+y
+the vertical dimension of the strike zone viewed from the pitcher’s perspective, with the origin in its center.
+The challenge with the approach above is that we do not necessarily have sufficient data for all pitchers on 3-0 counts
+for every pitch type
+to effectively estimate the Gaussian distribution.
+To address this issue, we use a deep neural network regression to estimate the Gaussian error model parameters for each pitcher and pitch type.
+For this, we use the same pitcher representation as described in Section
+4.1
+as input.
+4.3
+Representing and Learning Batter Patience
+We represent the problem of batter “patience” as the task of learning the probability that the batter swings on a pitch in a particular area outside of the zone.
+For this purpose, we first split our zones outside the strike zone further, with the presumption that when the pitch is far outside the zone, most batters will not swing, and the variation among batters stems primarily when pitches are relatively close to the strike zone.
+For each such
+borderline
+location
+l
+∈
+Z
+b
+l\in Z_{b}
+and pitch
+p
+∈
+P
+p\in P
+, we learn a binary classifier to predict whether a given batter
+x
+b
+x_{b}
+, represented exactly as described above, will swing.
+We use the same neural network architecture as the “batter” portion of the network in Figure
+4
+for this purpose, and learn a separate neural network for each pitch and location.
+4.4
+Solving the At-Bat Game
+Littman 1994
+presented a general approach for solving finite zero-sum stochastic games which blends value iteration with linear programming.
+We provide it here for completeness.
+Note that in general, an equilibrium in a stochastic game entails randomization (
+mixed strategies
+), and a mixed-strategy equilibrium in which policies depend only on current state, always exists
+(
+Filar and Vrieze 2012
+)
+.
+For our purposes, it suffices to introduce notation for the pitcher’s mixed strategies.
+Let
+Δ
+⁡
+(
+A
+p
+)
+\Delta(A_{p})
+denote the set of mixed strategies for the pitcher.
+We denote a particular mixed strategy (probability distribution) by
+r
+p
+∈
+Δ
+⁡
+(
+A
+p
+)
+r_{p}\in\Delta(A_{p})
+.
+The value function
+V
+i
+​
+(
+s
+)
+V_{i}(s)
+, which is initialized arbitrarily at iteration
+i
+=
+0
+i=0
+, is updated as follows in iteration
+i
+>
+0
+i>0
+:
+V
+i
+​
+(
+s
+)
+=
+min
+r
+p
+∈
+Δ
+⁡
+(
+A
+p
+)
+⁡
+max
+⁡
+∑
+a
+p
+∈
+A
+p
+a
+b
+∈
+A
+b
+⁡
+r
+p
+​
+(
+a
+p
+)
+​
+U
+i
+​
+(
+s
+,
+a
+p
+,
+a
+b
+)
+,
+V_{i}(s)=\min_{r_{p}\in\Delta(A_{p})}\max_{a_{b}\in A_{b}}\sum_{a_{p}\in A_{p}}r_{p}(a_{p})U_{i}(s,a_{p},a_{b}),
+(1)
+where
+r
+p
+​
+(
+a
+p
+)
+r_{p}(a_{p})
+denotes the probability of choosing
+a
+p
+a_{p}
+under the distribution
+r
+p
+r_{p}
+and
+U
+i
+​
+(
+s
+,
+a
+p
+,
+a
+b
+)
+=
+[
+u
+⁡
+(
+s
+,
+a
+p
+,
+a
+b
+)
++
+∑
+s
+′
+∈
+S
+T
+s
+​
+s
+′
+a
+p
+,
+a
+b
+​
+V
+i
+−
+1
+​
+(
+s
+′
+)
+]
+.
+U_{i}(s,a_{p},a_{b})=\left[u(s,a_{p},a_{b})+\sum_{s^{\prime}\in S}T_{ss^{\prime}}^{a_{p},a_{b}}V_{i-1}(s^{\prime})\right].
+Now, we can observe that in any iteration
+i
+i
+,
+U
+i
+​
+(
+s
+,
+a
+p
+,
+a
+b
+)
+U_{i}(s,a_{p},a_{b})
+is fixed for every state, and therefore Equation (
+1
+) defines a zero-sum game, which can be solved for the equilibrium mixed strategy for the pitcher,
+r
+p
+r_{p}
+, using linear programming
+(
+Shoham and Leyton-Brown 2008
+)
+.
+5
+Experiments
+Experiment Setup
+To train and test our models, we use a Kaggle dataset comprised of at-bats from 2015-2018 MLB seasons
+(
+Kaggle 2018
+)
+.
+For each at-bat, the dataset includes the pitcher and batter, the pitch thrown, along with its final coordinates as it crosses the home plate, count, and outcome (hit, foul, ball, etc).
+Our total dataset includes 2696132 pitches thrown over 730585 at-bats.
+Our training/test splits for each model ensured no overlap in pitchers or batters between the two.
+Experiments were run on a Macbook Air 2020 (1.1 GHz dual-core i3, 8 GB RAM) running macOS 10.15.5. Neural networks were built in TensorFlow 2.5.0, and all source code was written in Python.
+Throughout, we evaluate our approaches using batches of at-bats involving pitchers and batters that we categorize as
+strong
+(well above average),
+average
+(around average), and
+weak
+(well below average).
+The categorization is based on ranking either pitchers or batters in terms of empirical OBP (for pitchers, this would be OBP against).
+We present results for two such pairing groups: 1) strong pitchers vs. weak batters and 2) weak pitchers vs. strong batters.
+Outcome Predictions
+We begin by evaluating the efficacy of our neural network model for predicting outcomes of thrown pitches conditional on the batter swinging. Our test set of these outcomes comprised 147799 pitches.
+Since predictions are distributions, we compare the average predicted probabilities of the four outcomes (strike, foul, out, and hit) for two large batches of at-bats: one pairing a strong pitcher with a weak batter, and another pairing a weak pitcher and a strong batter.
+Both the predicted probabilities and empirical observations, are averaged over all corresponding counts and at-bats from test data.
+Figure 5:
+Average predicted probabilities and empirical observations of the four outcomes of swinging at a pitch (strike, foul, out, and hit).
+The results are shown in Figure
+5
+.
+First, we can observe that the predicted outcome distribution tracks empirical values very closely.
+Of particular importance to us is that the relative probabilities are closely preserved: for example, foul balls are the most common whatever the matchup, and a strong pitcher facing a weak batter is far more likely to get a swing-and-miss strike than if the relative pitcher-batter strength is reversed.
+Figure 6:
+Average predicted probabilities and empirical observations of the four outcomes of swinging at a pitch (strike, foul, out, and hit).
+Figure
+6
+offers additional demonstrations of the prediction efficacy in terms of tracking relative probabilities for different settings.
+Comparing 3-0 and 0-2 counts, for example, one would expect a higher likelihood of a hit in the former than the latter, which we indeed observe (for both predicted and empirical distributions).
+Similarly, we observe a significantly higher likelihood of a strike in an 0-2 than a 3-0 count, and we again observe this.
+Analogously, contrasting outcomes when the pitch thrown ends up outside the zone (a ball) vs. in the zone (a strike), we see a far greater likelihood of a swing-and-miss in the former case than the latter, but lower likelihood of a hit.
+Control Predictions
+We evaluate our model of control in two ways: first quantitatively, and then qualitatively, using 118 pitchers observed in 3-0 counts.
+First, we consider the accuracy of predicted Gaussian model covariance matrix parameters in terms of mean-squared error (MSE).
+The MSE in the
+x
+x
+-dimension is
+0.036
+0.036
+, in the
+y
+y
+-dimension it is
+0.053
+0.053
+, and the MSE for the covariance of
+x
+x
+and
+y
+y
+is
+0.025
+0.025
+.
+These are quite small compared to empirically observed variances in either the
+x
+x
+(0.45-0.55) and
+y
+y
+(0.55-0.67) dimensions for the 4-seam fastball (these are considerably higher for other pitch types).
+Second, we find that variance (both predicted and empirically measured, under the Gaussian assumption) is systematically higher for weaker pitchers.
+This observation is congruent with baseball intuition, and suggests that the Gaussian model of pitcher error distribution is indeed a reasonable starting point.
+Patience Predictions
+Next, we evaluate the efficacy of our approach of batter patience prediction over 126145 test pitches thrown outside of the strike zone, but sufficiently close for batters to swing at them.
+Figure 7:
+Average predicted probabilities and empirical observations of the four outcomes of swinging at a pitch (strike, foul, out, and hit).
+The results are shown in Figure
+7
+, where we consider variation by counts (left), and by batters with differing degrees of success (right).
+First, note that predictions are remarkably close to empirical swing probabilities.
+Second, we can observe qualitative trends for both empirical and predicted swing propensities that are consistent with common baseball intuition.
+For example, batters very rarely swing at pitches outside the zone on a 3-0 count, and very frequently on 2-strike counts.
+Second, the top batters (those in our
+strong
+category) are indeed noteworthy in that they tend to be more patient.
+Overall Effectiveness
+Finally, we compare the effectiveness of the proposed
+stochastic game (SG)
+approach in terms of on-based percentage (OBP) in equilibrium
+with empirical OBP.
+Our first observation is that, overall,
+SG
+significantly reduces OBP: over 3600 matchups on test data, the empirical OBP is 0.329, whereas the OBP in
+SG
+equilibrium is
+0.242
+, more than a 25% reduction!
+Figure 8:
+Stochastic game (SG) OBP vs. empirical OBP, for different matchups and counts.
+In Figure
+8
+, we delve deeper by comparing
+SG
+and empirical OBP for different counts, and contrasting, in particular, two classes of matchups: 1) strong pitchers paired with weak batters, and 2) weak pitchers paired with strong batters.
+First, note that we see expected variation for different counts: for both
+SG
+and empirical OBP, counts that favor the batter (2-0, 3-0, and 3-1) have dramatically higher OBP than those that favor the pitcher (0-2, 1-2).
+What is especially interesting, however, is that
+SG
+does not exhibit much advantage in batter-favored counts.
+However,
+SG
+offers a considerably greater advantage when the count is roughly even, or the pitcher is ahead.
+Furthermore,
+SG
+holds a far greater advantage for weaker pitchers: for example, on 0-0 count, empirical OBP in these matchups is, on average, 0.412, while
+SG
+yields an OBP of 0.276.
+Indeed, we see this in a number of counts, with an advantage of
+SG
+in a 1-0 and 1-1 counts particularly significant.
+6
+Conclusion
+We propose a novel game-theoretic model of a baseball at-bat as a stochastic game.
+The key challenge of this model is deriving the transition probability from empirical at-bat data for an arbitrary pitcher-batter pair.
+We present a novel approach for doing so which is based on first decomposing the transition distribution into several parts, and propose deep neural network approaches for learning the key parts from data.
+Our experiments demonstrate the efficacy of the proposed approach, showing, in particular, that the distribution of pitches and locations we compute in the resulting stochastic game yields significantly higher utility for the pitcher (lower on-based percentage for the batter) in nearly every count.
+Moreover, we show that the proposed approach is particularly beneficial for average and below-average pitchers.
+References
+Albert (2002)
+Albert, J. 2002.
+A baseball statistics course.
+Journal of Statistics Education
+, 10(2).
+Alcorn (2017)
+Alcorn, M. A. 2017.
+(batter/pitcher)2vec: Statistic-Free Talent Modeling With Neural
+Player Embeddings.
+In
+MIT Baseball Analytics Conference
+.
+Azar and Bar-Eli (2011)
+Azar, O. H.; and Bar-Eli, M. 2011.
+Do soccer players play the mixed-strategy Nash equilibrium?
+Applied Economics
+, 43(25): 3591–3601.
+Beal et al. (2020)
+Beal, R.; Chalkiadakis, G.; Norman, T. J.; and Ramchurn, S. D. 2020.
+Optimising Game Tactics for Football.
+In Seghrouchni, A. E. F.; Sukthankar, G.; An, B.; and Yorke-Smith,
+N., eds.,
+International Conference on Autonomous Agents and Multiagent
+Systems
+, 141–149.
+Beal et al. (2021)
+Beal, R.; Chalkiadakis, G.; Norman, T. J.; and Ramchurn, S. D. 2021.
+Optimising Long-Term Outcomes using Real-World Fluent Objectives: An
+Application to Football.
+In Dignum, F.; Lomuscio, A.; Endriss, U.; and Nowé, A., eds.,
+International Conference on Autonomous Agents and Multiagent Systems
+,
+196–204.
+Brown and Sandholm (2018)
+Brown, N.; and Sandholm, T. 2018.
+Superhuman AI for heads-up no-limit poker: Libratus beats top
+professionals.
+Science
+, 359(6374): 418–424.
+Brown and Sandholm (2019)
+Brown, N.; and Sandholm, T. 2019.
+Superhuman AI for multiplayer poker.
+Science
+, 365(6456): 885–890.
+Das and Das (1994)
+Das, R.; and Das, S. 1994.
+Catching a baseball: a reinforcement learning perspective using a
+neural network.
+In
+AAAI Conference on Artificial Intelligence
+, 688–693.
+Feng et al. (2021)
+Feng, D.; Haase-Schütz, C.; Rosenbaum, L.; Hertlein, H.; Gläser, C.;
+Timm, F.; Wiesbeck, W.; and Dietmayer, K. 2021.
+Deep Multi-Modal Object Detection and Semantic Segmentation for
+Autonomous Driving: Datasets, Methods, and Challenges.
+Transactions on Intelligent Transportation Systems
+, 22(3):
+1341–1360.
+Filar and Vrieze (2012)
+Filar, J.; and Vrieze, K. 2012.
+Competitive Markov decision processes
+.
+Springer Science & Business Media.
+Ganeshapillai and Guttag (2012)
+Ganeshapillai, G.; and Guttag, J. 2012.
+Predicting the next pitch.
+In
+Sloan Sports Analytics Conference
+.
+Hoang et al. (2015)
+Hoang, P.; Hamilton, M.; Murray, J.; Stafford, C.; and Tran, H. 2015.
+A dynamic feature selection based LDA approach to baseball pitch
+prediction.
+In
+Trends and Applications in Knowledge Discovery and Data
+Mining
+, 125–137.
+Jiang and Zhang (2010)
+Jiang, W.; and Zhang, C.-H. 2010.
+Empirical Bayes in-season prediction of baseball batting averages.
+In
+Borrowing Strength: Theory Powering Applications–A
+Festschrift for Lawrence D. Brown
+, 263–273.
+Kaggle (2018)
+Kaggle. 2018.
+MLB Pitch Data 2015-2018.
+https://www.kaggle.com/pschale/mlb-pitch-data-20152018
+.
+Koseler and Stephan (2017)
+Koseler, K.; and Stephan, M. 2017.
+Machine learning applications in baseball: A systematic literature
+review.
+Applied Artificial Intelligence
+, 31(9-10): 745–763.
+Lewis (2004)
+Lewis, M. 2004.
+Moneyball: The art of winning an unfair game
+.
+WW Norton & Company.
+Littman (1994)
+Littman, M. L. 1994.
+Markov games as a framework for multi-agent reinforcement learning.
+In
+International Conference on Machine Learning
+, 157–163.
+Lyle (2007)
+Lyle, A. 2007.
+Baseball prediction using ensemble learning
+.
+Ph.D. thesis, University of Georgia.
+Mikolov et al. (2013)
+Mikolov, T.; Sutskever, I.; Chen, K.; Corrado, G. S.; and Dean, J. 2013.
+Distributed representations of words and phrases and their
+compositionality.
+In
+Neural Information Processing Systems
+, 3111–3119.
+Sarris (2018)
+Sarris, E. 2018.
+Exclusive: a big step forward in measuring command.
+The Athletic
+.
+Shoham and Leyton-Brown (2008)
+Shoham, Y.; and Leyton-Brown, K. 2008.
+Multiagent systems: Algorithmic, game-theoretic, and logical
+foundations
+.
+Cambridge University Press.
+Statista (2020)
+Statista. 2020.
+Major League Baseball total league revenue from 2001 to 2020.
+https://www.statista.com/statistics/193466/total-league-revenue-of-the-mlb-since-2005/
+.
+Walker and Wooders (2001)
+Walker, M.; and Wooders, J. 2001.
+Minimax play at Wimbledon.
+American Economic Review
+, 91(5): 1521–1538.
+Walker, Wooders, and Amir (2011)
+Walker, M.; Wooders, J.; and Amir, R. 2011.
+Equilibrium play in matches: Binary Markov games.
+Games and Economic Behavior
+, 71(2): 487–502.
+Yang and Swartz (2004)
+Yang, T. Y.; and Swartz, T. 2004.
+A two-stage Bayesian model for predicting winners in major league
+baseball.
+Journal of Data Science
+, 2(1): 61–73.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►
