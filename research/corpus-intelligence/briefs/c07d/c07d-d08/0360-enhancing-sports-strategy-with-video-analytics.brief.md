@@ -1,0 +1,36 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0360-enhancing-sports-strategy-with-video-analytics.md
+
+## What it is (1-2 sentences)
+A 2025 NUS dissertation (Teo Wei Jun Charlton, arXiv:2507.02904) testing how well a LoRA fine-tuned VideoLLaMA2-7B multimodal LLM can classify single tennis events and identify full rally event sequences on the FineTennis dataset, and whether traditional CV features fused into the prompt close the gap with a dedicated CV benchmark (F³EST). Verdict recorded in the file: ADAPT — raw MLLM video reasoning is too weak to use directly; the portable lesson is the "structured-CV-features-as-text-in-the-prompt" hybrid pattern (edit score 76.0 vs benchmark 82.1).
+
+## Key metrics/methods (formulas where given, else "not specified")
+- Normalised segmental edit score (Lea et al. 2016), each event treated as one word: **Edit Score = (1 − (event additions, deletions or replacements needed) / (number of events in longer label)) × 100** (copied verbatim from file).
+- Per-sub-class accuracy and overall accuracy (single event); sub-class counted correct if its label appears in the answer and no competing sub-class label appears; overall correct only if all 5 sub-classes correct.
+- Event-count accuracy and mean absolute error of count.
+- Model: VideoLLaMA2 7B-Base, CLIP `clip-vit-large-patch14-336` visual encoder (frozen), STC connector, LoRA fine-tuning. Prompt: fixed "What is happening in the tennis video?"; answer templated as "The {e1} player hit a {e2} {e4} {e3} {e5}." (concatenated per event for sequences).
+- Variations tested: epochs {8,10,20,50}; audio added; frame sampling 8→32; frame numbers in answers; oracle event count in prompt; self-predicted event count; all-frames sampling; STC-connector-only probe (CLIP encoder + STC + one hidden layer + output, trained from scratch); bounding boxes (player) drawn in video / in prompt / both; court corners + ball centre coordinates in prompt (every 2 frames); 17 keypoints (every 20 frames) / 4 keypoints (every 5 frames) + court + ball in prompt; vision encoder unfrozen (1/4 epochs); CLIP fine-tuned alone (1 epoch) then reloaded into VideoLLaMA2 + LoRA fine-tuned (6/10 epochs).
+
+## Data sources named
+- **FineTennis dataset** (Liu, Jiang et al. 2025, arXiv:2504.08222 = paper 10 of this wave, F³Set): tennis rally videos from Grand Slam tournaments over several years; 7,445 training videos, 2,271 test videos; 56 possible event types across 5 sub-classes (e1 hitting player near/far; e2 stroke side forehand/backhand; e3 shot type serve/return/stroke; e4 direction T/body/wide for serves, CC/DL/DM/IO/II for returns/strokes; e5 outcome in/last). Train: mean 3.68 events/rally (Q1 1, median 3, Q3 5, max 34); Test: mean 3.90 (Q1 2, median 3, Q3 5, max 29). Rally start/end frames + per-event frame numbers given; matches tagged with YouTube links. Access: authors' lab dataset (NUS); no public URL stated.
+- F³EST traditional model as baseline (edit scores 88.4 on 38 event types / 82.1 on 111 event types).
+- Code: https://github.com/bigcrushes/videollama2_tennis (re-formatted repo stated in Appendix A). Model weights: not stated.
+
+## Findings (numbers and facts, not vibes)
+- Single-event fine-tuning (8 epochs): e1 0.96, e2 0.73, e3 0.83, e4 0.72, e5 0.96, **overall 0.41**. 6 epochs → 0.28; 10 epochs → 0.41 (plateau).
+- Rally sequence edit scores (10 epochs default): default 8 epochs 30.2; 10 epochs 34.4; 20 epochs 33.1; 50 epochs 28.0 (overfit). Audio variant 25.3. **32-frame sampling 39.7** (best pure-video). Frame numbers in answer 33.9. **Oracle event count in prompt 49.8**. Self-predicted count 30.0. All-frames sampling 28.6 (no gain — sampling not the bottleneck). Benchmark (F³EST): 82.1.
+- Event counting: accuracy 0.36; mean count error 1.31 (true mean 3.90, std 3.46).
+- STC connector alone: accuracy **0.018** — indistinguishable from random, suggesting the STC connector's spatial-temporal features are near-useless for this task (paper's inference).
+- CV-feature fusion (Table 7): default (32 frames) 39.7 → bboxes drawn in video **18.2** (halved; drawn lines break the vision encoder) → **bboxes in prompt 61.3** → bboxes in video+prompt 59.1 → **bboxes + court corners + ball coords in prompt (every 2 frames) 76.0** (approaching the 82.1 benchmark) → 17 keypoints (every 20 frames) + court + ball 50.7 → 4 keypoints (every 5 frames) + court + ball 57.6.
+- Vision encoder (Table 8, single-event accuracy): default 0.41; unfrozen encoder 1 epoch 0.087, 4 epochs 0.075 (overfit — train loss <0.1 by epoch 1); CLIP alone 1 epoch 0.43; **CLIP fine-tuned separately then reloaded into VideoLLaMA2: 0.55 (10 epochs) / 0.56 (6 epochs)**. Sequence task with separately fine-tuned CLIP: **54.6** (up from 39.7).
+- Qualitative: model gets rally *structure* right — all rallies start with a serve and end with "last", players alternate near/far — showing strong textual pattern learning but poor video understanding.
+- UNCERTAIN claim (accuracy-by-keyword metric is gameable): a verbose answer containing the right label plus nothing contradictory counts as correct; this flatters the MLLM.
+- Leakage/limitations recorded: train/test rallies split from the same tournaments (possible near-duplicate rallies across splits, not addressed); tiny model + LoRA chosen for VRAM reasons; full fine-tuning never run; benchmark mismatch (F³EST at 38/111 granularities vs MLLM's 56 — the 82.1 comparison is approximate); oracle-count feeding is explicitly diagnostic leakage; RAM-bounded frame intervals mean best results achieved under hardware caps.
+
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- **OTHER (video-content pipeline architecture, tracking lane):** The hybrid CV→text→LLM pattern is the design pattern for any future GSE film-analysis tooling: per-frame detectors (YOLOv8/v11 player detection + TrackNet-style ball tracking + court-keypoint detection) produce compact text, a strong LLM reasons over that structured text for event narration or clip description. The paper's numbers justify this over an MLLM-first approach (76.0 vs raw-video 39.7).
+- **OTHER (negative result for the multimodal-fusion lane):** Raw MLLM video reasoning (edit scores 30–40) is far below the dedicated CV benchmark (82.1); the multimodal-fusion lane should be built on CV-first structure, not video-reasoning-first. Fine-tuning the vision encoder *separately* (0.55–0.56 accuracy) rather than joint-unfreezing (0.075–0.087, overfit) is the correct recipe if vision features are needed.
+- **TRUST-SIGNAL (caution):** The model's strong textual-pattern learning (rally structure right, events wrong) is a warning for any LLM-based football narration: confident structure with wrong particulars. Any film-analysis output needs grounded verification against detector outputs, not free generation.
+- CONTRADICTION: none with other known results; complements 0400 (hybrid broadcast tracking) as the per-clip pipeline's downstream consumer pattern.
+
+## Engine-actionable? (yes/no + one-line what)
+Yes — if GSE ever builds film-analysis content tooling, implement the hybrid pattern (CV detectors → structured text prompt → LLM narration) with the paper's ≥25pp edit-score acceptance gate; do NOT build an MLLM-first video pipeline.
