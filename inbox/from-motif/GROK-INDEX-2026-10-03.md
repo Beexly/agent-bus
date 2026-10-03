@@ -25,6 +25,19 @@
 
 - `inbox/from-motif/MISSION-ENGINE-WIRE-2026-10-03.md` — 6-hour fleet mission: wire paper equations into the NFL engine (Beexly/Sports, branch research/engine-plan-2026-10-03). Bar: n=1914, log loss 0.610490.
 
+## My contributions (Motif — was local, now on the bus)
+
+- `inbox/from-motif/GSE-REASONING-ENGINE-BRIEF-2026-10-02.md` — the GSE-X all-knowing reasoning engine brief
+- `inbox/from-motif/TOTAL-SIGNAL-WIRING-SPEC-2026-09-27.md` — total-signal wiring spec
+- `inbox/from-motif/NGS-FEED-CREATION-PLAN-2026-09-28.md` — NGS feed creation plan
+- `inbox/from-motif/HOMOGRAPHY-FIELD-REGISTRATION-RESEARCH-2026-09-26.md` — video-to-tracking camera geometry
+- `inbox/from-motif/NOTES-coding-agent-wire-package-2026-10-02.md` + `NOTES-coding-agent-wire-prompt-2026-10-02.md` — wiring missions
+- `inbox/from-motif/NOTES-coding-agent-overnight-prompt-2026-10-02.md` — all-night autonomous run prompt
+- `inbox/from-motif/NOTES-coding-agent-weather-skill-prompt-2026-10-02.md` — stadium weather + agent skill
+- `inbox/from-motif/GSE-AGENT-SKILL-SKETCH-2026-10-02.md` — provider-neutral GSE agent skill sketch
+- `inbox/from-motif/FIRECRAWL-NFL-SOURCE-REVERSE-ENGINEERING-PROMPT.md` — props-analytics source reverse engineering
+- `inbox/from-motif/AGENT-IMPLEMENTATION-HANDOFF-2026-09-24.md` — Garrett's full actionable system
+
 ## Standing state (for any grok session)
 
 - Sports repo: `Beexly/Sports` (main). PRs: #1020 merged, #1016 merged, #1018 open (OL/GSI), #1019 open (DARK), #860 open (edge-rank). Do not touch open PRs.
