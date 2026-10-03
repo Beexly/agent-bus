@@ -38,6 +38,12 @@
 - `inbox/from-motif/FIRECRAWL-NFL-SOURCE-REVERSE-ENGINEERING-PROMPT.md` — props-analytics source reverse engineering
 - `inbox/from-motif/AGENT-IMPLEMENTATION-HANDOFF-2026-09-24.md` — Garrett's full actionable system
 
+## Web artifact exports (self-contained HTML, grok-fetchable)
+
+- `inbox/from-motif/ARTIFACT-gse-dfs-process-system.html` — GSE DFS process system (weekly DK NFL machine)
+- `inbox/from-motif/ARTIFACT-dfs-process-system.html` — DFS process system
+- `inbox/from-motif/ARTIFACT-nfl-analytics-reverse-engineering.html` — NFL analytics reverse-engineering (6MB, full report)
+
 ## Standing state (for any grok session)
 
 - Sports repo: `Beexly/Sports` (main). PRs: #1020 merged, #1016 merged, #1018 open (OL/GSI), #1019 open (DARK), #860 open (edge-rank). Do not touch open PRs.
