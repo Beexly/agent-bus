@@ -1,0 +1,30 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0622-deephit-time-to-injury-forecasting.md
+## What it is (1-2 sentences)
+arXiv:2601.19479v1 (Catterall, Lynch et al.): forecasts *time to injury* — not binary injury/no-injury — in elite women's football using a DeepHit neural survival network over 21-day windows with per-player SHAP explanations. Verdict in file: ADAPT the formulation (rank by imminent risk) with imputation discipline, not the headline C-index.
+## Key metrics/methods (formulas where given, else "not specified")
+- DeepHit (Lee et al. 2018) with MLP backbone (deliberately not RNN — irregular spacing/heavy missingness made recurrence infeasible). Outputs PMF over discrete time bins for first-hitting-time of injury; trained with combined log-likelihood + ranking loss. Loss formula not reprinted in the paper.
+- 21-day input window (follows Jarmann 2023), 7-day prediction horizon; event indicator 1 = injury, 0 = censoring.
+- Three imputation strategies compared: median imputation, linear interpolation, bespoke teammate-relative formula (imputed fewest values, best preserved distribution + univariate injury correlations).
+- Baselines (grid-search optimized) on next-day binary prediction: RF, XGBoost, logistic regression; horizons 3/5/7/10/14 days tested, degraded badly beyond one day, abandoned.
+- Primary metric: concordance index (C-index).
+- Assumptions stated: censoring is non-informative; 21-day window captures the etiological period; imputation does not distort risk ordering.
+## Data sources named
+SoccerMon, Team B subset: 37 players from two elite Norwegian women's first-division teams, 322 recorded days, 2020–2021 → 4,449 player-date observations, 39 features, 43 injuries. Features: PmSys athlete-monitoring self-reports (stress, mood, sleep, soreness, fatigue, readiness), STATSports APEX GNSS (speed, positioning, exertion, heart rate), weekly missingness-rate indicator, proportion-of-missing-responses feature. Data: https://zenodo.org/records/10033832 (open; objective injury-report data NOT open — legal restrictions). Code: https://github.com/simulamet-host/soccermon-deephit. 15 of 37 players had ~half their training-day data missing; only 21 present from collection start; more injuries in season two than season one.
+## Findings (numbers and facts, not vibes)
+- Baselines (next-day injury): RF F1 0.533, AUC 0.779, precision 1.000, recall 0.364 (zero false positives, caught 36.4% of injuries); XGBoost F1 0.429, AUC 0.876, precision 1.000, recall 0.271; logistic F1 0.071, AUC 0.758, precision 0.037, recall 0.833.
+- Literature context (Leckey et al. 2024): sports-injury models average AUC 0.69 and F1 0.73 — RF beats the AUC average, misses the F1 average.
+- DeepHit chronological 80/20: C-index 0.660 (linear interpolation) → 0.762 (bespoke imputation) — a +0.102 C-index lift from imputation choice alone.
+- LOPO: C-index IQR = 0.192; best held-out player 0.974; correlation of per-player C-index with sessions tracked r = 0.44, with injury count r = −0.08. High within-player load variance and outlier-vs-teammate profiles hurt generalization — for a large fraction of players the model is near-useless.
+- Paper's quality bar (Longato et al.): >0.7 acceptable, >0.8 strong; authors call 0.762 "acceptable-to-strong" given dataset difficulty.
+- Global feature importance: average running speed, soreness, monotony, prior injury count most influential; session *time* surprisingly important (likely a session-type proxy); ACWR, sprint metrics, and subjective stress contributed little.
+- Subjective missingness emerged as a key predictor — players withholding responses may anticipate injury or disengage from recovery; UNCERTAIN direction of causality, and in deployment players could game questionnaire responses.
+- SHAP case study: risk peaked ahead of a real injury twice; elevated stress + high-intensity running + low mood + low sleep (fatigue on the peak day) drove the flag; readiness and longer sleep modestly protective; flagged period preceded an acute thigh injury.
+- Implementation spec in file: nflverse play-by-play + public injury reports (DNP/limited/full), 21-day windows, discrete 14-day horizon; validation = chronological splits + leave-one-team-out (NFL analog of LOPO); SHAP top-3 risk drivers per player-week. Effort ~2–3 weeks.
+- Acceptance gate in file: ADOPT iff DeepHit chronological-holdout C-index ≥ 0.70 AND beats a Cox baseline by ≥ 0.03 with leave-one-team-out IQR ≤ 0.15; reject for deployment (keep for research) if IQR > 0.20. Beatable beat bar in test: DeepHit C-index ≥ Cox + 0.03 on 2025 holdout (2020–2025 nflverse + injury reports).
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER (trust-target intake / availability-risk lane): survival-based time-to-injury is a formulation upgrade over binary injury classifiers (ledgers 0619/0621) — ranking players by *imminent* risk is the decision variable that load-management and prop pricing actually need; serves the trust-target intake program (which players are actually available/healthy).
+- OTHER (feature engineering): retain a missingness-indicator feature in any NFL port (practice-report non-participation as signal, not just noise); teammate/position-group-relative imputation for practice participation is the direct NFL analog of the bespoke formula that delivered the +0.102 C-index lift.
+- QB-BEHAVIOR / OTHER (QB availability): a per-QB DeepHit over practice participation + workload features would give a calibrated "QB plays at X% / misses N games" survival curve — directly feeds player-availability adjustments in projections and props.
+- COACHING (load management): prior-injury count + monotony + subjective-load features map onto coaching load-management decisions; the SHAP "top 3 risk drivers" output is exactly the coach-facing explainer format.
+## Engine-actionable? (yes/no + one-line what)
+yes — reimplement DeepHit on nflverse + public injury reports (21-day window, 14-day horizon) with leave-one-team-out validation; accept iff C-index ≥ 0.70 and beats Cox by ≥ 0.03 with IQR ≤ 0.15.
