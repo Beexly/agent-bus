@@ -182,3 +182,108 @@ RULES
 ```
 
 *Note: Prompt 2 (generic deep dive) is superseded by Prompt 3 for tonight. Prompt 2 remains valid for a future quota cycle.*
+
+---
+
+## PROMPT 4 — Floodgates: full corpus read + open arXiv scrape (the deepest run)
+
+```
+You are running as Grok Heavy: up to 16 parallel agents, independent work, then
+debate to a final answer. This is the deepest research run. Two prior passes are
+in this conversation. They read ONLY the slice maps (c01–c10), four search
+notes, and reconciliation files — roughly 20 files. They did NOT read the
+3,457 briefs, the 1,115 arXiv fulltext extracts, the scored batches, or the
+waves. Your job is to read what they didn't, then go beyond the corpus entirely.
+
+ACCESS RULES
+- Corpus files: fetch via raw.githubusercontent.com ONLY (the API rate-limits).
+  Pattern: https://raw.githubusercontent.com/Beexly/agent-bus/main/research/<path>
+  Example: https://raw.githubusercontent.com/Beexly/agent-bus/main/research/corpus-intelligence/briefs/c01/c01-d01/<file>.brief.md
+- arXiv papers: use arXiv directly (arxiv.org/abs/<id>, export.arxiv.org API,
+  ar5iv for full text). Do NOT use the GitHub API at all.
+- If a fetch fails, retry once, then log the file as unread. Never silently skip.
+- Keep a COVERAGE LEDGER from the first fetch: every file read or unread, with
+  counts per directory. The final report opens with this ledger. If you cannot
+  reach 100% coverage, say exactly what remains and what it would take.
+
+PHASE 1 — READ THE CORPUS (12 agents, divided by directory)
+The corpus is Beexly/agent-bus@main, research/corpus-intelligence (3,728 files)
+and research/arxiv-sweep (1,374 files). Divide as follows and read in priority
+order within each assignment:
+- 4 agents: research/corpus-intelligence/briefs/ (3,457 files) — these are the
+  actual research briefs the maps summarized. Read every one. Where a brief
+  makes a quantitative claim (a metric, a delta, a sample size), note the source
+  file it cites.
+- 3 agents: research/arxiv-sweep/fulltext/ (1,115 files) — full paper extractions.
+  Read every one.
+- 2 agents: research/arxiv-sweep/waves/ + research/corpus-intelligence/deep/ +
+  research/corpus-intelligence/handoff/ — the deep analyses.
+- 1 agent: research/arxiv-sweep/scored_batch_*.jsonl + phase2-candidates-*.jsonl
+  + research/corpus-intelligence/chunks/ + intake/ — the scored queues.
+Per file, extract: method in one sentence, math/estimator, dataset and sample
+size, claimed result with metric, license/provenance, GSE relevance
+HIGH/MEDIUM/LOW/NONE with one-line justification. Terse — one tight paragraph
+per file. Deduplicate: the maps already found filename-level dupes
+(2002.12860, 2004.14108, 2609.10615) — extract once, and flag any new dupes.
+
+PHASE 2 — OPEN ARXIV SCRAPE (4 agents, the floodgates)
+The corpus is not the universe. Find every arXiv paper on sports prediction,
+NFL modeling, calibration, forecasting, causal inference in sports, and betting
+markets that is NOT already in the corpus.
+- Exclusion list (already covered, do not re-extract): open
+  research/corpus-intelligence/../arxiv-sweep/existing-research-map.md — it
+  holds 64 arXiv IDs already read into Sports — plus every ID appearing in the
+  corpus fulltext/ directory and the manifest files. Build the exclusion set
+  first, then search.
+- Search arXiv broadly: query the API across stat.AP, cs.LG, cs.AI, econ.EM,
+  q-fin.*, physics.soc-ph for sports/prediction/calibration/forecasting terms,
+  all years, sorted by relevance then by date. Also sweep recent submissions
+  (2024–2026) in those categories for sports keywords.
+- For each paper NOT excluded: read the abstract; if relevant, read the full
+  text via ar5iv. Extract the same fields as Phase 1.
+- Log: queries run, papers screened, papers kept, papers excluded as dupes.
+
+PHASE 3 — SYNTHESIZE (synthesizers read Phase 1 + 2 output only)
+- What is NEW versus the two prior passes? The prior build list had 6 items
+  (conformal publish gate, QB pressure-to-sack residual, per-QB EPA/dropback,
+  trust-target props stack, staleness provenance, within-player scale-fit).
+  For each: does the new evidence strengthen, weaken, or kill it? Update ranks.
+- What compounds across the new material? Look specifically for: (a) props
+  signals (the open frontier — 47-signal registry has props unwired),
+  (b) calibration techniques beyond what the maps covered, (c) causal/injury
+  effects with actual NFL coefficients, (d) market microstructure edges.
+- Contradictions: where the new material disagrees with the maps or with the
+  prior build list, name both sides and judge the evidence.
+
+PHASE 4 — CHALLENGE (skeptics)
+Attack every HIGH-relevance claim from Phases 1–3: overfit? out-of-sample?
+transfers to NFL or another sport/domain? survives shuffled-time placebo +
+value-beyond-close + disjoint-fold threshold? Kill what doesn't survive.
+A killed claim is a correct output.
+
+PHASE 5 — DELIVER
+1. COVERAGE LEDGER: files read / unread per directory, arXiv queries run,
+   papers screened/kept/excluded. Honest numbers.
+2. RANKED BUILD LIST: new items first, then re-ranked prior items with their
+   evidence delta (strengthened/weakened/killed). For each: what to build,
+   source file path or arXiv ID, implementation sketch, the test that proves
+   it (data in, held-out metric, pass/fail bar), shadow or publish-ready.
+3. DEDUP REPORT: every duplicate found beyond the known ones.
+4. WHAT'S LEFT: if coverage < 100%, exactly what remains unread and the
+   single most valuable next read.
+
+RULES
+- Never invent a result, number, citation, or file path. Unread = unread.
+- The do-not-rebuild list stands: bridge-model.ts, paper 1704.00197 as anything
+  other than what it is (an in-game logistic), market-moneyline recalibration,
+  team-level pressure-to-sack, per-QB uncertainty bands.
+- A restrictive license means learn-the-method, not copy-the-code. Flag licenses.
+- Do not re-litigate settled kills (soft-Elo, coverage transformer, CMP-SAS,
+  Ising/KellyBoost) unless the new scrape finds genuine new evidence — and if
+  it does, say exactly what changed.
+- Sports repo state: PR #1020 merged; #1018 open (OL/GSI — QB-identity work
+  waits for it); #1019 open; #860 open; #1016 merged. Signal registry: 47
+  signals, props unwired. Do not recommend anything colliding with an open PR.
+```
+
+*Run order for tonight: Prompt 4 (this floodgates run) → hand its build list to the builder. Prompts 1–3 are complete; do not re-run them.*
