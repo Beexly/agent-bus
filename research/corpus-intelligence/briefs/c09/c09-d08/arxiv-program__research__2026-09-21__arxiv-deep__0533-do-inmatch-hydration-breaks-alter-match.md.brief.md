@@ -1,0 +1,19 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0533-do-inmatch-hydration-breaks-alter-match.md
+## What it is (1-2 sentences)
+An arXiv paper (2607.19783v2, Debangan Dey, 2026) using a within-match case-crossover design on the 2026 FIFA World Cup to test whether mandated ~3-minute hydration breaks blunt the momentum of the dominant side. The GSE ledger verdict is ADAPT — the self-matched case-crossover design is a clean quasi-experimental template GSE can reuse for in-game causal questions (weather stops, injury timeouts, challenge reviews, booth-review delays).
+## Key metrics/methods (formulas where given, else "not specified")
+Within-match case-crossover: each break event's own match supplies control minutes (self-matched), differencing out match-level characteristics mechanically. Sign-adjusted momentum outcome: o_i = sign(mean of raw momentum over 5 min pre-break); Y_i(t) = o_i·M_i(t) (positive = momentum toward pre-break dominant side). Fixed-effects ANCOVA: Y_ic = α_i + g(c) + φ·half + λ·L^lev + ψ·L^slp + δ·S + β·D + γ(D×S) + ηᵀ(D×Z) + ε, g(c) = quadratic game-time trend; match-clustered SEs. Two counterfactuals: clock-aligned (same clock offset) vs play-aligned (break removed as dead time, resume matched to control's first play minute). ATT estimand τ = E[Y(1)−Y(0)|D=1]. Falsification: placebo break at 38′/82′. External design: tight-caliper (0.2 SD logit) propensity-score matching to historical no-break minutes (Copa América 2019/2021/2024, EURO 2020/2024, Gold Cup 2019/2021/2023/2025, World Cups 2018/2022).
+## Data sources named
+99 World Cup 2026 matches (67 group, 32 knockout), 198 break events (2 per match), 3,139 non-break control anchors; SofaScore Attack Momentum minute-resolved signed index + SofaScore xG; WBGT heat index (mean 24.2°C, SD 4.3, range 17.8–34.7); match-dated international Elo (dominant-side mean +111, SD 227); code/datasets at github.com/Ddey07/wc2026-hydration-momentum (MIT).
+## Findings (numbers and facts, not vibes)
+- Main effect on sign-adjusted momentum: within-match +0.26 [−2.50, +3.02] clock-aligned; −0.63 [−3.63, +2.37] play-aligned. External matched: −1.57 [−5.00, +1.87]; −2.48 [−5.97, +1.01]. All intervals cross zero; play-aligned leans negative.
+- Break×Elo/100: +1.59 (SE 0.80) — the only statistically significant interaction; at level scoreline, implied effect runs from −4 points (200-point underdog dominant) to +5 points (400-point favorite dominant).
+- Break×lead: −0.90/goal averaged over strength; −2.19 to −2.23/goal (SE 1.36–1.39) holding strength fixed; at 2-goal lead ≈ −4.1 at average strength [−9.3, +1.1].
+- Heat: hot matches (WBGT≥28°C, n=42 events) −0.96 [−6.6,+4.7] clock-aligned, −2.80 [−8.3,+2.7] play-aligned; heat×break continuous −0.21 (SE 0.31).
+- Net xG effect ≈ zero: −0.001 [−0.051,+0.049] clock-aligned; +0.011 [−0.051,+0.073] play-aligned.
+- Sensitivity: main effect β moves +1.1 → −5.1 with referent-band relocation (fragile); break×lead slope ≈ −0.2 stable across trend specs.
+- Interpretation: momentum reverts through the break at the same rate as non-break minutes; break excises continued pressure but leaves no trace in chance creation.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER (method transfer): case-crossover/self-controlled in-game causal design → injury-timeout and weather-stop effects on NFL live spreads via nflverse play-level EPA/drive momentum proxies (ledger implementation spec); upgrades referee-crew stoppage-burden totals work from correlation to quasi-causal; heat-policy totals modeling (corpus gap #8 weather-physics).
+## Engine-actionable? (yes/no + one-line what)
+Yes — port the case-crossover design to NFL injury timeouts/weather delays and referee-crew stoppage effects on live spreads/totals (4–6 engineer-days; placebo-battery gate specified in ledger).

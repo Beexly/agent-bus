@@ -1,0 +1,23 @@
+# personal/aws/AWS_TO_GSE_CROSSWALK.md
+## What it is (1-2 sentences)
+A 12-row crosswalk mapping Garrett's personal AWS learning areas (Educate, Skill Builder, re/Start) to repo-safe GSE/FABLE system improvements. It explicitly does NOT claim course completion — completion claims require an approved evidence item to be added.
+
+## Key metrics/methods (formulas where given, else "not specified")
+Not specified — this is an operational/planning doc, not an analytic one. No formulas, no numbers, no gates/thresholds. Each row lists: learning area, personal learning output, GSE/FABLE system affected, repo doc/code path affected, practical improvement, risk reduced, a no-cost artifact to build, and an owner decision needed (every row's decision is a "Garrett approves before any real cloud action" gate).
+
+## Data sources named
+None — no datasets. The referenced artifact paths are all under `docs/fable/aws/` (e.g. `AWS_COST_SECURITY_GATES.md`, `DATA_LEGAL_BOUNDARIES.md`, `AWS_SERVICE_SCORECARD.md`, `AWS_IMPLEMENTATION_SPIKES.md`, `AGENT_TOOL_PERMISSION_MATRIX.md`, `AGENTCORE_SECURITY_FIREBREAK.md`, `AWS_BEDROCK_AGENTCORE_PLAN.md`, `AWS_MODEL_ROUTER_DESIGN.md`, `AWS_SAGEMAKER_MLOPS_PLAN.md`, `AWS_CLEAN_ROOMS_PARTNERSHIP_PLAN.md`, `AWS_AMPLIFY_INVESTIGATION.md`), plus `infrastructure/aws/amplify/README.md`, `apps/web/lib/fable/aws-decision-engine.ts`, and personal-boundary docs `docs/personal/aws/AWS_RESTART_APPLICATION_BOUNDARY.md` and `AWS_PORTFOLIO_CASE_STUDY.md`.
+
+## Findings (numbers and facts, not vibes)
+- 12 learning areas mapped: S3/storage, EC2/compute, VPC/networking, RDS/databases, Cloud Operations/Cost, Skill Builder Cloud Practitioner, IAM/security, Amplify, Bedrock/AgentCore, SageMaker, Clean Rooms, re/Start career track.
+- The doctrine is consistently: learning concepts are applied via no-cost local artifacts (mocks, checklists, worksheets, runbook drafts) and **every** row requires an explicit owner decision before any real AWS resource is created, billing alarm is enabled, IAM policy is touched, badge proof is used publicly, or personal application data is moved into the repo.
+- Practical improvements named: (1) separation between local artifacts and cloud storage candidates (S3) — reduces risk of cloud upload before rights review; (2) compute-vs-serverless decision language (EC2) — reduces overbuilding hosted compute before local proof; (3) blast-radius reviews for private workloads (VPC); (4) RDS/Aurora rejection criteria while the current Postgres path suffices; (5) spend ceilings, audit language, kill-switch planning (Cloud Ops/Cost); (6) service fit/reject/adopt-later reasoning (Cloud Practitioner); (7) wildcard/admin/PassRole rejection language (IAM); (8) preview-only Amplify spike design without migration pressure; (9) agent firebreak vocabulary + eval gates (Bedrock/AgentCore) — reduces risk of paid model calls or agent write authority; (10) local-vs-hosted ML levels (SageMaker); (11) partner credibility without raw data exchange (Clean Rooms); (12) public-safe career narrative without private forms (re/Start).
+- The re/Start row carries an explicit boundary: `AWS_RESTART_APPLICATION_BOUNDARY.md` exists to keep personal application data out of the repo — the case study is public-safe narrative only.
+
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- **OTHER (infra-ops gatekeeping):** The no-cost-before-paid doctrine (local proof before any live instance, paid compute, billing alarm, or model call) is directly engine-relevant: any calibration/training/backfill worker plan must default to local execution (Neon throwaway branches, local scripts) and never assume hosted compute. Connects to the calibration/sizing lane as a cost guardrail.
+- **OTHER (agent governance):** IAM least-privilege and the Bedrock/AgentCore firebreak vocabulary (wildcard/admin/PassRole rejection, agent tool permission matrix, no agent write authority without eval gates) maps to the agent-fleet lanes (Motif/Hermes/OpenCode/Mimo/Cursor) — the same blast-radius discipline applies to who can touch prediction DBs and public surfaces.
+- **OTHER (data-rights):** S3 bucket-safety + DATA_LEGAL_BOUNDARIES risk ("accidental cloud storage before rights review") echoes the NGS internal-only doctrine: artifacts with commercial-data content must stay local/internal and never be uploaded before rights review.
+
+## Engine-actionable? (yes/no + one-line what)
+No — planning/governance doc with no metrics or methods; only actionable as standing cost/rights guardrails, which are already captured in repo gates.

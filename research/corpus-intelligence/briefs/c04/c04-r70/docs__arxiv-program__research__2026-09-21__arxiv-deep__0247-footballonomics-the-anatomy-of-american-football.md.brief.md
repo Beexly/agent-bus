@@ -1,0 +1,23 @@
+# docs/arxiv-program/research/2026-09-21/arxiv-deep/0247-footballonomics-the-anatomy-of-american-football.md
+## What it is (1-2 sentences)
+Deep read of arXiv:1601.04302v6 (Pelechrinis & Papalexakis, 2016): testing whether NFL coaches make rational expected-points-maximizing decisions (PAT, fourth downs), identifying which box-score factors move win probability, and a bootstrap prediction engine (FPM) with a hypothesis-test pick rule. Ledger verdict: ADAPT — do not adopt the model as-is (2009–2015 data, dead nflgame API); adapt the FPM bootstrap prediction architecture and the quantified factor magnitudes as priors.
+## Key metrics/methods (formulas where given, else "not specified")
+- PAT expected point differential: E[p] = 2·s_2pts − 1·s_kick (3).
+- Fourth-down mean field: E[P+] = 6·s_4conv^{γ(l)} (4); E[P−] = 3·s_fg + (3·Δπ_fg + 6·Δπ_td) (5); γ(l) = (100−l)/29 (avg drive 29 yards); E[P] = E[P+] − E[P−].
+- Bradley-Terry GLM: Pr(T_i ≻ T_j) = e^{π_i−π_j}/(1+e^{π_i−π_j}) (1); π_i − π_j = Σ_r α_r(z_ir − z_jr) + U, U∼N(0,σ²) (2). Features (home−away differentials): total offensive yards, penalty yards, turnovers, possession time, pass-to-rush yardage ratio r = pass yards/total yards (6), ΔSportsNetRank. Intercept → Pr = 0.555 at all-zero features (home advantage).
+- FPM engine: bootstrap B = 1,000 resamples of each team's performance matrix M_T (recency bias last k = 5 games, block sampling of correlated columns) → regression module (each pair through BT model → win-probability sets) → statistical test module (H_0: P̄_1 = P̄_2, α = 0.05; reject → sign of difference picks winner). Predictions start Week 6; model trained on the other 6 seasons each year.
+## Data sources named
+NFL Game Center play-by-play via Python nflgame API (BurntSushi/nflgame, accessed 2016-01-12 — defunct), 2009–2015 seasons: 1,792 regular-season games; 9,021 TDs (460 2-pt attempts, 8,561 XP attempts); 1,870 fourth-down attempts; ~43,000 drives. Only 3 regular-season ties (0.1%). No model code released.
+## Findings (numbers and facts, not vibes)
+- PAT: 2-pt success 51% (235/460) → expected 1.02 pts vs XP 98.4% (8,425/8,561) → 0.984 pts → E[p] > 0 favors 2-pt. 2015 XP move (15-yard line): XP success fell ~5% (p < 10⁻⁶); 2-pt success unchanged (p = 0.4). Steelers attempted 11/45 TDs in 2015 (~25%).
+- Fourth down: conversion 77.9% overall (89% on 4th-and-1, 55% of attempts; yardage-adjusted 73%); constant beyond own 35. FG success 85.5% overall, sharp decline beyond 50 yards. Failed conversion in opponent territory raises ensuing-drive score probability by only ~7% vs touchback. E[P] positive for >80% of field; mean +1.4 points/drive (p ≪ 0.01).
+- Paired winner-vs-loser: total yards +51.78***, penalty yards −3.29*, turnovers −1.04***, possession +211.79s***, r −0.06***, home win 56.03% ± 2.49%. Winners had fewer turnovers in ~80% of games.
+- BT standardized coefficients: turnovers −2.08, total yards +1.82, penalty −0.83, r −0.63, rank +0.55. Practical: winning turnover battle by 1 ≈ +20% win probability; 10-yard penalty differential ≈ 5%. Winners' r ≈ 0.64, losers' ≈ 0.80 (r valid only within [0.3, 0.98]; authors warn against extrapolating).
+- FPM accuracy: 63.4% (SE 1.3%), beating win-loss baseline every season by ~9%; comparable to Microsoft Cortana ~64.5% and ESPN FPI 63%; better than ~60% of sampled experts. Accuracy rises through season (slope 0.01, p < 0.05, R² = 0.41). Calibration: y=x check on 5% bins, slope CI [0.76, 1.16], R² = 0.94.
+- Reverse-causality: r-ratio stable after Q1; turnover differential favors eventual winners by end of Q3 (p ≪ 0.01).
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- COACHING: rational-coaching tests (PAT/2-pt, fourth-down) with quantified expected-point costs — direct template for coach decision audits.
+- SCHEME: pass-to-rush yardage ratio r (winners ≈ 0.64 vs losers ≈ 0.80) as game-script balance signal; turnover differential dominance (−2.08 standardized) as the top factor hierarchy.
+- OTHER: FPM bootstrap architecture (uncertainty distribution over win probability + hypothesis-test pick rule) as the missing uncertainty layer for Kelly sizing; y=x quantized-bin calibration protocol.
+## Engine-actionable? (yes/no + one-line what)
+Yes — replicate FPM's bootstrap architecture on GSE's stack (B = 1,000 correlated resamples through GSE's win model → probability CI + H_0 test) and feed the lower confidence bound into Kelly sizing; recalibrate factor hierarchy on 2020–2025 data (paper coefficients are era-stale); implement the paper's proposed-but-unbuilt propensity-score opponent adjustment.

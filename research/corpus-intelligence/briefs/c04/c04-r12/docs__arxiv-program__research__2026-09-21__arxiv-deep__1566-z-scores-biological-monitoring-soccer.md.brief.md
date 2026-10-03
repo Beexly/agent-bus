@@ -1,0 +1,24 @@
+# docs/arxiv-program/research/2026-09-21/arxiv-deep/1566-z-scores-biological-monitoring-soccer.md
+## What it is (1-2 sentences)
+Ledger of arXiv:2510.01810 (Berthelot et al. 2025), anti-doping biological-passport work introducing interpretable intra-individual Z-score statistics (Tₙ⁽⁰⁾–Tₙ⁽³⁾, plus DevianLM Gaussian-linear-model extension Tₙ⁽⁴⁾) for detecting abnormal observations/subsequences in longitudinal athlete biomarker sequences, applied to 3,936 French soccer players (2006–2019) and 1,683 cyclists (2003–2014). Verdict in the ledger: ADAPT — the intra-individual change-point machinery (especially Tₙ⁽²⁾ interval scan with Monte Carlo critical values and DevianLM covariate adjustment) is portable to GSE's longitudinal athlete monitoring: flagging fatigue/overtraining regime shifts in NGS speed, snap loads, and practice participation.
+## Key metrics/methods (formulas where given, else "not specified")
+- Tₙ⁽⁰⁾ = (Xₙ−X̄ₙ₋₁)/(σ̂ₙ₋₁√(1+1/(n−1))) ~ Student(n−2) under H₀ — new-observation test (Eq. 1–2).
+- Tₙ⁽¹⁾ = maxᵢ leave-one-out studentized deviation — single abnormal observation anywhere (Eq. 3–4).
+- Tₙ⁽²⁾ = max over all intervals I of |X̄_I − X̄_Ī|/(σ̂_{n,I}√(1/|I|+1/(n−|I|))) — abnormal consecutive subsequence, change-point style (Eq. 5–7); n≥4.
+- Tₙ⁽³⁾ = (n−1)/(nd)·maxᵢ Mahalanobis (Xᵢ−X̄_{n,−i})′C_{n,−i}⁻¹(Xᵢ−X̄_{n,−i}) — multivariate correlated biomarkers (Eq. 8–9); n≥d+2.
+- Tₙ⁽⁴⁾ = maxᵢ |êᵢ(X)| — external studentized residuals under Gaussian linear model Xᵢ=(Mθ)ᵢ+εᵢ (DevianLM extension; Eq. 10–11); null distribution parameter-free but design-dependent → Monte Carlo tabulated. Designs: A: Xᵢ=β₀+εᵢ; B: Xᵢ=β₀+β₁sᵢ+εᵢ (summer/winter seasonality); C: Xᵢ=β₀+β₁tᵢ+εᵢ (chronological drift).
+- Transformation pipeline: per biomarker try {identity, m-th root m=2..10, log, Lambert W₀, Box-Cox λ∈{−0.0606, 0.0202, −0.3030}}; per-individual Shapiro → KS-test of p-value vector vs Uniform; pick maximizing KS p-value. Significance α=0.05.
+## Data sources named
+Soccer: 3,936 players, French Ligue 1 & 2, 5 biomarkers (ferritin μmol/L, serum iron μmol/L, hemoglobin g/L, erythrocytes T/L, hematocrit %), ~6-monthly sampling (July/August, January/March), 2006–2019, 27 collection waves. Cycling: 1,683 athletes (1,247 amateur + 436 professional; road 1052, MTB XC 143, BMX 105, downhill 60, cyclo-cross 49, track sprint 38, trials 30, pursuit 40, multi 166), ages 13.30–43.54 (mean 24.07), 10 biomarkers, 2003-01-09 to 2014-02-12. All male, ethics-approved, proprietary federation data (FFF Clairefontaine, French Cycling Federation, INSEP) — not publicly available. DevianLM R package implements Tₙ⁽⁴⁾ (no GitHub URL in text).
+## Findings (numbers and facts, not vibes)
+- Tₙ⁽²⁾ detects far above the 5% nominal rate: ferritin 26.67% (cycling), 18.67% (soccer); IGF1 35.97% (cycling); "more than three times the false positive rate."
+- Among status-switchers: ferritin Tₙ⁽²⁾ 89/158 (56.33%), IGF1 Tₙ⁽²⁾ 96/135 (71.11%).
+- Multivariate Tₙ⁽³⁾ {erythrocytes, hemoglobin, hematocrit}: amateurs 53/604 (8.77%), professionals 27/160 (16.88%).
+- Model A/B/C single-outlier stats mostly 3–14% (closer to nominal). Malfunctioning-device hemoglobin sequences: 4.45% soccer, 4.75% cycling.
+- KS normality p-values for chosen transforms all tiny (e.g., ferritin soccer 6.79×10⁻¹⁶) except osteocalcin (0.841) — the 5% nominal rate itself may be miscalibrated (ledger's adversarial note).
+- No ground-truth labels: "abnormal" is purely statistical; no injury/doping outcome prediction numbers exist in the paper. No training-load, nutrition, altitude, or medication covariates; intra-individual serial correlation ignored (authors' own limitation).
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- [OTHER] Intra-individual anomaly detection framework for athlete monitoring: per-player longitudinal series (NGS max speed, burst accelerations, snap share, practice participation, weekly PPR) with Tₙ⁽²⁾ interval change-point scan, opponent-adjusted DevianLM-style baselines (analog of model B/C seasonality), and multivariate Tₙ⁽³⁾ over correlated NGS metrics {max speed, accelerations, distance} jointly.
+- [OTHER] Ledger gates: internal risk input only — never presented publicly as injury predictions; acceptance requires recall ≥25% of injury-absence within 3 weeks at ≤10% flag rate among healthy player-weeks, opponent-adjusted flags beating raw flags by ≥5pp precision, and nominal 5% FPR holding within ±2pp on the healthy cohort.
+## Engine-actionable? (yes/no + one-line what)
+Yes — build `gse-athlete-monitor` (Python, ~1 week + 2-week backtest) flagging 2–4-game abnormal low subsequences per player with Monte Carlo critical values; INFERENCE: the ledger's improvement experiment extends Tₙ⁽²⁾ to a prospective sequential suffix test with alpha-spending for live weekly alerts.

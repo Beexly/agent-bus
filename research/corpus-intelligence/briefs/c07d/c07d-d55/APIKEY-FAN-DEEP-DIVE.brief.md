@@ -1,0 +1,41 @@
+# props/research/2026-09-18/firecrawl/APIKEY-FAN-DEEP-DIVE.md
+
+## What it is (1-2 sentences)
+A 2026-09-18 research deep dive (all page fetches ~16:04–16:25 CDT) that kills a false premise: apikey.fan is an AI-model API relay/gateway ("The Universal AI Gateway") with zero sports/odds/NFL endpoints, and — in the same pass — documents OddsPapi (oddspapi.io), a genuine odds API with an unusually generous free tier including an always-free unmetered `/v4/historical-odds` endpoint.
+
+## Key metrics/methods (formulas where given, else "not specified")
+not specified (no formulas; it is a source-evaluation recon, not a model).
+
+## Data sources named
+- apikey.fan ("The Universal AI Gateway") — AI-model API relay for Claude, OpenAI/Codex, Gemini; pricing "roughly 20% of official rates" (FAQ verbatim), with sub2api claiming relay pricing "from as low as 7% of the original rate"; free account tier exists but free-quota amount unpublished. Supported-tools page lists OpenClaw, Claude Code, Codex, Hermes (multi-channel config tool — name collision with the builder agent, not the builder agent).
+- GitHub: fan-van/sub2api (apikey.fun listed as core contributor/sponsor); sailingloong/loongport commit 99b4248aaa969b5763a5f0020eeb24762e7a3446 (2026-09-13, domain migration apikey.fun → apikey.fan); doctorfan1314/oortapi (unrelated self-hosted relay, architecture reference only).
+- **OddsPapi (oddspapi.io)**: real-time, pre-match, live, and historical odds from 300+ bookmakers across 60+ sports and 12,000+ yearly competitions; books include Pinnacle, Bet365, DraftKings, FanDuel, BetMGM, Unibet, Bwin, Sbobet; markets: moneyline, spread, totals, draw-no-bet, double chance, 1X2, player props, team props, exact score, Asian handicaps, futures. Base URL `https://api.oddspapi.io/v4`; auth = `apiKey` as query parameter (not header).
+- Companion notes: `APIVAULT-DEEP-DIVE.md` (same directory; apivault.uk = generic proxy aggregator, zero sports endpoints).
+- Free Public APIs (freepublicapis.com): directory only; sports-relevant listing = "5Dollar Football API" (live scores, fixtures, odds, statistics, historical data for backtesting; 1 endpoint, health 95) — existence confirmed as listing; docs/pricing not fetched.
+- BetOnline (api.betonline.ag): sportsbook, not public data API; public betonline.ag frontend JS bundles are a legitimate reverse-engineering target (public bundles in scope; authenticated endpoints not).
+- Independent cross-checks: mxvsatv321/cleatiq `docs/oddspapi_recon.md` (2026-05-02, T-5min odds availability); alexandrosh8/sharp-ev-picks `docs/research/2026-07-05-oddspapi-crosscheck-evaluation.md` (working GET-only client reducing chronological per-outcome price history to (open, close), UTC-aware times; NBA-tested, Pinnacle open = anchor, Pinnacle close = CLV reference); andrewkorot/sports-odds-discrepancy-alert-scanner.
+
+## Findings (numbers and facts, not vibes)
+- CONFIRMED: apikey.fan is NOT a sports-data or odds-data provider — zero sports, odds, or NFL endpoints on its public site. Garrett's belief (from 5 password-manager screenshots) that it has "free tiers of API data statistics" for sports is NOT supported by any public evidence.
+- Domain history: apikey.fan is successor of apikey.fun (migration commit 2026-09-13); Garrett's password-manager entry shows website "apikey.fun", modified Aug 20, 2026, username baxley.garrett@gmail.com — consistent with registration in the apikey.fun era.
+- Pricing claims: "roughly 20% of official rates" (verbatim FAQ); "as low as 7% of the original rate" (fan-van/sub2api). Billing: top-up balance, never expires while account active; Alipay/WeChat Pay supported; claims "100% official performance," enterprise-tier quota, "zero risk" of bans via their enterprise quota. Free-account CTA exists; free quota amount unpublished (UNVERIFIED).
+- No public REST data-API docs exist (product is an OpenAI/Anthropic-compatible relay — INFERRED: standard `/v1/chat/completions` and `/v1/messages` wire protocols; inference from marketing copy, not documented — do not treat as CONFIRMED).
+- GitHub surface: no sports/odds code under apikey.fan — no repos, mirrors, clones, or leaked datasets. No archived/leaked historical data; none expected (sells inference, not data).
+- **OddsPapi free tier (CONFIRMED)**: 250 requests/month; **`/v4/historical-odds` is ALWAYS FREE — calls never increment the request count**; `/v4/account` unmetered and always accessible. 1 request = 1 call to a billable endpoint regardless of response size. Per their comparison post: The Odds API free tier = 500 credits/mo but costs markets × regions (1–15+ credits) per call and 10× for historical; OddsPapi's 250 requests = "250 full boards — every book, every market."
+- Billable endpoints (1 request each): `/v4/players`, `/v4/settlements`, `/v4/fixtures`, `/v4/fixture`, `/v4/odds-by-tournaments`, `/v4/languages`, `/v4/sports`, `/v4/bookmakers`, `/v4/markets`, `/v4/tournaments`, `/v4/participants`, `/v4/scores`, `/v4/odds`. Free: `/v4/historical-odds`. Unmetered: `/v4/account`.
+- Usage: `GET /v4/historical-odds?fixtureId=X&bookmakers=slug1,slug2` — max 3 bookmakers per call. 69 sports as of June 2026. Fixtures endpoint takes `from`/`to` ISO date range, max 10 days apart. Only fixtures with `hasOdds: true` return a price payload. Soccer sportId = 10; MLB sportId = 13; **NFL sportId UNVERIFIED** — resolve via `GET /v4/sports` before building.
+- Key hygiene: `apiKey` is a query param — keep it out of logs (same discipline as existing odds-api client).
+- Update latency/snapshot granularity of historical odds NOT published on fetched pages (INFERRED/UNVERIFIED); docs claim "ultra-fast latency with WebSocket streaming"; do not conflate with Sportsbook API's "update once per minute." The cleatiq recon was scoped to T-5min odds availability — read before assuming.
+- Licensing/commercial use UNVERIFIED: free historical endpoint free ≠ free to redistribute; read ToS before persisting/republishing.
+- Priority engineering tasks from the file: (1) spike OddsPapi free historical-odds ingestion: `/v4/sports` → resolve NFL sportId → `/v4/fixtures` by date range → `/v4/historical-odds` per fixture (Pinnacle) → reduce to open/close per sharp-ev-picks pattern, no credit burn on the historical endpoint; (2) CLV feed: Pinnacle open/close as closing-line-value reference for grading GSE/Beex picks — "the single highest-value free data on the board"; (3) read cleatiq recon (quota burn notes, sport/tournament IDs) and OddsPapi ToS before persisting; (4) do NOT build adapters for apikey.fan or apivault.uk as data sources.
+- Companion note referenced: `APIVAULT-DEEP-DIVE.md` (same directory) covers apivault.uk separately.
+
+## Intelligence connections
+- TRUST-SIGNAL: This finding serves the trust-target intake / calibration-and-sizing lane. OddsPapi's free Pinnacle open/close histories are the free-market-baseline feed for CLV grading of every GSE pick — the sharp-book anchor (Pinnacle open = anchor, Pinnacle close = CLV reference, per the sharp-ev-picks NBA-tested pattern). This directly feeds the calibration/sizing lane: grade engine picks against closing line value without credit burn.
+- OTHER (cost/infra): apikey.fan matters only as cheap AI-inference cost arbitrage (~7–20% of official rates) for builder-agent / Motif LLM compute spend — an operations/compute lane item, not a Sports data source. Note the 2026-09-26 Minis/OpenRouter 403 content-filter lesson (AGENTS.md): an inference relay changes the filter behavior that caused "Invalid API key" mislabels.
+- SCHEME/other-lane: the "5Dollar Football API" listing (health 95, 1 endpoint, free) is a follow-up target only if a soccer lane opens; NFL coverage UNVERIFIED.
+- QB-BEHAVIOR, COACHING, OL: none in this file.
+- The file explicitly rejects building data adapters for apikey.fan and apivault.uk — a negative result worth preserving so future intake doesn't re-open the question.
+
+## Engine-actionable? (yes/no + one-line what)
+Yes — spike the OddsPapi `/v4/historical-odds` (free, unmetered, Pinnacle open/close) ingestion as the CLV grading feed for pick calibration; resolve NFL sportId via `/v4/sports` first and read the OddsPapi ToS (redistribution terms) before persisting.

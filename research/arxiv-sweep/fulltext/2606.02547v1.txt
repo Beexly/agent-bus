@@ -1,0 +1,7220 @@
+Pluralistic Leaderboards
+Nika Haghtalab
+Affiliation:
+University of California, Berkeley
+Ariel D. Procaccia
+Affiliation:
+Harvard University
+Han Shao
+Affiliation:
+University of Maryland, College Park
+Serena Lutong Wang
+Affiliation:
+Harvard University
+Kunhe Yang
+Thanks:
+Authors are listed alphabetically.
+Emails:
+nika@berkeley.edu
+,
+arielpro@seas.harvard.edu
+,
+hanshao@umd.edu
+,
+serenalwang@g.harvard.edu
+,
+kunheyang@berkeley.edu
+.
+Affiliation:
+University of California, Berkeley
+Abstract
+Recent leaderboard-based evaluations of large language models aggregate user feedback by fitting a Bradley–Terry model to pairwise comparisons, producing a single global ranking based on a latent quality score. While appealing for its simplicity, this approach is incompatible with heterogeneous preferences: when LLMs are used across diverse tasks and use cases, users who favor fundamentally different model behaviors can be systematically misrepresented when collapsed into a single quality score. To address this issue, we study
+pluralistic leaderboards
+that aim to remain
+stable
+with respect to heterogeneous user populations. Drawing on ideas from social choice theory, we adapt the notion of
+local stability
+, which requires that no model outside the top-
+k
+k
+positions is collectively preferred to the top-
+k
+k
+set by more than
+O
+⁡
+(
+1
+/
+k
+)
+O(1/k)
+fraction of users. Building on techniques from the social choice literature, we design an alternative leaderboard mechanism that satisfies local stability while eliciting only
+O
+~
+​
+(
+k
+)
+\widetilde{O}(k)
+pairwise comparisons per user, where
+k
+k
+is the size of the prefix for which stability is guaranteed. Using data from LMArena, we show that standard Bradley–Terry aggregation can violate local stability in practice, whereas our method provides substantially stronger stability guarantees.
+1
+Introduction
+Until recently, leading approaches to the evaluation of large language models (LLMs) relied on benchmarks, which measure performance on multiple tasks and aggregate the corresponding scores
+(
+Liang et al. 2023
+;
+Jimenez et al. 2024
+)
+. While this paradigm has provided a standardized and reproducible basis for comparing models, it is increasingly strained by rapid model iteration, benchmark saturation, and sensitivity to task selection; it also struggles to capture qualitative dimensions of model behavior such as helpfulness.
+Some of these shortcomings are addressed by an alternative evaluation approach championed by LMArena
+(
+Chiang et al. 2024
+)
+. Upon submitting a prompt, an LMArena user is shown a pair of responses from two different LLMs and is asked to indicate which is preferred.
+LMArena aggregates these votes by fitting a Bradley–Terry (BT) model. That is, it posits that each LLM has a single latent “quality” score, where the probability that one model beats another on a prompt depends only on the difference between their qualities, independently of the identity of the user.
+By computing the maximum likelihood estimator for the quality of each LLM based on the input comparisons, the platform is able to produce a ranking over the models.
+The approach taken by LMArena is compelling and hugely successful,
+1
+1
+1
+As of January 2026, LMArena is valued at $1.7B just months after it launched as a company.
+but it has also attracted notable controversy and criticism
+(
+Singh et al. 2025
+)
+. In our view, its main conceptual flaw is its reliance on the BT model, and with it, the implicit assumption that all pairwise comparisons originate from a generic (or “average”) person —
+a view that is fundamentally at odds with heterogeneous preferences. People come to LLMs with different goals (e.g., safety vs. creativity, conciseness vs. thoroughness, formality vs. warmth) that represent inherently different latent utility models.
+These differences can be large enough that there may be no single ground-truth scalar “quality” that explains society’s preferences. Statistically speaking,
+a single BT model is a misspecified model of the exhibited comparisons, and as such, the maximum-likelihood BT scores need not represent what people want in any meaningful way
+(
+Ge et al. 2024
+;
+Gölz et al. 2025
+;
+Shirali et al. 2025
+)
+.
+When fundamental disagreements arising from heterogeneous preferences are unavoidable, social choice theory
+(
+Brandt et al. 2016
+)
+provides a principled framework for aggregation.
+To see how these issues manifest in LMArena, and how social choice provides solutions, consider a setting with six competing LLMs
+{
+a
+,
+b
+,
+c
+,
+d
+,
+e
+,
+f
+}
+\{a,b,c,d,e,f\}
+, and two preference profiles shown below.
+60
+%
+40
+%
+a
+f
+b
+e
+c
+d
+d
+c
+e
+b
+f
+a
+10
+%
+10
+%
+10
+%
+10
+%
+10
+%
+10
+%
+10
+%
+10
+%
+10
+%
+10
+%
+a
+c
+c
+a
+b
+a
+a
+b
+b
+a
+b
+b
+d
+e
+e
+d
+d
+c
+c
+c
+c
+d
+a
+b
+d
+e
+e
+e
+e
+d
+f
+f
+f
+f
+f
+f
+f
+f
+f
+f
+d
+e
+b
+d
+a
+c
+b
+a
+d
+e
+e
+a
+e
+c
+c
+b
+c
+d
+a
+b
+​
+P
+​
+r
+​
+o
+​
+f
+​
+i
+​
+l
+​
+e
+​
+1
+​
+P
+​
+r
+​
+o
+​
+f
+​
+i
+​
+l
+​
+e
+​
+2
+\begin{array}[]{c@{\quad}c}\footnotesize\par\begin{array}[]{|cc|}\hline\cr 60\%&40\%\\
+\hline\cr a&f\\
+b&e\\
+c&d\\
+d&c\\
+e&b\\
+f&a\\
+\hline\cr\end{array}\hfil\hskip 8.50012pt&\footnotesize\begin{array}[]{|cccccccccc|}\hline\cr 10\%&10\%&10\%&10\%&10\%&10\%&10\%&10\%&10\%&10\%\\
+\hline\cr a&c&c&a&b&a&a&b&b&a\\
+b&b&d&e&e&d&d&c&c&c\\
+c&d&a&b&d&e&e&e&e&d\\
+f&f&f&f&f&f&f&f&f&f\\
+d&e&b&d&a&c&b&a&d&e\\
+e&a&e&c&c&b&c&d&a&b\\
+\hline\cr\end{array}\\[40.00006pt]
+\footnotesize\emph{Profile1}\hfil\hskip 8.50012pt&\footnotesize\emph{Profile2}\par\end{array}
+The two profiles induce the same pairwise comparisons and are therefore indistinguishable from the perspective of the BT model, which outputs the ranking
+a
+≻
+b
+≻
+c
+≻
+d
+≻
+e
+≻
+f
+a\succ b\succ c\succ d\succ e\succ f
+in both cases. Now suppose (for simplicity) that a user tests the leaderboard’s top three models to find one that is to their liking. For Profile 2, the set
+{
+a
+,
+b
+,
+c
+}
+\{a,b,c\}
+works well, as the favorite model of each and every individual is included. By contrast, the same outcome is far less satisfactory for Profile 1. Here, 40% of the population is only exposed to models that they dislike; an outcome that elevates
+f
+f
+into the top tier would ensure that this sizable faction is not shut out.
+Social choice theory provides a formal understanding of the principle that a large and cohesive faction should be fairly represented in the outcome. There is a significant literature on representation in committee elections — building on the work of
+Aziz et al. 2017a
+— which has led to deployed participatory budgeting methods
+(
+Peters et al. 2021
+)
+and AI-driven applications
+(
+Fish et al. 2024
+)
+. As we discuss below, however, it is nontrivial to adapt these techniques to LLM leaderboards, where the input consists of (typically sparse) pairwise comparisons. Our research problem, therefore, is this:
+Design
+pluralistic leaderboards
+that take pairwise comparisons as input and produce an outcome that fairly represents heterogeneous preferences.
+Our approach and results.
+To construct pluralistic leaderboards, we need a formal notion for
+fair representation
+; that is, any large cohesive subgroups of users should have sufficient impact on the leaderboard to ensure that the models they collectively favor are ranked near the top.
+To this end, we adopt the notion of
+local stability
+(
+Aziz et al. 2017b
+)
+from the social choice literature on committee elections. Intuitively, local stability requires that no sufficiently large subgroup of users can “profitably deviate” to an alternative candidate that is excluded from the selected committee. More formally, a committee
+W
+k
+W_{k}
+of size
+k
+k
+is
+locally stable
+if for any candidate
+a
+∉
+W
+k
+a\notin W_{k}
+, the fraction of users who prefer
+a
+a
+to all candidates in
+W
+k
+W_{k}
+is at most
+1
+/
+k
+1/k
+, and is
+γ
+\gamma
+-approximately local stable if the fraction is at most
+γ
+/
+k
+\gamma/k
+.
+Since our ultimate goal is to produce
+rankings
+rather than committees, we extend local stability to rankings by requiring the property to hold for every prefix of the ranking.
+Specifically, we treat the top-
+k
+k
+prefix of a ranking as a size
+k
+k
+committee, and impose local stability at every cutoff
+k
+k
+. Our goal is therefore to design a ranking mechanism that converts pairwise comparisons into such an (approximately) locally stable ranking.
+We begin with studying the committee selection setting, where we build on algorithms by
+Jiang et al. 2020
+. The challenge is that these algorithms assume access to the complete rankings of all the users. We adapt these techniques to the leaderboard setting where users are drawn from an underlying distribution, and they each contribute only a small amount of feedback, rather than providing full rankings. By carefully controlling the errors arising from finite-sample estimation, we develop an algorithm that produces
+approximately locally stable committees, with a constant approximation factor.
+Our algorithm uses
+O
+~
+​
+(
+poly
+​
+(
+m
+)
+)
+\widetilde{O}(\mathrm{poly}(m))
+sampled users and
+O
+~
+​
+(
+k
+)
+\widetilde{O}(k)
+pairwise comparison queries per user, where
+k
+k
+denotes the committee size. We then develop a reduction that uses this algorithm as a subroutine to construct approximately stable rankings, incurring only a constant multiplicative factor in the approximation ratio.
+Finally, we empirically validate our approach on synthetic and semi-synthetic experiments derived from LMArena data. Our experiments demonstrate that the currently-used Bradley–Terry ranking can violate stability, whereas our methods achieve stability to a degree that is even stronger than our theoretical bounds in practice.
+Related Works.
+While a global leaderboard aggregates all battles into a single score, recent work has attempted to incorporate heterogeneity by constructing task-specific or more fine-grained leaderboards. For example,
+Frick et al. 2025
+propose Prompt-to-Leaderboard, which conditions Bradley–Terry scores on the prompt to produce prompt-dependent rankings from LMArena data. We take a different approach: rather than producing multiple task- or prompt-specific rankings, we aim to construct a single global ranking that automatically represents all sufficiently large user subgroups, whether defined explicitly or implicitly.
+Our approach builds on the social choice literature on local stability in committee selection. In particular,
+Jiang et al. 2020
+propose algorithms for computing approximately locally stable committees, and subsequent work improves the approximation factors
+(
+Charikar et al. 2025
+;
+Nguyen et al. 2025
+)
+. These results assume access to richer preference information (users’ full rankings) than is typically available in leaderboard settings. We extend this line of work by adapting local stability algorithms to sparse pairwise comparisons and by lifting committee-level guarantees to full rankings.
+Finally, our work is related to research on ranking and committee selection under incomplete or partially elicited preferences
+(
+Halpern et al. 2023
+;
+Halpern et al. 2024
+;
+Springham et al. 2025
+)
+. In particular,
+Halpern et al. 2023
+and
+Springham et al. 2025
+study representation under approval-based preferences, whereas our framework assumes ranked preferences revealed through pairwise comparisons.
+2
+Model and Preliminaries
+We use
+𝒞
+=
+{
+1
+,
+2
+,
+…
+,
+m
+}
+\mathcal{C}=\{1,2,\ldots,m\}
+to denote the set of
+m
+m
+models competing on the leaderboard.
+We assume that users are heterogeneous and are drawn from a distribution
+𝒟
+\mathcal{D}
+.
+Each user
+i
+i
+is associated with a strict preference order over the models in
+𝒞
+\mathcal{C}
+, represented by a permutation
+σ
+i
+=
+(
+σ
+i
+​
+(
+1
+)
+,
+…
+,
+σ
+i
+​
+(
+m
+)
+)
+∈
+𝖲𝗒𝗆
+⁡
+(
+𝒞
+)
+\sigma_{i}=(\sigma_{i}(1),\ldots,\sigma_{i}(m))\in\mathsf{Sym}(\mathcal{C})
+, where
+σ
+i
+(
+1
+)
+≻
+i
+σ
+i
+(
+2
+)
+≻
+i
+…
+≻
+i
+σ
+i
+(
+m
+)
+\sigma_{i}(1)\succ_{i}\sigma_{i}(2)\succ_{i}\ldots\succ_{i}\sigma_{i}(m)
+. Here,
+𝖲𝗒𝗆
+⁡
+(
+𝒞
+)
+\mathsf{Sym}(\mathcal{C})
+denotes the set of all permutations of
+𝒞
+\mathcal{C}
+and
+𝒟
+\mathcal{D}
+can be equivalently viewed as a distribution over rankings.
+Leaderboard Mechanism.
+The goal of the leaderboard is to produce a ranking of models
+π
+=
+(
+π
+⁡
+(
+1
+)
+,
+…
+,
+π
+⁡
+(
+m
+)
+)
+∈
+𝖲𝗒𝗆
+⁡
+(
+𝒞
+)
+\pi=(\pi(1),\ldots,\pi(m))\in\mathsf{Sym}(\mathcal{C})
+based on the preferences of the users.
+Users interact with the leaderboard by contributing “battles”, which are pairwise comparisons between two models.
+Specifically, for each battle, a user
+i
+i
+submits a prompt to the leaderboard platform, and the platform selects a pair of models
+{
+x
+,
+y
+}
+⊆
+𝒞
+\{x,y\}\subseteq\mathcal{C}
+and presents their outputs to the user without revealing the identity of the models. The user then indicates which output they prefer.
+If user
+i
+i
+participates in
+d
+d
+battles, we denote the outcomes by a sequence of ordered pairs
+(
+x
+i
+t
+≻
+i
+y
+i
+t
+)
+t
+=
+1
+d
+(x_{i}^{t}\succ_{i}y_{i}^{t})_{t=1}^{d}
+.
+We make the key simplifying assumption that users are consistent: for any user
+i
+i
+and any pair of models
+x
+,
+y
+∈
+𝒞
+x,y\in\mathcal{C}
+,
+i
+i
+prefers
+x
+x
+over
+y
+y
+in a battle if and only if
+x
+x
+appears before
+y
+y
+in the associated ranking
+σ
+i
+\sigma_{i}
+.
+2
+2
+2
+In practice, a user’s preferences may also depend on contextual factors such as the task or use case. Our model can capture this by treating the user’s type as a latent type that aggregates all such factors, so that preferences are fixed conditioned on the user’s type.
+A leaderboard’s
+ranking mechanism
+ℳ
+\mathcal{M}
+specifies both which models are selected for comparison and how the observed battles are aggregated into a ranking.
+Specifically,
+ℳ
+\mathcal{M}
+has sampling access to the population
+𝒟
+\mathcal{D}
+, and can query each sampled user for their preferences via a sequence of pairwise comparison queries. The choice of which model pairs to compare may be adaptive and depend on the outcomes of previous queries. We measure the complexity of
+ℳ
+\mathcal{M}
+by (i) the maximum number of pairwise comparisons elicited per user, denoted with
+d
+d
+, and (ii) the total number of users sampled from
+𝒟
+\mathcal{D}
+, denoted with
+n
+n
+.
+Bradley–Terry Ranking by LM Arena
+(
+Chiang et al. 2024
+)
+.
+We describe the Bradley–Terry-based leaderboard mechanism proposed by
+Chiang et al. 2024
+for LMArena, which we denote by
+ℳ
+𝖡𝖳
+\mathcal{M}_{\mathsf{BT}}
+. This mechanism first uses an active sampling approach for selecting model pairs, then ranks models according to scores obtained by fitting a Bradley–Terry (BT) model to the observed battle outcomes.
+In this approach, the selection of sampled pairs is independent of the user’s identity: for the
+t
+t
+-th battle in the data collection process, the leaderboard samples an unordered pair of models
+{
+x
+t
+,
+y
+t
+}
+∼
+P
+t
+\{x^{t},y^{t}\}\sim P_{t}
+where
+P
+t
+∈
+Δ
+⁡
+(
+𝒞
+2
+)
+P_{t}\in\Delta(\mathcal{C}^{2})
+is a distribution over model pairs. The distribution
+P
+t
+P_{t}
+is chosen adaptively to prioritize pairs that are expected to reduce the uncertainty in the estimated BT scores, and is shown by
+Chiang et al. 2024
+to converge almost surely to a limiting distribution as
+t
+→
+∞
+t\to\infty
+.
+Given a total of
+T
+T
+battle outcomes
+(
+x
+t
+≻
+y
+t
+)
+t
+=
+1
+T
+(x^{t}\succ y^{t})_{t=1}^{T}
+,
+Chiang et al. 2024
+estimate BT scores by solving the following reweighted maximum likelihood estimation problem:
+θ
+=
+argmax
+θ
+∈
+ℝ
+m
+∑
+t
+=
+1
+T
+1
+P
+⁡
+(
+{
+x
+t
+,
+y
+t
+}
+)
+log
+1
+1
++
+e
+−
+(
+θ
+x
+t
+−
+θ
+y
+t
+)
+,
+\theta=\argmax_{\theta\in\mathbb{R}^{m}}\sum_{t=1}^{T}\frac{1}{P(\{x^{t},y^{t}\})}\log\frac{1}{1+e^{-(\theta_{x^{t}}-\theta_{y^{t}})}},
+where
+θ
+x
+\theta_{x}
+is the BT score of model
+x
+x
+.
+The final leaderboard ranking orders models according to their BT scores
+θ
+x
+\theta_{x}
+.
+3
+3
+3
+The current mechanism by LMArena extends this by calculating the confidence intervals for each model’s estimated BT score, and displaying ties in the ranking when intervals overlap
+(
+LMArena Team 2025b
+)
+.
+Local Stability.
+In this paper, we consider the local stability of the leaderboard.
+Local stability, proposed by
+Aziz et al. 2017b
+, is a property of a committee that ensures that no outside model is collectively preferred by a sufficiently large subgroup of users.
+Formally, a committee
+W
+k
+⊆
+𝒞
+W_{k}\subseteq\mathcal{C}
+of size
+k
+k
+is said to be
+γ
+\gamma
+-approximately locally stable
+if
+max
+a
+∉
+W
+k
+Pr
+i
+∼
+𝒟
+[
+a
+≻
+i
+W
+k
+]
+≤
+γ
+k
+,
+\max_{a\notin W_{k}}\Pr_{i\sim\mathcal{D}}[a\succ_{i}W_{k}]\leq\frac{\gamma}{k},
+where
+a
+≻
+i
+W
+k
+a\succ_{i}W_{k}
+means that user
+i
+i
+prefers
+a
+a
+to all models in
+W
+k
+W_{k}
+.
+When
+γ
+=
+1
+\gamma=1
+, the committee is said to be locally stable. We refer to the smallest
+γ
+\gamma
+that satisfies the above condition as the
+stability ratio
+of
+W
+k
+W_{k}
+.
+Since our ultimate goal is to produce a full ranking of models, we extend this notion to rankings by considering the local stability of all
+prefix committees
+. For a ranking
+π
+∈
+𝖲𝗒𝗆
+⁡
+(
+𝒞
+)
+\pi\in\mathsf{Sym}(\mathcal{C})
+, let
+W
+k
+π
+=
+{
+π
+⁡
+(
+1
+)
+,
+…
+,
+π
+⁡
+(
+k
+)
+}
+W_{k}^{\pi}=\{\pi(1),\ldots,\pi(k)\}
+denote the prefix committee consisting of the top
+k
+k
+models in the ranking
+π
+\pi
+. We say that
+π
+\pi
+is
+γ
+\gamma
+-approximately locally stable ranking
+for user distribution
+𝒟
+\mathcal{D}
+if, for every
+k
+≤
+m
+k\leq m
+, the prefix committee
+W
+k
+π
+W_{k}^{\pi}
+is
+γ
+\gamma
+-approximately locally stable.
+3
+Committee Selection
+We consider the committee selection problem as a first step towards constructing stable rankings. Our goal is to select a single committee of a given size that satisfies approximate stability. We will later show in
+Section
+4
+how this procedure can be adapted or used as a subroutine to construct approximately stable rankings.
+Our committee selection algorithm (
+Algorithm
+1
+) is closely inspired by the
+Iterated Rounding
+Algorithm proposed by
+Jiang et al. 2020
+. But in contrast to their setting, which assumes full access to the users’ complete rankings, we adapt the approach to the sampling-based model in which the user population is represented by an underlying distribution that can be accessed only through sampling, and each user’s preferences can be accessed through only a limited number of pairwise comparisons.
+At a high level, the Iterated Rounding approach proceeds in
+T
+=
+O
+~
+​
+(
+log
+⁡
+k
+)
+T=\tilde{O}(\log k)
+rounds. In each round
+t
+t
+, it identifies a sub-committee
+S
+t
+S_{t}
+of geometrically decreasing size. This sub-committee is chosen to provide a good representation for a large fraction of the users that have not been well represented by sub-committees selected in previous rounds. Repeating this process guarantees that the algorithm
+makes progress
+by geometrically shrinking the fraction of poorly represented users, and as a result, the union of all such sub-committees forms a committee of size
+k
+k
+with the desired stability guarantees.
+Algorithm 1
+Committee Selection via Iterated Rounding
+Input:
+Committee size
+k
+k
+; sampling oracle
+𝒟
+\mathcal{D}
+, rank estimation oracle
+𝖱𝖺𝗇𝗄
+^
+\widehat{\mathsf{Rank}}
+(
+Algorithm
+5
+)
+Output:
+A committee
+S
+^
+\hat{S}
+of size
+k
+k
+.
+Parameters:
+α
+←
+1
+2
++
+4
+​
+ε
+\alpha\leftarrow\frac{1}{2}+4\varepsilon
+,
+β
+←
+1
+4
++
+2
+​
+ε
+\beta\leftarrow\frac{1}{4}+2\varepsilon
+. Number of Rounds
+T
+←
+⌈
+10
+​
+log
+⁡
+(
+k
+ε
+)
+⌉
+T\leftarrow\lceil 10\log(\tfrac{k}{\varepsilon})\rceil
+, sub-committee sizes
+(
+k
+t
+)
+t
+∈
+[
+T
+]
+(k_{t})_{t\in[T]}
+defined by
+k
+t
+←
+max
+⁡
+{
+1
+,
+⌊
+(
+1
+−
+α
+)
+​
+α
+t
+−
+1
+​
+k
+⌋
+}
+k_{t}\leftarrow\max\{1,\lfloor(1-\alpha)\alpha^{t-1}k\rfloor\}
+while the total committee size is less than
+k
+k
+, and stop once
+∑
+t
+k
+t
+=
+k
+\sum_{t}k_{t}=k
+.
+Initialize
+S
+^
+←
+∅
+\hat{S}\leftarrow\emptyset
+for
+t
+=
+1
+t=1
+to
+T
+T
+do
+𝒟
+^
+t
+β
+−
+ε
+←
+\widehat{\mathcal{D}}_{t}^{\beta-\varepsilon}\leftarrow
+sampling oracle for unsatisfied users at round
+t
+t
+, implemented in
+Algorithm
+4
+with history
+(
+S
+τ
+,
+Δ
+τ
+)
+τ
+≤
+t
+−
+1
+(S_{\tau},\Delta_{\tau})_{\tau\leq t-1}
+and threshold
+β
+−
+ε
+\beta-\varepsilon
+;
+Δ
+t
+←
+(
+1
++
+ε
+)
+\Delta_{t}\leftarrow(1+\varepsilon)
+-approximately stable lottery for
+𝒟
+^
+t
+β
+−
+ε
+\widehat{\mathcal{D}}_{t}^{\beta-\varepsilon}
+of size
+k
+t
+k_{t}
+(see
+Cheng et al. 2020
+);
+S
+t
+←
+S_{t}\leftarrow
+committee in
+supp
+⁡
+(
+Δ
+t
+)
+\mathrm{supp}(\Delta_{t})
+that minimizes estimated unsatisfied probability
+1
+N
+∑
+i
+=
+1
+N
+𝟙
+[
+𝖱𝖺𝗇𝗄
+^
+(
+i
+;
+S
+,
+Δ
+)
+≤
+β
+−
+ε
+]
+\frac{1}{N}\sum_{i=1}^{N}\mathbbm{1}\left[\widehat{\mathsf{Rank}}(i;S,\Delta)\leq\beta-\varepsilon\right]
+, for
+N
+N
+i.i.d. users drawn from
+𝒟
+^
+t
+β
+−
+ε
+\widehat{\mathcal{D}}_{t}^{\beta-\varepsilon}
+;
+S
+^
+←
+S
+^
+∪
+S
+t
+\hat{S}\leftarrow\hat{S}\cup S_{t}
+end
+for
+Return
+S
+^
+\hat{S}
+;
+Specifically, we formalize what we mean by
+representation
+in the above discussion, which depends on how each sub-committee is selected in
+Iterated Rounding
+. In each round
+t
+t
+, the algorithm first computes a
+γ
+\gamma
+-approximately stable lottery
+Δ
+t
+\Delta_{t}
+— a distribution over size-
+k
+t
+k_{t}
+committees  — for the currently unsatisfied user distribution. It then selects a committee
+S
+t
+S_{t}
+from the support of
+Δ
+t
+\Delta_{t}
+.
+To quantify representation, we define the
+rank
+of a committee
+S
+S
+for user
+i
+i
+under lottery
+Δ
+\Delta
+as
+𝖱𝖺𝗇𝗄
+(
+i
+;
+S
+,
+Δ
+)
+:=
+Pr
+S
+′
+∼
+Δ
+[
+S
+⪰
+i
+S
+′
+]
+,
+\mathsf{Rank}(i;S,\Delta):=\Pr_{S^{\prime}\sim\Delta}[S\succeq_{i}S^{\prime}],
+where
+S
+⪰
+i
+S
+′
+S\succeq_{i}S^{\prime}
+if user
+i
+i
+’s favorite candidate in
+S
+S
+is the same or more preferred than their favorite candidate in
+S
+′
+S^{\prime}
+.
+Intuitively, a larger rank indicates that
+S
+S
+is more representative of
+Δ
+\Delta
+for user
+i
+i
+. Given a threshold
+x
+∈
+(
+0
+,
+1
+)
+x\in(0,1)
+, we say that user
+i
+i
+is
+satisfied
+at the
+t
+t
+-th round if
+𝖱𝖺𝗇𝗄
+⁡
+(
+i
+,
+S
+t
+,
+Δ
+t
+)
+≥
+x
+\mathsf{Rank}(i;S_{t},\Delta_{t})\geq x
+. Following this, the users that remain
+unsatisfied
+at round
+t
+t
+are
+U
+t
+x
+=
+{
+i
+∣
+𝖱𝖺𝗇𝗄
+(
+i
+;
+S
+τ
+,
+Δ
+τ
+)
+<
+x
+,
+∀
+τ
+<
+t
+}
+.
+U_{t}^{x}=\left\{i\mid\mathsf{Rank}(i;S_{\tau},\Delta_{\tau})<x,\ \forall\tau<t\right\}.
+Accordingly, we use
+𝒟
+t
+x
+\mathcal{D}_{t}^{x}
+to denote the conditional distribution of unsatisfied users, which is
+𝒟
+t
+x
+:=
+𝒟
+|
+U
+t
+x
+\mathcal{D}_{t}^{x}:=\mathcal{D}\mid U_{t}^{x}
+.
+Algorithm
+1
+is obtained by adapting the above iterated rounding framework to a sampling-based and incomplete-preference setting. In particular, the estimation of user ranks, selection of sub-committees in each round, and the identification of unsatisfied users must all be carried out using only finite samples and pairwise comparison queries, rather than exact access to users’ complete rankings.
+In the remainder of this section, we formally establish the guarantees achieved by Algorithm
+1
+, showing how the algorithm maintains approximate local stability despite the errors introduced by finite-sample estimation.
+Theorem 3.1
+(Guarantee of
+Algorithm
+1
+)
+.
+For any user distribution
+𝒟
+\mathcal{D}
+and committee size
+k
+k
+,
+Algorithm
+1
+returns a committee
+S
+^
+\hat{S}
+of size at most
+k
+k
+, such that with probability at least
+1
+−
+δ
+1-\delta
+,
+S
+^
+\hat{S}
+is
+(
+16
++
+O
+⁡
+(
+ε
+)
+)
+(16+O(\varepsilon))
+-approximately stable for
+𝒟
+\mathcal{D}
+. The algorithm has the following complexity:
+(i)
+The total number of users sampled is
+n
+=
+O
+⁡
+(
+poly
+⁡
+(
+m
+,
+1
+/
+ε
+,
+log
+⁡
+1
+/
+δ
+)
+)
+n=O(\mathrm{poly}(m,1/\varepsilon,\log 1/\delta))
+;
+(ii)
+The maximum number of pairwise comparisons per user is
+d
+=
+O
+⁡
+(
+k
+ε
+2
+​
+log
+⁡
+(
+m
+ε
+​
+δ
+)
+)
+d=O(\frac{k}{\varepsilon^{2}}\log(\frac{m}{\varepsilon\delta}))
+.
+In particular, when
+ε
+\varepsilon
+is set to a constant,
+Algorithm
+1
+achieves a constant-factor approximation using
+O
+~
+​
+(
+k
+)
+\widetilde{O}(k)
+pairwise comparisons per user.
+Below we provide a proof sketch for a simpler case where
+𝒟
+\mathcal{D}
+has
+poly
+⁡
+(
+m
+,
+1
+/
+ε
+,
+log
+⁡
+(
+k
+)
+,
+log
+⁡
+(
+1
+/
+δ
+)
+)
+\mathrm{poly}(m,1/\varepsilon,\log(k),\log(1/\delta))
+. The full proof for the general case is relegated to
+Appendix
+B
+.
+Proof sketch of
+Theorem
+3.1
+.
+To show that the final committee
+S
+^
+\hat{S}
+is approximately stable, we can decompose the user population into
+T
+T
+rounds based on when a user becomes satisfied. Recall that we have used
+U
+t
+x
+U_{t}^{x}
+to denote the users that remain unsatisfied at round
+t
+t
+, measured using their true rank. However, since each user only answers a limited number of queries, the quantity
+𝖱𝖺𝗇𝗄
+⁡
+(
+i
+,
+S
+,
+Δ
+)
+\mathsf{Rank}(i;S,\Delta)
+cannot be computed directly. Instead, we estimate it by querying user
+i
+i
+to compare
+S
+S
+against a finite number of committees
+S
+1
+′
+,
+…
+,
+S
+L
+′
+∼
+i.i.d.
+Δ
+S_{1}^{\prime},\ldots,S_{L}^{\prime}\stackrel{{\scriptstyle\text{i.i.d.}}}{{\sim}}\Delta
+, and define
+𝖱𝖺𝗇𝗄
+^
+(
+i
+;
+S
+,
+Δ
+)
+:=
+1
+L
+∑
+ℓ
+=
+1
+L
+𝟙
+[
+S
+⪰
+i
+S
+ℓ
+′
+]
+.
+\widehat{\mathsf{Rank}}(i;S,\Delta):=\frac{1}{L}\sum_{\ell=1}^{L}\mathbbm{1}\left[S\succeq_{i}S_{\ell}^{\prime}\right].
+Here, each query
+𝟙
+[
+S
+⪰
+i
+S
+ℓ
+′
+]
+\mathbbm{1}\left[S\succeq_{i}S_{\ell}^{\prime}\right]
+can be implemented by quering user
+i
+i
+with
+|
+S
+|
++
+|
+S
+′
+|
+|S|+|S^{\prime}|
+pairwise comparisons.
+By standard concentration arguments, this estimator achieves at most
+ε
+\varepsilon
+additive error with
+O
+~
+​
+(
+1
+/
+ε
+2
+)
+\widetilde{O}(1/\varepsilon^{2})
+draws from
+Δ
+\Delta
+(see
+B.5
+).
+With the estimated rank, we use
+U
+^
+t
+x
+:=
+{
+i
+∣
+𝖱𝖺𝗇𝗄
+^
+(
+i
+;
+S
+τ
+,
+Δ
+τ
+)
+≤
+x
+,
+∀
+τ
+<
+t
+}
+\widehat{U}_{t}^{x}:=\left\{i\mid\widehat{\mathsf{Rank}}(i;S_{\tau},\Delta_{\tau})\leq x,\ \forall\tau<t\right\}
+to denote the subset of users that remain unsatisfied at round
+t
+t
+, measured using their estimated rank.
+Now we decompose the user population into
+T
++
+1
+T+1
+subgroups, where the
+t
+t
+-th subgroup is the users that become satisfied at round
+t
+t
+, i.e.,
+U
+t
+x
+∖
+U
+t
++
+1
+x
+U_{t}^{x}\setminus U_{t+1}^{x}
+for
+t
+≤
+T
+t\leq T
+, and the remaining users are
+U
+^
+T
++
+1
+x
+\widehat{U}_{T+1}^{x}
+for
+t
+=
+T
++
+1
+t=T+1
+. By combining the argument in
+Jiang et al. 2020
+with estimation errors, we can show that the newly satisfied users are well-represented by the committee
+S
+t
+S_{t}
+, as shown by the following lemma:
+Lemma 3.2
+(Guarantee for satisfied users)
+.
+Let
+S
+t
+S_{t}
+be the sub-committee selected at round
+t
+t
+, and
+x
+x
+be the threshold used to measure satisfaction with the estimated rank.
+We have that for any alternative
+a
+∉
+S
+t
+a\notin S_{t}
+,
+Pr
+i
+∼
+𝒟
+^
+t
+x
+[
+a
+≻
+i
+S
+t
+and
+i
+∈
+U
+^
+t
+x
+∖
+U
+^
+t
++
+1
+x
+]
+≤
+1
++
+ε
+k
+t
+⋅
+(
+x
+−
+ε
+)
+.
+\Pr_{i\sim\widehat{\mathcal{D}}_{t}^{x}}\left[a\succ_{i}S_{t}\ \text{and}\ i\in\widehat{U}_{t}^{x}\setminus\widehat{U}_{t+1}^{x}\right]\leq\frac{1+\varepsilon}{k_{t}\cdot(x-\varepsilon)}.
+In other words, users who are satisfied in the
+t
+t
+-th round (i.e., users in
+U
+^
+t
+x
+∖
+U
+^
+t
++
+1
+x
+\widehat{U}_{t}^{x}\setminus\widehat{U}_{t+1}^{x}
+) have bounded probability of deviation.
+More importantly, we must ensure that the algorithm continues to make steady progress by shrinking the fraction of unsatisfied users, even when we are using estimated ranks with some additive errors. This crucially depends on our choice of the threshold
+x
+x
+. We employ a
+more conservative threshold
+of
+x
+=
+β
+−
+ε
+x=\beta-\varepsilon
+when updating the distribution of unsatisfied users, as a proxy for the intended threshold
+β
+\beta
+. This choice is designed to account for estimation error and to ensure that users who are already satisfied are successfully removed from the estimated unsatisfied set, i.e.,
+U
+^
+t
+β
+−
+ε
+⊆
+U
+t
+β
+\widehat{U}_{t}^{\beta-\varepsilon}\subseteq U_{t}^{\beta}
+. We show in the following lemma that, with this conservative threshold, the probability mass of estimated unsatisfied users decreases geometrically across rounds.
+Lemma 3.3
+(Geometrically shrinking unsatisfied users)
+.
+For all
+t
+≥
+1
+t\geq 1
+, when the threshold is set to be
+x
+=
+β
+−
+ε
+x=\beta-\varepsilon
+, the probability mass of estimated unsatisfied users shrink geometrically: with probability at least
+1
+−
+T
+​
+δ
+1-T\delta
+,
+μ
+^
+t
+:=
+Pr
+i
+∼
+𝒟
+[
+i
+∈
+U
+^
+t
+β
+−
+ε
+]
+≤
+(
+β
++
+2
+ε
+)
+t
+−
+1
+for all
+t
+∈
+[
+T
+]
+.
+\widehat{\mu}_{t}:=\Pr_{i\sim\mathcal{D}}[i\in\widehat{U}_{t}^{\beta-\varepsilon}]\leq(\beta+2\varepsilon)^{t-1}\quad\text{for all }t\in[T].
+Putting the two lemmas together, we have the following guarantee:
+Pr
+i
+∼
+𝒟
+[
+a
+≻
+i
+S
+^
+]
+\displaystyle\Pr_{i\sim\mathcal{D}}[a\succ_{i}\hat{S}]
+≤
+(
+a
+)
+\displaystyle\overset{\rm(a)}{\leq}
+∑
+t
+=
+1
+T
+Pr
+i
+∼
+𝒟
+[
+a
+≻
+i
+S
+^
+,
+i
+∈
+U
+^
+t
+β
+−
+ε
+∖
+U
+^
+t
++
+1
+β
+−
+ε
+]
++
+Pr
+i
+∼
+𝒟
+[
+U
+^
+T
++
+1
+β
+−
+ε
+]
+\displaystyle\sum_{t=1}^{T}\Pr_{i\sim\mathcal{D}}\left[a\succ_{i}\hat{S},i\in\widehat{U}_{t}^{\beta-\varepsilon}\setminus\widehat{U}_{t+1}^{\beta-\varepsilon}\right]+\Pr_{i\sim\mathcal{D}}\left[\widehat{U}_{T+1}^{\beta-\varepsilon}\right]
+≤
+(
+b
+)
+\displaystyle\overset{\rm(b)}{\leq}
+∑
+t
+=
+1
+T
+Pr
+i
+∼
+𝒟
+[
+a
+≻
+i
+S
+t
+,
+i
+∈
+U
+^
+t
+β
+−
+ε
+∖
+U
+^
+t
++
+1
+β
+−
+ε
+]
++
+Pr
+i
+∼
+𝒟
+[
+U
+^
+T
++
+1
+β
+−
+ε
+]
+\displaystyle\sum_{t=1}^{T}\Pr_{i\sim\mathcal{D}}\left[a\succ_{i}S_{t},i\in\widehat{U}_{t}^{\beta-\varepsilon}\setminus\widehat{U}_{t+1}^{\beta-\varepsilon}\right]+\Pr_{i\sim\mathcal{D}}\left[\widehat{U}_{T+1}^{\beta-\varepsilon}\right]
+=
+\displaystyle={}
+∑
+t
+=
+1
+T
+μ
+^
+t
+⋅
+Pr
+i
+∼
+𝒟
+^
+t
+β
+−
+ε
+[
+a
+≻
+i
+S
+t
+,
+i
+∈
+U
+t
+β
+−
+ε
+∖
+U
+t
++
+1
+β
+−
+ε
+]
++
+μ
+^
+T
++
+1
+\displaystyle\sum_{t=1}^{T}\widehat{\mu}_{t}\cdot\Pr_{i\sim\widehat{\mathcal{D}}_{t}^{\beta-\varepsilon}}\left[a\succ_{i}S_{t},i\in U_{t}^{\beta-\varepsilon}\setminus U_{t+1}^{\beta-\varepsilon}\right]+\widehat{\mu}_{T+1}
+≤
+(
+c
+)
+\displaystyle\overset{\rm(c)}{\leq}
+∑
+t
+=
+1
+T
+(
+β
++
+2
+​
+ε
+)
+t
+−
+1
+⋅
+(
+1
++
+ε
+)
+α
+t
+−
+1
+​
+(
+1
+−
+α
+)
+​
+k
+⋅
+(
+β
+−
+2
+​
+ε
+)
++
+(
+β
++
+2
+​
+ε
+)
+T
++
+1
+.
+\displaystyle\sum_{t=1}^{T}\frac{(\beta+2\varepsilon)^{t-1}\cdot(1+\varepsilon)}{\alpha^{t-1}(1-\alpha)k\cdot(\beta-2\varepsilon)}+(\beta+2\varepsilon)^{T+1}\,.
+In the above argument, (a) follows from dividing the user population by the first time they are removed from the estimated unsatisfied set; (b) leverages the fact that
+a
+≻
+i
+S
+^
+a\succ_{i}\hat{S}
+implies
+a
+≻
+i
+S
+t
+a\succ_{i}S_{t}
+; (c) follows from combining
+Lemma
+3.2
+(with
+x
+=
+β
+−
+ε
+x=\beta-\varepsilon
+) and
+Lemma
+3.3
+.
+Finally, we optimize the parameters
+α
+,
+β
+,
+ε
+\alpha,\beta,\varepsilon
+to minimize the approximation factor. By setting
+α
+=
+1
+2
++
+4
+​
+ε
+\alpha=\frac{1}{2}+4\varepsilon
+,
+β
+=
+1
+4
++
+2
+​
+ε
+\beta=\frac{1}{4}+2\varepsilon
+, and
+T
+=
+⌈
+10
+​
+log
+⁡
+(
+k
+/
+ε
+)
+⌉
+T=\lceil 10\log(k/\varepsilon)\rceil
+, the final bound is at most
+16
++
+O
+⁡
+(
+ε
+)
+16+O(\varepsilon)
+. For example, setting
+ε
+=
+0.01
+\varepsilon=0.01
+and
+0.05
+0.05
+gives us approximation factors of
+18.97
+18.97
+and
+39.2
+39.2
+, respectively.
+∎
+4
+From Committees to Rankings
+Building from the committee selection algorithm, we next construct algorithms that output full rankings over models.
+Recall that we extend the
+local stability
+notion from committee selection to rankings by requiring that, for every
+k
+≤
+m
+k\leq m
+, the top-
+k
+k
+prefix of the ranking forms an (approximately) locally stable committee. This prefix-based formulation captures the fair representation property we seek at every cutoff of the leaderboard ranking.
+The connection between committee selection and rankings is conceptually natural and has been explored in prior work
+(
+Elkind et al. 2017
+;
+Skowron et al. 2017
+;
+Aziz et al. 2025
+)
+, especially through
+committee monotonicity
+, which requires that the committee selected for size
+k
+k
+be a subset of the committee selected for size
+k
++
+1
+k+1
+for all
+k
+k
+.
+4
+4
+4
+Aziz et al. 2025
+focuses on achieving committee monotonicity and the PSC (Proportionality for Solid Coalition) notion under the classic model where the algorithm has access to each user’s complete ranking. In Appendix
+A
+, we show that PSC does not extend well to the leaderboard setting in which each user’s preference is accessed through limited number of pairwise comparisons.
+Under this condition, the sequence of nested committees can be naturally combined into a ranking, with candidates ordered so that each prefix coincides with a committee in the sequence and inherits its representation guarantees.
+Our approach follows similar ideas, but we do not require committee monotonicity as a primitive. Instead, we begin from the ranking-level requirement and design algorithms that use committee selection as a subroutine to achieve this goal. This allows for more flexibility in how committee selection is employed.
+Algorithm 2
+Ranking via Geometric Checkpoints
+Input:
+Sampling oracle
+𝒟
+\mathcal{D}
+; committee selection subroutine
+Committee
+(
+Algorithm
+1
+)
+Output:
+A ranking
+π
+∈
+𝖲𝗒𝗆
+⁡
+(
+𝒞
+)
+\pi\in\mathsf{Sym}(\mathcal{C})
+Parameter:
+Growth factor
+λ
+>
+1
+,
+R
+←
+⌈
+log
+λ
+⁡
+m
+⌉
+\lambda>1,R\leftarrow\lceil\log_{\lambda}m\rceil
+π
+←
+[
+]
+\pi\leftarrow[\,]
+for
+r
+=
+1
+,
+…
+,
+R
+r=1,\ldots,R
+do
+k
+r
+←
+⌊
+λ
+r
+−
+1
+⌋
+k_{r}\leftarrow\lfloor\lambda^{r-1}\rfloor
+(size of the next checkpoint committee)
+A
+r
+←
+Committee
+​
+(
+k
+r
+,
+𝒟
+)
+A_{r}\leftarrow\textsc{Committee}(k_{r},\mathcal{D})
+Append
+A
+r
+∖
+A
+≤
+r
+−
+1
+A_{r}\setminus A_{\leq r-1}
+to
+π
+\pi
+, of arbitrary order or as ties
+(where
+A
+≤
+r
+−
+1
+:=
+⋃
+s
+≤
+r
+−
+1
+A
+s
+A_{\leq r-1}:=\bigcup_{s\leq r-1}A_{s}
+)
+if
+A
+≤
+r
+=
+𝒞
+A_{\leq r}=\mathcal{C}
+then return
+π
+\pi
+end
+for
+We present two methods for constructing rankings.
+The first uses the committee selection algorithm as a subroutine to produce a ranking that satisfies approximate local stability with a provable constant-factor guarantee. The second is a heuristic algorithm that modifies the iterated rounding procedure in Algorithm
+1
+to encourage a monotone growth of selected candidates across rounds, effectively inducing a ranking by the order in which candidates are added. While this second approach does not admit strong theoretical guarantees, it has the advantage of requiring fewer user samples, and we find that it performs well empirically.
+Approach based on checkpoints.
+Our first approach is based on the observation that, to ensure a ranking is approximately locally stable at every prefix, it is sufficient to guarantee that each prefix committee
+W
+k
+π
+W_{k}^{\pi}
+contains a smaller sub-committee
+A
+⊆
+W
+k
+π
+A\subseteq W_{k}^{\pi}
+that is approximately stable.
+Concretely, if the sub-committee is
+γ
+\gamma
+-approximately local stable and satisfies
+|
+A
+|
+≥
+k
+c
+|A|\geq\frac{k}{c}
+for a constant
+c
+c
+, then if a user prefers
+a
+a
+to the entire prefix
+W
+k
+π
+W_{k}^{\pi}
+, they
+also prefer
+a
+a
+to subset
+A
+A
+, and therefore the stability of
+A
+A
+transfers to stability of
+W
+k
+π
+W_{k}^{\pi}
+with an additional multiplicative factor:
+Pr
+i
+∼
+𝒟
+[
+a
+≻
+i
+W
+k
+π
+]
+≤
+Pr
+i
+∼
+𝒟
+[
+a
+≻
+i
+A
+]
+≤
+γ
+|
+A
+|
+≤
+c
+⋅
+γ
+k
+.
+\Pr_{i\sim\mathcal{D}}[a\succ_{i}W_{k}^{\pi}]\leq\Pr_{i\sim\mathcal{D}}[a\succ_{i}A]\leq\frac{\gamma}{|A|}\leq\frac{c\cdot\gamma}{k}.
+To realize this idea, we use
+checkpoint committees
+to impose a blockwise
+structure on the ranking. We compute a sequence of approximately stable
+committees
+A
+1
+,
+…
+,
+A
+R
+A_{1},\ldots,A_{R}
+using
+Algorithm
+1
+, with geometrically increasing sizes.
+The ranking
+π
+\pi
+is constructed by concatenating these committees: we first set the top-ranked model as
+π
+⁡
+(
+1
+)
+=
+A
+1
+\pi(1)=A_{1}
+(which is a singleton committee), and for each
+r
+≥
+2
+r\geq 2
+, append the models in
+A
+r
+A_{r}
+that have not been added previously as the next block (in arbitrary
+order, or equivalently as ties). By construction, every prefix
+W
+k
+π
+W_{k}^{\pi}
+contains a checkpoint
+A
+r
+⁡
+(
+k
+)
+A_{r(k)}
+whose size is within a constant factor of
+k
+k
+, and the above inequality transfers its stability guarantee to
+W
+k
+π
+W_{k}^{\pi}
+.
+We formalize this construction in
+Algorithm
+2
+and state its theoretical guarantee in
+Theorem
+4.1
+. The proof of
+Theorem
+4.1
+is deferred to
+Appendix
+C
+. Note that setting
+λ
+=
+2
+\lambda=2
+gives the best theoretical guarantee, but we might vary
+λ
+\lambda
+in practice to control the number of ties.
+Theorem 4.1
+(Guarantee of
+Algorithm
+2
+)
+.
+Let
+π
+\pi
+be the output ranking of
+Algorithm
+2
+with parameter
+λ
+>
+1
+\lambda>1
+.
+If the committee selection subroutine satisfies
+γ
+\gamma
+-approximate local stability, then the ranking
+π
+\pi
+satisfies
+λ
+2
+λ
+−
+1
+⋅
+γ
+\tfrac{\lambda^{2}}{\lambda-1}\cdot\gamma
+-approximate local stability if
+λ
+\lambda
+is an integer, and
+O
+⁡
+(
+1
+1
+−
+λ
+)
+⋅
+γ
+O(\tfrac{1}{1-\lambda})\cdot\gamma
+if
+λ
+↘
+1
+\lambda\searrow 1
+.
+Algorithm 3
+Ranking via Committee Monotonicity
+Input:
+Sampling oracle
+𝒟
+\mathcal{D}
+; committee selection subroutine
+Committee
+(Algorithm
+1
+)
+Output:
+A ranking
+π
+∈
+𝖲𝗒𝗆
+⁡
+(
+𝒞
+)
+\pi\in\mathsf{Sym}(\mathcal{C})
+Initialize
+Committee
+with committee size
+m
+m
+and single-addition decomposition
+(
+k
+t
+=
+1
+)
+t
+≤
+m
+(k_{t}=1)_{t\leq m}
+.
+π
+←
+[
+]
+\pi\leftarrow[\,]
+for
+t
+=
+1
+,
+…
+,
+m
+t=1,\ldots,m
+do
+a
+t
+←
+a_{t}\leftarrow
+candidate added to the committee at round
+t
+t
+Append
+a
+t
+a_{t}
+to
+π
+\pi
+if it has not been added before
+end
+for
+Append remaining candidates to
+π
+\pi
+in arbitrary order
+return
+π
+\pi
+Approach based on committee monotonicity.
+Our second approach is more heuristic and based on a direct adaptation of the committee selection algorithm to encourage
+committee monotonicity
+. Recall that
+Algorithm
+1
+selects a size-
+k
+k
+committee through a multi-round process: it first specifies a decomposition
+k
+=
+k
+1
++
+k
+2
++
+…
++
+k
+T
+k=k_{1}+k_{2}+\ldots+k_{T}
+, and then, in each round
+t
+∈
+[
+T
+]
+t\in[T]
+, it selects a sub-committee of size
+k
+t
+k_{t}
+for the distribution of currently unsatisfied users. The decomposition that gives rise to the theoretical guarantee in
+Theorem
+3.1
+uses a geometric schedule where
+k
+t
+∝
+α
+t
+⋅
+k
+k_{t}\propto\alpha^{t}\cdot k
+. While it effectively produces stable committee at a fixed size, the decomposition can change substantially when moving from size-
+k
+k
+to size-
+(
+k
++
+1
+)
+(k+1)
+committee. As a result, the output committees tend to violate monotonicity in general:
+S
+^
+k
+⊈
+S
+^
+k
++
+1
+\hat{S}_{k}\not\subseteq\hat{S}_{k+1}
+.
+To address this issue, we consider an alternative decomposition that adds candidates one at a time. Specifically, for selecting size-
+k
+k
+committee, we set
+T
+=
+k
+T=k
+rounds and
+k
+t
+=
+1
+k_{t}=1
+for all
+t
+∈
+[
+T
+]
+t\in[T]
+. Under this decomposition, the committee selection process grows the committee incrementally by a single candidate in each round. This modification directly ensures committee monotonicity: constructing a size-
+(
+k
++
+1
+)
+(k+1)
+committee is equivalent to extending the size-
+k
+k
+committee construction by one additional round, which naturally yields nested committees when randomness is shared.
+Using this alternative decomposition schedule, it suffices to run a single instance of
+Algorithm
+1
+with target committee size
+m
+m
+, and obtain the final ranking
+π
+\pi
+by ordering candidates according to the rounds in which they are added to the committee. We summarize this approach in
+Algorithm
+3
+.
+5
+Experiments
+Committee stability
+(
+ϕ
+=
+0.1
+)
+(\phi=0.1)
+Committee stability
+(
+ϕ
+=
+0.5
+)
+(\phi=0.5)
+Committee stability
+(
+ϕ
+=
+0.9
+)
+(\phi=0.9)
+Figure 1
+:
+Comparison on mixtures of Mallows of the stability of committees produced by Algorithm 1 and the two described baseline methods. For each
+k
+k
+, a mixture of Mallows model is created with
+k
+k
+central rankings sampled uniformly at random, and a committee of size
+k
+k
+is produced by each method. Values of
+γ
+^
+≤
+1
+\hat{\gamma}\leq 1
+indicate that the committee produced was stable. The plotted points and error regions show the mean and standard error, respectively, after 10 repeats.
+Ranking stability (
+ϕ
+=
+0.1
+\phi=0.1
+)
+Ranking stability (
+ϕ
+=
+0.5
+\phi=0.5
+)
+Ranking stability (
+ϕ
+=
+0.9
+\phi=0.9
+)
+Figure 2
+:
+Comparison on LMArena-based simulation of the stability of Bradley-Terry rankings vs. the rankings produced by Algorithms 2 and 3. Values of
+γ
+^
+≤
+1
+\hat{\gamma}\leq 1
+indicate that the top-
+k
+k
+prefix committee was stable for each
+k
+k
+.
+The plotted points and error regions show the mean and standard error, respectively, after 5 repeats. A sample of exact rankings for each method is given in Appendix
+D.4
+.
+We empirically demonstrate the performance of our committee selection algorithm and both ranking algorithms across both synthetic and semi-synthetic user distributions. We begin with fully synthetic simulations, where the goal is to empirically measure the stability of committees selected using Algorithm 1, which we find to be significantly better than the bounds given in Theorem
+3.1
+. We then turn to a semi-synthetic experiment based on real data from LMArena
+(
+Chiang et al. 2024
+)
+. We show that the currently adopted Bradley-Terry ranking indeed violates stability for some top-
+k
+k
+prefix committees, whereas our ranking is able to preserve stability for all top-
+k
+k
+prefix committees.
+5.1
+Committee Stability with Mixtures of Mallows
+We construct synthetic user distributions
+𝒟
+\mathcal{D}
+using a mixture of Mallows models
+(
+Mallows 1957
+)
+, a well-established model for user heterogeneity applied across social choice and recommender systems. We employ the standard Mallows-
+ϕ
+\phi
+parameterization, where each mixture component consists of a central ranking
+π
+\pi
+and a dispersion parameter
+ϕ
+\phi
+, and the probability of drawing a ranking
+r
+r
+is given by
+Pr
+⁡
+(
+r
+)
+∝
+ϕ
+d
+⁡
+(
+r
+,
+π
+)
+\Pr(r)\propto\phi^{d(r,\pi)}
+, where
+d
+⁡
+(
+r
+,
+π
+)
+d(r,\pi)
+is the Kendall tau distance.
+As a basic demonstration of the ability of Algorithm 1 to select a stable committee from a heterogeneous population, we create a mixture of
+k
+k
+Mallows models with central rankings
+{
+π
+1
+,
+…
+,
+π
+k
+}
+\{\pi_{1},...,\pi_{k}\}
+drawn uniformly at random from all permutations over
+m
+=
+20
+m=20
+candidates, and identical dispersion parameters
+ϕ
+\phi
+and mixture weights
+1
+k
+\frac{1}{k}
+. We then measure the approximate stability of a committee of size
+k
+k
+produced by Algorithm 1. We compare this to two baselines:
+(i)
+an “ideal” baseline consisting of the top-ranked candidate from each central ranking,
+W
+k
+=
+{
+π
+1
+​
+(
+1
+)
+,
+…
+,
+π
+k
+​
+(
+1
+)
+}
+W_{k}=\{\pi_{1}(1),...,\pi_{k}(1)\}
+, and
+(ii)
+a “status quo” baseline consisting of the top-
+k
+k
+prefix of a Bradley-Terry ranking.
+To measure stability for a given committee
+W
+k
+W_{k}
+, we estimate a stability approximation factor
+γ
+^
+\hat{\gamma}
+from
+n
+n
+rankings sampled from the mixture:
+γ
+^
+=
+k
+(
+max
+a
+∉
+W
+k
+1
+n
+∑
+i
+=
+1
+n
+𝟙
+[
+a
+≻
+i
+W
+k
+]
+)
+\hat{\gamma}=k\left(\max_{a\notin W_{k}}\frac{1}{n}\sum_{i=1}^{n}\mathbbm{1}\left[a\succ_{i}W_{k}\right]\right)
+.
+This roughly captures the proportion of users that are unsatisfied with the committee
+W
+k
+W_{k}
+. A value of
+γ
+^
+=
+1
+\hat{\gamma}=1
+means that no more than the required
+1
+k
+\frac{1}{k}
+fraction of users is unsatisfied.
+Results.
+Figure
+1
+shows the approximation factors
+γ
+^
+\hat{\gamma}
+for committees produced using Algorithm 1, as well as the two previously described baselines. Across varying
+k
+k
+, we find that Algorithm 1 manages to produce committees that are stable, and with
+γ
+^
+\hat{\gamma}
+being significantly better than the bound in Theorem
+3.1
+. In contrast, the top-
+k
+k
+prefix committee of the Bradley-Terry ranking actually violates stability for many
+k
+k
+when
+ϕ
+=
+0.1
+\phi=0.1
+and
+ϕ
+=
+0.5
+\phi=0.5
+. Finally, the committee consisting of the top-ranked model in each Mallows central ranking (labeled “Mallows centers”) performs well when
+ϕ
+\phi
+is small, but as
+ϕ
+\phi
+increases, the probability that a user’s top candidate is not ranked first by one of the Mallows centers also increases. Thus, the coverage of the Mallows centers worsens as
+ϕ
+\phi
+increases, and violates stability when
+ϕ
+=
+0.9
+\phi=0.9
+.
+5.2
+Ranking Stability with LMArena Simulation
+We next compare the stability of rankings produced by our proposed algorithms to that of a Bradley-Terry ranking, which is currently applied by the LMArena platform.
+We construct semi-synthetic user distributions based on the recent “arena-human-preference-140k” dataset released by LMArena
+(
+LMArena Team 2025a
+;
+LMArena 2025
+)
+(as our algorithms are online algorithms, we cannot run these on the static LMArena dataset directly).
+Candidates correspond to LLMs (of which we filter to just the top
+m
+=
+20
+m=20
+by overall Bradley-Terry ranking), and users correspond to users that make pairwise comparisons between LLMs for various prompts.
+We construct a mixture of Mallows distribution that seeks to roughly capture the heterogeneity in rankings by prompt category.
+Specifically, we create a mixture of Mallows with one center for each of the
+20
+20
+largest prompt categories (by
+category_tag
+), with each central ranking set to the Bradley-Terry ranking per category.
+The mixture weights are given by the relative number of pairwise comparisons per category.
+Appendix
+D.4
+reports exact rankings and weights found for each category.
+As before, we conduct experiments for varying dispersions
+ϕ
+\phi
+, using the same dispersion for all categories. In essence, we model a population of users whose preferences are generally clustered around prompt categories, and higher dispersions
+ϕ
+\phi
+correspond with higher user diversity within these clusters.
+Results.
+Figure
+2
+shows the stability approximation factors
+γ
+^
+\hat{\gamma}
+of each of the top-
+k
+k
+committees for the Bradley-Terry ranking and the rankings produced by Algorithms 2 and 3.
+The Bradley-Terry ranking actually violates stability for top-
+k
+k
+prefix committees with
+k
+=
+4
+,
+5
+k=4,5
+when
+ϕ
+=
+0.1
+\phi=0.1
+, and
+k
+=
+5
+k=5
+when
+ϕ
+=
+0.5
+\phi=0.5
+. In contrast, both Algorithms 2 and 3 maintain stability for all
+k
+k
+and all
+ϕ
+\phi
+. Intuitively, stability is “easiest” to satisfy when
+ϕ
+=
+0.9
+\phi=0.9
+, since this corresponds to high enough user diversity that there are no large clusters of users to activate the stability constraint. While Algorithm 2 has stronger theoretical guarantees, we find that Algorithm 3 performs slightly better empirically.
+6
+Discussion
+We conclude by discussing several promising directions for future research. First, our framework assumes that a user’s type deterministically yields their preference ranking over models. In practice, user preferences may depend on the specific prompt as well as stochasticity in model responses. Even within a single multi-round interaction on LMArena, model pairs are often resampled for each prompt and treated as new battles, which can lead to variability in the user’s preferences. Extending our framework to prompt-dependent preferences is an important direction for future work.
+Second, while our proposed algorithms guarantees approximate local stability, they rely on the ability to
+adaptively
+choose which model pairs are presented to users in each battle, based on both previous interactions with the same user and the history of battles contributed by other users. In many real-world settings, however, one must work with pre-collected preference datasets in which users already contribute varying numbers of comparisons.
+It would be interesting to study how to achieve fair representation in this offline setting.
+Finally, it is natural to consider stronger notions of representation beyond local stability, such as
+proportional
+representation. While local stability guarantees that cohesive user coalitions of weight
+O
+⁡
+(
+1
+/
+k
+)
+O(1/k)
+are represented, proportional representation notions aim to guarantee that representation scales
+proportionally
+with the size of cohesive groups. For instance,
+Aziz et al. 2017b
+also study the notion of
+full local stability
+which ensures any user subgroup of
+O
+⁡
+(
+ℓ
+/
+k
+)
+O(\ell/k)
+fraction of users have no collective deviation of size
+ℓ
+\ell
+.
+Proportionality for Solid Coalitions (PSC)
+(
+Dummett 1984
+;
+Aziz et al. 2025
+)
+is another prominent proportional representation notion; however, as we show in
+Appendix
+A
+, even access to all
+k
+k
+-wise comparisons is insufficient to verify PSC for committee size of
+k
+k
+.
+Future work could seek to understand the query complexity required to achieve such stronger guarantees under pairwise comparison access and design efficient algorithms to do so.
+Acknowledgments
+This work was partially supported by the NSF Institute for Foundations of Machine Learning under grant CCF-2505865, the National Science Foundation under grants IIS-2229881 and CCF-2145898; by the Office of Naval Research under grants N00014-24-1-2704, N00014-25-1-2153, and N00014-24-1-2159; an Amazon Research Award, an Alfred P. Sloan fellowship, a Schmidt Sciences AI2050 fellowship, an Adobe Research gift, and by grants from the Cooperative AI Foundation and the Foresight Institute.
+References
+Aziz et al. [2017a]
+H. Aziz, M. Brill, V. Conitzer, E. Elkind, R. Freeman, and T. Walsh.
+Justified representation in approval-based committee voting.
+Social Choice and Welfare
+, 42(2):461–485,
+2017a.
+Aziz et al. [2017b]
+Haris Aziz, Edith Elkind, Piotr Faliszewski, Martin Lackner, and Piotr Skowron.
+The Condorcet principle for multiwinner elections: From
+shortlisting to proportionality.
+arXiv preprint arXiv:1701.08023
+, 2017b.
+Aziz et al. [2025]
+Haris Aziz, Patrick Lederer, Dominik Peters, Jannik Peters, and Angus Ritossa.
+Committee monotonicity and proportional representation for ranked
+preferences.
+In
+Proceedings of the 26th ACM Conference on Economics and
+Computation (EC)
+, 2025.
+Brandt et al. [2016]
+F. Brandt, V. Conitzer, U. Endriss, J. Lang, and A. D. Procaccia, editors.
+Handbook of Computational Social Choice
+.
+Cambridge University Press, 2016.
+Charikar et al. [2025]
+Moses Charikar, Alexandra Lassota, Prasanna Ramakrishnan, Adrian Vetta, and
+Kangning Wang.
+Six candidates suffice to win a voter majority.
+In
+Proceedings of the 57th Annual ACM Symposium on Theory of
+Computing
+, pages 1590–1601, 2025.
+Cheng et al. [2020]
+Yu Cheng, Zhihao Jiang, Kamesh Munagala, and Kangning Wang.
+Group fairness in committee selection.
+ACM Transactions on Economics and Computation (TEAC)
+,
+8(4):1–18, 2020.
+Chiang et al. [2024]
+W.-L. Chiang, L. Zheng, Y. Sheng, A. N. Angelopoulos, T. Li, D. Li, B. Zhu,
+H. Zhang, M. Jordan, J. E. Gonzalez, and I. Stoica.
+Chatbot Arena: An open platform for evaluating LLMs by human
+preference.
+In
+Proceedings of the 41st International Conference on Machine
+Learning (ICML)
+, 2024.
+Dummett [1984]
+Michael Dummett.
+Voting procedures.
+1984.
+Elkind et al. [2017]
+Edith Elkind, Piotr Faliszewski, Piotr Skowron, and Arkadii Slinko.
+Properties of multiwinner voting rules.
+Social Choice and Welfare
+, 48(3):599–632,
+2017.
+Fish et al. [2024]
+S. Fish, P. Gölz, D. C. Parkes, A. D. Procaccia, G. Rusak, I. Shapira, and
+M. Wüthrich.
+Generative social choice.
+In
+Proceedings of the 25th ACM Conference on Economics and
+Computation (EC)
+, 2024.
+Frick et al. [2025]
+Evan Frick, Connor Chen, Joseph Tennyson, Tianle Li, Wei-Lin Chiang,
+Anastasios Nikolas Angelopoulos, and Ion Stoica.
+Prompt-to-leaderboard: Prompt-adaptive LLM evaluations.
+In
+Proceedings of the 42nd International Conference on Machine
+Learning (ICML)
+, 2025.
+Ge et al. [2024]
+L. Ge, D. Halpern, E. Micha, A. D. Procaccia, I. Shapira, Y. Vorobeychik, and
+J. Wu.
+Axioms for AI alignment from human feedback.
+In
+Proceedings of the 38th Annual Conference on Neural
+Information Processing Systems (NeurIPS)
+, 2024.
+Gölz et al. [2025]
+Paul Gölz, Nika Haghtalab, and Kunhe Yang.
+Distortion of AI alignment: Does preference optimization optimize
+for preferences?
+In
+Proceedings of the 39th Annual Conference on Neural
+Information Processing Systems (NeurIPS)
+, pages 25969–26007, 2025.
+Halpern et al. [2023]
+D. Halpern, G. Kehne, A. D. Procaccia, J. Tucker-Foltz, and Manuel Wüthrich.
+Representation with incomplete votes.
+In
+Proceedings of the 37th AAAI Conference on Artificial
+Intelligence (AAAI)
+, pages 5657–5664, 2023.
+Halpern et al. [2024]
+Daniel Halpern, Safwan Hossain, and Jamie Tucker-Foltz.
+Computing voting rules with elicited incomplete votes.
+In
+Proceedings of the 25th ACM Conference on Economics and
+Computation (EC)
+, pages 941–963, 2024.
+Jiang et al. [2020]
+Zhihao Jiang, Kamesh Munagala, and Kangning Wang.
+Approximately stable committee selection.
+In
+Proceedings of the 52nd Annual ACM Symposium on Theory of
+Computing (STOC)
+, pages 463–472, 2020.
+Jimenez et al. [2024]
+C. E. Jimenez, J. Yang, A. Wettig, S. Yao, K. Pei, O. Press, and K. Narasimhan.
+SWE-bench: Can language models resolve real-world GitHub issues?
+In
+Proceedings of the 12th International Conference on Learning
+Representations (ICLR)
+, 2024.
+Liang et al. [2023]
+Percy Liang, Rishi Bommasani, Tony Lee, Dimitris Tsipras, Dilara Soylu,
+Michihiro Yasunaga, Yian Zhang, Deepak Narayanan, Yuhuai Wu, Ananya Kumar,
+Benjamin Newman, Binhang Yuan, Bobby Yan, Ce Zhang, Christian Cosgrove,
+Christopher D Manning, Christopher Re, Diana Acosta-Navas, Drew A. Hudson,
+Eric Zelikman, Esin Durmus, Faisal Ladhak, Frieda Rong, Hongyu Ren, Huaxiu
+Yao, Jue WANG, Keshav Santhanam, Laurel Orr, Lucia Zheng, Mert Yuksekgonul,
+Mirac Suzgun, Nathan Kim, Neel Guha, Niladri S. Chatterji, Omar Khattab,
+Peter Henderson, Qian Huang, Ryan Andrew Chi, Sang Michael Xie, Shibani
+Santurkar, Surya Ganguli, Tatsunori Hashimoto, Thomas Icard, Tianyi Zhang,
+Vishrav Chaudhary, William Wang, Xuechen Li, Yifan Mai, Yuhui Zhang, and Yuta
+Koreeda.
+Holistic evaluation of language models.
+Transactions on Machine Learning Research
+, 2023.
+ISSN 2835-8856.
+LMArena [2025]
+LMArena.
+arena-human-preference-140k, 2025.
+URL
+https://huggingface.co/datasets/lmarena-ai/arena-human-preference-140k
+.
+Accessed: 2026-01-23.
+LMArena Team [2025a]
+LMArena Team.
+A deep dive into recent Arena data.
+LMArena Blog, 2025a.
+URL
+https://lmarena.ai/blog/opendata-july2025/
+.
+Accessed: 2026-01-23.
+LMArena Team [2025b]
+LMArena Team.
+Leaderboard changelog.
+LMArena Blog, 2025b.
+URL
+https://lmarena.ai/blog/leaderboard-changelog/
+.
+Accessed: 2026-01-26.
+Mallows [1957]
+Colin L Mallows.
+Non-null ranking models. i.
+Biometrika
+, 44(1/2):114–130, 1957.
+Nguyen et al. [2025]
+Thanh Nguyen, Haoyu Song, and Young-San Lin.
+A few good choices.
+arXiv preprint arXiv:2506.22133
+, 2025.
+Peters et al. [2021]
+D. Peters, G. Pierczynski, and P. Skowron.
+Proportional participatory budgeting with additive utilities.
+In
+Proceedings of the 35th Annual Conference on Neural
+Information Processing Systems (NeurIPS)
+, pages 12726–12737, 2021.
+Shirali et al. [2025]
+Ali Shirali, Arash Nasr-Esfahany, Abdullah Alomar, Parsa Mirtaheri, Rediet
+Abebe, and Ariel Procaccia.
+Direct alignment with heterogeneous preferences.
+In
+Proceedings of the 39th Annual Conference on Neural
+Information Processing Systems (NeurIPS)
+, pages 69858–69898, 2025.
+Singh et al. [2025]
+S. Singh, Y. Nan, A. Wang, D. D’Souza, S. Kapoor, A. Üstün, S. Koyejo,
+Y. Deng, S. Longpre, N. A. Smith, B. Ermis, M. Fadaee, and S. Hooker.
+The leaderboard illusion.
+arXiv:2504.20879, 2025.
+Skowron et al. [2017]
+Piotr Skowron, Martin Lackner, Markus Brill, Dominik Peters, and Edith Elkind.
+Proportional rankings.
+In
+Proceedings of the 26th International Joint Conference on
+Artificial Intelligence (IJCAI)
+, pages 409–415, 2017.
+Springham et al. [2025]
+Drew Springham, Edith Elkind, Bart de Keijzer, and Maria Polukarov.
+Multiwinner voting with interval preferences under incomplete
+information.
+arXiv preprint arXiv:2510.11625
+, 2025.
+Appendix A
+Notion for Proportional Representation
+In this section, we discuss an alternative notion called Proportionality for Solid Coalitions (PSC)
+[
+Dummett 1984
+,
+Aziz et al. 2025
+]
+, which is a
+proportional representation
+notion that gives stronger guarantees for larger cohesive subgroups.
+Definition A.1
+(Proportionality for Solid Coalitions (PSC))
+.
+A committee
+W
+k
+W_{k}
+of size
+k
+k
+satisfies
+Proportionality for Solid Coalitions (PSC)
+for user distribution
+𝒟
+\mathcal{D}
+if, for any candidate set
+C
+⊆
+𝒞
+C\subseteq\mathcal{C}
+, if
+Pr
+i
+∼
+𝒟
+[
+∀
+a
+∈
+C
+,
+∀
+b
+∉
+C
+,
+a
+≻
+i
+b
+]
+>
+ℓ
+k
++
+1
+\Pr_{i\sim\mathcal{D}}[\forall a\in C,\forall b\notin C,a\succ_{i}b]>\frac{\ell}{k+1}
+for some
+ℓ
+∈
+ℕ
+\ell\in\mathbb{N}
+, then it holds that
+|
+C
+⊆
+W
+k
+|
+≥
+min
+{
+ℓ
+,
+|
+C
+|
+}
+|C\subseteq W_{k}|\geq\min\{\ell,|C|\}
+.
+We will show that it is challenging to verify PSC with incomplete rankings. Following
+Halpern et al. 2023
+,
+Halpern et al. 2024
+, we consider incomplete rankings of the form of
+k
+k
+-wise comparisons, where we assume that the algorithm can pick a size-
+k
+k
+subset
+A
+⊆
+𝒞
+A\subseteq\mathcal{C}
+and ask a random user sampled from
+𝒟
+\mathcal{D}
+to provide their ranking of
+A
+A
+in the form of a
+k
+k
+-wise comparison. Note that
+k
+k
+-wise comparison can be implemented using
+O
+⁡
+(
+k
+​
+log
+⁡
+k
+)
+O(k\log k)
+adaptive pairwise comparisons or
+O
+⁡
+(
+k
+2
+)
+O(k^{2})
+non-adaptive ones.
+Proposition A.2
+(Impossibility of verifying PSC with
+k
+k
+-wise comparisons)
+.
+For any committee size
+k
+≤
+m
+−
+1
+k\leq m-1
+, there does not exist a deterministic algorithm that can verify whether any given size-
+k
+k
+committee satisfies PSC, using only
+k
+k
+-wise comparison queries. In addition, no randomized algorithm can be correct with probability greater than
+k
+k
++
+1
+\frac{k}{k+1}
+.
+Proof of
+Proposition
+A.2
+.
+It suffices to prove the claim in the infinite-sample limit, in which the algorithm has access to the exact marginal distribution of the user preference profile restricted to every subset
+A
+⊆
+𝒞
+A\subseteq\mathcal{C}
+with
+|
+A
+|
+≤
+k
+|A|\leq k
+. Any impossibility in this setting immediately implies the same impossibility for finite samples.
+We leverage the notion of
+k
+k
+-indistinguishability
+introduced by
+Halpern et al. 2024
+.
+Two user distributions
+𝒟
+1
+,
+𝒟
+2
+∈
+Δ
+⁡
+(
+𝖲𝗒𝗆
+⁡
+(
+𝒞
+)
+)
+\mathcal{D}^{1},\mathcal{D}^{2}\in\Delta(\mathsf{Sym}(\mathcal{C}))
+are said to be
+k
+k
+-indistinguishable if
+𝒟
+1
+|
+A
+=
+𝒟
+2
+|
+A
+for all
+​
+A
+⊆
+𝒞
+​
+with
+​
+|
+A
+|
+≤
+k
+.
+\mathcal{D}^{1}|_{A}=\mathcal{D}^{2}|_{A}\qquad\text{for all }A\subseteq\mathcal{C}\text{ with }|A|\leq k.
+Our construction.
+Let
+m
+′
+:=
+k
++
+1
+m^{\prime}:=k+1
+and consider candidate subset
+A
+=
+{
+1
+,
+2
+,
+…
+,
+m
+′
+}
+⊆
+𝒞
+A=\{1,2,\ldots,m^{\prime}\}\subseteq\mathcal{C}
+.
+By the construction of
+Halpern et al. 2024
+, there exists a family of
+m
+′
+m^{\prime}
+distributions
+{
+𝒟
+c
+}
+c
+∈
+[
+m
+′
+]
+⊆
+Δ
+⁡
+(
+𝖲𝗒𝗆
+⁡
+(
+A
+)
+)
+\{\mathcal{D}^{c}\}_{c\in[m^{\prime}]}\subseteq\Delta(\mathsf{Sym}(A))
+such that:
+1.
+The distributions
+{
+𝒟
+c
+}
+c
+∈
+[
+m
+′
+]
+\{\mathcal{D}^{c}\}_{c\in[m^{\prime}]}
+are
+k
+k
+-indistinguishable, and
+2.
+In each distribution
+𝒟
+c
+\mathcal{D}^{c}
+, candidate
+c
+c
+is the unique candidate in
+A
+A
+whose plurality score exceeds
+1
+m
+′
+\frac{1}{m^{\prime}}
+:
+𝗉𝗅𝗎
+𝒟
+c
+(
+c
+)
+:=
+Pr
+i
+∼
+𝒟
+[
+c
+≻
+i
+A
+∖
+{
+c
+}
+]
+>
+1
+m
+′
+;
+whereas
+𝗉𝗅𝗎
+𝒟
+c
+(
+a
+)
+<
+1
+m
+′
+,
+∀
+a
+∈
+A
+∖
+{
+c
+}
+.
+\mathsf{plu}_{\mathcal{D}^{c}}(c):=\Pr_{i\sim\mathcal{D}}[c\succ_{i}A\setminus\{c\}]>\frac{1}{m^{\prime}};\text{ whereas }\mathsf{plu}_{\mathcal{D}^{c}}(a)<\frac{1}{m^{\prime}},\ \forall a\in A\setminus\{c\}.
+We extend each
+𝒟
+c
+\mathcal{D}^{c}
+to a distribution
+𝒟
+~
+c
+∈
+Δ
+⁡
+(
+𝖲𝗒𝗆
+⁡
+(
+𝒞
+)
+)
+\widetilde{\mathcal{D}}^{c}\in\Delta(\mathsf{Sym}(\mathcal{C}))
+by appending the remaining
+candidates
+{
+m
+′
++
+1
+,
+…
+,
+m
+}
+\{m^{\prime}+1,\ldots,m\}
+to the bottom of every ranking in a fixed order.
+Formally, if
+σ
+i
+∼
+𝒟
+c
+\sigma_{i}\sim\mathcal{D}^{c}
+is the ranking of user
+i
+i
+over
+A
+A
+, then we define
+σ
+~
+i
+:=
+σ
+i
+followed by
+(
+m
+′
++
+1
+)
+≻
+i
+(
+m
+′
++
+2
+)
+≻
+i
+⋯
+≻
+i
+m
+,
+\widetilde{\sigma}_{i}\ :=\ \sigma_{i}\ \text{ followed by }\ (m^{\prime}+1)\succ_{i}(m^{\prime}+2)\succ_{i}\cdots\succ_{i}m,
+and let
+𝒟
+~
+c
+\widetilde{\mathcal{D}}^{c}
+denote the induced distribution over rankings
+σ
+~
+i
+\widetilde{\sigma}_{i}
+.
+Next, we will show that PSC forces the inclusion of
+c
+c
+. Since the additional candidates are appended below those in
+A
+A
+, the plurality scores of candidates in
+A
+A
+are unchanged. In particular,
+𝗉𝗅𝗎
+𝒟
+~
+c
+​
+(
+c
+)
+=
+𝗉𝗅𝗎
+𝒟
+c
+​
+(
+c
+)
+>
+1
+k
++
+1
+.
+\mathsf{plu}_{\widetilde{\mathcal{D}}^{c}}(c)=\mathsf{plu}_{\mathcal{D}^{c}}(c)>\frac{1}{k+1}.
+Thus, the set of users who rank
+c
+c
+first forms a solid coalition for
+{
+c
+}
+\{c\}
+of size exceeding the PSC threshold. Consequently, any size-
+k
+k
+committee
+W
+k
+W_{k}
+that satisfies PSC under
+𝒟
+~
+c
+\widetilde{\mathcal{D}}^{c}
+must contain
+c
+c
+.
+On the other hand, it is not hard to see that
+k
+k
+-indistinguishability is preserved after appending these extra candidates. As a result, any algorithm that only accesses
+k
+k
+-wise comparison information receives identical input (or identically distributed input in the finite-sample regime) for all distributions
+𝒟
+~
+c
+\widetilde{\mathcal{D}}^{c}
+and therefore must output the same YES/NO for each of them.
+Now Consider a committee
+W
+⊆
+A
+W\subseteq A
+of size
+k
+k
+.
+The above argument shows that
+W
+W
+satisfies PSC under
+𝒟
+~
+c
+\widetilde{\mathcal{D}}^{c}
+for every
+c
+∈
+W
+c\in W
+, but fails to satisfy PSC under
+𝒟
+~
+c
+⋆
+\widetilde{\mathcal{D}}^{c^{\star}}
+for
+c
+⋆
+∈
+A
+∖
+W
+c^{\star}\in A\setminus W
+. However, the algorithm must return the same answer for all
+𝒟
+~
+c
+\widetilde{\mathcal{D}}^{c}
+, and thus cannot be correct on all instances. This completes the proof for deterministic algorithms.
+The randomized bound follows from the same construction.
+∎
+Appendix B
+Proof of
+Theorem
+3.1
+See
+3.1
+We begin by proving
+Theorem
+3.1
+for the simplified setting in which the distribution
+𝒟
+\mathcal{D}
+has finite support of size
+κ
+=
+poly
+⁡
+(
+m
+,
+k
+,
+1
+/
+ε
+,
+1
+/
+δ
+)
+\kappa=\mathrm{poly}(m,k,1/\varepsilon,1/\delta)
+. We address the extension to general distributions in
+Section
+B.3
+.
+Following the proof sketch in
+Section
+3
+, we can apply
+Lemmas
+3.2
+and
+3.3
+iteratively at each round, conditioning on the success event of previous rounds and
+|
+𝖱𝖺𝗇𝗄
+⁡
+(
+i
+,
+S
+,
+Δ
+t
+)
+−
+𝖱𝖺𝗇𝗄
+^
+​
+(
+i
+,
+S
+,
+Δ
+)
+|
+≤
+ε
+|\mathsf{Rank}(i;S,\Delta_{t})-\widehat{\mathsf{Rank}}(i;S,\Delta)|\leq\varepsilon
+for all
+i
+∈
+supp
+⁡
+(
+𝒟
+)
+i\in\mathrm{supp}(\mathcal{D})
+5
+5
+5
+As a result,
+|
+𝖱𝖺𝗇𝗄
+⁡
+(
+i
+,
+S
+,
+Δ
+t
+)
+−
+𝖱𝖺𝗇𝗄
+^
+​
+(
+i
+,
+S
+,
+Δ
+t
+)
+|
+≤
+ε
+|\mathsf{Rank}(i;S,\Delta_{t})-\widehat{\mathsf{Rank}}(i;S,\Delta_{t})|\leq\varepsilon
+also holds for all
+i
+∈
+supp
+⁡
+(
+𝒟
+^
+t
+β
+−
+ε
+)
+i\in\mathrm{supp}(\widehat{\mathcal{D}}_{t}^{\beta-\varepsilon})
+since
+𝒟
+^
+t
+β
+−
+ε
+\widehat{\mathcal{D}}_{t}^{\beta-\varepsilon}
+is obtained by performing rejection sampling on
+𝒟
+\mathcal{D}
+.
+and all
+S
+∈
+supp
+⁡
+(
+Δ
+t
+)
+S\in\mathrm{supp}(\Delta_{t})
+. By
+B.5
+, a union bound over all rounds, and the guarantee from
+Jiang et al. 2020
+that lotteries
+Δ
+t
+\Delta_{t}
+has support size
+poly
+⁡
+(
+m
+,
+1
+/
+ε
+)
+\mathrm{poly}(m,1/\varepsilon)
+, it suffices to implement the rank estimator using
+Algorithm
+5
+with
+L
+=
+O
+⁡
+(
+log
+⁡
+(
+T
+​
+κ
+⋅
+|
+supp
+⁡
+(
+Δ
+)
+|
+/
+δ
+)
+ε
+2
+)
+=
+O
+⁡
+(
+log
+⁡
+(
+m
+ε
+​
+δ
+)
+ε
+2
+)
+L=O\left(\frac{\log(T\kappa\cdot|\mathrm{supp}(\Delta)|/\delta)}{\varepsilon^{2}}\right)=O\left(\frac{\log(\tfrac{m}{\varepsilon\delta})}{\varepsilon^{2}}\right)
+sampled committees.
+This guarantees the total failure probability of the rank estimator is at most
+δ
+\delta
+.
+Now we analyze the sample complexity of the algorithm.
+•
+Pairwise comparisons per user.
+Algorithm
+1
+accesses users through the rejection sampling oracle implemented in
+Algorithm
+4
+. For each user
+i
+i
+, this oracle calls the rank estimator
+≤
+T
+\leq T
+times, with the sequence of
+S
+τ
+S_{\tau}
+and
+Δ
+τ
+\Delta_{\tau}
+in previous rounds. The total number of pairwise comparisons that
+i
+i
+being called at round
+t
+t
+needs to make is
+O
+⁡
+(
+∑
+τ
+=
+1
+t
+|
+S
+τ
+|
+⋅
+log
+⁡
+(
+m
+ε
+​
+δ
+)
+ε
+2
+)
+=
+O
+⁡
+(
+k
+​
+log
+⁡
+(
+m
+ε
+​
+δ
+)
+ε
+2
+)
+.
+O\left(\sum_{\tau=1}^{t}|S_{\tau}|\cdot\frac{\log(\tfrac{m}{\varepsilon\delta})}{\varepsilon^{2}}\right)=O\left(\frac{k\log(\tfrac{m}{\varepsilon\delta})}{\varepsilon^{2}}\right).
+When
+ε
+\varepsilon
+is set to be a constant, each user contributes
+O
+⁡
+(
+k
+​
+log
+⁡
+(
+m
+/
+δ
+)
+)
+{O}(k\log(m/\delta))
+pairwise comparisons.
+•
+Total number of sampled users.
+In each round
+t
+t
+, computing the
+(
+1
++
+ε
+)
+(1+\varepsilon)
+-approximately stable lottery
+Δ
+t
+\Delta_{t}
+using the algorithm of
+Cheng et al. 2020
+requires
+poly
+⁡
+(
+m
+,
+1
+/
+ε
+)
+\mathrm{poly}(m,1/\varepsilon)
+calls to the sampling oracle
+𝒟
+^
+t
+β
+−
+ε
+\widehat{\mathcal{D}}_{t}^{\beta-\varepsilon}
+. For the sampling oracle
+Algorithm
+4
+, to make sure that the total failure probability is at bounded by
+O
+⁡
+(
+δ
+)
+O(\delta)
+, it suffices to set the number of trials to be
+M
+=
+O
+⁡
+(
+k
+​
+log
+⁡
+(
+m
+ε
+​
+δ
+)
+)
+M=O\left(k\log(\tfrac{m}{\varepsilon\delta})\right)
+.
+The next step of selecting
+S
+t
+S_{t}
+from the support of
+Δ
+t
+\Delta_{t}
+requires
+N
+⋅
+|
+supp
+⁡
+(
+Δ
+t
+)
+|
+N\cdot|\mathrm{supp}(\Delta_{t})|
+sampled users, where
+N
+=
+O
+⁡
+(
+log
+⁡
+(
+m
+ε
+​
+δ
+)
+/
+ε
+2
+)
+N=O\left({\log(\tfrac{m}{\varepsilon\delta})}/{\varepsilon^{2}}\right)
+according to
+Lemma
+3.3
+. Put together, the number of user sampled in each round is
+O
+⁡
+(
+poly
+⁡
+(
+m
+,
+1
+ε
+,
+log
+⁡
+(
+1
+δ
+)
+)
+CLOSE
+O(\mathrm{poly}(m,\frac{1}{\varepsilon},\log(\frac{1}{\delta}))
+. Since there are
+T
+=
+O
+⁡
+(
+log
+⁡
+(
+k
+ε
+)
+)
+T=O(\log(\tfrac{k}{\varepsilon}))
+rounds, the total number of users sampled remains to be
+O
+⁡
+(
+poly
+⁡
+(
+m
+,
+1
+ε
+,
+log
+⁡
+(
+1
+δ
+)
+)
+CLOSE
+.
+O\left(\mathrm{poly}(m,\tfrac{1}{\varepsilon},\log(\tfrac{1}{\delta})\right).
+B.1
+Proof of
+Lemma
+3.2
+Lemma
+(Restatement of
+Lemma
+3.2
+)
+.
+Let
+S
+t
+S_{t}
+be the sub-committee selected at round
+t
+t
+, and
+x
+x
+be the threshold used to measure satisfaction with the estimated rank.
+We have that for any alternative
+a
+∉
+S
+t
+a\notin S_{t}
+,
+Pr
+i
+∼
+𝒟
+^
+t
+x
+[
+a
+≻
+i
+S
+t
+and
+i
+∈
+U
+^
+t
+x
+∖
+U
+^
+t
++
+1
+x
+]
+≤
+1
++
+ε
+k
+t
+⋅
+(
+x
+−
+ε
+)
+.
+\Pr_{i\sim\widehat{\mathcal{D}}_{t}^{x}}\left[a\succ_{i}S_{t}\ \text{and}\ i\in\widehat{U}_{t}^{x}\setminus\widehat{U}_{t+1}^{x}\right]\leq\frac{1+\varepsilon}{k_{t}\cdot(x-\varepsilon)}.
+In other words, users who are satisfied in the
+t
+t
+-th round (i.e., users in
+U
+^
+t
+x
+∖
+U
+^
+t
++
+1
+x
+\widehat{U}_{t}^{x}\setminus\widehat{U}_{t+1}^{x}
+) have bounded probability of deviation.
+Proof of
+Lemma
+3.2
+.
+We condition throughout on the success event of
+B.5
+for lottery
+Δ
+t
+\Delta_{t}
+, under which the estimated rank
+𝖱𝖺𝗇𝗄
+^
+​
+(
+i
+,
+S
+,
+Δ
+t
+)
+\widehat{\mathsf{Rank}}(i;S,\Delta_{t})
+is an
+ε
+\varepsilon
+-additive approximation of the true rank
+𝖱𝖺𝗇𝗄
+⁡
+(
+i
+,
+S
+,
+Δ
+t
+)
+\mathsf{Rank}(i;S,\Delta_{t})
+for all relevant users
+i
+i
+and all committees
+S
+∈
+supp
+⁡
+(
+Δ
+)
+S\in\mathrm{supp}(\Delta)
+.
+We first recall a result about stable lottery from
+[
+Jiang et al. 2020
+, Claim 1 and Lemma 1]
+.
+Suppose
+Δ
+\Delta
+is a
+γ
+\gamma
+-approximately stable lottery for
+𝒟
+\mathcal{D}
+with committee size
+k
+k
+, and
+S
+S
+is any committee in the support of
+Δ
+\Delta
+. Then, for any threshold
+x
+∈
+(
+0
+,
+1
+)
+x\in(0,1)
+and any alternative
+a
+∈
+𝒞
+a\in\mathcal{C}
+,
+we have
+Pr
+i
+∼
+D
+[
+a
+≻
+i
+S
+and
+𝖱𝖺𝗇𝗄
+(
+i
+;
+S
+,
+Δ
+)
+≥
+x
+]
+≤
+γ
+k
+​
+x
+.
+\Pr_{i\sim D}\left[a\succ_{i}S\ \text{and}\ \mathsf{Rank}(i;S,\Delta)\geq x\right]\leq\frac{\gamma}{kx}.
+We now apply this fact to round
+t
+t
+of the execution of
+Algorithm
+1
+.
+Since
+Δ
+t
+\Delta_{t}
+is an
+(
+1
++
+ε
+)
+(1+\varepsilon)
+-approximately stable lottery for
+𝒟
+^
+t
+x
+\widehat{\mathcal{D}}_{t}^{x}
+, we have
+Pr
+i
+∼
+𝒟
+^
+t
+x
+[
+a
+≻
+i
+S
+and
+i
+∈
+U
+^
+t
+x
+∖
+U
+^
+t
++
+1
+x
+]
+≤
+\displaystyle\Pr_{i\sim\widehat{\mathcal{D}}_{t}^{x}}\left[a\succ_{i}S\ \text{and}\ i\in\widehat{U}_{t}^{x}\setminus\widehat{U}_{t+1}^{x}\right]\leq
+Pr
+i
+∼
+𝒟
+^
+t
+x
+[
+a
+≻
+i
+S
+and
+𝖱𝖺𝗇𝗄
+^
+(
+i
+;
+S
+t
+,
+Δ
+t
+)
+>
+x
+]
+\displaystyle\Pr_{i\sim\widehat{\mathcal{D}}_{t}^{x}}\left[a\succ_{i}S\ \text{and}\ \widehat{\mathsf{Rank}}(i;S_{t},\Delta_{t})>x\right]
+≤
+\displaystyle\leq
+Pr
+i
+∼
+𝒟
+^
+t
+x
+[
+a
+≻
+i
+S
+and
+𝖱𝖺𝗇𝗄
+(
+i
+;
+S
+t
+,
+Δ
+t
+)
+>
+x
+−
+ε
+]
+\displaystyle\Pr_{i\sim\widehat{\mathcal{D}}_{t}^{x}}\left[a\succ_{i}S\ \text{and}\ \mathsf{Rank}(i;S_{t},\Delta_{t})>x-\varepsilon\right]
+≤
+\displaystyle\leq
+1
++
+ε
+k
+t
+⋅
+(
+x
+−
+ε
+)
+,
+\displaystyle\frac{1+\varepsilon}{k_{t}\cdot(x-\varepsilon)},
+where the second inequality uses the
+ε
+\varepsilon
+-additive accuracy of
+𝖱𝖺𝗇𝗄
+^
+\widehat{\mathsf{Rank}}
+guaranteed by
+B.5
+, and the final inequality follows from the approximate stability bound above.
+∎
+B.2
+Proof of
+Lemma
+3.3
+Lemma
+(Restatement of
+Lemma
+3.3
+)
+.
+For all
+t
+≥
+1
+t\geq 1
+, when the threshold is set to be
+x
+=
+β
+−
+ε
+x=\beta-\varepsilon
+, the probability mass of estimated unsatisfied users shrink geometrically:
+If
+N
+≥
+O
+⁡
+(
+log
+⁡
+(
+m
+​
+k
+/
+(
+ε
+​
+δ
+)
+)
+ε
+2
+)
+N\geq O\left(\frac{\log(mk/(\varepsilon\delta))}{\varepsilon^{2}}\right)
+, then with probability at least
+1
+−
+δ
+1-\delta
+,
+μ
+^
+t
+:=
+Pr
+i
+∼
+𝒟
+[
+i
+∈
+U
+^
+t
+β
+−
+ε
+]
+≤
+(
+β
++
+2
+ε
+)
+t
+−
+1
+for all
+t
+∈
+[
+T
+]
+.
+\widehat{\mu}_{t}:=\Pr_{i\sim\mathcal{D}}[i\in\widehat{U}_{t}^{\beta-\varepsilon}]\leq(\beta+2\varepsilon)^{t-1}\text{ for all }t\in[T].
+Proof of
+Lemma
+3.3
+.
+We start with proving an auxiliary lemma about selecting committees from stable lottery support based on estimated ranks, and then apply it to each round of
+Algorithm
+1
+to prove
+Lemma
+3.3
+.
+Lemma B.1
+(Empirical selection from a stable lottery)
+.
+For any user distribution
+𝒟
+\mathcal{D}
+and any lottery
+Δ
+\Delta
+, let
+𝖴𝗇𝗌
+𝒟
+=
+Pr
+i
+∼
+𝒟
+[
+𝖱𝖺𝗇𝗄
+^
+(
+i
+;
+S
+,
+Δ
+)
+≤
+β
+−
+ε
+]
+\mathsf{Uns}_{\mathcal{D}}=\Pr_{i\sim\mathcal{D}}[\widehat{\mathsf{Rank}}(i;S,\Delta)\leq\beta-\varepsilon]
+denote the unsatisfied probability under
+𝒟
+\mathcal{D}
+.
+Let
+𝖴𝗇𝗌
+^
+𝒟
+\widehat{\mathsf{Uns}}_{\mathcal{D}}
+be an unbiased estimator of
+𝖴𝗇𝗌
+𝒟
+\mathsf{Uns}_{\mathcal{D}}
+from user samples. Specifically, given
+N
+N
+i.i.d. users
+i
+1
+,
+…
+,
+i
+N
+∼
+𝒟
+i_{1},\ldots,i_{N}\sim\mathcal{D}
+, define
+𝖴𝗇𝗌
+^
+𝒟
+(
+S
+)
+=
+1
+N
+∑
+j
+=
+1
+N
+𝟙
+[
+𝖱𝖺𝗇𝗄
+^
+(
+i
+j
+;
+S
+,
+Δ
+)
+≤
+β
+−
+ε
+]
+\widehat{\mathsf{Uns}}_{\mathcal{D}}(S)=\frac{1}{N}\sum_{j=1}^{N}\mathbbm{1}\left[\widehat{\mathsf{Rank}}(i_{j};S,\Delta)\leq\beta-\varepsilon\right]
+.
+Let
+S
+^
+∈
+argmin
+S
+∈
+supp
+⁡
+(
+Δ
+)
+𝖴𝗇𝗌
+^
+𝒟
+​
+(
+S
+)
+\hat{S}\in\argmin_{S\in\mathrm{supp}(\Delta)}\widehat{\mathsf{Uns}}_{\mathcal{D}}(S)
+denote the committee that minimizes the empirical unsatisfied probability.
+If
+N
+≥
+O
+⁡
+(
+log
+⁡
+(
+|
+supp
+⁡
+(
+Δ
+)
+|
+/
+δ
+)
+ε
+2
+)
+N\geq O\left(\frac{\log(|\mathrm{supp}(\Delta)|/\delta)}{\varepsilon^{2}}\right)
+and
+|
+𝖱𝖺𝗇𝗄
+−
+𝖱𝖺𝗇𝗄
+^
+|
+≤
+ε
+|\mathsf{Rank}-\widehat{\mathsf{Rank}}|\leq\varepsilon
+always hold,
+then with probability at least
+1
+−
+δ
+1-\delta
+,
+𝖴𝗇𝗌
+𝒟
+​
+(
+S
+^
+)
+≤
+β
++
+2
+​
+ε
+.
+\mathsf{Uns}_{\mathcal{D}}(\hat{S})\leq\beta+2\varepsilon\,.
+Proof of
+Lemma
+B.1
+.
+By standard concentration argument and the union bound,
+when
+N
+≥
+O
+⁡
+(
+log
+(
+|
+supp
+(
+Δ
+)
+/
+δ
+)
+ε
+2
+)
+N\geq O\left(\tfrac{\log(|\mathrm{supp}(\Delta)/\delta)}{\varepsilon^{2}}\right)
+, we have that with probability at least
+1
+−
+δ
+1-\delta
+,
+|
+𝖴𝗇𝗌
+^
+𝒟
+​
+(
+S
+)
+−
+𝖴𝗇𝗌
+𝒟
+​
+(
+S
+)
+|
+≤
+ε
+uniformly for all
+​
+S
+∈
+supp
+⁡
+(
+Δ
+)
+.
+\bigl|\widehat{\mathsf{Uns}}_{\mathcal{D}}(S)-\mathsf{Uns}_{\mathcal{D}}(S)\bigr|\leq\varepsilon\qquad\text{uniformly for all }S\in\mathrm{supp}(\Delta).
+According to
+[
+Jiang et al. 2020
+, Lemma 1]
+, we have the fact that for any
+D
+,
+Δ
+D,\Delta
+and threshold
+β
+\beta
+, there always exists a committee
+S
+∈
+supp
+⁡
+(
+Δ
+)
+S\in\mathrm{supp}(\Delta)
+such that
+Pr
+i
+∼
+𝒟
+[
+𝖱𝖺𝗇𝗄
+(
+i
+;
+S
+,
+Δ
+)
+≤
+β
+]
+≤
+β
+\Pr_{i\sim\mathcal{D}}[\mathsf{Rank}(i;S,\Delta)\leq\beta]\leq\beta
+. We denote such a committee with
+S
+⋆
+S^{\star}
+.
+Now we combine the above facts to bound
+𝖴𝗇𝗌
+𝒟
+​
+(
+S
+^
+)
+\mathsf{Uns}_{\mathcal{D}}(\hat{S})
+. We have
+𝖴𝗇𝗌
+𝒟
+​
+(
+S
+^
+)
+≤
+\displaystyle\mathsf{Uns}_{\mathcal{D}}(\hat{S})\leq{}
+𝖴𝗇𝗌
+^
+𝒟
+(
+S
+^
+)
++
+ε
+≤
+𝖴𝗇𝗌
+^
+𝒟
+(
+S
+⋆
+)
++
+ε
+≤
+𝖴𝗇𝗌
+𝒟
+(
+S
+⋆
+)
++
+2
+ε
+=
+Pr
+i
+∼
+𝒟
+[
+𝖱𝖺𝗇𝗄
+^
+(
+i
+;
+S
+,
+Δ
+)
+≤
+β
+−
+ε
+]
++
+2
+ε
+\displaystyle\widehat{\mathsf{Uns}}_{\mathcal{D}}(\hat{S})+\varepsilon\leq\widehat{\mathsf{Uns}}_{\mathcal{D}}(S^{\star})+\varepsilon\leq\mathsf{Uns}_{\mathcal{D}}(S^{\star})+2\varepsilon=\Pr_{i\sim\mathcal{D}}\left[\widehat{\mathsf{Rank}}(i;S,\Delta)\leq\beta-\varepsilon\right]+2\varepsilon
+≤
+\displaystyle\leq{}
+Pr
+i
+∼
+𝒟
+[
+𝖱𝖺𝗇𝗄
+(
+i
+;
+S
+,
+Δ
+)
+≤
+β
+]
++
+2
+ε
+≤
+β
++
+2
+ε
+,
+\displaystyle\Pr_{i\sim\mathcal{D}}[\mathsf{Rank}(i;S,\Delta)\leq\beta]+2\varepsilon\leq\beta+2\varepsilon\,,
+where the second last inequality holds since
+𝖱𝖺𝗇𝗄
+^
+​
+(
+i
+,
+S
+,
+Δ
+)
+≤
+β
+−
+ε
+\widehat{\mathsf{Rank}}(i;S,\Delta)\leq\beta-\varepsilon
+implies
+𝖱𝖺𝗇𝗄
+⁡
+(
+i
+,
+S
+,
+Δ
+)
+≤
+β
+\mathsf{Rank}(i;S,\Delta)\leq\beta
+due to the assumption
+|
+𝖱𝖺𝗇𝗄
+−
+𝖱𝖺𝗇𝗄
+^
+|
+≤
+ε
+|\mathsf{Rank}-\widehat{\mathsf{Rank}}|\leq\varepsilon
+.
+∎
+Now we apply
+Lemma
+B.1
+to prove
+Lemma
+3.3
+.
+We do this by induction on
+t
+∈
+[
+T
+]
+t\in[T]
+.
+Consider a given round
+t
+t
+and
+assume that we already have
+μ
+^
+t
+−
+1
+≤
+(
+β
++
+2
+​
+ε
+)
+t
+−
+2
+\widehat{\mu}_{t-1}\leq(\beta+2\varepsilon)^{t-2}
+. Similar to
+Lemma
+3.2
+, we condition on the success event of
+B.5
+for the computed
+Δ
+t
+\Delta_{t}
+, which holds because of our choice of
+N
+≥
+O
+⁡
+(
+log
+⁡
+(
+m
+​
+k
+/
+(
+ε
+​
+δ
+)
+)
+ε
+2
+)
+N\geq O\left(\frac{\log(mk/(\varepsilon\delta))}{\varepsilon^{2}}\right)
+and that
+|
+supp
+⁡
+(
+Δ
+t
+)
+|
+≤
+poly
+⁡
+(
+m
+,
+1
+/
+ε
+)
+|\mathrm{supp}(\Delta_{t})|\leq\mathrm{poly}(m,1/\varepsilon)
+by
+Jiang et al. 2020
+.
+By applying
+Lemma
+B.1
+with user distribution
+𝒟
+^
+t
+β
+−
+ε
+\widehat{\mathcal{D}}_{t}^{\beta-\varepsilon}
+and the approximately lottery-committee pair
+(
+Δ
+t
+,
+S
+t
+)
+(\Delta_{t},S_{t})
+computed via empirical rank estimates, we have that with probability at least
+1
+−
+δ
+/
+T
+1-\delta/T
+,
+Pr
+i
+∼
+𝒟
+^
+t
+β
+−
+ε
+[
+i
+∈
+U
+^
+t
++
+1
+β
+−
+ε
+]
+=
+\displaystyle\Pr_{i\sim\widehat{\mathcal{D}}_{t}^{\beta-\varepsilon}}\left[i\in\widehat{U}_{t+1}^{\beta-\varepsilon}\right]=
+Pr
+i
+∼
+𝒟
+^
+t
+β
+−
+ε
+[
+𝖱𝖺𝗇𝗄
+^
+(
+i
+;
+S
+t
+,
+Δ
+t
+)
+≤
+β
+−
+ε
+]
+≤
+β
++
+2
+ε
+.
+\displaystyle{}\Pr_{i\sim\widehat{\mathcal{D}}_{t}^{\beta-\varepsilon}}\left[\widehat{\mathsf{Rank}}(i;S_{t},\Delta_{t})\leq\beta-\varepsilon\right]\leq\beta+2\varepsilon\,.
+Then we have
+μ
+^
+t
++
+1
+=
+Pr
+i
+∼
+𝒟
+[
+i
+∈
+U
+^
+t
++
+1
+β
+−
+ε
+]
+=
+Pr
+i
+∼
+𝒟
+|
+U
+^
+t
+β
+−
+ε
+[
+i
+∈
+U
+^
+t
++
+1
+β
+−
+ε
+]
+⋅
+Pr
+i
+∼
+𝒟
+[
+i
+∈
+U
+^
+t
+β
+−
+ε
+]
+≤
+(
+β
++
+2
+ε
+)
+⋅
+μ
+^
+t
+≤
+(
+β
++
+2
+ε
+)
+t
+−
+1
+.
+\displaystyle\widehat{\mu}_{t+1}=\Pr_{i\sim\mathcal{D}}\left[i\in\widehat{U}_{t+1}^{\beta-\varepsilon}\right]=\Pr_{i\sim\mathcal{D}|\widehat{U}_{t}^{\beta-\varepsilon}}\left[i\in\widehat{U}_{t+1}^{\beta-\varepsilon}\right]\cdot\Pr_{i\sim\mathcal{D}}\left[i\in\widehat{U}_{t}^{\beta-\varepsilon}\right]\leq(\beta+2\varepsilon)\cdot\widehat{\mu}_{t}\leq(\beta+2\varepsilon)^{t-1}\,.
+The proof is complete by taking a union bound over the failure probabilities in each round
+t
+∈
+[
+T
+]
+t\in[T]
+.
+∎
+B.3
+Extension to the general case
+Now consider
+𝒟
+\mathcal{D}
+that can have arbitrarily large support. We can sample
+κ
+\kappa
+points from
+𝒟
+\mathcal{D}
+and let
+𝒟
+~
+\tilde{\mathcal{D}}
+denote the empirical distribution over the
+κ
+\kappa
+points. Then we run our proposed algorithm to select the stable committee for
+𝒟
+~
+\tilde{\mathcal{D}}
+.
+Lemma B.2
+.
+When
+κ
+≥
+k
+3
+​
+log
+⁡
+(
+m
+/
+δ
+)
+ε
+2
+\kappa\geq\frac{k^{3}\log(m/\delta)}{\varepsilon^{2}}
+, with probability at least
+1
+−
+δ
+1-\delta
+, any
+γ
+\gamma
+-approximately stable committee for
+𝒟
+~
+\tilde{\mathcal{D}}
+is also
+γ
++
+ε
+\gamma+\varepsilon
+-approximately stable committee for
+𝒟
+\mathcal{D}
+.
+Proof.
+With probability at least
+1
+−
+δ
+1-\delta
+, for any pair of
+(
+a
+,
+S
+)
+(a,S)
+where
+a
+∈
+𝒞
+a\in\mathcal{C}
+and
+S
+⊆
+𝒞
+S\subseteq\mathcal{C}
+with
+|
+S
+|
+=
+k
+|S|=k
+,
+|
+Pr
+i
+∼
+𝒟
+[
+a
+≻
+i
+S
+]
+−
+Pr
+i
+∼
+𝒟
+^
+[
+a
+≻
+i
+S
+]
+|
+≤
+ε
+k
+.
+\left|\Pr_{i\sim\mathcal{D}}[a\succ_{i}S]-\Pr_{i\sim\hat{\mathcal{D}}}[a\succ_{i}S]\right|\leq\frac{\varepsilon}{k}\,.
+Thus, for any
+γ
+\gamma
+-approximately stable committee
+W
+k
+W_{k}
+for
+𝒟
+^
+\hat{\mathcal{D}}
+, we have
+max
+a
+∉
+W
+k
+Pr
+i
+∼
+𝒟
+[
+a
+≻
+i
+W
+k
+]
+≤
+max
+a
+∉
+W
+k
+Pr
+i
+∼
+𝒟
+^
+[
+a
+≻
+i
+W
+k
+]
++
+ε
+k
+≤
+γ
++
+ε
+k
+.
+\max_{a\notin W_{k}}\Pr_{i\sim\mathcal{D}}[a\succ_{i}W_{k}]\leq\max_{a\notin W_{k}}\Pr_{i\sim\hat{\mathcal{D}}}[a\succ_{i}W_{k}]+\frac{\varepsilon}{k}\leq\frac{\gamma+\varepsilon}{k}\,.
+∎
+Lemma B.3
+(No repetition of sampled users)
+.
+Given
+κ
+≥
+n
+2
+/
+δ
+\kappa\geq n^{2}/\delta
+points, when sampling
+n
+n
+uniformly at random from these
+κ
+\kappa
+points, with probability at least
+1
+−
+δ
+1-\delta
+, there is no repetition in
+n
+n
+samples.
+Proof.
+We denote the
+n
+n
+draws as
+X
+1
+,
+…
+,
+X
+n
+X_{1},\dots,X_{n}
+, where each sample is drawn from the set of
+κ
+\kappa
+points uniformly at random,
+and taken independently with replacement. For
+1
+≤
+i
+<
+j
+≤
+n
+1\leq i<j\leq n
+define the event
+E
+i
+​
+j
+=
+{
+X
+i
+=
+X
+j
+}
+.
+E_{ij}=\{X_{i}=X_{j}\}.
+For any fixed pair
+(
+i
+,
+j
+)
+(i,j)
+we have
+Pr
+⁡
+(
+E
+i
+​
+j
+)
+=
+1
+/
+κ
+\Pr(E_{ij})=1/\kappa
+. By the union bound,
+the probability that there exists at least one collision satisfies
+Pr
+⁡
+(
+⋃
+1
+≤
+i
+<
+j
+≤
+n
+E
+i
+​
+j
+)
+≤
+∑
+1
+≤
+i
+<
+j
+≤
+n
+Pr
+⁡
+(
+E
+i
+​
+j
+)
+=
+(
+n
+2
+)
+​
+1
+κ
+=
+n
+⁡
+(
+n
+−
+1
+)
+2
+​
+κ
+≤
+n
+2
+2
+​
+κ
+.
+\Pr\bigg(\bigcup_{1\leq i<j\leq n}E_{ij}\bigg)\leq\sum_{1\leq i<j\leq n}\Pr(E_{ij})=\binom{n}{2}\frac{1}{\kappa}=\frac{n(n-1)}{2\kappa}\leq\frac{n^{2}}{2\kappa}.
+Since
+κ
+≥
+n
+2
+/
+δ
+\kappa\geq n^{2}/\delta
+,
+we obtain
+Pr
+⁡
+[
+X
+1
+,
+…
+,
+X
+n
+​
+has repetitions
+]
+≤
+n
+2
+2
+​
+κ
+≤
+n
+2
+2
+⋅
+(
+n
+2
+/
+δ
+)
+≤
+δ
+.
+\Pr[X_{1},\ldots,X_{n}\text{ has repetitions}]\leq\frac{n^{2}}{2\kappa}\leq\frac{n^{2}}{2\cdot(n^{2}/\delta)}\leq\delta.
+The proof is thus complete.
+∎
+B.4
+Additional oracles used in
+Algorithm
+1
+Algorithm 4
+Rejection Sampling Oracle for Unsatisfied Users
+Input:
+Sampling oracle
+𝒟
+\mathcal{D}
+; history of previous rounds
+(
+S
+τ
+,
+Δ
+τ
+)
+τ
+<
+t
+(S_{\tau},\Delta_{\tau})_{\tau<t}
+; failure probability
+p
+p
+; rank estimation oracle
+𝖱𝖺𝗇𝗄
+^
+\widehat{\mathsf{Rank}}
+Output:
+A random user
+i
+∼
+𝒟
+^
+t
+x
+i\sim\widehat{\mathcal{D}}_{t}^{x}
+, or
+failure
+Number of trials
+M
+←
+⌈
+k
+​
+log
+⁡
+(
+1
+/
+p
+)
+⌉
+M\leftarrow\lceil k\log(1/p)\rceil
+for
+ℓ
+=
+1
+\ell=1
+to
+M
+M
+do
+Sample a user
+i
+∼
+𝒟
+i\sim\mathcal{D}
+if
+𝖱𝖺𝗇𝗄
+^
+​
+(
+i
+,
+S
+τ
+,
+Δ
+τ
+)
+≤
+β
+−
+ε
+\widehat{\mathsf{Rank}}(i;S_{\tau},\Delta_{\tau})\leq\beta-\varepsilon
+for all
+τ
+<
+t
+\tau<t
+then
+Return
+i
+i
+end
+if
+end
+for
+Return
+failure
+Lemma B.4
+(Guarantee of
+Algorithm
+4
+)
+.
+Suppose
+𝒟
+\mathcal{D}
+is a user distribution, and
+𝖱𝖺𝗇𝗄
+^
+\widehat{\mathsf{Rank}}
+is a rank estimation oracle with error
+ε
+\varepsilon
+. Then,
+Algorithm
+4
+has failure probability at most
+p
+p
+, and when it does not fail, the output user
+i
+i
+is from the conditional distribution
+𝒟
+|
+U
+^
+t
+x
+\mathcal{D}|\widehat{U}_{t}^{x}
+where
+𝒟
+^
+t
+β
+−
+ε
+=
+U
+^
+t
+β
+−
+ε
+\widehat{\mathcal{D}}_{t}^{\beta-\varepsilon}=\widehat{U}_{t}^{\beta-\varepsilon}
+is the estimated unsatisfied event at round
+t
+t
+. The number of sampled voters is
+O
+⁡
+(
+k
+​
+log
+⁡
+(
+1
+/
+p
+)
+)
+O(k\log(1/p))
+.
+Proof of
+Lemma
+B.4
+.
+The fact that output users follow
+𝒟
+^
+t
+x
+\widehat{\mathcal{D}}_{t}^{x}
+is from standard fact of rejection sampling. Here, we bound the failure probability here.
+At each trial, the probability of sampling a user that satisfies
+𝖱𝖺𝗇𝗄
+^
+(
+i
+;
+S
+τ
+,
+Δ
+τ
+)
+≤
+x
+,
+∀
+τ
+≤
+t
+⇔
+i
+∈
+U
+^
+t
+x
+\widehat{\mathsf{Rank}}(i;S_{\tau},\Delta_{\tau})\leq x,\ \forall\tau\leq t\quad\iff\quad i\in\widehat{U}_{t}^{x}
+is exactly
+μ
+^
+t
+=
+Pr
+i
+∼
+𝒟
+[
+i
+∈
+U
+^
+t
+x
+]
+\widehat{\mu}_{t}=\Pr_{i\sim\mathcal{D}}[i\in\widehat{U}_{t}^{x}]
+. Therefore,
+the failure probability after
+M
+M
+trials is at most
+(
+1
+−
+μ
+^
+t
+)
+M
+≤
+e
+−
+μ
+^
+t
+​
+M
+(1-\widehat{\mu}_{t})^{M}\leq e^{-\widehat{\mu}_{t}M}
+.
+it suffices to show that
+μ
+^
+t
+≥
+Ω
+⁡
+(
+1
+/
+k
+)
+\widehat{\mu}_{t}\geq\Omega(1/k)
+. Note that
+Lemma
+B.1
+provides an upper bound that
+μ
+^
+t
+≤
+(
+β
++
+2
+​
+ε
+)
+t
+−
+1
+\widehat{\mu}_{t}\leq(\beta+2\varepsilon)^{t-1}
+, but the actual decrease rate might be faster. To deal with this, it suffices to add a stopping condition at
+Algorithm
+1
+for early stopping as long as
+μ
+^
+t
+≤
+O
+⁡
+(
+1
+/
+k
+)
+\widehat{\mu}_{t}\leq O(1/k)
+.
+∎
+Algorithm 5
+Rank Estimation Oracle
+Input:
+Committee
+S
+S
+, lottery
+Δ
+\Delta
+, user
+i
+i
+, failure probability
+δ
+\delta
+, error
+ε
+\varepsilon
+.
+Output:
+An estimate of
+𝖱𝖺𝗇𝗄
+(
+i
+;
+S
+,
+Δ
+)
+=
+Pr
+S
+′
+∼
+Δ
+[
+S
+⪰
+i
+S
+′
+]
+\mathsf{Rank}(i;S,\Delta)=\Pr_{S^{\prime}\sim\Delta}[S\succeq_{i}S^{\prime}]
+.
+Number of trials
+L
+←
+⌈
+1
+ε
+2
+​
+log
+⁡
+(
+1
+/
+δ
+)
+⌉
+L\leftarrow\lceil\frac{1}{\varepsilon^{2}}\log(1/\delta)\rceil
+Sample committees
+S
+1
+,
+…
+,
+S
+L
+∼
+i.i.d.
+Δ
+S_{1},\ldots,S_{L}\stackrel{{\scriptstyle\text{i.i.d.}}}{{\sim}}\Delta
+Return
+𝖱𝖺𝗇𝗄
+^
+(
+i
+;
+S
+,
+Δ
+)
+≜
+1
+L
+∑
+ℓ
+=
+1
+L
+𝟙
+[
+S
+⪰
+i
+S
+ℓ
+]
+\widehat{\mathsf{Rank}}(i;S,\Delta)\triangleq\frac{1}{L}\sum_{\ell=1}^{L}\mathbbm{1}\left[S\succeq_{i}S_{\ell}\right]
+Fact B.5
+(Guarantee of
+Algorithm
+5
+)
+.
+Suppose the user distribution
+𝒟
+\mathcal{D}
+has support size at most
+κ
+\kappa
+, then for a fixed lottery
+Δ
+\Delta
+,
+Algorithm
+5
+with failure probability
+δ
+κ
+⋅
+|
+supp
+⁡
+(
+Δ
+)
+|
+\frac{\delta}{\kappa\cdot|\mathrm{supp}(\Delta)|}
+guarantees that with probability at least
+1
+−
+δ
+1-\delta
+, for any user
+i
+∈
+supp
+⁡
+(
+𝒟
+)
+i\in\mathrm{supp}(\mathcal{D})
+, and committee
+S
+∈
+supp
+⁡
+(
+Δ
+)
+S\in\mathrm{supp}(\Delta)
+,
+|
+𝖱𝖺𝗇𝗄
+^
+​
+(
+i
+,
+S
+,
+Δ
+)
+−
+𝖱𝖺𝗇𝗄
+⁡
+(
+i
+,
+S
+,
+Δ
+)
+|
+≤
+ε
+.
+\left|\widehat{\mathsf{Rank}}(i;S,\Delta)-\mathsf{Rank}(i;S,\Delta)\right|\leq\varepsilon\,.
+The number of pairwise comparisons each user makes is
+O
+⁡
+(
+|
+S
+|
+⋅
+log
+⁡
+(
+κ
+⋅
+|
+supp
+⁡
+(
+Δ
+)
+|
+/
+δ
+)
+ε
+2
+)
+O\left(|S|\cdot\frac{\log(\kappa\cdot|\mathrm{supp}(\Delta)|/\delta)}{\varepsilon^{2}}\right)
+.
+Appendix C
+Proof of
+Theorem
+4.1
+See
+4.1
+Proof.
+Based on the choice of the sizes of checkpoint committees, the size of
+A
+≤
+r
+=
+⋃
+s
+=
+1
+r
+A
+s
+A_{\leq r}=\bigcup_{s=1}^{r}A_{s}
+satisfies
+|
+A
+≤
+r
+|
+=
+|
+⋃
+s
+=
+1
+r
+A
+s
+|
+≤
+∑
+s
+=
+1
+r
+|
+A
+s
+|
+≤
+∑
+s
+=
+1
+r
+λ
+s
+−
+1
+=
+λ
+r
+−
+1
+λ
+−
+1
+\displaystyle|A_{\leq r}|=\left|\bigcup_{s=1}^{r}A_{s}\right|\leq\sum_{s=1}^{r}|A_{s}|\leq\sum_{s=1}^{r}\lambda^{s-1}=\frac{\lambda^{r}-1}{\lambda-1}
+Therefore, for any prefix
+W
+k
+π
+W_{k}^{\pi}
+of the output ranking
+π
+\pi
+, as long as
+k
+≥
+λ
+r
+−
+1
+λ
+−
+1
+,
+\displaystyle k\geq\frac{\lambda^{r}-1}{\lambda-1},
+(Sufficient Condition)
+then we must have
+W
+k
+π
+⊇
+A
+≤
+r
+⊇
+A
+r
+.
+W_{k}^{\pi}\supseteq A_{\leq r}\supseteq A_{r}.
+It now remains to find the largest
+r
+=
+r
+⁡
+(
+k
+)
+r=r(k)
+for (
+Sufficient Condition
+) to hold. For such an
+r
+⁡
+(
+k
+)
+r(k)
+, (
+Sufficient Condition
+) would fail for
+r
+=
+r
+⁡
+(
+k
+)
++
+1
+r=r(k)+1
+, i.e.,
+k
+<
+λ
+r
+⁡
+(
+k
+)
++
+1
+−
+1
+λ
+−
+1
+.
+\displaystyle k<\frac{\lambda^{r(k)+1}-1}{\lambda-1}.
+If
+λ
+\lambda
+is an integer, then we have
+|
+A
+r
+⁡
+(
+k
+)
+|
+=
+λ
+r
+⁡
+(
+k
+)
+−
+1
+≥
+k
+⁡
+(
+λ
+−
+1
+)
+λ
+2
+≥
+k
+⁡
+(
+λ
+−
+1
+)
+λ
+2
+,
+\left|A_{r(k)}\right|=\lambda^{r(k)-1}\geq\frac{k(\lambda-1)}{\lambda^{2}}\geq\frac{k(\lambda-1)}{\lambda^{2}},
+which implies that
+W
+k
+π
+W_{k}^{\pi}
+, which is a superset of the
+γ
+\gamma
+-approximately local stable committee
+A
+r
+⁡
+(
+k
+)
+A_{r(k)}
+, also satisfies local stability with approximation factor
+λ
+2
+λ
+−
+1
+⋅
+γ
+\frac{\lambda^{2}}{\lambda-1}\cdot\gamma
+.
+When
+λ
+↘
+1
+\lambda\searrow 1
+, we have
+|
+A
+r
+⁡
+(
+k
+)
+|
+=
+⌊
+λ
+r
+⁡
+(
+k
+)
+−
+1
+⌋
+≥
+⌊
+k
+⁡
+(
+λ
+−
+1
+)
+λ
+2
+⌋
+≥
+k
+O
+⁡
+(
+1
+λ
+−
+1
+)
+,
+|A_{r(k)}|=\left\lfloor\lambda^{r(k)-1}\right\rfloor\geq\left\lfloor\frac{k(\lambda-1)}{\lambda^{2}}\right\rfloor\geq\frac{k}{O(\tfrac{1}{\lambda-1})},
+which proves the second part of the theorem that
+W
+k
+π
+W_{k}^{\pi}
+is
+O
+⁡
+(
+1
+λ
+−
+1
+)
+⋅
+γ
+O(\tfrac{1}{\lambda-1})\cdot\gamma
+-approximately local stable.
+∎
+Appendix D
+Additional Experiment Details
+We give additional details about the implementation of our algorithms for experiments, as well as detailed sampling procedures. All experiment code is included with the submission.
+D.1
+Algorithm implementation details and default parameters
+For our experimental implementation of Algorithm 1, we describe several subroutines in detail along with their default parameters used throughout the experiments. These same parameters carry forward to Algorithms 2 and 3.
+Computing an approximately stable lottery.
+We describe our implementation of the following line from Algorithm
+1
+:
+Δ
+t
+←
+(
+1
++
+ε
+)
+\Delta_{t}\leftarrow(1+\varepsilon)
+-approximately stable lottery for
+𝒟
+^
+t
+β
+−
+ε
+\widehat{\mathcal{D}}_{t}^{\beta-\varepsilon}
+of size
+k
+t
+k_{t}
+(see
+Cheng et al. 2020
+)
+To implement this, we run the algorithm described by
+Cheng et al. 2020
+in Section 2.5 using their proposed multiplicative weight update (MWU) procedure. This includes two parameters: the number of iterations
+T
+MWU
+T_{\text{MWU}}
+to run the multiplicative weight update procedure, and the number of iterations
+T
+Oracle
+T_{\textsc{Oracle}}
+to run their
+Oracle
+(
+Δ
+a
+\Delta_{a}
+,
+ϵ
+\epsilon
+) subroutine. By default in experiments, we run
+T
+MWU
+=
+20
+T_{\text{MWU}}=20
+iterations of the multiple weight update procedure, and
+T
+Oracle
+=
+30
+T_{\textsc{Oracle}}=30
+iterations to compute
+Oracle
+(
+Δ
+a
+\Delta_{a}
+,
+ϵ
+\epsilon
+). For each iteration of the multiplicative weight update procedure, we sample
+n
+MWU
+=
+50
+n_{\text{MWU}}=50
+users.
+Choosing a committee.
+We describe our implementation of the following line from Algorithm
+1
+:
+S
+t
+←
+S_{t}\leftarrow
+committee in
+supp
+⁡
+(
+Δ
+t
+)
+\mathrm{supp}(\Delta_{t})
+that minimizes estimated unsatisfied probability
+In experiments, we sample
+n
+eval
+=
+100
+n_{\text{eval}}=100
+users, and estimate the unsatisfied probability for each committee
+S
+S
+in
+supp
+⁡
+(
+Δ
+t
+)
+\mathrm{supp}(\Delta_{t})
+.
+D.2
+Additional details for experiments on committee stability with mixtures of Mallows (Section
+5.1
+)
+To produce the plots in Figure
+1
+, we run the following full procedure 10 times for each
+k
+k
+:
+1.
+Sample
+k
+k
+permutations uniformly at random and set these as centers
+π
+1
+,
+…
+,
+π
+k
+\pi_{1},...,\pi_{k}
+. Set mixture weights to
+1
+k
+\frac{1}{k}
+, and set all dispersions to the same given
+ϕ
+\phi
+.
+2.
+Run Algorithm 1 with default parameters to produce a committee of size
+k
+k
+. Figure
+3
+gives a breakdown of the samples drawn for an example run, which sampled
+18,540
+18,540
+users at a maximum of
+98
+98
+pairwise comparisons per user, and a median of
+38
+38
+pairwise comparisons per user.
+3.
+Compute the Bradley-Terry ranking over a sample of
+10,000
+10,000
+users and all pairwise comparisons for each user, and produce a committee of size
+k
+k
+consisting of the top-
+k
+k
+ranked candidates.
+4.
+Produce a committee consisting of
+{
+π
+1
+​
+(
+1
+)
+,
+…
+,
+π
+k
+​
+(
+1
+)
+}
+\{\pi_{1}(1),...,\pi_{k}(1)\}
+(labeled “Mallows centers” in Figure
+1
+).
+5.
+Draw a sample of
+n
+=
+10,000
+n=10,000
+users, and compute
+γ
+^
+\hat{\gamma}
+for all committees.
+Histogram of pairwise comparisons for Algorithm 1
+Figure 3
+:
+Histogram of pairwise comparisons per user for a single run of Algorithm 1 for committee size
+k
+=
+5
+k=5
+and
+ϕ
+=
+0.5
+\phi=0.5
+. The total number of users sampled was 18,540. The maximum number of pairwise comparisons for a single user was
+98
+98
+, and the median was
+38
+38
+.
+D.3
+Additional details for experiments on ranking stability with LMArena simulation (Section
+5.2
+)
+To produce the plots in Figure
+2
+, we run the following procedure
+5
+5
+times:
+1.
+Run Algorithm 2 with default parameters over the data distribution to produce a ranking. Figure
+4
+gives a breakdown of the samples drawn for an example run, which sampled
+39,080
+39,080
+users at a maximum of
+95
+95
+pairwise comparisons per user, and a median of
+24
+24
+pairwise comparisons per user
+2.
+Run Algorithm 3 with default parameters over the data distribution to produce a ranking. Figure
+5
+gives a breakdown of the samples drawn for an example run, which sampled
+74,150
+74,150
+users at a maximum of
+45
+45
+pairwise comparisons per user, and a median of
+5
+5
+pairwise comparisons per user.
+3.
+Compute the Bradley-Terry ranking over a sample of
+100,000
+100,000
+users and all pairwise comparisons for each user. This is equivalent to ranking by Borda count over all sampled users, and is also equivalent to ranking by Elo-score over all possible pairwise comparisons from all sampled users. With the sample size of
+100,000
+100,000
+users, there was no variation in the Bradley-Terry ranking between repeats.
+4.
+Compute the stability approximation factors
+γ
+^
+\hat{\gamma}
+for all top-
+k
+k
+prefix committees of all rankings using a draw of
+n
+=
+100,000
+n=100,000
+users.
+Histogram of pairwise comparisons for Algorithm 2
+Figure 4
+:
+Histogram of pairwise comparisons per user for a single run of Algorithm 3 on LMArena simulation with
+ϕ
+=
+0.5
+\phi=0.5
+. The total number of users sampled was 39,080. The maximum number of pairwise comparisons for a single user was
+95
+95
+, and the median was
+24
+24
+.
+Histogram of pairwise comparisons for Algorithm 3
+Figure 5
+:
+Histogram of pairwise comparisons per user for a single run of Algorithm 3 on LMArena simulation with
+ϕ
+=
+0.5
+\phi=0.5
+. The total number of users sampled was 74,150. The maximum number of pairwise comparisons for a single user was
+45
+45
+, and the median was
+5
+5
+.
+D.4
+Specific model rankings on LMArena simulation
+Here we give more details the specific Bradley-Terry rankings per category from the LMArena data that form the Mallows central rankings. Table
+1
+shows the top two ranked LLMs per category, as well as the estimated mixture weight per category. To give a sense of the exact rankings computed in Figure
+2
+, Table
+2
+shows the rankings produced by a single run of each ranking method. All full rankings can be found in the attached experiment code.
+Category index
+Mixture weight
+Top-ranked LLM,
+π
+⁡
+(
+1
+)
+\pi(1)
+Second ranked LLM,
+π
+⁡
+(
+2
+)
+\pi(2)
+0
+0.17
+gemini-2.5-pro-preview-03-25
+gemini-2.5-pro
+1
+0.13
+gemini-2.5-pro-preview-03-25
+chatgpt-4o-latest-20250326
+2
+0.13
+chatgpt-4o-latest-20250326
+kimi-k2-0711-preview
+3
+0.07
+gemini-2.5-pro
+gemini-2.5-pro-preview-03-25
+4
+0.04
+gemini-2.5-pro
+grok-3-preview-02-24
+5
+0.04
+chatgpt-4o-latest-20250326
+o3-2025-04-16
+6
+0.04
+deepseek-r1-0528
+llama-4-maverick-03-26-experimental
+7
+0.04
+gemini-2.5-pro
+deepseek-r1-0528
+8
+0.03
+gemini-2.5-pro
+gemini-2.5-flash
+9
+0.03
+gemini-2.5-pro
+gemini-2.5-pro-preview-03-25
+10
+0.03
+llama-4-maverick-03-26-experimental
+grok-4-0709
+11
+0.03
+gemini-2.5-pro
+gemini-2.5-pro-preview-05-06
+12
+0.03
+chatgpt-4o-latest-20250326
+llama-4-maverick-03-26-experimental
+13
+0.03
+gemini-2.5-pro
+gemini-2.5-pro-preview-05-06
+14
+0.03
+gemini-2.5-pro
+o4-mini-2025-04-16
+15
+0.03
+o3-2025-04-16
+llama-4-maverick-03-26-experimental
+16
+0.02
+gemini-2.5-pro
+llama-4-maverick-03-26-experimental
+17
+0.02
+gemini-2.5-pro
+grok-3-preview-02-24
+18
+0.02
+o3-2025-04-16
+gemini-2.5-pro
+19
+0.02
+gemini-2.5-flash
+gemini-2.5-pro
+Table 1
+:
+Mixture weights and top-ranked LLMs for each central ranking corresponding to a prompt category in the LMArena simulation. Each central ranking is determined by the Bradley-Terry ranking over the pairwise comparisons within a given
+category_tag
+from the LMArena dataset.
+ϕ
+=
+0.1
+\phi=0.1
+Bradley-Terry ranking
+gemini-2.5-pro, chatgpt-4o-latest-20250326, grok-3-preview-02-24, o3-2025-04-16, deepseek-r1-0528, gemini-2.5-pro-preview-03-25, llama-4-maverick-03-26-experimental, gemini-2.5-flash, …
+Algorithm 2 ranking
+gemini-2.5-pro, chatgpt-4o-latest-20250326, gemini-2.5-pro-preview-03-25, o3-2025-04-16, llama-4-maverick-03-26-experimental, o4-mini-2025-04-16, kimi-k2-0711-preview, gpt-4.1-2025-04-14, …
+Algorithm 3 ranking
+gemini-2.5-pro, gemini-2.5-pro-preview-03-25, chatgpt-4o-latest-20250326, deepseek-r1-0528, grok-4-0709, gemini-2.5-pro-preview-05-06, o3-2025-04-16, grok-3-preview-02-24, …
+ϕ
+=
+0.5
+\phi=0.5
+Bradley-Terry ranking
+gemini-2.5-pro, chatgpt-4o-latest-20250326, grok-3-preview-02-24, o3-2025-04-16, deepseek-r1-0528, gemini-2.5-pro-preview-03-25, llama-4-maverick-03-26-experimental, gemini-2.5-flash, …
+Algorithm 2 ranking
+gemini-2.5-pro, chatgpt-4o-latest-20250326, gemini-2.5-flash, llama-4-maverick-03-26-experimental, gemini-2.5-pro-preview-03-25, qwen3-235b-a22b, o4-mini-2025-04-16, deepseek-r1-0528, …
+Algorithm 3 ranking
+gemini-2.5-pro, chatgpt-4o-latest-20250326, deepseek-r1-0528, grok-3-preview-02-24, gemini-2.5-pro-preview-03-25, grok-4-0709, gemini-2.5-pro-preview-05-06, o3-2025-04-16, …
+ϕ
+=
+0.9
+\phi=0.9
+Bradley-Terry ranking
+gemini-2.5-pro, chatgpt-4o-latest-20250326, grok-3-preview-02-24, o3-2025-04-16, deepseek-r1-0528, gemini-2.5-pro-preview-03-25, llama-4-maverick-03-26-experimental, gemini-2.5-flash, …
+Algorithm 2 ranking
+gemini-2.5-pro, grok-3-preview-02-24, gemini-2.5-flash, llama-4-maverick-03-26-experimental, gemini-2.5-pro-preview-03-25, o4-mini-2025-04-16, chatgpt-4o-latest-20250326, qwen3-235b-a22b-no-thinking, …
+Algorithm 3 ranking
+gemini-2.5-pro, chatgpt-4o-latest-20250326, gemini-2.5-pro-preview-03-25, o3-2025-04-16, deepseek-r1-0528, grok-3-preview-02-24, llama-4-maverick-03-26-experimental, grok-4-0709, …
+Table 2
+:
+Example rankings from a single run of each ranking in Figure
+2
+. For ease of visualization, we show the top 8 ranked candidates per ranking here. This does not account for variation across repeats, but gives a single ranking sample as an illustration of the tendencies of each ranking method.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

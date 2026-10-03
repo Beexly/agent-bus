@@ -1,0 +1,29 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/1853-smart-semantic-guided-rl-interpretable-feature-engineering.md
+## What it is (1-2 sentences)
+Full-text read of Bouadi, Alavi, Benbernou & Ouziri (2024), "A Report on Semantic-Guided RL for Interpretable Feature Engineering" / SMART (arXiv:2410.02519): a hybrid Knowledge-Graph semantic-reasoning (exploitation via HermiT/Description-Logics + SWRL validity rules) + DQN reinforcement learning (exploration) system that optimizes a bi-objective of model performance and feature interpretability jointly. Verdict in file: ADAPT — the only paper in its wave treating broadcast-explainability as a first-class optimized objective, but it is tabular-only with no temporal discipline and needs a sports ontology built from scratch.
+
+## Key metrics/methods (formulas where given, else "not specified")
+- Bi-objective (Eq): T* = argmax_T (λ·P(L(X̂_T, Y)) + (1−λ)·I_KG(X̂_T)); I_KG(X̂_T) = Σ I_KG(x̂), λ ∈ [0,1] user-set accuracy/interpretability tradeoff.
+- Feature interpretability: I_KG(x̃) = max over decomposition paths pk of I^pk_KG(x̃), where I^pk_KG(x̃) = Π_j Inter(t_j) × min_i I_KG(x_i) — product of per-transformation interpretability scores times the least interpretable feature on the path (Def. 2.2: interpretability = the intellectual effort a domain expert exerts to map a feature to domain concepts, operationalized via KG distance).
+- Step 1 (exploitation): Description-Logics reasoning (HermiT) over a Knowledge Graph — domain-agnostic TBox (SI units, arithmetic/aggregation semantics) + domain-specific ontologies — infers new features (Date → Day/Month/Year; Mass + Velocity → Energy); SWRL rules veto nonsense (unit mismatch additions → nonInterpretable; aggregationSum over a Stock feature → nonInterpretable).
+- Step 2 (exploration): DQN over transformation space — state = semantic vectorization of the dataset (features mapped to KG concepts, state = summed semantic feature vectors Φ(X)), actions = {unary, binary, aggregations, date operators}, reward = ΔP (k-fold CV performance gain) + interpretability score; decaying ε-greedy, experience replay, target network; loss L_i(θ_i) = E[(r + γ·max_a' Q̂(s',a';θ̂_i) − Q(s,a;θ_i))²].
+- Key differentiator vs. pure-RL FE (Khurana 2018, mCAFE, NFS): KG supplies transferable prior knowledge — semantic vectorization lets the agent reuse policy structure across datasets instead of re-exploring from scratch (asserted, never empirically tested).
+- GSE bridge in file: sports TBox (Team, Player, Game, WeatherCondition, MarketLine; units points/yards/dollars/days); SWRL examples "points + temperature → nonInterpretable," "summing a rate stat over games without weighting → nonInterpretable"; plus causal-temporal rules the paper lacks (past-rows-only aggregations, no negative shifts).
+
+## Data sources named
+- 14 public tabular datasets: Wine Quality, Bikeshare DC, Home Credit, Amazon Employee, Higgs Boson, Brazilian E-Commerce, Medical Appointment, Fraud Detection, Retail Spending, NYC Taxi, OpenML-618, Diabetes, German Credit (+2 more); five downstream models (RF, DT, LR, SVM, XGB); metrics 1−rae (regression), F1 (classification); evaluation 80/20-style with k-fold CV inside the reward loop.
+- No code or public KG released; domain-specific TBox fragments privacy-limited in the paper.
+
+## Findings (numbers and facts, not vibes)
+- SMART vs. raw data: +20.94% average improvement across datasets and models.
+- SMART vs. strongest baselines (averages): +11.55% over DIFER, +4.86% over NFS, +7.24% over mCAFE; beats Base, Random, DFS, AutoFeat in nearly all cells.
+- Example RF cells: Diabetes 0.740 → 0.853; Medical Appointment 0.491 → 0.893; OpenML-618 White 0.689 → 0.722; Bikeshare DC 0.393 → 0.988; Amazon Employee 0.712 → 0.912; NYC Taxi 0.425 → 0.610; Higgs 0.718 → 0.743.
+- Interpretability validation: SHAP feature-importance on raw+SMART datasets shows SMART features outrank raw features on all four plotted datasets; human-readable outputs (NYC Taxi Haversine pickup–dropoff distance; Medical Appointment booking lead time — longer lead time → higher no-show probability) vs. mCAFE's opaque composites.
+- Limitations: no temporal dimension or leakage/lookahead discipline; sports ontology is real hand-construction work; SWRL coverage only as good as the rule author — novel concepts outside the KG get low interpretability by construction (penalizes genuine novelty); only 10 of 14 datasets tabulated; no runtime/cost table; λ has no selection guidance; the transferability claim is untested.
+
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER (engine method — semantic feature-engineering guardrails): the unit-typed SWRL veto idea is directly portable as a semantic type-checker on GSE's LLM feature-generation pipelines (ledgers 1847/1850) — auto-vetoing dimensionally absurd compositions (rate + count, summing stock variables like season-long ratings across weeks). The semantic-vectorization state encoding offers a transferable FE policy across sports: train the DQN on NFL, reuse the KG-grounded encoder for NCAA/CFB.
+- TRUST-SIGNAL (INFERENCE): the bi-objective accuracy/interpretability formulation matches Garrett's "analysts who show their work" brand rule — features optimized to be broadcast-explainable; the file's acceptance gate proposes a human rating "could you explain this on a broadcast" (1–5) with a ≥4.0 threshold.
+
+## Engine-actionable? (yes/no + one-line what)
+Yes — implement the SWRL-style semantic type-checker (unit mismatch, stock-vs-flow aggregation errors, temporal past-only rules) as a guardrail on existing feature pipelines first, and build the sports ontology + semantic DQN second, gated on ≥0.003 NFL held-out log-loss gain, zero veto failures, no leakage, and ≥4.0/5.0 human broadcast-explainability rating on the top-20 features.

@@ -1,0 +1,31 @@
+# docs/arxiv-program/research/2026-09-21/wiring/WIRING-PLAN.md
+## What it is (1-2 sentences)
+A reconciliation (dated 2026-09-22) of every wiring/implementation plan found across Grok, Gemini, Claude, DeepSeek, and the repo's own research corpus into one additive-only plan (nothing removed, no behavior changed); it records what was already done (dual CLV reporting, publish deadlock, CQR fail-closed fix), what was implemented this pass on branch `motif/wiring-plans-2026-09-22` (W-1/W-2/W-3 calibration modules), what is queued as 12 NGS metric lab/ML projects, and what needs a human call (props storage, fixture dating, publish-path wiring of W-1).
+## Key metrics/methods (formulas where given, else "not specified")
+- **W-1 (arXiv 2103.00083, quantile aggregation):** `quantile-isotonize.ts` — `sortQuantiles` (non-crossing) + `pavaIsotonic` (PAVA isotonic regression); Prop. 2: WIS cannot worsen. Gate: ADOPT into publish path only if 2025 data shows crossing violations (wiring = human call). Risk: Low (pure function).
+- **W-2 (arXiv 1912.05642v4, scale-invariant scoring):** `scrps.ts` — SCRPS = CRPS / E|X−X′| from forecast samples; scale-normalized second engine ranking. Gate: ADOPT as second ranking only if it flips ≥2 game-target rankings vs mean CRPS on last 3 seasons. Risk: Low.
+- **W-3 (arXiv 1808.07501v2, practical scoring rules):** `practical-scoring.ts` — bounded proper scoring rule: log score floored at s_min = −57.27. Gate: ADOPT for analyst leaderboard only if Spearman ≥ 0.95 vs raw-log-score ranking. Risk: Low.
+- Tests: `quantile-isotonize.test.ts`, `scrps.test.ts`, `practical-scoring.test.ts` (co-located vitest), each asserting the paper's core property (non-crossing, scale invariance, loss cap + properness) plus empty-input behavior.
+- **NGS queued metrics with numeric gates (12):** NGS-1 Completion Probability/CPOE — Brier skill ≥ 0.9 vs NGS r²=0.98-equivalent calibration; NGS-2 Run Scheme Classification — beat charting-heuristic baseline by ≥5pp accuracy; NGS-3 Run Blocking Matchups — OL time-to-pressure-allowed (lab triage); NGS-5 xRY/RYOE — CRPS ≤ 2020 winning score on competition set; NGS-6 Pressure Probability — calibration within 2pp of 10.3% avg-rusher baseline, 75% threshold; NGS-7 Tackle Probability — ≥80% recall on PFF missed tackles at 20% FPR; NGS-9 QB Passing Score — replicate AWS SBP code, correlate vs win%; others: lab triage or computable-today vs naive baseline.
+- **Already done:** Dual CLV reporting (merged #872, `computeClvPushDoctrineRates` in @sports/types, three denominators side by side); publish deadlock closed (#870, mint-side supersede); CQR fail-closed (ledger 1905.03222) — `apps/web/lib/calibration/cqr.ts` repaired 2026-09-22 (commit 1d38140 on main) — unclamped rank, +∞/No-Bet when ceil((1−α)(n+1)) > n.
+- **Needs human call:** (1) props storage — add PROP to Prisma PickType + settlement + grading (schema/migrations frozen to agents per AGENTS.md law 2; 31 hierarchical-Bayes prop models already exist in packages/prediction-engine/src/edge-lab/ wired to quote-plane — storage is the only blocker); (2) fixture dating upstream fix — next-Sunday fixtures stamped ~7 days early, commenceTime off-grid by seconds (needs DB read; AGENTS.md law 7; do NOT patch board-side); (3) publish-path wiring of W-1 — routing GSE quantile outputs through sortQuantiles changes published intervals; founder call.
+## Data sources named
+nflverse (backfill standing); Big Data Bowl tracking sets (INGEST dependency for NGS-1…9); nflverse play-by-play + charting features; 31 hierarchical-Bayes prop models in packages/prediction-engine/src/edge-lab/ wired to quote-plane; Gmail (Grok Signal Desk briefs), Google Drive claude-build-queue folders, agent-bus/inbox/from-motif/, docs/ops/HANDOFF_2026-09-20_CLAUDE_SESSION.md, docs/research/2026-09-21/arxiv-program/index/IMPROVEMENT-LEDGER.jsonl (1,251 papers with gates).
+## Findings (numbers and facts, not vibes)
+- 8 sources collected; only 3 yielded wiring items (4 + 12 + ledger quick-wins); total 12 queued NGS items + 3 implemented modules this pass.
+- The conformal-prediction audit's cqr.ts clamp defect (flagged 2026-09-21) was repaired 2026-09-22 on main (commit 1d38140) — one-day turnaround.
+- Publish-path wiring was deliberately NOT done this pass (behavior change) — publish-path gates stay human calls.
+- No conflicts found between any model plans; Claude's hard rules (never modify schema/migrations/workflows, never flip gates, never weaken guards) were honored — zero such changes in this plan.
+- INGEST dependency: NGS-1…9 need Big Data Bowl tracking sets + nflverse backfill (Hermes lane, standing TASK-2026-09-18-scrape-every-api); NGS-11/12 need only nflverse (already available).
+- Branch discipline: `motif/wiring-plans-2026-09-22` (never main — Garrett/Hermes merge); verify via vitest on touched suites + tsc --noEmit before push.
+## Intelligence connections (tag each finding: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- CQR fail-closed repair landed (unclamped rank, +∞/No-Bet gate): TRUST-SIGNAL
+- Dual CLV reporting merged (computeClvPushDoctrineRates, three denominators): TRUST-SIGNAL
+- W-1 non-crossing quantile post-sort (WIS cannot worsen, Prop. 2): OTHER (calibration)
+- W-2 SCRPS = CRPS / E|X−X′| scale-invariant second engine ranking: OTHER (ranking metric)
+- W-3 bounded log score floored at −57.27 for analyst leaderboard: OTHER (scoring)
+- 12 NGS metric builds with explicit numeric adoption gates (Brier skill, 5pp accuracy delta, CRPS vs 2020 winner, 2pp pressure calibration, 80% recall @ 20% FPR): OL (NGS-3 time-to-pressure-allowed; NGS-6 pressure probability), SCHEME (NGS-2 run scheme classification; NGS-4 route classification), QB-BEHAVIOR (NGS-9 QB Passing Score), OTHER (rest)
+- Props storage as the only blocker between 31 existing hierarchical-Bayes prop models and the publish path: OTHER (infra)
+- No model-plan conflicts; Claude's hard guardrails honored: TRUST-SIGNAL
+## Engine-actionable? (yes/no + one-line what)
+Yes — the three CALIBRATE modules (W-1/W-2/W-3) are implemented on-branch with explicit adoption gates (crossing violations on 2025 data; ≥2 ranking flips vs mean CRPS; Spearman ≥ 0.95), and the 12 NGS lab items carry numeric gates that a builder can execute against once Big Data Bowl/nflverse ingestion lands.

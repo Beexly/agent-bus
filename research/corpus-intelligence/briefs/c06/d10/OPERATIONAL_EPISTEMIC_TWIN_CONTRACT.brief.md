@@ -1,0 +1,31 @@
+# frontier/OPERATIONAL_EPISTEMIC_TWIN_CONTRACT.md
+## What it is (1-2 sentences)
+Frozen (Fable FV-003) architecture contract for an "operational epistemic twin": a read-time composition law over evidence the system already produces, answering which capabilities are trustworthy right now — and why, with what evidence, and what observation would resolve it. Motivated by the production incident where `/nflverse` OOM-500ed while `/api/health` said healthy.
+## Key metrics/methods (formulas where given, else "not specified")
+No statistical formulas; the load-bearing method is a deterministic **composition law** (pure function of registry + evidence set + now):
+1. Node X = **unavailable** if own unavailable, or ANY hard dep composes unavailable.
+2. else **gated** (with gate provenance chain) if own gated or any hard dep gated — intentional darkness propagates as intent, never as outage.
+3. else **unknown** if own unknown or any hard dep unknown — ignorance is contagious through hard edges.
+4. else **degraded/stale** (max rank; union of tags/reasons) if own or any hard dep carries rank 1, or any SOFT dep composes to ANY non-healthy state — including a soft dep that composes **unknown** (missing/expired evidence), which caps the dependent at degraded. Soft dep contributes exactly one capped "degraded" tag; its specific tag granularity never propagates. Soft deps never gate, never unknown-ify, never disable.
+5. else **healthy**.
+- Three orthogonal axes: **Severity** `healthy(0) · degraded(1) · stale(1) · unavailable(2)` (degraded/stale share rank 1 as distinct tags — impairment vs freshness); **Certainty** `evidenced · unknown` (unknown is not a severity; a node can never be more certain than its least-certain required evidence); **Intent** `open · proof_gated · owner_gated` (founder-gated ≠ outage; modal provenance records WHICH gate).
+- **Evidence decay**: every evidence ref carries `observedAt` + freshness horizon; past-horizon severity evidence decays to **unknown** automatically — gating does NOT decay (structural fact; a gate stays gated even if not re-read). Own-state derivation priority: (a) fresh evidenced `unavailable` first, (b) `intent`/gating unconditionally next, (c) freshness-horizon check last.
+- **Determinism**: same inputs ⇒ same graph; property test — composition is monotone (worse evidence in never yields a better composed state).
+- Graph: nodes are namespaced capability ids (`route:/nflverse`, `engine:clv-decomposition`, `source:nflverse`, `revenue:checkout`, `proof:slate-commitment`, `gate:PUBLISH_LEDGER`, `db:primary`); edges **hard** (required) or **soft** (enhancing); registry is code (reviewed, typed), never runtime-mutated.
+## Data sources named
+v0 evidence sources (all already exist): OP-003 health-route adapters (feed `db:primary`, ingestion, settlement); `nflverseTableCacheStats()` from OP-002 (feeds `source:nflverse → route:/nflverse`); SettlementHealthBand (LC-005, feeds `engine:settlement`); gate flags from the LC-006 matrix (feed `gate:*` nodes); Sentinel result artifact when present (feeds `route:*` nodes).
+- v0 consumers: `/api/health` (capabilities array upgraded to composed graph, same wire shape, `ok`/503 semantics unchanged); Cockpit capability map (internal page with reasons + next-resolving-observation per non-healthy node); **agent planning guard** — `canActAsIf(capabilityId, atLeast: CapabilityStatus): boolean`, checkable violation when agents act as if unknown/unavailable capability were healthy.
+## Findings (numbers and facts, not vibes)
+- Status: **FROZEN** — v0 implementable by Sonnet immediately after OP-003 (capability-state module) lands; consumes it as its atom. Origin: `POST_LC_CRITICAL_REVIEW.md` frontier section + `gse-operate` §11.
+- Explicitly NOT: a new monitoring datastore, a metrics pipeline, or a dashboard. v0 is a **pure composition law** assembled through a typed dependency graph at read time; persistence, revenue weighting, journey modeling deferred to §6 phases.
+- v0 delivers `packages/epistemic-twin` — pure registry types + composition law + decay + ~15-node seed registry covering the live funnel (home → picks → checkout, nflverse reports, proof surfaces, health atoms) + the three consumers. No persistence.
+- v1 adds: Sentinel enrichment (each check maps to a node; coverage gaps surface as unknown automatically), deployment-SHA correlation, freshness-SLA integration (`refresh-sla.ts` becomes an evidence source).
+- v2 adds: revenue-impact weighting, user-journey nodes (journeys as derived nodes, e.g. "signup works"), Genesis integration (agents negotiating actions against the Twin).
+- Non-goals (stated so they stay dead): no auto-remediation; no runtime registry mutation; no new alerting channel in v0; no replacement of any existing enum — the 8 vocabularies stay, Twin adapts them via OP-003 adapters; no persistence until v1 proves read-time composition insufficient.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- TRUST-SIGNAL: **`/nflverse` OOM-500ing while `/api/health` said healthy** — the exact incident the Twin exists to prevent; every capability claim (including engine prediction surfaces) needs composed truth, not a flat green list.
+- TRUST-SIGNAL: agent planning guard `canActAsIf()` — a checkable predicate blocking agents from acting as if an unknown/unavailable capability were healthy; INFERENCE: this same guard pattern applies to acting on model outputs from unverified data sources (treat an uncalibrated source as unknown, not healthy).
+- OTHER: "absence of coverage is not green" (OP-003 invariant, generalized over time via evidence decay) — applies to engine signals too: a signal with no freshness evidence composes **unknown**, not healthy.
+- OTHER: intentional darkness ≠ outage (proof_gated/owner_gated) — the exact modal vocabulary needed for the shadow-vs-published projection gates (`canPublishProjections` false, PROJECTIONS_PROVIDER unflipped) in the variance-model file.
+## Engine-actionable? (yes/no + one-line what)
+Yes — implement the composition law + `canActAsIf()` guard in `packages/epistemic-twin` (v0, post-OP-003) and point it at the live funnel and health route so no agent or cron ever consumes an unverified engine capability again.

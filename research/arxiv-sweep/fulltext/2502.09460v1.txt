@@ -1,0 +1,5018 @@
+Metamorphic Testing for Pose Estimation Systems
+Thanks:
+This work was supported in part with the financial support of grant 13/RC/2094_2 to Lero - the Research Ireland Research Centre for Software.
+Matías Duran
+1
+Thomas Laurent
+1
+Ellen Rushe
+2
+Anthony Ventresque
+1
+Affiliation:
+1
+SFI Lero & School of Computer Science and Statistics
+Trinity College Dublin
+- Dublin, Ireland
+{mduran
+|
+|
+tlaurent
+|
+|
+anthony.ventresque}@tcd.ie
+Affiliation:
+2
+School of Computing
+Dublin City University
+- Dublin, Ireland
+ellen.rushe@dcu.ie
+Abstract
+Pose estimation systems are used in a variety of fields, from sports analytics to livestock care. Given their potential impact, it is paramount to systematically test their behaviour and potential for failure. This is a complex task due to the oracle problem and the high cost of manual labelling necessary to build ground truth keypoints. This problem is exacerbated by the fact that different applications require systems to focus on different subjects (e.g., human versus animal) or landmarks (e.g., only extremities versus whole body and face), which makes labelled test data rarely reusable. To combat these problems we propose
+MeT-Pose
+, a metamorphic testing framework for pose estimation systems that bypasses the need for manual annotation while assessing the performance of these systems under different circumstances.
+MeT-Pose
+thus allows users of pose estimation systems to assess the systems in conditions that more closely relate to their application without having to label an ad-hoc test dataset or rely only on available datasets, which may not be adapted to their application domain. While we define
+MeT-Pose
+in general terms, we also present a non-exhaustive list of metamorphic rules that represent common challenges in computer vision applications, as well as a specific way to evaluate these rules. We then experimentally show the effectiveness of
+MeT-Pose
+by applying it to Mediapipe Holistic, a state of the art human pose estimation system, with the
+FLIC
+and
+PHOENIX
+datasets. With these experiments, we outline numerous ways in which the outputs of
+MeT-Pose
+can uncover faults in pose estimation systems at a similar or higher rate than classic testing using hand labelled data, and show that users can tailor the rule set they use to the faults and level of accuracy relevant to their application.
+Index Terms:
+Pose estimation, Metamorphic testing,
+I
+Introduction
+Pose Estimation Systems
+has applications in medicine
+[
+1
+]
+, sign language recognition
+[
+2
+]
+and high stakes sports events
+[
+3
+]
+, requiring them to be well-tested in order to provide a substantiated assessment of the correct behaviour when applied to sensitive domains. Such systems need to perform correctly and as expected under a variety of conditions. This work aims to provide practitioners with a means of assessing this.
+In this work we propose
+MeT-Pose
+, a metamorphic testing framework to test pose estimation systems without the significant cost of manual data labelling. Additionally, we propose a non exhaustive set of metamorphic rules for
+MeT-Pose
+, including flexible metrics to assess violations. These rules allow practitioners to apply various commonly encountered image changes and can easily be extended by users, should they want to explore different aspects of the system.
+We apply
+MeT-Pose
+to Mediapipe Hollistic
+[
+4
+]
+, a widely used state-of-the-art pose estimation system, on datasets from the literature used to train and assess human pose estimation systems in different domains. We show that our proposed framework can find numerous faulty outputs from the system. Results show that
+MeT-Pose
+provides results on par with classic, human annotated ground truth-based testing on the
+FLIC
+dataset. Furthermore, we illustrate how analysis of the results can highlight elements of the input that impact the system’s performance. Such analysis can then help practitioners better understand the settings under which the system functions properly, and can thus be used with confidence.
+The remainder of this paper is organised as follows. First, Section
+II
+provides an overview of the context and concepts that underpin this work. Next, Section
+III
+describes our proposed metamorphic testing framework for pose estimation systems, and Section
+IV
+describes a non-exhaustive set of possible metamorphic relations for this system. Section
+V
+describes the experiments performed to evaluate the framework, and Section
+VI
+describes and analyses the results of these experiments. Section
+VII
+gives an overview of related work, while Section
+VIII
+describes threats to the validity of this work, and steps taken to address them. Finally, Section
+IX
+concludes the paper and proposes avenues for future work.
+II
+Background
+This section provides an overview and definition of the concepts used in this work. First, Section
+II-A
+defines human pose estimation systems, which the proposed framework tests, then Section
+II-B
+defines challenges specific to testing Machine Learning (ML) systems, and Section
+II-C
+explains the idea of metamorphic testing, the basis of the proposed framework.
+II-A
+Pose Estimation
+Pose estimation is the task of estimating the locations of different landmarks on a subject from images or video frames, with the overall aim of providing an overview of their pose. This task is important to a wide variety of fields including human activity recognition
+[
+5
+]
+, sign language recognition
+[
+2
+]
+, and sports analytics
+[
+3
+]
+. It is typically solved using DL-based regression algorithms which estimate the coordinates of each body part. One of the most common open-source pose estimation frameworks available is MediaPipe’s Pose Landmark Detection system
+[
+6
+]
+, which is often incorporated directly into larger ML frameworks for a variety of tasks. This is typically done without fine-tuning, as this model is trained on a large and diverse set of people – often a far larger number of individuals than would be available for the lower-resource tasks on which this model is typically applied. It is thus important that these pose estimation systems be tested under different conditions when integrated into different systems that target different use cases and thus will provide images of different natures (e.g., dynamic applications will feed the pose estimation system images that are more blurry).
+II-B
+Challenges in Testing ML-based Systems
+Deep Learning (DL) research has gained enormous momentum over the last decade, with a majority of the development in this area being centred around computer vision. However, despite their success, these deep architectures have also demonstrated harmful decision-making
+[
+7
+,
+8
+,
+9
+]
+, bias
+[
+10
+]
+and a lack of “understanding” of common-sense concepts such as basic spatial relations
+[
+11
+,
+12
+]
+. These issues are made all the more challenging to identify given that DL methods lack interpretability, with the steps that lead to a particular decision often being unclear. This lack of transparency means that it is crucial that these systems are systematically tested and their results compared to their expected behaviour in order to understand their sensitivities, along with the conditions under which they can be expected to behave correctly.
+Another aspect that complicates the testing of complex systems is that they often present what is known as the
+Oracle Problem
+[
+13
+]
+, which describes a scenario where the correct output of the system under test is not known. Sometimes there are no automated ways to compute this oracle, or the act of querying this oracle can be prohibitively expensive. In the case of pose estimation, labelling keypoints in videos is extremely time consuming, making it expensive to collect this form of ground truth data for many applications. This complicates the testing of these systems and requires techniques that can assess the correct functioning of the system without needing an oracle for the correctness of a single execution of the system.
+Though testing techniques for computer vision-based classification systems have been extensively explored
+[
+14
+,
+15
+,
+16
+]
+, less attention has been given to more complex computer vision tasks such as pose estimation. For example, while MediaPipe does evaluate its pose estimation framework for bias related to the demographics of individuals – an admirable activity – this analysis is expensive as it requires ground truth information. Additionally, though their evaluation states that degradation can be expected as video quality and lighting gets worse, a comprehensive testing procedure is not outlined. For many applications, it is crucial that we understand the
+specific
+parameters within which a system can be expected to operate accurately, especially where mistakes are costly. There has been some work in this area
+[
+17
+]
+II-C
+Metamorphic testing
+Metamorphic Testing
+(
+𝑀𝑇
+\mathit{MT}
+) has been used to address the oracle problem for both classical programs
+[
+18
+]
+and ML applications
+[
+15
+]
+and has demonstrated promising results at a relatively low cost.
+𝑀𝑇
+\mathit{MT}
+relies on
+metamorphic rules
+– relations between certain changes to the input of the system (e.g., doubling an integer input) and their effect on its output (e.g., the output should be doubled too) – to circumvent the oracle problem. If one of these relations is violated for a given input, then the system is not behaving correctly. Note that the violation of the metamorphic rule can be verified without knowing what the correct output for either of the inputs is, i.e., without an oracle for the correctness of each output.
+This method is well suited for testing pose estimation systems as it does not require ground truth labels, which come from expensive manual annotation of data. Additionally, since the inputs can be modified in numerous ways, it can help understand the boundaries of the input space under which the system performs as expected.
+III
+MEtamorphic TEsting for POSe Estimation (MeT-Pose)
+This section first formally defines the problem of testing pose estimation systems (
+III-A
+) and then introduces
+MeT-Pose
+(
+III-B
+).
+III-A
+Problem definition
+MeT-Pose
+aims to test pose estimation systems at large. Given an input image
+i
+​
+m
+​
+g
+img
+, a pose estimation system returns an output
+O
+O
+which is a list of sets of keypoints:
+O
+=
+[
+K
+​
+P
+0
+,
+K
+​
+P
+1
+,
+…
+,
+K
+​
+P
+n
+]
+O=[KP_{0},KP_{1},...,KP_{n}]
+with
+n
+∈
+ℕ
+n\in\mathbb{N}
+or
+O
+=
+[
+]
+O=[]
+. Each list of keypoints
+K
+​
+P
+i
+KP_{i}
+corresponds to the keypoints of a subject detected in the image by the system, i.e.,
+∀
+i
+∈
+{
+0
+.
+.
+n
+}
+,
+K
+P
+i
+=
+k
+p
+0
+,
+…
+,
+k
+p
+p
+\forall i\in\{0..n\},KP_{i}={kp_{0},...,kp_{p}}
+, with each keypoint
+k
+​
+p
+j
+kp_{j}
+, identifying a landmark of subject
+i
+i
+and its coordinates.
+Testing these systems is an inherently complex task, as they often lack exact requirements. For example, the list of landmarks that should be found on a person in the task of human pose estimation is not defined in a consistent manner with each system defining its own. Similarly, the way to account for occlusion in an image or to process images containing no or multiple subjects is often not defined. This lack of standard requirements contributes to the oracle problem and to the cost of testing pose estimation systems, as each system requires its own hand labelled data for evaluation.
+Additionally, current systems that rely on pose estimation are mostly built using deep neural networks-based pose estimation system. These models are typically trained on large, diverse datasets to facilitate generalisation. Given the “generalised” nature of these models and high cost of labelling pose data, these models are typically used “out-of-the-box”, without fine-tuning them for the particular application of the system they are used in, and even sometimes without domain-specific testing. Additionally, different use cases and environmental factors can challenge a pose estimation system in different ways, for example: low lighting, different camera angles, or motion blur. We consider that the problem of testing pose estimation systems should be embedded in a particular use case and consider these application-specific conditions.
+MeT-Pose
+aims at tackling these problems with the testing of pose estimation systems. It aims at providing a general, flexible, and tunable testing method for pose estimation systems that does not require hand labelled ground truth test data.
+MeT-Pose
+thus offers a testing method that lets users tests these systems for their particular use cases.
+III-B
+Approach overview
+We aim for
+MeT-Pose
+to be a general framework so we present it here in broad terms. A specific example of how the framework can be applied is detailed in Section
+IV
+.
+MeT-Pose
+is a metamorphic testing framework for pose estimation systems. It thus relies on
+metamorphic rules
+based on images and keypoints. Each rule
+ℳ
+\mathcal{M}
+is defined by two elements:
+•
+A
+transformation
+ℳ
+.
+𝑡𝑟𝑎𝑛𝑠
+\mathit{\mathcal{M}.\mathit{trans}}
+, that defines a modification to apply to an image, e.g., making the image greyscale. Given an original test image
+i
+​
+m
+​
+g
+o
+​
+r
+​
+i
+​
+g
+img_{orig}
+,
+ℳ
+.
+𝑡𝑟𝑎𝑛𝑠
+\mathit{\mathcal{M}.\mathit{trans}}
+produces a modified test image
+i
+​
+m
+​
+g
+m
+​
+o
+​
+d
+=
+ℳ
+.
+𝑡𝑟𝑎𝑛𝑠
+⁡
+(
+i
+​
+m
+​
+g
+o
+​
+r
+​
+i
+​
+g
+)
+img_{mod}=\mathit{\mathcal{M}.\mathit{trans}}(img_{orig})
+.
+•
+A
+relation
+ℳ
+.
+𝑟𝑒𝑙
+\mathit{\mathcal{M}.\mathit{rel}}
+, that defines a property between the System Under Test (SUT)’s output keypoints for
+i
+​
+m
+​
+g
+o
+​
+r
+​
+i
+​
+g
+img_{orig}
+and its output keypoints for
+i
+​
+m
+​
+g
+m
+​
+o
+​
+d
+img_{mod}
+that should appear if the system functions correctly. The simplest relation is the identity relation, i.e., the system should output the same keypoints for
+i
+​
+m
+​
+g
+o
+​
+r
+​
+i
+​
+g
+img_{orig}
+and
+i
+​
+m
+​
+g
+m
+​
+o
+​
+d
+img_{mod}
+. If this relation is not followed (i.e., the property does not appear), then the rule is said to be violated.
+A violation of a metamorphic rule on an image indicates that the pose estimation system is providing incorrect output on
+i
+​
+m
+​
+g
+o
+​
+r
+​
+i
+​
+g
+img_{orig}
+, on
+i
+​
+m
+​
+g
+m
+​
+o
+​
+d
+img_{mod}
+, or on both. The severity of the system’s error can vary, i.e., the output can be more incorrect in some cases than others. This is something that
+MeT-Pose
+takes into account by returning the severity of a violation, which can then be considered by, for example, using different error thresholds to decide if a violation constitutes a test failure.
+Fig.
+1
+gives an overview of the
+MeT-Pose
+framework.
+MeT-Pose
+takes as input the SUT, a set of metamorphic rules, and a set
+I
+​
+M
+​
+G
+o
+​
+r
+​
+i
+​
+g
+IMG_{orig}
+of test images.
+MeT-Pose
+applies the transformation of each rule to each test image in
+I
+​
+M
+​
+G
+o
+​
+r
+​
+i
+​
+g
+IMG_{orig}
+, and for each pair of original and modified images it checks whether the rule is violated, and to what degree. For each input image
+i
+​
+m
+​
+g
+o
+​
+r
+​
+i
+​
+g
+∈
+I
+​
+M
+​
+G
+o
+​
+r
+​
+i
+​
+g
+img_{orig}\in IMG_{orig}
+, and each metamorphic rule
+ℳ
+\mathcal{M}
+in the input set, the output of
+MeT-Pose
+is:
+•
+a modified image
+ℳ
+.
+𝑡𝑟𝑎𝑛𝑠
+⁡
+(
+i
+​
+m
+​
+g
+o
+​
+r
+​
+i
+​
+g
+)
+\mathit{\mathcal{M}.\mathit{trans}}(img_{orig})
+,
+•
+whether the pair of images violates
+ℳ
+.
+𝑟𝑒𝑙
+\mathit{\mathcal{M}.\mathit{rel}}
+,
+•
+how severely the pair violates
+ℳ
+.
+𝑟𝑒𝑙
+\mathit{\mathcal{M}.\mathit{rel}}
+if it does.
+Users are then free to analyse this output based on the quality constraints of their application. Some use cases, for example, might not require that small violations be considered failures if high precision is not required.
+Fig. 1
+:
+Overview diagram of
+MeT-Pose
+MeT-Pose
+is agnostic to the way rules are defined and how the relations are assessed. The next section details examples of rules and a possible error metric-based technique to assess their relations.
+IV
+Proposed metamorphic rules
+MeT-Pose
+can be used with any metamorphic rule that defines a transformation
+𝑡𝑟𝑎𝑛𝑠
+\mathit{trans}
+of an input image
+i
+​
+m
+​
+g
+img
+and a relation
+𝑟𝑒𝑙
+\mathit{rel}
+between the keypoints of
+i
+​
+m
+​
+g
+img
+and
+𝑡𝑟𝑎𝑛𝑠
+⁡
+(
+i
+​
+m
+​
+g
+)
+\mathit{trans}(img)
+. This section describes a non-exhaustive set of rules that we propose to evaluate
+MeT-Pose
+with. Section
+IV-A
+describes the transformations and relations of these rules and Section
+IV-B
+defines a possible error-metric based mechanism to assess violations of the rules. Section
+V-D
+defines the exact metric used in this work.
+IV-A
+Transformations and Relations
+This section describes a varied set of rules for
+MeT-Pose
+that cover a range of transformations that are often encountered in the applications of pose estimation systems. In each different application of pose estimation, it can be useful to compare the effect of various modifications to the input images to infer which specific modifications lead to higher output inaccuracies. This is particularly important when there is a possibility of collecting new data for a given task, as these data quality issues can be potentially mitigated or minimised.
+Fig.
+2
+shows the effect of some of the transformations used in this work. We detail here the proposed rules and settings used in the experiment. The rules can be classified based on their transformations:
+•
+Spatial transformations.
+These rules focus on the shape or orientation of the image:
+–
+Identity
+(
+𝙸𝚍
+\mathtt{Id}
+): does not modify the image.
+𝑟𝑒𝑙
+\mathit{rel}
+: the keypoints on both images should be equal. Checks that the SUT is deterministic.
+–
+Stretch
+(
+𝚂𝚝𝚌𝚑
+h
+,
+w
+\mathtt{Stch}_{h,w}
+): stretch the image both on the vertical (by a factor of
+h
+h
+) and horizontal (
+w
+w
+) axes.
+𝑟𝑒𝑙
+\mathit{rel}
+: the keypoints should keep at the same relative coordinates (0,0 is at bottom left of the image, and 1,1 at top right) in the stretched and original images.
+–
+Mirror
+(
+𝙼𝚒𝚛𝚛
+\mathtt{Mirr}
+): mirrors the image along the horizontal (
+𝙼𝚒𝚛𝚛
+h
+\mathtt{Mirr}_{h}
+), vertical (
+𝙼𝚒𝚛𝚛
+v
+\mathtt{Mirr}^{v}
+) or both (
+𝙼𝚒𝚛𝚛
+h
+v
+\mathtt{Mirr}_{h}^{v}
+) axes.
+𝑟𝑒𝑙
+\mathit{rel}
+: keypoints should be mirrored in the chosen axes. Mimics situations such as video-calls where the image can be mirrored.
+–
+Rotation
+(
+𝚁𝚘𝚝
+ω
+c
+\mathtt{Rot}_{\omega}^{c}
+): rotates the image
+ω
+\omega
+degrees around a given centre point
+c
+c
+.
+𝑟𝑒𝑙
+\mathit{rel}
+: keypoints on the modified image should be equal to the keypoints on the original image rotated
+ω
+\omega
+degrees around
+c
+c
+.
+•
+Image quality transformations.
+These rules focus on problems often encountered with the quality of images provided as input to pose estimation systems and challenges often encountered in practice. Fig.
+3
+provides an example of such problems (motion blur and pixelation) for sports analytics.
+The relation for these rules is that the keypoints should be unchanged after the transformation.
+–
+Resolution
+(
+𝚁𝚎𝚜
+f
+​
+a
+​
+c
+​
+t
+​
+o
+​
+r
+\mathtt{Res}_{factor}
+): multiplies the resolution of the image by a factor
+0
+<=
+f
+​
+a
+​
+c
+​
+t
+​
+o
+​
+r
+<
+1
+0<=factor<1
+. Lower resolutions of images could be a concern for applications using older or cheaper image capturing devices.
+–
+Gamma correction
+(
+𝙶𝚊𝚖𝚖𝚊
+γ
+\mathtt{Gamma}_{\gamma}
+): applies gamma correction
+[
+19
+]
+to the image with a gamma
+γ
+\gamma
+. Brightness can present high variations in real world applications.
+–
+Brightness Scaling
+(
+𝙱𝚛𝚒𝚐𝚑𝚝
+a
+m
+\mathtt{Bright}_{a}^{m}
+): for each pixel and each channel value
+v
+i
+,
+j
+c
+v^{c}_{i,j}
+returns
+a
++
+m
+∗
+v
+i
+,
+j
+c
+a+m*v^{c}_{i,j}
+.
+–
+Bilateral Filtering
+(
+𝙱𝚒𝚕𝚊𝚝
+s
+​
+t
+​
+r
+s
+​
+i
+​
+z
+​
+e
+\mathtt{Bilat}_{str}^{size}
+): applies a bilateral filter
+[
+20
+]
+of strength (
+s
+​
+t
+​
+r
+str
+) and size (
+s
+​
+i
+​
+z
+​
+e
+size
+) to the image, preserving edges of the image but reducing textures. By preserving the edges of objects but reducing textures, this rule checks if the SUT is too reliant on textures instead of the shape of objects, as shown by Geirhos et al.
+[
+21
+]
+.
+–
+Motion
+(
+𝙼𝚘𝚝𝚒𝚘𝚗
+k
+​
+_
+​
+s
+d
+​
+i
+​
+r
+\mathtt{Motion}_{k\_s}^{dir}
+): applies motion blur to the image with a given kernel size and direction. Motion blur is often seen on images used for pose estimation, as Fig.
+3
+shows. This is especially true when pose estimation is used for hands
+[
+22
+]
+.
+•
+Colour-space transformations.
+These rules change the colours of the image in a way that does not affect the clarity of the subjects in order to ensure that the pose estimation system is properly recognising their pose, and not relying on features unrelated to the pose, such as colours.
+The relation for these rules is that the keypoints should be unchanged after the transformation. All colour transformations test the SUT’s over-reliance on colour, which can affect performance when the system is used in a new context
+[
+23
+]
+.
+–
+Greyscale
+(
+𝙶𝚛𝚎𝚢
+\mathtt{Grey}
+): turns the image into a greyscale (only shades of grey) image.
+–
+Colour wheel
+(
+𝙲𝚆𝚑𝚎𝚎𝚕
+θ
+\mathtt{CWheel}_{\theta}
+): changes colours in the image by applying a rotation
+θ
+\theta
+on the hue colour wheel value of a
+HSV
+[
+24
+]
+encoding of the input image.
+–
+Colour channels
+(
+𝙲𝚌𝚑𝚊𝚗𝚜
+[
+f
+​
+a
+​
+c
+​
+t
+​
+o
+​
+r
+​
+1
+,
+f
+​
+a
+​
+c
+​
+t
+​
+o
+​
+r
+​
+2
+,
+f
+​
+a
+​
+c
+​
+t
+​
+o
+​
+r
+​
+3
+]
+e
+​
+n
+​
+c
+​
+o
+​
+d
+​
+i
+​
+n
+​
+g
+\mathtt{Cchans}_{[factor1,factor2,factor3]}^{encoding}
+): multiplies each of the 3 colour channels in the
+e
+​
+n
+​
+c
+​
+o
+​
+d
+​
+i
+​
+n
+​
+g
+encoding
+(RGB, BGR or XYZ) of the image by a given factor.
+To understand the influence of different zones of the image, we introduce “filtered” versions of certain rules:
+𝙵𝚕𝚝
+⁡
+(
+𝚛𝚞𝚕𝚎
+,
+𝚣𝚘𝚗𝚎
+)
+\mathtt{Flt(rule,zone)}
+.
+The filtered version of a rule only applies the transformation to a particular zone of the image, e.g., the background of the image (all non-subject zones).
+The last rule we propose in this work is the
+Colour fill
+(
+𝙲𝚏𝚒𝚕𝚕
+c
+​
+o
+​
+l
+​
+o
+​
+u
+​
+r
+\mathtt{Cfill}_{colour}
+). This rule is only used in a filtered way, and therefore fills only a segment of the image a certain colour. Its relation is that keypoints should remain unchanged.
+Fig. 2
+:
+Example image modified by various rules
+Fig. 3
+:
+Example inputs from a sports analytics application, showing motion blur and rotation; occlusion; and pixelation
+IV-B
+Error Metric-based Relation Assessment
+This section introduces an error metric-based technique to assess violations of rules used in
+MeT-Pose
+. All the rules proposed in this work either expect no change in keypoints or modify the position of the expected output keypoints between the original and modified. However, different rules, e.g., those involving removing or adding landmarks to the image, could also modify the keypoints that the system is expected to detect. Assessing the degree of violation of these different types of rules would require different approaches, which could all be implemented as an error metric (e.g., counting the number of added landmarks that were not detected by the SUT).
+For each rule, the user can provide a metric
+𝙴𝚛𝚛
+⁡
+(
+O
+e
+​
+x
+​
+p
+​
+e
+​
+c
+​
+t
+​
+e
+​
+d
+,
+O
+m
+​
+o
+​
+d
+)
+\mathtt{Err}(O_{expected},O_{mod})
+, where
+O
+e
+​
+x
+​
+p
+​
+e
+​
+c
+​
+t
+​
+e
+​
+d
+O_{expected}
+is the expected position of the keypoints on the modified image according to the metamorphic rule’s relation. This metric should be tailored to each relation and to the types of errors considered (e.g., focusing only on hand keypoints).
+MeT-Pose
+lets the user define an error threshold
+t
+e
+​
+r
+​
+r
+t_{err}
+over which the error is not acceptable. A test then passes iff:
+𝙴𝚛𝚛
+⁡
+(
+O
+e
+​
+x
+​
+p
+​
+e
+​
+c
+​
+t
+​
+e
+​
+d
+,
+O
+m
+​
+o
+​
+d
+)
+<
+t
+e
+​
+r
+​
+r
+\mathtt{Err}(O_{expected},O_{mod})<t_{err}
+Both the error metric and error threshold are definable by the user, giving them full control over the aspects of the system’s output they want to test (e.g., ignoring particular keypoints), along with the sensitivity of those tests. Section
+V-D
+details the human pose estimation-oriented metric used in the experiments, and a comparison of results for different error thresholds.
+V
+Experiments
+This section details the experiments conducted to illustrate how
+MeT-Pose
+can be used and evaluate how well it can find faults in a pose estimation system without using ground truth keypoints. Section
+V-A
+details the research questions we explore with these experiments. Sections
+V-B
+and
+V-C
+detail the pose estimation system under test and datasets used in the experiments, and Section
+V-D
+defines the error metric used to evaluate rule violations.
+V-A
+Research questions
+The experiments in this work aim to answer the following research questions (RQs):
+•
+RQ1
+: Does
+MeT-Pose
+find faults?
+This RQ considers whether
+MeT-Pose
+can find faults in pose estimation systems. In order to explore this question we consider the number of rule violations found by
+MeT-Pose
+using different subsets of the rules described in Section
+IV-A
+and different error thresholds.
+•
+RQ2
+: How different are the results of
+MeT-Pose
+and classic, ground truth-based testing?
+This RQ focuses on whether the faults found by
+MeT-Pose
+correspond to those found using classic, ground truth-based testing using the same error metric and error threshold as
+MeT-Pose
+. This research question considers the same rule sets and error thresholds as RQ1 and is composed of three sub-RQs:
+–
+RQ2.1
+: Do both testing methods lead to a similar number of failures?
+This RQ first assesses whether both testing methods uncover the same number of failing test cases, a test case being considered as an input image for both methods.
+–
+RQ2.2
+: Do the same test images make the system fail with both methods?
+This RQ explores whether the particular images that lead to a failure are the same for both methods, i.e., if they expose the same system failures.
+–
+RQ2.3
+: How large are the errors found by both methods?
+Finding larger (w.r.t. the chosen error metric) errors in addition to small errors would show that a testing method finds faults in the SUT with a stronger effect on the output.
+•
+RQ3
+: What do the different proposed metamorphic rules bring to the method?
+This RQ explores the contribution of the different rules proposed in Section
+IV-A
+1
+1
+1
+Note that these rules are general examples that cover general (human) pose estimation challenges and that, as described in Section
+III-B
+,
+MeT-Pose
+can be used with any metamorphic rules, allowing users to tailor the rules they use to the particular application they want to test pose estimation for.
+to
+MeT-Pose
+. It is composed of two sub-RQs:
+–
+RQ3.1
+Are there subsumption relationships amongst the proposed rules?
+This RQ explores possible subsumption relations between the different proposed rules. A rule subsumes another rule if it finds the failure-inducing images another rule does, making the second rule redundant.
+–
+RQ3.2
+Do the different metamorphic relations reveal the same types of faults?
+This RQ assesses whether the different metamorphic rules find the same failure-inducing images, which would indicate the violations of these rules could have their roots in the same fault in the system.
+V-B
+System Under Test
+In order to explore the three RQs defined in Section
+V-A
+, we applied
+MeT-Pose
+to
+𝑀𝑒𝑑𝑖𝑎𝑝𝑖𝑝𝑒
+\mathit{Mediapipe}
+𝐻𝑜𝑙𝑖𝑠𝑡𝑖𝑐
+\mathit{Holistic}
+[
+4
+]
+, a state of the art human pose estimation system. Its underlying DL model is BlazePose GHUM 3D
+[
+25
+]
+. The BlazePose
+[
+26
+]
+model is a lightweight convolutional neural network that predicts the co-ordinates of body parts.
+𝐻𝑜𝑙𝑖𝑠𝑡𝑖𝑐
+\mathit{Holistic}
+is composed of three sub-models, each one responsible for the keypoints of the: face (468 landmarks), hands (21 landmarks each), and overall body pose (33 landmarks).
+We used
+𝐻𝑜𝑙𝑖𝑠𝑡𝑖𝑐
+\mathit{Holistic}
+in static image mode. Using the system in this mode provides a deterministic output, as verified by the use of the
+𝙸𝚍
+\mathtt{Id}
+rule (i.e. there is no difference between two different generations without a transform). This ensures that no noise from non-determinism is integrated into the error metric.
+V-C
+Datasets
+We tested the SUT with
+MeT-Pose
+with two datasets:
+•
+PHOENIX
+[
+27
+]
+is a dataset created for sign language recognition. It contains
+947,756
+947,756
+video frames from a signed German weather forecast. Given that this dataset is used in the field of sign-language recognition and translation, the dataset contains manually labelled annotations in the form of written text translation of signs, but no ground truth keypoints. The images are in a very controlled environment, with all video frames having a similar plain background, with subjects wearing plain black clothes, and without large changes in the subject’s distance from the camera or in the angles of their poses.
+•
+FLIC
+[
+28
+]
+is a dataset containing
+4,552
+4,552
+movie frames curated from popular movies. All images include one or multiple subjects (people) as it is specifically a human pose estimation benchmark. The environment of this dataset is less controlled, with situations changing drastically depending on the movie scene images were taken from. This provides a contrast to the controlled environment of
+PHOENIX
+.
+FLIC
+contains ground truth (
+g
+​
+t
+gt
+) manual annotations of 11 keypoints obtained from multiple annotators through Amazon Mechanical Turk. We have mapped a subset of keypoints from
+𝑀𝑒𝑑𝑖𝑎𝑝𝑖𝑝𝑒
+\mathit{Mediapipe}
+to the corresponding keypoints of the
+FLIC
+g
+​
+t
+gt
+.
+Both of these datasets use publicly available images.
+FLIC
+was specifically curated to benchmark pose estimation systems, while Phoenix requires that the person signing remains in frame, meaning that both datasets have an easily identifiable person in the frame. This is in contrast with other datasets that are built for general object classification such as
+COCO
+[
+29
+]
+, which contain comparatively fewer human subjects or have these subjects positioned very far away from the camera. We ran our experiments on representative subsets of these two datasets in order to reduce the cost of our experiments. Specifically, for
+PHOENIX
+we used the
+dev
+subset (
+55,775
+55,775
+images). For
+FLIC
+, we used the images labelled as
+test
+, excluding the
+FLIC-full
+extension, i.e.,
+835
+835
+images.
+V-D
+Metamorphic Rules and Error Metrics
+In order to explore the research questions that Section
+V-A
+details, we applied
+MeT-Pose
+using a set of the rules that Section
+IV-A
+describes using a range of configurations of these relations. Table
+I
+details this set of configurations, which is denoted by
+𝐴𝑙𝑙𝑅𝑒𝑙𝑠
+\mathit{AllRels}
+.
+TABLE I
+:
+Full list of metamorphic rules settings, settings in bold are included in
+𝑆𝑢𝑏𝑅𝑒𝑙𝑠
+\mathit{SubRels}
+Transformation
+∈
+𝑆𝑢𝑏𝑅𝑒𝑙𝑠
+\in\mathit{SubRels}
+Configurations
+𝙸𝚍
+\mathtt{Id}
+✓
+𝚂𝚝𝚌𝚑
+1
+,
+2
+\mathtt{Stch}_{1,2}
+✓
+(0.6, 1), (0.8, 1), (0.9, 1.1), (0.95, 1.05), (1, 1.4), (1, 1.25),
+(1, 0.8)
+,
+(1, 0.6)
+, (1.05, 0.95), (1.1, 0.9),
+(1.25, 1)
+, (1.4, 1)
+𝙼𝚒𝚛𝚛
+h
+v
+\mathtt{Mirr}_{h}^{v}
+✓
+horizontal
+, vertical, both
+𝚁𝚘𝚝
+1
+2
+\mathtt{Rot}_{1}^{2}
+✓
+(5, (0.5, 0.5))
+,
+(10, (0.5, 0.5))
+, (15, (0.5, 0.5)), (25, (0.5, 0.5))
+𝚁𝚎𝚜
+1
+\mathtt{Res}_{1}
+✓
+0.1,
+0.2
+, 0.3, 0.4, 0.5, 0.6,
+0.7
+, 0.8, 0.9, 0.95, 0.98
+𝙶𝚊𝚖𝚖𝚊
+1
+\mathtt{Gamma}_{1}
+✓
+0.25,
+0.5
+, 0.85, 0.95, 1.05, 1.15, 1.5, 1.75
+𝙱𝚛𝚒𝚐𝚑𝚝
+1
+2
+\mathtt{Bright}_{1}^{2}
+✓
+(-20, 0.8), (-20, 1.6), (0, 1.05), (0, 1.15), (20, 0.4),
+(20, 0.8)
+, (20, 1.2), (20, 1.6), (30, 1.15)
+𝙱𝚒𝚕𝚊𝚝
+1
+2
+\mathtt{Bilat}_{1}^{2}
+✓
+(10, 3)
+, (10, 5), (10, 7), (10, 9), (30, 3), (30, 5), (30, 7), (30, 9), (50, 3), (50, 5), (50, 7), (50, 9), (80, 3), (80, 5),
+(80, 7)
+, (80, 9), (125, 3),
+(125, 5)
+, (125, 7), (125, 9), (150, 3), (150, 5), (150, 7), (150, 9), (180, 3), (180, 5), (180, 7), (180, 9)
+𝙼𝚘𝚝𝚒𝚘𝚗
+1
+2
+\mathtt{Motion}_{1}^{2}
+✓
+(5, 0), (5, 40), (5, 70), (5, 100), (7, 0), (7, 40), (7, 70), (7, 100), (9, 0), (9, 40), (9, 70), (9, 100),
+(11, 0)
+, (11, 70),
+(11, 100)
+𝙶𝚛𝚎𝚢
+\mathtt{Grey}
+✓
+𝙵𝚕𝚝
+⁡
+(
+𝙲𝚆𝚑𝚎𝚎𝚕
+𝟷
+,
+𝟸
+)
+\mathtt{Flt(\mathtt{CWheel}_{1},2)}
+✓
+(10, skin), (30, skin), (90, skin), (-45, skin), (10, clothes), (30, clothes), (90, clothes), (-45, clothes),
+(90, hair)
+,
+(90, background)
+𝙵𝚕𝚝
+⁡
+(
+𝙲𝚌𝚑𝚊𝚗𝚜
+𝟷
+𝟸
+,
+𝟹
+)
+\mathtt{Flt(\mathtt{Cchans}_{1}^{2},3)}
+([0.9, 1.1, 1.1], RGB, skin), ([1.1, 1.1, 0.9], RGB, skin), ([0.8, 1.3, 1.3], RGB, skin), ([1.3, 1.3, 0.8], RGB, skin), ([0.6, 1.4, 1], RGB, skin), ([1.4, 1, 0.6], RGB, skin), ([0.45, 1, 1.2], RGB, skin), ([1.2, 1, 0.45], RGB, skin), ([1, 1, 1], BGR, skin), ([1, 1, 1], XYZ, skin)
+𝙵𝚕𝚝
+⁡
+(
+𝙲𝚏𝚒𝚕𝚕
+𝟷
+,
+𝟸
+)
+\mathtt{Flt(\mathtt{Cfill}_{1},2)}
+([0, 0, 255], background), ([255, 180, 120]
+a
+, background), ([33, 28, 27]
+b
+, background), ([0, 0, 255], skin), ([255, 180, 120], skin), ([33, 28, 27], skin), ([0, 0, 255], clothes), ([255, 180, 120], clothes), ([33, 28, 27], clothes)
+a
+close to skin colour on phoenix dataset
+b
+close to clothes colour in phoenix dataset
+Not all of the relations and configurations in
+𝐴𝑙𝑙𝑅𝑒𝑙𝑠
+\mathit{AllRels}
+are relevant to the data in
+PHOENIX
+and
+FLIC
+and to testing
+𝐻𝑜𝑙𝑖𝑠𝑡𝑖𝑐
+\mathit{Holistic}
+without finetuning, leading to artificially high error rates. We thus also use a restricted set of relations and settings, highlighted in bold in Table
+I
+and denoted by
+𝑆𝑢𝑏𝑅𝑒𝑙𝑠
+\mathit{SubRels}
+. Additionally, we consider
+𝙶𝚛𝚎𝚢
+\mathtt{Grey}
+and
+𝙼𝚒𝚛𝚛
+h
+\mathtt{Mirr}_{h}
+in order to assess whether
+MeT-Pose
+can find problems with
+concept understanding
+in these systems – an area previously shown to be faulty in other deep learning-based models
+[
+11
+]
+. Finally, we determine whether
+MeT-Pose
+can surface particular faults in the pose estimation system such as over-reliance on colour (which can vary substantially based on the lighting and other conditions) or orientation (e.g., dealing with left and right handed signers in
+PHOENIX
+, or with mirrored input from online calls)– two features that should not impact its output.
+To assess violations of all rules used in the experiments we use the same error metric
+𝐸𝑟𝑟
+𝑙𝑚𝑘𝑠
+{\mathit{Err^{\mathit{}}_{lmks}}}
+defined as:
+𝐸𝑟𝑟
+𝑙𝑚𝑘𝑠
+​
+(
+O
+e
+​
+x
+​
+p
+​
+c
+​
+t
+,
+O
+t
+​
+r
+​
+a
+​
+n
+​
+s
+)
+=
+{
+if
+​
+O
+e
+​
+x
+​
+p
+​
+c
+​
+t
+=
+∅
+⊻
+O
+t
+​
+r
+​
+a
+​
+n
+​
+s
+=
+∅
+,
+inf
+elif
+​
+O
+e
+​
+x
+​
+p
+​
+c
+​
+t
+=
+∅
+∧
+O
+t
+​
+r
+​
+a
+​
+n
+​
+s
+=
+∅
+,
+0
+else
+,
+Med
+l
+​
+m
+​
+k
+∈
+l
+​
+m
+​
+k
+​
+s
+​
+L
+​
+2
+M
+​
+P
+​
+(
+k
+​
+p
+e
+​
+x
+​
+p
+​
+c
+​
+t
+,
+k
+​
+p
+t
+​
+r
+​
+a
+​
+n
+​
+s
+)
+{\mathit{Err^{\mathit{}}_{lmks}}}(O_{expct},O_{trans})=\begin{cases}\text{if }O_{expct}=\emptyset\veebar O_{trans}=\emptyset,\inf\\
+\text{elif }O_{expct}=\emptyset\land O_{trans}=\emptyset,0\\
+\text{else},\underset{lmk\in lmks}{\text{Med}}L2_{MP}(kp_{expct},kp_{trans})\end{cases}
+If the pose estimation system only returns keypoints on the original image or the modified image,
+𝐸𝑟𝑟
+𝑙𝑚𝑘𝑠
+{\mathit{Err^{\mathit{}}_{lmks}}}
+returns an infinite value. Indeed, the transformations used in these experiments do not modify which landmarks the system should detect on the image, at most they change the expected position of the returned keypoints. Failing to detect any landmarks on just one of the pair of images is thus the worst violation of a rule possible.
+However, if the pose estimation system returns no keypoints for both images it displays a coherent behaviour w.r.t. the metamorphic rule and the rule is not violated. Note that, in general, not returning keypoints does not denote a fault in itself as an image could contain no visible person. However,
+FLIC
+and
+PHOENIX
+both only contain images containing people so
+O
+o
+​
+r
+​
+i
+​
+g
+=
+∅
+O_{orig}=\emptyset
+does denote a fault, albeit not one that would violate our proposed rules.
+If the pose estimation system returned keypoints for both images then
+𝐸𝑟𝑟
+𝑙𝑚𝑘𝑠
+{\mathit{Err^{\mathit{}}_{lmks}}}
+returns the median of the distance between the expected keypoint (following the metamorphic rule’s relation and the keypoints returned by the system on the original image) and the keypoint returned by the system on the modified image for each landmark
+l
+​
+m
+​
+k
+lmk
+.
+Using the median as a measure of the overall error of the system on an image attenuates the effect of outliers on the error value. Indeed, if only a single keypoint’s coordinates are extremely inaccurate, many applications would still work. Note however that the error of all keypoints in an image could be aggregated in other ways (min, max, …) depending on the needs of the use case the pose estimation system is tested for.
+Here the distance used,
+L
+​
+2
+M
+​
+P
+L2_{MP}
+is the normalised Euclidean distance as described in
+𝑀𝑒𝑑𝑖𝑎𝑝𝑖𝑝𝑒
+\mathit{Mediapipe}
+’s model cards
+[
+30
+,
+31
+,
+32
+]
+, i.e., depending on which of the 3 groups described in section
+V-B
+the landmark belongs to, the distance is normalised by dividing by either the distance between the subject’s: shoulders; irises; or their wrist and the first joint of their middle finger.
+As we test
+𝑀𝑒𝑑𝑖𝑎𝑝𝑖𝑝𝑒
+\mathit{Mediapipe}
+without a particular use case, setting a meaningful value for the error threshold is not possible. We thus assess violations using a large range of values for the threshold and report the performance of
+MeT-Pose
+using these different values.
+VI
+Results
+This section analyses and discusses some of the results from our experiments following the research questions defined in Section
+V-A
+. The code used to generate the reported results is available in the companion repository
+[
+33
+]
+.
+VI-A
+RQ1
+Figure
+4
+shows the proportion of images in each dataset leading to a rule violation when testing
+𝐻𝑜𝑙𝑖𝑠𝑡𝑖𝑐
+\mathit{Holistic}
+with
+MeT-Pose
+for different sets of rules and different error threshold values when considering the body pose landmarks. These results confirm that
+MeT-Pose
+can find faults in the system as it finds violations of the rules. They also confirm the central role of the rules and the error threshold value used in
+MeT-Pose
+, which is why we have chosen to keep these characteristics customisable so they can be defined by users of the framework
+to suit their particular application.
+0.01
+0.05
+0.1
+0.2
+0.3
+0.7
+1
+2
+5
+20
+inf
+0
+0
+20
+20
+40
+40
+60
+60
+80
+80
+100
+100
+100
+100
+100
+100
+100
+100
+100
+100
+100
+100
+78.49
+78.49
+68.1
+68.1
+66.35
+66.35
+66.27
+66.27
+66.26
+66.26
+66.26
+66.26
+99.76
+99.76
+99.76
+99.76
+99.76
+99.76
+99.76
+99.76
+99.76
+99.76
+98.92
+98.92
+93.29
+93.29
+88.26
+88.26
+83.83
+83.83
+83.47
+83.47
+83.47
+83.47
+Error threshold
+%age of images with violation
+PHOENIX
+FLIC
+(a)
+using
+𝐴𝑙𝑙𝑅𝑒𝑙𝑠
+\mathit{AllRels}
+0.01
+0.05
+0.1
+0.2
+0.3
+0.7
+1
+2
+5
+20
+inf
+0
+0
+20
+20
+40
+40
+60
+60
+80
+80
+100
+100
+100
+100
+99.98
+99.98
+61.05
+61.05
+36.68
+36.68
+25.08
+25.08
+12.56
+12.56
+11.73
+11.73
+9.64
+9.64
+9.62
+9.62
+9.62
+9.62
+9.62
+9.62
+99.4
+99.4
+99.4
+99.4
+99.4
+99.4
+99.4
+99.4
+92.34
+92.34
+64.67
+64.67
+61.44
+61.44
+57.25
+57.25
+46.11
+46.11
+42.99
+42.99
+42.87
+42.87
+Error threshold
+%age of images with violation
+(b)
+using
+𝑆𝑢𝑏𝑅𝑒𝑙𝑠
+\mathit{SubRels}
+0.01
+0.05
+0.1
+0.2
+0.3
+0.7
+1
+2
+5
+20
+inf
+0
+0
+20
+20
+40
+40
+60
+60
+80
+80
+100
+100
+100
+100
+10.42
+10.42
+0.19
+0.19
+0.01
+0.01
+0.01
+0.01
+0.01
+0.01
+0.01
+0.01
+0.01
+0.01
+0.01
+0.01
+0.01
+0.01
+0.01
+0.01
+98.44
+98.44
+80
+80
+51.62
+51.62
+43.11
+43.11
+41.68
+41.68
+40.84
+40.84
+40.12
+40.12
+38.44
+38.44
+30.3
+30.3
+27.19
+27.19
+27.19
+27.19
+Error threshold
+%age of images with violation
+(c)
+using only
+𝙶𝚛𝚎𝚢
+\mathtt{Grey}
+and
+𝙼𝚒𝚛𝚛
+h
+\mathtt{Mirr}_{h}
+Fig. 4
+:
+Percentage of images leading to a rule violation with varying error thresholds using body landmarks
+When the threshold is set very low, e.g., to 0.01
+2
+2
+2
+In this setting, a median error of more than 1% of the distance between the subject’s shoulders leads to a violation.
+as the leftmost columns of the graphs illustrate,
+MeT-Pose
+is very sensitive and most images lead to violations. With high error threshold values
+MeT-Pose
+is much more lenient and the proportion of images leading to a violation quickly drops. However,
+MeT-Pose
+still finds images that lead to an infinite error, i.e., where the pose estimation system detects the subject only in one of the original and modified images, as defined in Section
+V-D
+. These cases are always considered violations of our proposed metamorphic rules.
+Figure
+5
+shows the proportion of images in
+PHOENIX
+leading to a rule violation with
+𝙶𝚛𝚎𝚢
+\mathtt{Grey}
+and
+𝙼𝚒𝚛𝚛
+h
+\mathtt{Mirr}_{h}
+for different error threshold values when considering the hand landmarks. These results, when contrasted with those in Figure
+4
+, show once more the importance of adaptability in
+MeT-Pose
+. While focusing on the body pose landmarks quickly exposes very few errors on
+FLIC
+when using only the
+𝙶𝚛𝚎𝚢
+\mathtt{Grey}
+and
+𝙼𝚒𝚛𝚛
+h
+\mathtt{Mirr}_{h}
+, using hand landmarks exposes many more rule violations. This is consistent with the goal of
+PHOENIX
+, i.e., the fact that it is a sign language dataset, where the hands, arms, and face, are much more the focus than the general body pose.
+0.01
+0.05
+0.1
+0.2
+0.3
+0.7
+1
+2
+5
+20
+inf
+0
+0
+20
+20
+40
+40
+60
+60
+80
+80
+100
+100
+75.19
+75.19
+55.75
+55.75
+29.11
+29.11
+16.21
+16.21
+12.57
+12.57
+9.48
+9.48
+8.87
+8.87
+8.17
+8.17
+7.94
+7.94
+7.88
+7.88
+7.87
+7.87
+82.88
+82.88
+61.06
+61.06
+31.11
+31.11
+17.93
+17.93
+14.74
+14.74
+12.52
+12.52
+12.15
+12.15
+11.82
+11.82
+11.68
+11.68
+11.64
+11.64
+11.64
+11.64
+Error threshold
+%age of images with violation
+left hand
+right hand
+(a)
+Using only
+𝙼𝚒𝚛𝚛
+h
+\mathtt{Mirr}_{h}
+0.01
+0.05
+0.1
+0.2
+0.3
+0.7
+1
+2
+5
+20
+inf
+0
+0
+20
+20
+40
+40
+60
+60
+80
+80
+100
+100
+72.91
+72.91
+41.13
+41.13
+27.13
+27.13
+17.35
+17.35
+14.10
+14.10
+11.18
+11.18
+10.53
+10.53
+9.72
+9.72
+9.49
+9.49
+9.46
+9.46
+9.45
+9.45
+79.20
+79.20
+49.37
+49.37
+31.25
+31.25
+20.17
+20.17
+17.07
+17.07
+14.46
+14.46
+14.01
+14.01
+13.65
+13.65
+13.50
+13.50
+13.47
+13.47
+13.47
+13.47
+Error threshold
+%age of images with violation
+(b)
+Using only
+𝙶𝚛𝚎𝚢
+\mathtt{Grey}
+Fig. 5
+:
+Percentage of images in
+PHOENIX
+leading to a rule violation for varying error thresholds using hand landmarks
+VI-B
+RQ2
+This RQ focuses on the difference between classic, ground truth based testing and
+MeT-Pose
+. Thus, it relies on
+FLIC
+, the only dataset in our experiments with ground truth labels. Figure
+6
+shows: the proportion of images leading to both a classic test failure and a rule violation, a classic test failure only, and a rule violation only for different error thresholds. A classic test failure is defined as a normalised distance between the ground truth keypoints and the keypoints output by the system on the original image greater than the error threshold.
+0.01
+0.05
+0.1
+0.2
+0.3
+0.7
+1.0
+2.0
+5.0
+20.0
+inf
+0
+0
+20
+20
+40
+40
+60
+60
+80
+80
+100
+100
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+0.2
+𝟎
+0
+1.2
+1.2
+43.7
+43.7
+76.6
+76.6
+79.5
+79.5
+79.3
+79.3
+73.9
+73.9
+73.7
+73.7
+78.2
+78.2
+79.5
+79.5
+79.5
+79.5
+99.8
+99.8
+98.6
+98.6
+𝟓𝟔
+56
+23.1
+23.1
+20.2
+20.2
+19.6
+19.6
+19.4
+19.4
+14.6
+14.6
+5.6
+5.6
+𝟒
+4
+𝟒
+4
+Error threshold
+%age of images with failure
+both
+only
+MeT-Pose
+only classic testing
+(a)
+with
+MeT-Pose
+using
+𝐴𝑙𝑙𝑅𝑒𝑙𝑠
+\mathit{AllRels}
+0.01
+0.05
+0.1
+0.2
+0.3
+0.7
+1.0
+2.0
+5.0
+20.0
+inf
+0
+0
+20
+20
+40
+40
+60
+60
+80
+80
+100
+100
+0.6
+0.6
+0.6
+0.6
+0.6
+0.6
+0.6
+0.6
+0.6
+0.6
+2
+2
+2.2
+2.2
+1.7
+1.7
+1
+1
+0.6
+0.6
+0.6
+0.6
+𝟎
+0
+1.2
+1.2
+43.7
+43.7
+76.6
+76.6
+72.5
+72.5
+46.8
+46.8
+𝟒𝟒
+44
+44.1
+44.1
+41.2
+41.2
+39.4
+39.4
+39.3
+39.3
+99.4
+99.4
+98.2
+98.2
+55.7
+55.7
+22.8
+22.8
+19.9
+19.9
+17.8
+17.8
+17.5
+17.5
+13.2
+13.2
+4.9
+4.9
+3.6
+3.6
+3.6
+3.6
+Error threshold
+%age of images with failure
+(b)
+with
+MeT-Pose
+using
+𝑆𝑢𝑏𝑅𝑒𝑙𝑠
+\mathit{SubRels}
+0.01
+0.05
+0.1
+0.2
+0.3
+0.7
+1.0
+2.0
+5.0
+20.0
+inf
+0
+0
+20
+20
+40
+40
+60
+60
+80
+80
+100
+100
+8.6
+8.6
+32.5
+32.5
+25.7
+25.7
+9.6
+9.6
+8.6
+8.6
+𝟗
+9
+9.2
+9.2
+7.5
+7.5
+3.8
+3.8
+3.1
+3.1
+3.1
+3.1
+𝟎
+0
+0.4
+0.4
+15.4
+15.4
+24.7
+24.7
+25.3
+25.3
+𝟐𝟓
+25
+24.7
+24.7
+26.2
+26.2
+25.1
+25.1
+23.8
+23.8
+23.8
+23.8
+91.4
+91.4
+66.3
+66.3
+30.5
+30.5
+13.8
+13.8
+11.9
+11.9
+10.9
+10.9
+10.4
+10.4
+7.3
+7.3
+𝟐
+2
+1.1
+1.1
+1.1
+1.1
+Error threshold
+%age of images with failure
+(c)
+with
+MeT-Pose
+using
+𝙶𝚛𝚎𝚢
+\mathtt{Grey}
+0.01
+0.05
+0.1
+0.2
+0.3
+0.7
+1.0
+2.0
+5.0
+20.0
+inf
+0
+0
+20
+20
+40
+40
+60
+60
+80
+80
+100
+100
+1.9
+1.9
+42.6
+42.6
+37.2
+37.2
+12.6
+12.6
+11.9
+11.9
+12.2
+12.2
+12.2
+12.2
+9.6
+9.6
+3.2
+3.2
+1.9
+1.9
+1.9
+1.9
+𝟎
+0
+0.4
+0.4
+2.9
+2.9
+4.7
+4.7
+4.9
+4.9
+4.8
+4.8
+4.7
+4.7
+5.3
+5.3
+𝟒
+4
+1.7
+1.7
+1.7
+1.7
+98.1
+98.1
+56.2
+56.2
+𝟏𝟗
+19
+10.8
+10.8
+8.6
+8.6
+7.7
+7.7
+7.4
+7.4
+5.3
+5.3
+2.6
+2.6
+2.3
+2.3
+2.3
+2.3
+Error threshold
+%age of images with failure
+(d)
+with
+MeT-Pose
+using
+𝙼𝚒𝚛𝚛
+h
+\mathtt{Mirr}_{h}
+Fig. 6
+:
+Percentage of images in
+FLIC
+leading to a classic test failure or a rule violation with varying error thresholds using body landmarks
+These results show that for low values of the error threshold, both methods perform similarly in the number of failures they find, even when using a single rule in
+MeT-Pose
+. This is explained by both methods being too sensitive with that configuration and considering nearly all outputs as faults. With higher values of the error threshold we see that
+MeT-Pose
+finds many more failures than classic testing when using
+𝐴𝑙𝑙𝑅𝑒𝑙𝑠
+\mathit{AllRels}
+or
+𝑆𝑢𝑏𝑅𝑒𝑙𝑠
+\mathit{SubRels}
+. The answer to RQ2.1 is thus that, overall,
+MeT-Pose
+finds more failures than classic testing.
+Regarding RQ2.2, we see that in all cases, there is some overlap between the images that lead to failures for each method, however each method also finds failures that the other method did not detect, with
+MeT-Pose
+finding more failures when using more complete sets of rules.
+As discussed in RQ2.1, both testing methods perform similarly for smaller values of the error threshold while
+MeT-Pose
+finds more failures for higher values. This indicates that
+MeT-Pose
+finds larger failures overall.
+VI-C
+RQ3
+𝙸𝚍
+\mathtt{Id}
+𝙶𝚛𝚎𝚢
+\mathtt{Grey}
+𝙱𝚒𝚕𝚊𝚝
+10
+3
+\mathtt{Bilat}_{10}^{3}
+𝙱𝚒𝚕𝚊𝚝
+125
+5
+\mathtt{Bilat}_{125}^{5}
+𝙱𝚒𝚕𝚊𝚝
+80
+7
+\mathtt{Bilat}_{80}^{7}
+𝙱𝚛𝚒𝚐𝚑𝚝
+20
+0.8
+\mathtt{Bright}_{20}^{0.8}
+𝙶𝚊𝚖𝚖𝚊
+0.5
+\mathtt{Gamma}_{0.5}
+𝙵𝚕𝚝
+⁡
+(
+𝙲𝚆𝚑𝚎𝚎𝚕
+𝟿𝟶
+,
+𝚋𝚐
+)
+\mathtt{Flt(\mathtt{CWheel}_{90},bg)}
+𝙵𝚕𝚝
+⁡
+(
+𝙲𝚆𝚑𝚎𝚎𝚕
+𝟿𝟶
+,
+𝚑𝚊𝚒𝚛
+)
+\mathtt{Flt(\mathtt{CWheel}_{90},hair)}
+𝙼𝚒𝚛𝚛
+h
+\mathtt{Mirr}_{h}
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+0
+\mathtt{Motion}_{11}^{0}
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+100
+\mathtt{Motion}_{11}^{100}
+𝚁𝚎𝚜
+0.2
+\mathtt{Res}_{0.2}
+𝚁𝚎𝚜
+0.7
+\mathtt{Res}_{0.7}
+𝚁𝚘𝚝
+0.5
+(
+0.5
+,
+0.5
+)
+\mathtt{Rot}_{0.5}^{(0.5,0.5)}
+𝚁𝚘𝚝
+10
+(
+0.5
+,
+0.5
+)
+\mathtt{Rot}_{10}^{(0.5,0.5)}
+𝚂𝚝𝚌𝚑
+1.25
+,
+1
+\mathtt{Stch}_{1.25,1}
+𝚂𝚝𝚌𝚑
+1
+,
+0.6
+\mathtt{Stch}_{1,0.6}
+𝚂𝚝𝚌𝚑
+1
+,
+0.8
+\mathtt{Stch}_{1,0.8}
+𝙸𝚍
+\mathtt{Id}
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+𝙶𝚛𝚎𝚢
+\mathtt{Grey}
+0.0
+1.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.2
+0.0
+0.0
+0.0
+0.2
+0.4
+0.2
+𝙱𝚒𝚕𝚊𝚝
+10
+3
+\mathtt{Bilat}_{10}^{3}
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+𝙱𝚒𝚕𝚊𝚝
+125
+5
+\mathtt{Bilat}_{125}^{5}
+0.0
+0.0
+0.0
+1.0
+0.0
+0.0
+1.0
+0.0
+0.0
+0.0
+0.0
+1.0
+0.0
+0.0
+0.0
+0.0
+0.0
+1.0
+0.0
+𝙱𝚒𝚕𝚊𝚝
+80
+7
+\mathtt{Bilat}_{80}^{7}
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+𝙱𝚛𝚒𝚐𝚑𝚝
+20
+0.8
+\mathtt{Bright}_{20}^{0.8}
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+𝙶𝚊𝚖𝚖𝚊
+0.5
+\mathtt{Gamma}_{0.5}
+0.0
+0.0
+0.0
+1.0
+0.0
+0.0
+1.0
+0.0
+0.0
+0.0
+0.0
+1.0
+0.0
+0.0
+0.0
+0.0
+0.0
+1.0
+0.0
+𝙵𝚕𝚝
+⁡
+(
+𝙲𝚆𝚑𝚎𝚎𝚕
+𝟿𝟶
+,
+𝚋𝚐
+)
+\mathtt{Flt(\mathtt{CWheel}_{90},bg)}
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+𝙵𝚕𝚝
+⁡
+(
+𝙲𝚆𝚑𝚎𝚎𝚕
+𝟿𝟶
+,
+𝚑𝚊𝚒𝚛
+)
+\mathtt{Flt(\mathtt{CWheel}_{90},hair)}
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+𝙼𝚒𝚛𝚛
+h
+\mathtt{Mirr}_{h}
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+1.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+1.0
+1.0
+1.0
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+0
+\mathtt{Motion}_{11}^{0}
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+1.0
+0.025974025974025976
+0.37662337662337664
+0.0
+0.0
+0.0
+0.0
+0.6233766233766234
+0.0
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+100
+\mathtt{Motion}_{11}^{100}
+0.0
+0.0
+0.0
+0.030303030303030304
+0.0
+0.0
+0.030303030303030304
+0.0
+0.0
+0.0
+0.06060606060606061
+1.0
+0.2727272727272727
+0.0
+0.0
+0.0
+0.06060606060606061
+0.7272727272727273
+0.06060606060606061
+𝚁𝚎𝚜
+0.2
+\mathtt{Res}_{0.2}
+0.0
+0.0034129692832764505
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.09897610921501707
+0.030716723549488054
+1.0
+0.0
+0.0
+0.0
+0.006825938566552901
+0.6279863481228669
+0.0034129692832764505
+𝚁𝚎𝚜
+0.7
+\mathtt{Res}_{0.7}
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+𝚁𝚘𝚝
+0.5
+(
+0.5
+,
+0.5
+)
+\mathtt{Rot}_{0.5}^{(0.5,0.5)}
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+1.0
+0.0
+1.0
+0.0
+0.0
+𝚁𝚘𝚝
+10
+(
+0.5
+,
+0.5
+)
+\mathtt{Rot}_{10}^{(0.5,0.5)}
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+𝚂𝚝𝚌𝚑
+1.25
+,
+1
+\mathtt{Stch}_{1.25,1}
+0.0
+0.004807692307692308
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.009615384615384616
+0.0
+0.009615384615384616
+0.009615384615384616
+0.0
+0.004807692307692308
+0.0
+1.0
+0.9326923076923077
+0.5913461538461539
+𝚂𝚝𝚌𝚑
+1
+,
+0.6
+\mathtt{Stch}_{1,0.6}
+0.0
+0.00009850275807722617
+0.0
+0.000049251379038613084
+0.0
+0.0
+0.000049251379038613084
+0.0
+0.0
+0.00009850275807722617
+0.002364066193853428
+0.001182033096926714
+0.009062253743104806
+0.0
+0.0
+0.0
+0.009554767533490938
+1.0
+0.0076832151300236405
+𝚂𝚝𝚌𝚑
+1
+,
+0.8
+\mathtt{Stch}_{1,0.8}
+0.0
+0.0058823529411764705
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.011764705882352941
+0.0
+0.011764705882352941
+0.0058823529411764705
+0.0
+0.0
+0.0
+0.7235294117647059
+0.9176470588235294
+1.0
+(a)
+PHOENIX
+𝙸𝚍
+\mathtt{Id}
+𝙶𝚛𝚎𝚢
+\mathtt{Grey}
+𝙱𝚒𝚕𝚊𝚝
+10
+3
+\mathtt{Bilat}_{10}^{3}
+𝙱𝚒𝚕𝚊𝚝
+125
+5
+\mathtt{Bilat}_{125}^{5}
+𝙱𝚒𝚕𝚊𝚝
+80
+7
+\mathtt{Bilat}_{80}^{7}
+𝙱𝚛𝚒𝚐𝚑𝚝
+20
+0.8
+\mathtt{Bright}_{20}^{0.8}
+𝙶𝚊𝚖𝚖𝚊
+0.5
+\mathtt{Gamma}_{0.5}
+𝙵𝚕𝚝
+⁡
+(
+𝙲𝚆𝚑𝚎𝚎𝚕
+𝟿𝟶
+,
+𝚋𝚐
+)
+\mathtt{Flt(\mathtt{CWheel}_{90},bg)}
+𝙵𝚕𝚝
+⁡
+(
+𝙲𝚆𝚑𝚎𝚎𝚕
+𝟿𝟶
+,
+𝚑𝚊𝚒𝚛
+)
+\mathtt{Flt(\mathtt{CWheel}_{90},hair)}
+𝙼𝚒𝚛𝚛
+h
+\mathtt{Mirr}_{h}
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+0
+\mathtt{Motion}_{11}^{0}
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+100
+\mathtt{Motion}_{11}^{100}
+𝚁𝚎𝚜
+0.2
+\mathtt{Res}_{0.2}
+𝚁𝚎𝚜
+0.7
+\mathtt{Res}_{0.7}
+𝚁𝚘𝚝
+0.5
+(
+0.5
+,
+0.5
+)
+\mathtt{Rot}_{0.5}^{(0.5,0.5)}
+𝚁𝚘𝚝
+10
+(
+0.5
+,
+0.5
+)
+\mathtt{Rot}_{10}^{(0.5,0.5)}
+𝚂𝚝𝚌𝚑
+1.25
+,
+1
+\mathtt{Stch}_{1.25,1}
+𝚂𝚝𝚌𝚑
+1
+,
+0.6
+\mathtt{Stch}_{1,0.6}
+𝚂𝚝𝚌𝚑
+1
+,
+0.8
+\mathtt{Stch}_{1,0.8}
+𝙸𝚍
+\mathtt{Id}
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+𝙶𝚛𝚎𝚢
+\mathtt{Grey}
+0.0
+1.0
+0.0529595015576324
+0.13395638629283488
+0.16199376947040497
+0.14953271028037382
+0.22118380062305296
+0.2803738317757009
+0.18691588785046728
+0.2803738317757009
+0.3862928348909657
+0.3862928348909657
+0.34579439252336447
+0.102803738317757
+0.7289719626168224
+0.9875389408099688
+0.3613707165109034
+0.67601246105919
+0.3426791277258567
+𝙱𝚒𝚕𝚊𝚝
+10
+3
+\mathtt{Bilat}_{10}^{3}
+0.0
+0.7727272727272727
+1.0
+0.8181818181818182
+0.8181818181818182
+0.6818181818181818
+0.7727272727272727
+0.7272727272727273
+0.7272727272727273
+0.9545454545454546
+0.8636363636363636
+0.8181818181818182
+0.8181818181818182
+0.8181818181818182
+0.9090909090909091
+0.9545454545454546
+0.7727272727272727
+0.8636363636363636
+0.8181818181818182
+𝙱𝚒𝚕𝚊𝚝
+125
+5
+\mathtt{Bilat}_{125}^{5}
+0.0
+0.6935483870967742
+0.2903225806451613
+1.0
+0.9193548387096774
+0.5
+0.6612903225806451
+0.6290322580645161
+0.46774193548387094
+0.8064516129032258
+0.8548387096774194
+0.8387096774193549
+0.8709677419354839
+0.6451612903225806
+0.9354838709677419
+0.9838709677419355
+0.7419354838709677
+0.7903225806451613
+0.7419354838709677
+𝙱𝚒𝚕𝚊𝚝
+80
+7
+\mathtt{Bilat}_{80}^{7}
+0.0
+0.7027027027027027
+0.24324324324324326
+0.7702702702702703
+1.0
+0.44594594594594594
+0.6351351351351351
+0.581081081081081
+0.4594594594594595
+0.7297297297297297
+0.8513513513513513
+0.8243243243243243
+0.8783783783783784
+0.5405405405405406
+0.918918918918919
+0.9594594594594594
+0.7567567567567568
+0.8108108108108109
+0.7432432432432432
+𝙱𝚛𝚒𝚐𝚑𝚝
+20
+0.8
+\mathtt{Bright}_{20}^{0.8}
+0.0
+0.7619047619047619
+0.23809523809523808
+0.49206349206349204
+0.5238095238095238
+1.0
+0.7301587301587301
+0.6031746031746031
+0.5396825396825397
+0.7142857142857143
+0.746031746031746
+0.6984126984126984
+0.7936507936507936
+0.3968253968253968
+0.9523809523809523
+0.9682539682539683
+0.6984126984126984
+0.8095238095238095
+0.6984126984126984
+𝙶𝚊𝚖𝚖𝚊
+0.5
+\mathtt{Gamma}_{0.5}
+0.0
+0.6698113207547169
+0.16037735849056603
+0.3867924528301887
+0.44339622641509435
+0.4339622641509434
+1.0
+0.5188679245283019
+0.37735849056603776
+0.6226415094339622
+0.6886792452830188
+0.7358490566037735
+0.7358490566037735
+0.3490566037735849
+0.8679245283018868
+0.9716981132075472
+0.6509433962264151
+0.7547169811320755
+0.6037735849056604
+𝙵𝚕𝚝
+⁡
+(
+𝙲𝚆𝚑𝚎𝚎𝚕
+𝟿𝟶
+,
+𝚋𝚐
+)
+\mathtt{Flt(\mathtt{CWheel}_{90},bg)}
+0.0
+0.7894736842105263
+0.14035087719298245
+0.34210526315789475
+0.37719298245614036
+0.3333333333333333
+0.4824561403508772
+1.0
+0.3508771929824561
+0.5526315789473685
+0.6754385964912281
+0.6403508771929824
+0.6578947368421053
+0.2982456140350877
+0.8947368421052632
+0.9649122807017544
+0.6052631578947368
+0.8333333333333334
+0.543859649122807
+𝙵𝚕𝚝
+⁡
+(
+𝙲𝚆𝚑𝚎𝚎𝚕
+𝟿𝟶
+,
+𝚑𝚊𝚒𝚛
+)
+\mathtt{Flt(\mathtt{CWheel}_{90},hair)}
+0.0
+0.8450704225352113
+0.22535211267605634
+0.4084507042253521
+0.4788732394366197
+0.4788732394366197
+0.5633802816901409
+0.5633802816901409
+1.0
+0.6338028169014085
+0.6901408450704225
+0.676056338028169
+0.7605633802816901
+0.39436619718309857
+0.8450704225352113
+0.9859154929577465
+0.6901408450704225
+0.8028169014084507
+0.6197183098591549
+𝙼𝚒𝚛𝚛
+h
+\mathtt{Mirr}_{h}
+0.0
+0.6976744186046512
+0.16279069767441862
+0.3875968992248062
+0.4186046511627907
+0.3488372093023256
+0.5116279069767442
+0.4883720930232558
+0.3488372093023256
+1.0
+0.6744186046511628
+0.6589147286821705
+0.6589147286821705
+0.31007751937984496
+0.8837209302325582
+0.9844961240310077
+0.6356589147286822
+0.7906976744186046
+0.6356589147286822
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+0
+\mathtt{Motion}_{11}^{0}
+0.0
+0.6492146596858639
+0.09947643979057591
+0.2774869109947644
+0.3298429319371728
+0.24607329842931938
+0.38219895287958117
+0.4031413612565445
+0.25654450261780104
+0.45549738219895286
+1.0
+0.6178010471204188
+0.680628272251309
+0.21465968586387435
+0.837696335078534
+0.9790575916230366
+0.4973821989528796
+0.7958115183246073
+0.4869109947643979
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+100
+\mathtt{Motion}_{11}^{100}
+0.0
+0.7005649717514124
+0.1016949152542373
+0.2937853107344633
+0.3446327683615819
+0.24858757062146894
+0.4406779661016949
+0.4124293785310734
+0.2711864406779661
+0.480225988700565
+0.6666666666666666
+1.0
+0.7062146892655368
+0.24293785310734464
+0.8757062146892656
+0.9774011299435028
+0.5536723163841808
+0.8135593220338984
+0.5254237288135594
+𝚁𝚎𝚜
+0.2
+\mathtt{Res}_{0.2}
+0.0
+0.6201117318435754
+0.1005586592178771
+0.3016759776536313
+0.36312849162011174
+0.27932960893854747
+0.43575418994413406
+0.41899441340782123
+0.3016759776536313
+0.4748603351955307
+0.7262569832402235
+0.6983240223463687
+1.0
+0.24581005586592178
+0.8659217877094972
+0.9720670391061452
+0.5363128491620112
+0.770949720670391
+0.5307262569832403
+𝚁𝚎𝚜
+0.7
+\mathtt{Res}_{0.7}
+0.0
+0.6470588235294118
+0.35294117647058826
+0.7843137254901961
+0.7843137254901961
+0.49019607843137253
+0.7254901960784313
+0.6666666666666666
+0.5490196078431373
+0.7843137254901961
+0.803921568627451
+0.8431372549019608
+0.8627450980392157
+1.0
+0.9215686274509803
+0.9803921568627451
+0.7450980392156863
+0.7843137254901961
+0.6862745098039216
+𝚁𝚘𝚝
+0.5
+(
+0.5
+,
+0.5
+)
+\mathtt{Rot}_{0.5}^{(0.5,0.5)}
+0.0
+0.47657841140529533
+0.04073319755600815
+0.11812627291242363
+0.1384928716904277
+0.12219959266802444
+0.18737270875763748
+0.20773930753564154
+0.12219959266802444
+0.23217922606924643
+0.3258655804480652
+0.31568228105906315
+0.31568228105906315
+0.09572301425661914
+1.0
+0.9938900203665988
+0.2790224032586558
+0.6456211812627292
+0.2606924643584521
+𝚁𝚘𝚝
+10
+(
+0.5
+,
+0.5
+)
+\mathtt{Rot}_{10}^{(0.5,0.5)}
+0.0
+0.38658536585365855
+0.025609756097560974
+0.07439024390243902
+0.08658536585365853
+0.07439024390243902
+0.12560975609756098
+0.13414634146341464
+0.08536585365853659
+0.1548780487804878
+0.2280487804878049
+0.21097560975609755
+0.2121951219512195
+0.06097560975609756
+0.5951219512195122
+1.0
+0.2121951219512195
+0.5829268292682926
+0.19878048780487806
+𝚂𝚝𝚌𝚑
+1.25
+,
+1
+\mathtt{Stch}_{1.25,1}
+0.0
+0.6590909090909091
+0.09659090909090909
+0.26136363636363635
+0.3181818181818182
+0.25
+0.39204545454545453
+0.39204545454545453
+0.2784090909090909
+0.4659090909090909
+0.5397727272727273
+0.5568181818181818
+0.5454545454545454
+0.2159090909090909
+0.7784090909090909
+0.9886363636363636
+1.0
+0.8863636363636364
+0.8125
+𝚂𝚝𝚌𝚑
+1
+,
+0.6
+\mathtt{Stch}_{1,0.6}
+0.0
+0.45208333333333334
+0.03958333333333333
+0.10208333333333333
+0.125
+0.10625
+0.16666666666666666
+0.19791666666666666
+0.11875
+0.2125
+0.31666666666666665
+0.3
+0.2875
+0.08333333333333333
+0.6604166666666667
+0.9958333333333333
+0.325
+1.0
+0.30625
+𝚂𝚝𝚌𝚑
+1
+,
+0.8
+\mathtt{Stch}_{1,0.8}
+0.0
+0.6748466257668712
+0.11042944785276074
+0.2822085889570552
+0.3374233128834356
+0.26993865030674846
+0.39263803680981596
+0.3803680981595092
+0.26993865030674846
+0.5030674846625767
+0.5705521472392638
+0.5705521472392638
+0.5828220858895705
+0.2147239263803681
+0.7852760736196319
+1.0
+0.8773006134969326
+0.901840490797546
+1.0
+(b)
+FLIC
+Fig. 7
+:
+𝚂𝚞𝚋𝚁𝚊𝚝𝚎
+ℳ
+𝟷
+,
+ℳ
+𝟸
+\mathtt{SubRate_{\mathcal{M}_{1},\mathcal{M}_{2}}}
+, with
+ℳ
+1
+\mathcal{M}_{1}
+left and
+ℳ
+2
+\mathcal{M}_{2}
+top, for each dataset, using body pose landmarks and a 0.2 error threshold.
+To analyse the contribution of different metamorphic relations when using
+MeT-Pose
+we can look at their
+subsumption rates
+. A rule
+ℳ
+1
+\mathcal{M}_{1}
+subsumes a rule
+ℳ
+2
+\mathcal{M}_{2}
+if, when
+ℳ
+2
+\mathcal{M}_{2}
+detects a failure for an image then
+ℳ
+1
+\mathcal{M}_{1}
+also detected that failure. This means that running
+ℳ
+1
+\mathcal{M}_{1}
+is sufficient to detect the failures
+ℳ
+2
+\mathcal{M}_{2}
+detects. Given two rules,
+ℳ
+1
+\mathcal{M}_{1}
+and
+ℳ
+2
+\mathcal{M}_{2}
+, we explore the degree to which
+ℳ
+1
+\mathcal{M}_{1}
+subsumes
+ℳ
+2
+\mathcal{M}_{2}
+using the subsumption rate
+𝚂𝚞𝚋𝚁𝚊𝚝𝚎
+ℳ
+𝟷
+,
+ℳ
+𝟸
+\mathtt{SubRate_{\mathcal{M}_{1},\mathcal{M}_{2}}}
+:
+𝚂𝚞𝚋𝚁𝚊𝚝𝚎
+ℳ
+𝟷
+,
+ℳ
+𝟸
+=
+{
+if
+ℳ
+1
+is never violated,
+​
+1
+else,
+​
+# images violating
+ℳ
+1
+and
+ℳ
+2
+# images violating
+ℳ
+1
+\mathtt{SubRate_{\mathcal{M}_{1},\mathcal{M}_{2}}}=\begin{cases}\text{if $\mathcal{M}_{1}$ is never violated,}1\\
+\text{else, }\frac{\text{\# images violating $\mathcal{M}_{1}$ and $\mathcal{M}_{2}$}}{\text{\# images violating $\mathcal{M}_{1}$}}\end{cases}
+Figure
+7
+shows the subsumption rates of all pairs of rules in
+𝑆𝑢𝑏𝑅𝑒𝑙𝑠
+\mathit{SubRels}
+for each dataset for a set value of the error threshold (0.2). These results show that the subsumption rates between the rules are very dependent on the dataset used, indicating that the different rules make different contributions to
+MeT-Pose
+, i.e., they find different types of errors.
+Figure
+8
+focuses on the different settings of the
+𝙼𝚘𝚝𝚒𝚘𝚗
+\mathtt{Motion}
+rule and how they subsume each other. While one might expect that settings that introduce more discrete blur would clearly subsume settings that introduce stronger blur, the results do not show such a clear result. This is probably due to the complex nature of
+𝑀𝑒𝑑𝑖𝑎𝑝𝑖𝑝𝑒
+\mathit{Mediapipe}
+𝐻𝑜𝑙𝑖𝑠𝑡𝑖𝑐
+\mathit{Holistic}
+, which means that the direct effects of a transformation on the system’s output are not easily predictable – further illustrating the value of the proposed testing procedure.
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+0
+\mathtt{Motion}_{5}^{0}
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+40
+\mathtt{Motion}_{5}^{40}
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+70
+\mathtt{Motion}_{5}^{70}
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+100
+\mathtt{Motion}_{5}^{100}
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+0
+\mathtt{Motion}_{7}^{0}
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+40
+\mathtt{Motion}_{7}^{40}
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+70
+\mathtt{Motion}_{7}^{70}
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+100
+\mathtt{Motion}_{7}^{100}
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+0
+\mathtt{Motion}_{9}^{0}
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+40
+\mathtt{Motion}_{9}^{40}
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+70
+\mathtt{Motion}_{9}^{70}
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+100
+\mathtt{Motion}_{9}^{100}
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+0
+\mathtt{Motion}_{11}^{0}
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+70
+\mathtt{Motion}_{11}^{70}
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+100
+\mathtt{Motion}_{11}^{100}
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+0
+\mathtt{Motion}_{5}^{0}
+1.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+40
+\mathtt{Motion}_{5}^{40}
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+70
+\mathtt{Motion}_{5}^{70}
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+1.0
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+100
+\mathtt{Motion}_{5}^{100}
+0.0
+0.0
+0.0
+1.0
+0.0
+0.0
+0.0
+0.5
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+0
+\mathtt{Motion}_{7}^{0}
+0.0
+0.0
+0.0
+0.0
+1.0
+0.6666666666666666
+0.0
+0.0
+1.0
+1.0
+0.6666666666666666
+0.0
+1.0
+0.6666666666666666
+0.3333333333333333
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+40
+\mathtt{Motion}_{7}^{40}
+0.0
+0.0
+0.0
+0.0
+0.4
+1.0
+0.0
+0.0
+0.6
+1.0
+0.6
+0.0
+0.8
+0.6
+0.4
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+70
+\mathtt{Motion}_{7}^{70}
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+1.0
+1.0
+0.0
+1.0
+1.0
+1.0
+0.0
+0.0
+1.0
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+100
+\mathtt{Motion}_{7}^{100}
+0.0
+0.0
+0.0
+0.5
+0.0
+0.0
+0.5
+1.0
+0.0
+0.5
+0.5
+0.5
+0.0
+0.0
+0.5
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+0
+\mathtt{Motion}_{9}^{0}
+0.0
+0.0
+0.0
+0.0
+0.25
+0.25
+0.0
+0.0
+1.0
+0.5833333333333334
+0.25
+0.0
+1.0
+0.3333333333333333
+0.16666666666666666
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+40
+\mathtt{Motion}_{9}^{40}
+0.0
+0.0
+0.0
+0.0
+0.16666666666666666
+0.2777777777777778
+0.05555555555555555
+0.05555555555555555
+0.3888888888888889
+1.0
+0.3333333333333333
+0.05555555555555555
+0.5555555555555556
+0.4444444444444444
+0.2777777777777778
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+70
+\mathtt{Motion}_{9}^{70}
+0.0
+0.0
+0.0
+0.0
+0.2857142857142857
+0.42857142857142855
+0.14285714285714285
+0.14285714285714285
+0.42857142857142855
+0.8571428571428571
+1.0
+0.14285714285714285
+0.42857142857142855
+0.8571428571428571
+0.5714285714285714
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+100
+\mathtt{Motion}_{9}^{100}
+0.0
+0.0
+0.0
+0.0
+0.0
+0.0
+0.3333333333333333
+0.3333333333333333
+0.0
+0.3333333333333333
+0.3333333333333333
+1.0
+0.0
+0.3333333333333333
+1.0
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+0
+\mathtt{Motion}_{11}^{0}
+0.0
+0.0
+0.0
+0.0
+0.03896103896103896
+0.05194805194805195
+0.0
+0.0
+0.15584415584415584
+0.12987012987012986
+0.03896103896103896
+0.0
+1.0
+0.07792207792207792
+0.025974025974025976
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+40
+\mathtt{Motion}_{11}^{40}
+0.0
+0.0
+0.0
+0.0
+0.041666666666666664
+0.0625
+0.0
+0.0
+0.08333333333333333
+0.16666666666666666
+0.125
+0.020833333333333332
+0.125
+1.0
+0.125
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+100
+\mathtt{Motion}_{11}^{100}
+0.0
+0.0
+0.0
+0.0
+0.030303030303030304
+0.06060606060606061
+0.030303030303030304
+0.030303030303030304
+0.06060606060606061
+0.15151515151515152
+0.12121212121212122
+0.09090909090909091
+0.06060606060606061
+0.18181818181818182
+1.0
+(a)
+PHOENIX
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+0
+\mathtt{Motion}_{5}^{0}
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+40
+\mathtt{Motion}_{5}^{40}
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+70
+\mathtt{Motion}_{5}^{70}
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+100
+\mathtt{Motion}_{5}^{100}
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+0
+\mathtt{Motion}_{7}^{0}
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+40
+\mathtt{Motion}_{7}^{40}
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+70
+\mathtt{Motion}_{7}^{70}
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+100
+\mathtt{Motion}_{7}^{100}
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+0
+\mathtt{Motion}_{9}^{0}
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+40
+\mathtt{Motion}_{9}^{40}
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+70
+\mathtt{Motion}_{9}^{70}
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+100
+\mathtt{Motion}_{9}^{100}
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+0
+\mathtt{Motion}_{11}^{0}
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+70
+\mathtt{Motion}_{11}^{70}
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+100
+\mathtt{Motion}_{11}^{100}
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+0
+\mathtt{Motion}_{5}^{0}
+1.0
+0.863013698630137
+0.6712328767123288
+0.6575342465753424
+0.8904109589041096
+0.9041095890410958
+0.7808219178082192
+0.7123287671232876
+0.9041095890410958
+0.8767123287671232
+0.7671232876712328
+0.7397260273972602
+0.9178082191780822
+0.7945205479452054
+0.8082191780821918
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+40
+\mathtt{Motion}_{5}^{40}
+0.7590361445783133
+1.0
+0.7108433734939759
+0.6385542168674698
+0.7951807228915663
+0.927710843373494
+0.7951807228915663
+0.6987951807228916
+0.8313253012048193
+0.9036144578313253
+0.8192771084337349
+0.7469879518072289
+0.8433734939759037
+0.8313253012048193
+0.8072289156626506
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+70
+\mathtt{Motion}_{5}^{70}
+0.6533333333333333
+0.7866666666666666
+1.0
+0.8
+0.7733333333333333
+0.8266666666666667
+0.8666666666666667
+0.84
+0.84
+0.8933333333333333
+0.84
+0.84
+0.8266666666666667
+0.88
+0.8533333333333334
+𝙼𝚘𝚝𝚒𝚘𝚗
+5
+100
+\mathtt{Motion}_{5}^{100}
+0.6666666666666666
+0.7361111111111112
+0.8333333333333334
+1.0
+0.7777777777777778
+0.7777777777777778
+0.8611111111111112
+0.875
+0.7916666666666666
+0.8472222222222222
+0.8333333333333334
+0.8888888888888888
+0.8333333333333334
+0.875
+0.875
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+0
+\mathtt{Motion}_{7}^{0}
+0.65
+0.66
+0.58
+0.56
+1.0
+0.73
+0.68
+0.64
+0.94
+0.8
+0.72
+0.68
+0.9
+0.78
+0.79
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+40
+\mathtt{Motion}_{7}^{40}
+0.6666666666666666
+0.7777777777777778
+0.6262626262626263
+0.5656565656565656
+0.7373737373737373
+1.0
+0.7474747474747475
+0.6363636363636364
+0.8383838383838383
+0.9090909090909091
+0.7777777777777778
+0.7171717171717171
+0.8686868686868687
+0.8282828282828283
+0.8181818181818182
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+70
+\mathtt{Motion}_{7}^{70}
+0.59375
+0.6875
+0.6770833333333334
+0.6458333333333334
+0.7083333333333334
+0.7708333333333334
+1.0
+0.8229166666666666
+0.84375
+0.8645833333333334
+0.96875
+0.875
+0.8645833333333334
+0.9479166666666666
+0.9375
+𝙼𝚘𝚝𝚒𝚘𝚗
+7
+100
+\mathtt{Motion}_{7}^{100}
+0.5531914893617021
+0.6170212765957447
+0.6702127659574468
+0.6702127659574468
+0.6808510638297872
+0.6702127659574468
+0.8404255319148937
+1.0
+0.8085106382978723
+0.7659574468085106
+0.8617021276595744
+0.8936170212765957
+0.8085106382978723
+0.851063829787234
+0.9042553191489362
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+0
+\mathtt{Motion}_{9}^{0}
+0.4370860927152318
+0.45695364238410596
+0.41721854304635764
+0.37748344370860926
+0.6225165562913907
+0.5496688741721855
+0.5364238410596026
+0.5033112582781457
+1.0
+0.6556291390728477
+0.5960264900662252
+0.5827814569536424
+0.9403973509933775
+0.6754966887417219
+0.7152317880794702
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+40
+\mathtt{Motion}_{9}^{40}
+0.5245901639344263
+0.6147540983606558
+0.5491803278688525
+0.5
+0.6557377049180327
+0.7377049180327869
+0.680327868852459
+0.5901639344262295
+0.8114754098360656
+1.0
+0.7622950819672131
+0.7049180327868853
+0.8442622950819673
+0.8442622950819673
+0.819672131147541
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+70
+\mathtt{Motion}_{9}^{70}
+0.45161290322580644
+0.5483870967741935
+0.5080645161290323
+0.4838709677419355
+0.5806451612903226
+0.6209677419354839
+0.75
+0.6532258064516129
+0.7258064516129032
+0.75
+1.0
+0.7903225806451613
+0.7741935483870968
+0.9274193548387096
+0.9032258064516129
+𝙼𝚘𝚝𝚒𝚘𝚗
+9
+100
+\mathtt{Motion}_{9}^{100}
+0.4426229508196721
+0.5081967213114754
+0.5163934426229508
+0.5245901639344263
+0.5573770491803278
+0.5819672131147541
+0.6885245901639344
+0.6885245901639344
+0.7213114754098361
+0.7049180327868853
+0.8032786885245902
+1.0
+0.7459016393442623
+0.8688524590163934
+0.9590163934426229
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+0
+\mathtt{Motion}_{11}^{0}
+0.3507853403141361
+0.36649214659685864
+0.32460732984293195
+0.31413612565445026
+0.4712041884816754
+0.450261780104712
+0.43455497382198954
+0.39790575916230364
+0.743455497382199
+0.5392670157068062
+0.5026178010471204
+0.47643979057591623
+1.0
+0.612565445026178
+0.6178010471204188
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+70
+\mathtt{Motion}_{11}^{70}
+0.3493975903614458
+0.41566265060240964
+0.39759036144578314
+0.3795180722891566
+0.46987951807228917
+0.4939759036144578
+0.5481927710843374
+0.4819277108433735
+0.6144578313253012
+0.6204819277108434
+0.6927710843373494
+0.6385542168674698
+0.7048192771084337
+1.0
+0.8313253012048193
+𝙼𝚘𝚝𝚒𝚘𝚗
+11
+100
+\mathtt{Motion}_{11}^{100}
+0.3333333333333333
+0.3785310734463277
+0.3615819209039548
+0.3559322033898305
+0.4463276836158192
+0.4576271186440678
+0.5084745762711864
+0.480225988700565
+0.6101694915254238
+0.5649717514124294
+0.632768361581921
+0.6610169491525424
+0.6666666666666666
+0.7796610169491526
+1.0
+(b)
+FLIC
+Fig. 8
+:
+Subsumption rates of various motion blur settings
+The data in Table
+II
+confirms that the different rules reveal different types of faults. Indeed, when using a reasonable error threshold (not so low that nearly all images lead to rule violations), most images lead to a violation of only a small number of rules. This again suggests that the different rules assess different aspects of the system as, in most cases, the same input leads to a violation only for specific rules.
+TABLE II
+:
+Images that violate different numbers of rules at given error thresholds in
+PHOENIX
+(
+PH
+) and
+FLIC
+(
+FL
+)
+# failed rules
+Error
+thresh.
+0.01
+0.05
+0.1
+0.2
+0.3
+0.7
+1.0
+2.0
+5.0
+20.0
+inf
+\inf
+FL
+PH
+FL
+PH
+FL
+PH
+FL
+PH
+FL
+PH
+FL
+PH
+FL
+PH
+FL
+PH
+FL
+PH
+FL
+PH
+FL
+PH
+0
+2
+0
+2
+0
+2
+0
+2
+0
+2
+0
+9
+11996
+56
+17794
+98
+18767
+135
+18813
+138
+18821
+138
+18821
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+35
+23192
+51
+28258
+77
+28789
+113
+28759
+121
+28752
+122
+28752
+2
+0
+0
+0
+0
+0
+1
+0
+10363
+0
+14486
+52
+11742
+54
+7144
+44
+6180
+74
+6171
+84
+6171
+84
+6171
+3
+1
+0
+1
+0
+1
+1401
+1
+18521
+1
+24116
+48
+5985
+52
+1616
+47
+1334
+44
+1330
+47
+1329
+49
+1329
+4
+0
+0
+0
+0
+0
+5129
+0
+15246
+15
+11806
+48
+1956
+36
+617
+33
+446
+41
+443
+46
+443
+45
+443
+5 to 30 (25%)
+9
+0
+198
+53427
+534
+49229
+635
+11644
+643
+5367
+494
+904
+446
+346
+414
+259
+354
+259
+355
+259
+353
+259
+31 to 61 (50%)
+16
+0
+373
+2668
+206
+16
+136
+1
+118
+0
+111
+0
+104
+0
+92
+0
+59
+0
+36
+0
+36
+0
+62 to 91 (75%)
+5
+2635
+163
+38
+58
+0
+46
+0
+41
+0
+35
+0
+30
+0
+26
+0
+14
+0
+7
+0
+7
+0
+92 to 121
+464
+53684
+94
+2
+46
+0
+32
+0
+25
+0
+12
+0
+11
+0
+10
+0
+6
+0
+2
+0
+2
+0
+122 (100%)
+338
+42
+27
+0
+7
+0
+1
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+0
+VII
+Related Work
+The use of machine learning systems is becoming increasingly common in many diverse fields. Testing strategies for these systems are therefore being more widely recognised as a necessity, especially in safety critical systems
+[
+34
+]
+. In particular, these systems are tested with different focuses in mind such as: robustness to degradations
+[
+17
+]
+[
+35
+]
+[
+36
+]
+[
+37
+]
+, testing for faults when using ML frameworks
+[
+38
+]
+, testing the adequacy of the datasets used to train and test these systems
+[
+39
+]
+and testing the biases embedded in these systems
+[
+8
+,
+40
+]
+.
+In particular, metamorphic testing is a convenient method to circumvent the oracle problem found when attempting to test many of these systems. This method has been used to test a wide range of ML systems, including: autonomous delivery robots
+[
+41
+]
+, image classification systems
+[
+42
+]
+, recommender systems
+[
+43
+]
+, search engines
+[
+44
+]
+and chat bots
+[
+45
+]
+.
+More particularly, when looking at pose estimation systems, we can find previous work focused on the pose estimation of hands
+[
+17
+]
+, and on predicting the trajectory of humans, done by autonomous systems
+[
+46
+]
+.
+When looking at the particular model tested in this work, it has previously been explicitly evaluated on individuals from different regions of the world which has been reported in the model’s corresponding Model Card
+[
+30
+,
+47
+]
+.
+One of the main differences between the related work and the framework presented here is that we avoid the need for ground truth labelled data, meaning that
+MeT-Pose
+can work with datasets without ground truth, which has not been done in previous metamorphic testing applied to pose estimation. We also do not focus only on robustness to degradations. We present a framework that can be used for various specific interests of the applications, which can be image degradation, but can encompass a wide range of potential concerns from fairness issues to sensitivity to image quality. Even if we do not focus on suggesting novel metamorphic rules, when novel metamorphic rules are needed for a specific application,
+MeT-Pose
+can be applied to new datasets without the expense of labelling ground truth keypoints.
+VIII
+Threats to validity
+We list (and classify following
+[
+48
+]
+) threats to the validity of our work here:
+•
+Construct Validity:
+A possible threat is the validity of the metrics used to reach our conclusions. The results would be different if instead of counting the number of inputs that fail with at least one metamorphic rule, we required multiple failures for each input to be counted. They would also look different depending on the metamorphic relations we take into account, or if the modified images are out of scope of the system under test. The image aggregation metric can also change the results depending on whether we measure the mean, median, minimum or maximum error of all keypoints in an output.
+To mitigate this, we consider the median error as an image aggregation metric, which is less sensitive to outliers compared to the mean or the maximum. We also show the number of failed inputs for different selections of metamorphic relations. We choose to count the inputs when they fail for only one metamorphic relation instead of many because this is enough to show that the framework found a problem that would be relevant to the application engineers. Finally, we show how a wide and varied selection of different metamorphic relations do not completely subsume each other, so the errors found come from the test with various different rules, and not only one rule finding all the problems.
+We also note that in this work we are not trying to find specific problems in the SUT, and so the influence of the metrics discussed here is reduced. They show that
+MeT-Pose
+can be used to find problems in such systems, but the focus is not on which specific problems we found.
+•
+Internal Validity:
+Another threat is that the results shown were found by chance or due to mistakes in our implementation, and not because of the causes that we expect.
+To mitigate this, we have carefully inspected our implementation, and manually confirmed each step done until the results aggregation. We have also added an
+identity
+metamorphic relation as a sanity check to ensure that the system results do not change when we run the system with the same input twice, in which case we would need to run our experiments a number of times to reach a statistically significant conclusion.
+•
+External Validity:
+The current work may not generalise to other datasets or systems beyond the ones in this work. It is also not explored how effective it would be when used in a real application setting with a specific set of relevant input features and output requirements. In general,
+DL
+models are evolving rapidly and so it is common that many methods are rendered obsolete quickly.
+To mitigate these, we have designed this framework in a way that it is highly dataset and system agnostic: any image is processed equally, not depending on its colour, number or type of subjects, etc.; and
+MeT-Pose
+tests the SUT as a black-box. The only change required to use different ground truth annotations, or different systems, is due to the non-standardised pose estimation outputs and annotations, which is unavoidable. We have also left not only the specific metamorphic relations but also the error metric open to modification for different applications, facilitating adaptability to different contexts.
+IX
+Conclusions and Future Work
+In this work we propose
+MeT-Pose
+, a metamorphic testing-based framework for pose estimation systems. We have focused on making this framework both system- and dataset-agnostic, due to the rapid developments of the area of pose estimation systems. This should help the approach remain relevant even if architectures or methodological changes occur in the area.
+We applied
+MeT-Pose
+to
+𝑀𝑒𝑑𝑖𝑎𝑝𝑖𝑝𝑒
+\mathit{Mediapipe}
+𝐻𝑜𝑙𝑖𝑠𝑡𝑖𝑐
+\mathit{Holistic}
+using two datasets from different application domains. Results show that
+MeT-Pose
+can detect failures of the system without ground truth data, i.e., without human annotations. They also show that, by leaving the definition of the metamorphic rules and the metrics used to assess violation of these rules open to the user,
+MeT-Pose
+is adaptable and can test pose estimation systems for different use cases.
+As future work, we plan to apply
+MeT-Pose
+to different systems and use cases. This will first confirm the framework’s adaptability. We also plan to show that, by using application-specific rules, practitioners who build these pose estimation systems can gain a better understanding of how they operate and even use this information towards repairing their systems.
+References
+[1]
+G. Litjens, T. Kooi, B. E. Bejnordi, A. A. A. Setio, F. Ciompi, M. Ghafoorian, J. A. van der Laak, B. van Ginneken, and C. I. Sánchez, “A survey on deep learning in medical image analysis,”
+MIA
+, vol. 42, pp. 60–88, 2017.
+[2]
+R. Holmes, E. Rushe, M. De Coster, M. Bonnaerens, S. Satoh, A. Sugimoto, and A. Ventresque, “From scarcity to understanding: Transfer learning for the extremely low resource irish sign language,” in
+ICCV
+, 2023.
+[3]
+Z. Martin, S. Hendricks, and A. Patel, “Automated tackle injury risk assessment in contact-based sports-a rugby union example,” in
+CVPR
+, 2021.
+[4]
+I. Grishchenko and V. Bazarevsky, “MediaPipe Holistic — Simultaneous Face, Hand and Pose Prediction, on Device,”
+https://research.google/blog/mediapipe-holistic-simultaneous-face-hand-and-pose-prediction-on-device/
+, [Accessed 19-08-2024].
+[5]
+D. C. Luvizon, D. Picard, and H. Tabia, “2d/3d pose estimation and action recognition using multitask deep learning,” in
+CVPR
+, 2018.
+[6]
+“Mediapipe pose landmark detection system,” [Accessed 21-01-2025]. [Online]. Available:
+https://ai.google.dev/edge/mediapipe/solutions/vision/pose_landmarker
+[7]
+A. Birhane, S. Dehdashtian, V. Prabhu, and V. Boddeti, “The dark side of dataset scaling: Evaluating racial classification in multimodal models,” in
+FAccT
+, 2024.
+[8]
+A. Birhane, V. U. Prabhu, and J. Whaley, “Auditing saliency cropping algorithms,” in
+WACV
+, 2022.
+[9]
+L. Weidinger, J. Mellor, M. Rauh, C. Griffin, J. Uesato, P.-S. Huang, M. Cheng, M. Glaese, B. Balle, A. Kasirzadeh
+et al.
+, “Ethical and social risks of harm from language models,”
+arXiv preprint arXiv:2112.04359
+, 2021.
+[10]
+I. D. Raji, T. Gebru, M. Mitchell, J. Buolamwini, J. Lee, and E. Denton, “Saving face: Investigating the ethical concerns of facial recognition auditing,” in
+AIES
+, 2020.
+[11]
+N. Hoehing, E. Rushe, and A. Ventresque, “What’s left can’t be right–the remaining positional incompetence of contrastive vision-language models,”
+arXiv preprint arXiv:2311.11477
+, 2023.
+[12]
+F. Liu, G. Emerson, and N. Collier, “Visual spatial reasoning,”
+TACL
+, vol. 11, 2023.
+[13]
+E. T. Barr, M. Harman, P. McMinn, M. Shahbaz, and S. Yoo, “The oracle problem in software testing: A survey,”
+TOSEM
+, vol. 41, no. 5, 2014.
+[14]
+L. Ma, F. Zhang, J. Sun, M. Xue, B. Li, F. Juefei-Xu, C. Xie, L. Li, Y. Liu, J. Zhao
+et al.
+, “Deepmutation: Mutation testing of deep learning systems,” in
+ISSRE
+. IEEE, 2018.
+[15]
+A. Dwarakanath, M. Ahuja, S. Sikand, R. M. Rao, R. J. C. Bose, N. Dubash, and S. Podder, “Identifying implementation bugs in machine learning based image classifiers using metamorphic testing,” in
+ISSTA
+, 2018.
+[16]
+L. Ma, F. Juefei-Xu, F. Zhang, J. Sun, M. Xue, B. Li, C. Chen, T. Su, L. Li, Y. Liu
+et al.
+, “Deepgauge: Multi-granularity testing criteria for deep learning systems,” in
+ASE
+, 2018.
+[17]
+M. Pu, C. Y. Chong, and M. K. Lim, “Robustness evaluation in hand pose estimation models using metamorphic testing,” in
+MET)
+, 2023.
+[18]
+X. Xie, J. W. Ho, C. Murphy, G. Kaiser, B. Xu, and T. Y. Chen, “Testing and validating machine learning classifiers by metamorphic testing,”
+JSS
+, vol. 84, no. 4, 2011.
+[19]
+“opencv implemmentation of gamma correction,” [Accessed 21-01-2025]. [Online]. Available:
+https://docs.opencv.org/3.4/d3/dc1/tutorial_basic_linear_transform.html
+[20]
+“opencv implemmentation of bilateral filtering,” [Accessed 21-01-2025]. [Online]. Available:
+https://docs.opencv.org/4.x/d4/d13/tutorial_py_filtering.html
+[21]
+R. Geirhos, P. Rubisch, C. Michaelis, M. Bethge, F. A. Wichmann, and W. Brendel, “Imagenet-trained cnns are biased towards texture; increasing shape bias improves accuracy and robustness,” 2022. [Online]. Available:
+https://arxiv.org/abs/1811.12231
+[22]
+M. De Coster, M. Van Herreweghe, and J. Dambre, “Sign language recognition with transformer networks,” in
+LREC
+, 2020.
+[23]
+R. Holmes, E. Rushe, F. Fowley, and A. Ventresque, “Improving signer independent sign language recognition for low resource languages,” in
+SLTAT
+, 2022.
+[24]
+“opencv implemmentation of hsv colorspace encoding,” [Accessed 21-01-2025]. [Online]. Available:
+https://docs.opencv.org/3.4/df/d9d/tutorial_py_colorspaces.html
+[25]
+I. Grishchenko, V. Bazarevsky, A. Zanfir, E. G. Bazavan, M. Zanfir, R. Yee, K. Raveendran, M. Zhdanovich, M. Grundmann, and C. Sminchisescu, “Blazepose ghum holistic: Real-time 3d human landmarks and pose estimation,”
+arXiv preprint arXiv:2206.11678
+, 2022.
+[26]
+V. Bazarevsky, I. Grishchenko, K. Raveendran, T. Zhu, F. Zhang, and M. Grundmann, “Blazepose: On-device real-time body pose tracking,”
+arXiv preprint arXiv:2006.10204
+, 2020.
+[27]
+N. C. Camgoz, S. Hadfield, O. Koller, H. Ney, and R. Bowden, “Neural sign language translation,” in
+CVPR
+, 2018.
+[28]
+B. Sapp and B. Taskar, “Modec: Multimodal decomposable models for human pose estimation,” in
+CVPR
+, 2013.
+[29]
+T.-Y. Lin, M. Maire, S. Belongie, L. Bourdev, R. Girshick, J. Hays, P. Perona, D. Ramanan, C. L. Zitnick, and P. Dollár, “Microsoft coco: Common objects in context,”
+arXiv preprint arXiv:1405.0312
+, 2014.
+[30]
+G. A. for Developers, “Model Card: MediaPipe BlazePose GHUM 3D,”
+https://storage.googleapis.com/mediapipe-assets/Model%20Card%20BlazePose%20GHUM%203D.pdf
+, 2021, [Online; Accessed 2 July, 2024].
+[31]
+——, “Model Card: MediaPipe FaceMesh,”
+https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Face%20Mesh%20V2.pdf
+, 2022, [Online; Accessed 25 September, 2024].
+[32]
+——, “Model Card: MediaPipe Hands (Lite/Full),”
+https://storage.googleapis.com/mediapipe-assets/Model%20Card%20Hand%20Tracking%20(Lite_Full)%20with%20Fairness%20Oct%202021.pdf
+, 2021, [Online; Accessed 25 September, 2024].
+[33]
+M. Duran, T. Laurent, E. Rushe, and A. Ventresque, “Companion repository for “Metamorphic Testing for Pose Estimation Systems”,” [Accessed 21-01-2025]. [Online]. Available:
+https://github.com/MatoFD/MeT-Pose
+[34]
+M. Kassab, “Testing practices of software in safety critical systems: Industrial survey.” in
+ICEIS (2)
+, 2018.
+[35]
+D. Hendrycks and T. Dietterich, “Benchmarking neural network robustness to common corruptions and perturbations,” 2019. [Online]. Available:
+https://arxiv.org/abs/1903.12261
+[36]
+J. Mohapatra, T.-W. Weng, P.-Y. Chen, S. Liu, and L. Daniel, “Towards verifying robustness of neural networks against a family of semantic perturbations,” in
+CVPR
+, 2020.
+[37]
+N. Drenkow and M. Unberath, “Robustclevr: A benchmark and framework for evaluating robustness in object-centric learning,” in
+WACV
+, 2024.
+[38]
+N. Humbatova, G. Jahangirova, G. Bavota, V. Riccio, A. Stocco, and P. Tonella, “Taxonomy of real faults in deep learning systems,” in
+ICSE
+, 2020.
+[39]
+J. Kim, R. Feldt, and S. Yoo, “Evaluating surprise adequacy for deep learning system testing,”
+ACM TOSEM
+, vol. 32, no. 2, 2023.
+[40]
+J. Buolamwini and T. Gebru, “Gender shades: Intersectional accuracy disparities in commercial gender classification,” in
+FAccT
+. PMLR, 2018.
+[41]
+T. Laurent, P. Arcaini, X.-Y. Zhang, and F. Ishikawa, “Metamorphic testing of an autonomous delivery robots scheduler,” in
+ICST
+. IEEE, 2024.
+[42]
+P. Naidu, H. Gudaparthi, and N. Niu, “Metamorphic testing for convolutional neural networks: Relations over image classification,” in
+IRI
+. IEEE, 2021.
+[43]
+S. Wu, Y. Hu, Y. Wang, J. Gu, J. Meng, L. Fan, Z. Luan, X. Wang, and Y. Zhou, “Combating missed recalls in e-commerce search: A cot-prompting testing approach,” in
+FSE
+, ser. FSE 2024. New York, NY, USA: Association for Computing Machinery, 2024. [Online]. Available:
+https://doi.org/10.1145/3663529.3663842
+[44]
+X. Wang, G. Yi, and Y. Wang, “Automated functional testing of search engines using metamorphic testing,” in
+QRS
+, 2021.
+[45]
+J. Bozic and F. Wotawa, “Testing chatbots using metamorphic relations,” in
+Testing Software and Systems
+, C. Gaston, N. Kosmatov, and P. Le Gall, Eds. Cham: Springer International Publishing, 2019.
+[46]
+S. Helge, B. Nassim, G. Arnaud, and L. Nadjib, “Evaluating human trajectory prediction with metamorphic testing,”
+arXiv preprint arXiv:2407.18756
+, 2024.
+[47]
+M. Mitchell, S. Wu, A. Zaldivar, P. Barnes, L. Vasserman, B. Hutchinson, E. Spitzer, I. D. Raji, and T. Gebru, “Model cards for model reporting,” in
+FAccT
+, 2019.
+[48]
+R. Feldt and A. Magazinius, “Validity threats in empirical software engineering research - an initial survey,” in
+SEKE
+, 2010.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

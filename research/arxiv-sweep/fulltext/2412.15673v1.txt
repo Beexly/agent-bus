@@ -1,0 +1,3999 @@
+Learning Group Interactions and Semantic Intentions for Multi-Object Trajectory Prediction
+Mengshi Qi
+Yuxin Yang
+Huadong Ma
+Thanks:
+This work is partly supported by the Funds for the NSFC Project under Grant 62202063, Beijing Natural Science Foundation (L243027), the Innovation Research Group Project of the NSFC under Grant 61921003. (
+Corresponding author: Mengshi Qi˜(email:˜qms@bupt.edu.cn)
+)
+Thanks:
+M. Qi, Y. Yang, and H. Ma are with State Key Laboratory of Networking and Switching Technology, Beijing University of Posts and Telecommunications, China.
+Abstract
+Effective modeling of group interactions and dynamic semantic intentions is crucial for forecasting behaviors like trajectories or movements. In complex scenarios like sports, agents’ trajectories are influenced by group interactions and intentions, including team strategies and opponent actions. To this end, we propose a novel diffusion-based trajectory prediction framework that integrates group-level interactions into a conditional diffusion model, enabling the generation of diverse trajectories aligned with specific group activity. To capture dynamic semantic intentions, we frame group interaction prediction as a cooperative game, using Banzhaf interaction to model cooperation trends. We then fuse semantic intentions with enhanced agent embeddings, which are refined through both global and local aggregation. Furthermore, we expand the NBA SportVU dataset by adding human annotations of team-level tactics for trajectory and tactic prediction tasks. Extensive experiments on three widely-adopted datasets demonstrate that our model outperforms state-of-the-art methods. Our source code and data are available at https://github.com/aurora-xin/Group2Int-trajectory.
+Index Terms:
+Trajectory prediction, Sports analysis, Game theory, Diffusion model, Group Interaction, Semantic Intention.
+I
+Introduction
+Multi-object trajectory prediction is a task that aims to forecast multi-modal future movements in the scene based on their observed history and contextual information. It is essential to obtain accurate trajectory prediction for decision-making in various real-world applications, including sports analysis systems
+[
+1
+,
+2
+,
+3
+,
+4
+]
+, autonomous driving systems
+[
+5
+,
+6
+,
+7
+,
+8
+]
+, social robots
+[
+9
+]
+, etc.
+Especially, trajectory prediction in sports competitions
+[
+1
+,
+2
+,
+3
+,
+4
+]
+presents unique challenges and opportunities due to the complex group interactions among objects and the rapidly changing semantic intention demands of the game. Incorporating expert knowledge, such as tactics, can enhance both prediction accuracy and interpretability, thereby providing invaluable support for tactical analysis and decision-making. We present a case study of a 3 vs. 3 basketball game in Fig.
+1
+.
+Fig. 1:
+Illustration of multi-agent trajectory prediction in a 3 vs. 3 basketball game. Agent trajectories are shown as circles, blue for one team, red for the opposing team, and green for the basketball. Solid circles are observed trajectories, while dashed ones are predicted positions. The blue team begins with a ”Ball Movement” tactic, switching to ”Single”, while the red team uses ”Man-to-Man Defense”. Given the observed 2D trajectories and tactics, our goal is to (a) predict future trajectories and (b) forecast the tactics each team will adopt in the next frames.
+From the figure, we can see the blue team, on offense and advancing to the right, initially employs a ”Ball Movement“ tactic for prior three frames, in which player A pass to player B near the basket to prevent interception by player D. Then the tactic transitions to a ”Single” play over the next two frames, as player B has an opportunity for a quick shot. While the red team implements a ”Man-to-Man Defense” with each defender closely following their assigned opponent, where player E try to obstruct the movement of player B. Recognizing the blue team’s shift from ”Ball Movement” to ”Single” indicates the ball-handler’s intent to drive or shoot, while understanding the red team’s defense suggests that defensive trajectories will mirror the movements of offensive players, demonstrating learning strategy transitions informs movement trajectories and underlying motivations.
+As deep learning advances rapidly in recent years, there have been generative model based attempts to represent multi-modality of human motion by latent variable, such as generative adversarial networks (GANs)
+[
+10
+,
+2
+]
+and conditional variational autoencoders (CVAEs)
+[
+11
+,
+12
+,
+4
+]
+. However, due to limitations like unstable training process of GANs and unnatural trajectories generation of CVAE
+[
+13
+]
+, diffusion-based methods have been utilized for this specific task. Recent advancements in diffusion-based trajectory prediction leverage observed trajectories as conditions
+[
+13
+]
+, enhancing inference speed
+[
+14
+]
+with a trainable initializer and human motion representation
+[
+15
+]
+in a singular space.
+Meanwhile, existing methods have proposed various solutions that focus on modeling social interactions through pooling mechanisms
+[
+6
+]
+and graph-based representations of spatial and temporal relationships
+[
+7
+,
+16
+,
+4
+]
+.
+However, these works have limitations in analyzing group-level interactions and exploring variations in semantic intention. Existing methods tend to focus on agent-level interactions but ignore higher-level group interactions and implicit dynamics of semantic intention changes, which are crucial for guiding agents to adopt different trajectories, especially in complex competitive sports settings. In sports, group interactions are diverse, including intra-team cooperation, responses to opponents, and mutual influences among team members. Such interactions often exhibit a game-theoretic nature, where each player’s intentions are shaped not only by team strategies but also by the actions and intentions of opponents. This complexity impacts the overall distribution of player trajectories. Thus, more comprehensive incorporation of intention variation and group-level interactions in trajectory prediction models can enable more accurate and realistic simulations of sports dynamics, enhancing predictive reliability. In conclusion, two major challenges have not been fully tackled in multi-agent trajectory forecasting: 1) how to model the complex group interactions among multiple objects; 2) how to capture semantic intention in dynamic scenarios to guide trajectory prediction.
+In order to address aforementioned challenges, we propose a novel end-to-end trajectory prediction framework that leverages group interactions and semantic intentions for trajectory prediction. The framework incorporates expert knowledge for modeling group interactions and employs game theory to capture the dynamic semantic intentions among agents and groups, especially in sports games. Specifically, we utilize an interaction encoder to process observed trajectories with group-level tactics as condition for diffusion model in the classifier-free guidance
+[
+17
+]
+manner, learning explicit group interactions for trajectory prediction. Moreover, we capture both global and local information through attention mechanisms to obtain enhanced agent tokens. More importantly, we model group interaction prediction as a cooperative game, where agents in the scene and the potential tactics each group adopts are considered as players according to the game theory. We utilize Banzhaf Interaction
+[
+18
+]
+to represent the cooperation trends among any coalition of players, reflecting the semantic intentions across multiple levels.
+Finally, we fuse the enhanced agent tokens with the learned semantic intention assignments for each agent, derived from the learned similarity, and input to the prediction head for each group to obtain group interaction probabilities.
+The main contributions can be summarized as follows:
+1.
+We propose a novel diffusion-based trajectory prediction method that incorporates group-level interactions as expert knowledge, providing an additional condition to generate more realistic and interactive trajectories.
+2.
+We present an innovative semantic intentions prediction method that leverages the game theory to capture multi-level dynamic activity changes among various agents and groups, thereby enhancing the model’s ability in reasoning.
+3.
+We introduce a new benchmark by expanding the NBA SportVU dataset with human annotations of team-level dynamic tactics for trajectroy and tactic prediction tasks. Extensive experiments on three widely-adopted datasets demonstrate our model’s state-of-the-art performance even compared to the Large Language Models (LLMs).
+II
+Related Works
+II-A
+Trajectory prediction
+Early trajectory prediction research primarily relies on deterministic models such as Markov processes
+[
+19
+]
+, social forces
+[
+20
+]
+and recurrent neural networks
+[
+21
+]
+, which incorporate social interactions among agents and highlight the role of generative models.
+As deep learning advances
+[
+22
+,
+23
+,
+24
+]
+, stochastic prediction, which considers all potential future trajectories, such as an agent’s decisions at a crossroads, has emerged as the prevailing approach in the field.
+These works combine probabilistic inferences with the bivariate Gaussian distribution
+[
+6
+,
+25
+,
+16
+,
+26
+,
+27
+,
+28
+]
+, Generative Adversarial Network (GAN)
+[
+10
+,
+29
+,
+30
+,
+31
+]
+, Conditional Variational AutoEncoder (CVAE)
+[
+32
+,
+33
+,
+34
+,
+35
+,
+12
+]
+and Diffusion model
+[
+13
+,
+14
+,
+36
+,
+37
+,
+15
+,
+38
+]
+for multi-modal trajectory generation.
+For example, Social-LSTM
+[
+6
+]
+introduces a social pooling layer to capture agent interactions, extended by Social-GAN
+[
+10
+]
+. Additionally, attention-based methods are essential to capture critical interactions in crowded environments
+[
+7
+]
+. Other works integrate scene understanding to extract global information, such as SS-LSTM
+[
+39
+]
+. Trajectron++
+[
+11
+]
+establishes the connections between scene information and agent motion using graph structures, and MANTRA
+[
+40
+]
+combines memory mechanisms with scene images.
+MID
+[
+13
+]
+is noteworthy as it introduced diffusion models to predict trajectories by modeling the process of human motion variation from indeterminate to determinate, and laying the foundation of Transformer diffusion for trajectory prediction that a serious of later works
+[
+14
+,
+15
+]
+adopt. Specifically, LED
+[
+14
+]
+proposes a leapfrog initializer to accelerate the trajectory prediction.
+TRACE
+[
+36
+]
+incorporates controllable guidance factors such as goals, avoidance, and social groups into the diffusion model, leading to the generation of trajectory data that rivals real-world scenarios while maintaining rationality, SingularTrajectory
+[
+15
+]
+unifies human motion representations in a singular space to help generate trajectories.
+Moreover, existing works in the sports domain
+[
+2
+,
+41
+,
+42
+,
+43
+,
+44
+,
+45
+]
+also focus on trajectory forecasting and imputations, analyzing and modeling sports activities and agent behaviors. However, most of these works emphasis on interactions among agents, but ignore the dynamic group activity and semantic intention changes. Different from these previous works, we model the group interactions in a classifier-free guidance manner for diffusion model in sports scenarios, using the detected tactic strategy as an additional group-level condition to enhance trajectory prediction performance.
+II-B
+Diffusion models
+Diffusion models
+[
+46
+]
+have demonstrated promising results across various generative applications, including image generation
+[
+46
+,
+47
+,
+17
+]
+and natural language generation
+[
+48
+]
+.
+These models are a class of neural generative models that leverage stochastic diffusion processes based on thermodynamic principles. They iteratively introduce noise to data samples and train a neural network to reverse this process by removing the noise. Diffusion models have also shown great potential for generation in trajectory prediction
+[
+13
+,
+14
+,
+15
+]
+. Specifically, MID
+[
+13
+]
+is the first to utilize diffusion models for trajectory prediction, effectively modeling the indeterminacy variation process. LED
+[
+14
+]
+introduces a trainable initializer to establish an expressive distribution, thereby reducing the number of denoising steps required to accelerate inference. SingularTrajectory
+[
+15
+]
+unifies human motion representations in a singular space and employs an adaptive anchor within a diffusion model framework.
+A seminal work that performs text-guided generation with diffusion is classifier-guidance diffusion
+[
+17
+]
+. Classifier-free guidance (CFG)
+[
+17
+]
+forms the key basis of modern text-guided generation with diffusion models
+[
+49
+,
+50
+]
+.
+However, it requires an accurate estimation of guidance gradient based on the classifier.
+Thus, classifier-free guidance offers a significant advantage over classifier-guided models
+[
+49
+]
+. Then, a branch of this kind of conditional diffusion method achieves state-of-the-art performance in a variety of tasks
+[
+51
+]
+. In our work, we adopt the classifier-free approach to augment the trajectory generation process with a guidance signal, which amplifies the features of specific hidden constraints and optimal group interactions.
+II-C
+Cooperative Game Theory
+Game theory is widely applied in economic theory
+[
+52
+,
+53
+]
+, politics
+[
+54
+]
+, but its exploration in computer vision domain, particularly human trajectory prediction, is relatively limited. The cooperative game theory involves a set of players and a characteristic function
+[
+55
+]
+, which maps each possible subset of players (also known as a coalition) to a real number representing the total payoff achieved by those players working together toward a shared goal
+[
+18
+,
+56
+,
+57
+]
+.
+The core of cooperative game theory is to fairly and reasonably allocate different payoffs to individual players based on their contributions. Researchers introduce various value concepts, such as the Shapley value
+[
+58
+,
+59
+]
+and Banzhaf value
+[
+60
+,
+61
+]
+, to measure the average added value that each player brings to different coalitions. Some prior works utilize the game theory to improve model interpretability
+[
+62
+]
+, while some works incorporate the game theory for the vision-language task
+[
+18
+,
+57
+]
+. Recently, GameFormer
+[
+63
+]
+uses the hierarchical game theory to decode future trajectories for vehicle prediction and planning. In our work, we exploit the game theory to model dynamic semantic intentions in sports games, of which we incorporate Banzhaf Interaction
+[
+18
+]
+to obtain multi-level interactions, thereby improving the accuracy, reliability and interpretability of human trajectory prediction.
+III
+Preliminary
+III-A
+Diffusion models
+The diffusion model converts a noisy distribution represented by the noise vector
+𝐲
+T
+\mathbf{y}_{T}
+, into the desired clean data
+𝐲
+0
+\mathbf{y}_{0}
+over
+T
+T
+steps, utilizing intermediate latent variables
+{
+𝐲
+t
+∣
+t
+∈
+[
+1
+,
+…
+,
+T
+]
+}
+\{\mathbf{y}_{t}\mid t\in[1,\ldots,T]\}
+that are involved in both the diffusion and denoising phases. During the diffusion phase, noise is progressively introduced into the data in incremental steps, transforming the distribution
+q
+⁡
+(
+𝐲
+0
+)
+q(\mathbf{y}_{0})
+into the standard normal distribution
+q
+⁡
+(
+𝐲
+T
+)
+q(\mathbf{y}_{T})
+, through a Markov chain as follows:
+q
+(
+𝐲
+1
+:
+T
+∣
+𝐲
+0
+)
+:=
+∏
+t
+=
+1
+T
+q
+(
+𝐲
+t
+∣
+𝐲
+t
+−
+1
+)
+,
+q(\mathbf{y}_{1:T}\mid\mathbf{y}_{0}):=\prod_{t=1}^{T}q(\mathbf{y}_{t}\mid\mathbf{y}_{t-1}),
+(1)
+q
+⁡
+(
+𝐲
+t
+∣
+𝐲
+t
+−
+1
+)
+:=
+𝒩
+⁡
+(
+𝐲
+t
+,
+1
+−
+β
+t
+​
+𝐲
+t
+−
+1
+,
+β
+t
+​
+𝐈
+)
+,
+q(\mathbf{y}_{t}\mid\mathbf{y}_{t-1}):=\mathcal{N}(\mathbf{y}_{t};\sqrt{1-\beta_{t}}\mathbf{y}_{t-1},\beta_{t}\mathbf{I}),
+(2)
+where
+β
+t
+\beta_{t}
+is a constant that controls the variance schedule for noise injection. In the denoising phase,
+𝐲
+t
+\mathbf{y}_{t}
+is used to reconstruct
+𝐲
+0
+\mathbf{y}_{0}
+via a learnable model as:
+p
+θ
+(
+𝐲
+0
+:
+T
+)
+:=
+p
+(
+𝐲
+T
+)
+∏
+t
+=
+1
+T
+p
+θ
+(
+𝐲
+t
+−
+1
+∣
+𝐲
+t
+)
+,
+p_{\theta}(\mathbf{y}_{0:T}):=p(\mathbf{y}_{T})\prod_{t=1}^{T}p_{\theta}(\mathbf{y}_{t-1}\mid\mathbf{y}_{t}),
+(3)
+p
+θ
+​
+(
+𝐲
+t
+−
+1
+∣
+𝐲
+t
+)
+:=
+𝒩
+⁡
+(
+𝐲
+t
+−
+1
+,
+f
+ϵ
+​
+(
+𝐲
+t
+,
+t
+)
+,
+β
+t
+​
+𝐈
+)
+,
+p_{\theta}(\mathbf{y}_{t-1}\mid\mathbf{y}_{t}):=\mathcal{N}(\mathbf{y}_{t-1};f_{\epsilon}(\mathbf{y}_{t},t),\beta_{t}\mathbf{I}),
+(4)
+where
+𝐲
+T
+∼
+𝒩
+⁡
+(
+0
+,
+𝐈
+)
+\mathbf{y}_{T}\sim\mathcal{N}(0,\mathbf{I})
+denotes the initial noise sampled from the Gaussian distribution
+p
+⁡
+(
+𝐲
+T
+)
+p(\mathbf{y}_{T})
+,
+θ
+\theta
+represents the learnable parameters of the diffusion model and
+f
+ϵ
+f_{\epsilon}
+is the learnable denoising model. The goal is to train the neural network to enable the denoising process to accurately approximate the true data distribution, typically by maximizing the evidence lower bound (ELBO), ensuring that the samples generated by the diffusion model closely resemble real data.
+Furthermore, classifier-free guidance is well known to yield significantly improved samples over generic sampling techniques
+[
+17
+,
+64
+]
+.
+Our approach is inspired by classifier-free diffusion guidance
+[
+17
+]
+, which offers a significant advantage over classifier-guided models
+[
+49
+]
+, balancing the diversity and fidelity of samples in conditional diffusion models. By adopting the classifier-free approach, we incorporate group interactions, global and local information to Transformer Diffusion to customize and control trajectory generation.
+III-B
+Game theory
+Game theory is proposed to examine how players or groups form coalitions to cooperate and achieve shared objectives in cooperative games. A cooperative game consists of a player set
+P
+=
+{
+1
+,
+2
+,
+…
+,
+n
+}
+P=\{1,2,...,n\}
+and a characteristic function
+ϕ
+⁡
+(
+⋅
+)
+\phi(\cdot)
+, which maps each subset
+S
+​
+e
+​
+t
+b
+⊆
+P
+Set_{b}\subseteq P
+of players to a score value, indicating the payoff when players in coalition
+S
+​
+e
+​
+t
+b
+Set_{b}
+work together in the game. Mainstream methods including Shapley value
+[
+58
+,
+59
+]
+and Banzhaf value
+[
+60
+,
+61
+]
+are widely-used characteristic function calculating the benefits of coalitions in a game. For two players
+i
+i
+and
+j
+j
+within a player set
+P
+P
+, their individual rewards,
+ϕ
+⁡
+(
+{
+i
+}
+)
+\phi(\{i\})
+and
+ϕ
+⁡
+(
+{
+j
+}
+)
+\phi(\{j\})
+, might be low, but if they form a coalition, the combined reward,
+ϕ
+⁡
+(
+{
+i
+,
+j
+}
+)
+\phi(\{i,j\})
+, could be significantly higher. This increase occurs because the players in the coalition can interact and collaborate, potentially generating additional benefits through their cooperation.
+Banzhaf Interaction
+[
+65
+,
+18
+]
+is a widely-used approach for valuing the benefits of coalitions in a game. Specifically, given a coalition
+{
+i
+,
+j
+}
+⊆
+𝒩
+\{i,j\}\subseteq\mathcal{N}
+, the Banzhaf Interaction
+ℐ
+⁡
+(
+[
+{
+i
+,
+j
+}
+]
+)
+\mathcal{I}([\{i,j\}])
+for the player
+[
+{
+i
+,
+j
+}
+]
+[\{i,j\}]
+is defined as the following:
+ℐ
+(
+[
+{
+i
+,
+j
+}
+]
+)
+=
+∑
+𝒞
+⊆
+𝒩
+∖
+{
+i
+,
+j
+}
+p
+(
+𝒞
+)
+[
+ϕ
+(
+𝒞
+∪
+{
+[
+{
+i
+,
+j
+}
+]
+}
+)
++
+ϕ
+(
+𝒞
+)
+\displaystyle\mathcal{I}([\{i,j\}])\!=\!\sum_{\!\mathcal{C}\subseteq\mathcal{N}\setminus\{i,j\}}p(\mathcal{C})[\phi(\mathcal{C}\cup\{[\{i,j\}]\})+\phi(\mathcal{C})
+(5)
+−
+ϕ
+(
+𝒞
+∪
+{
+i
+}
+)
+−
+ϕ
+(
+𝒞
+∪
+{
+j
+}
+)
+]
+,
+\displaystyle-\phi(\mathcal{C}\cup\{i\})-\phi(\mathcal{C}\cup\{j\})],
+where
+p
+⁡
+(
+𝒞
+)
+=
+1
+2
+n
+−
+2
+p(\mathcal{C})=\frac{1}{2^{n-2}}
+is the likelihood of
+𝒞
+\mathcal{C}
+being sampled. ”
+𝒩
+∖
+{
+i
+,
+j
+}
+\mathcal{N}\setminus\{i,j\}
+” denotes removing
+{
+i
+,
+j
+}
+\{i,j\}
+from
+𝒩
+\mathcal{N}
+. Intuitively,
+ℐ
+⁡
+(
+{
+i
+,
+j
+}
+)
+\mathcal{I}(\{i,j\})
+reflects the tendency of interactions inside
+{
+i
+,
+j
+}
+\{i,j\}
+. The higher value of
+ℐ
+⁡
+(
+{
+i
+,
+j
+}
+)
+\mathcal{I}(\{i,j\})
+indicates that player
+i
+i
+and player
+j
+j
+cooperate closely with each other.
+As for the task of trajectory prediction in this work, especially in complex sports games, agent interactions and cooperation, driven by group strategies and competition, greatly influence individual trajectories. An agent’s behavior is shaped by its intentions and others’ actions, like positioning, passing, and defense. So we introduce Banzhaf Interaction to model these dynamics with game theory in a semantic approach, enhancing trajectory prediction.
+IV
+Proposed Method
+IV-A
+Problem Formulation
+In this work we focus on the team sports and our objective is to utilize past trajectories and group-level information (tactic labels) from previous frames to forecast future player movements and group-level tactic labels. Taking a basketball game as an example, we formally define the problem involving
+M
+=
+2
+M=2
+teams and
+N
+=
+11
+N=11
+agents (five players from each team, plus the basketball,
+N
+T
+=
+6
+N_{T}=6
+) as follows:
+•
+Let
+X
+−
+T
+o
+​
+b
+​
+s
++
+1
+:
+0
+∈
+ℝ
+N
+×
+T
+o
+​
+b
+​
+s
+×
+2
+X^{-T_{obs}+1:0}\in\mathbb{R}^{N\times T_{obs}\times 2}
+,
+X
+1
+:
+T
+p
+​
+r
+​
+e
+​
+d
+∈
+ℝ
+N
+×
+T
+p
+​
+r
+​
+e
+​
+d
+×
+2
+X^{1:T_{pred}}\in\mathbb{R}^{N\times T_{pred}\times 2}
+represent past and future trajectories of
+N
+N
+agents over
+T
+o
+​
+b
+​
+s
+T_{obs}
+and
+T
+p
+​
+r
+​
+e
+​
+d
+T_{pred}
+time steps, respectively.
+•
+Let
+L
+−
+T
+o
+​
+b
+​
+s
++
+1
+:
+0
+∈
+ℝ
+M
+×
+T
+o
+​
+b
+​
+s
+×
+1
+L^{-T_{obs}+1:0}\in\mathbb{R}^{M\times T_{obs}\times 1}
+,
+L
+1
+:
+T
+p
+​
+r
+​
+e
+​
+d
+∈
+ℝ
+M
+×
+T
+p
+​
+r
+​
+e
+​
+d
+×
+1
+L^{1:T_{pred}}\in\mathbb{R}^{M\times T_{pred}\times 1}
+denote past and future group-level tactic labels of
+M
+M
+teams over
+T
+o
+​
+b
+​
+s
+T_{obs}
+and
+T
+p
+​
+r
+​
+e
+​
+d
+T_{pred}
+time steps.
+Our goal is to develop a predictive model
+ℳ
+\mathcal{M}
+such that:
+ℳ
+:
+(
+X
+−
+T
+o
+​
+b
+​
+s
++
+1
+:
+0
+,
+L
+−
+T
+o
+​
+b
+​
+s
++
+1
+:
+0
+)
+→
+(
+X
+1
+:
+T
+p
+​
+r
+​
+e
+​
+d
+,
+L
+1
+:
+T
+p
+​
+r
+​
+e
+​
+d
+)
+.
+\mathcal{M}:(X^{-T_{obs}+1:0},L^{-T_{obs}+1:0})\rightarrow({X}^{1:T_{pred}},L^{1:T_{pred}}).
+This concise formulation encapsulates the dual prediction tasks, harnessing historical data to forecast future player movements and tactical strategies, thereby providing a comprehensive approach to game analysis and strategy development in team sports.
+Trajectory Prediction.
+Human motion trajectory prediction aims to forecast the future paths of multiple agents based on their historical movement data. Given a scenario with N agents, each agent
+i
+i
+has historical trajectory data
+X
+i
+=
+{
+x
+i
+t
+}
+t
+=
+−
+T
+o
+​
+b
+​
+s
++
+1
+0
+∈
+ℝ
+T
+o
+​
+b
+​
+s
+×
+2
+X_{i}=\{x_{i}^{t}\}_{t=-T_{obs}+1}^{0}\in\mathbb{R}^{T_{obs}\times 2}
+, where
+i
+∈
+[
+1
+,
+2
+,
+…
+,
+N
+]
+i\in[1,2,\dots,N]
+represents the identifier of the observed agents, and
+x
+i
+t
+∈
+ℝ
+2
+x_{i}^{t}\in\mathbb{R}^{2}
+represents the position of the
+i
+i
+-th agent at time
+t
+t
+. Our method aims to predict the future trajectories of these agents, denoted as
+Y
+i
+=
+{
+y
+i
+t
+}
+t
+=
+1
+T
+p
+​
+r
+​
+e
+​
+d
+∈
+ℝ
+T
+p
+​
+r
+​
+e
+​
+d
+×
+2
+,
+i
+∈
+[
+1
+,
+2
+,
+…
+,
+N
+]
+Y_{i}=\{y_{i}^{t}\}_{t=1}^{T_{pred}}\in\mathbb{R}^{T_{pred}\times 2},i\in[1,2,\dots,N]
+.
+Tactic Label Prediction.
+In addition to trajectory prediction, we aim to forecast the future group-level tactic labels
+L
+j
+1
+:
+T
+p
+​
+r
+​
+e
+​
+d
+L_{j}^{1:T_{pred}}
+for
+j
+t
+​
+h
+j_{th}
+team with
+X
+−
+T
+o
+​
+b
+​
+s
++
+1
+:
+0
+X^{-T_{obs}+1:0}
+and
+L
+j
+−
+T
+o
+​
+b
+​
+s
++
+1
+:
+0
+L_{j}^{-T_{obs}+1:0}
+as input, where
+j
+∈
+[
+1
+,
+…
+,
+M
+]
+j\in[1,\dots,M]
+represents the identifier of different teams in the sport game scenario.
+The overview of our proposed framework is shown in Figure
+2
+. Our framework adopts in an end-to-end manner, designed to fulfill the objectives of a two-fold prediction task, including trajectory prediction and tactic prediction. The latter one serves as an auxiliary task that enriches the primary trajectory forecasts by incorporating semantic intentions from game perspective. Firstly, we employ an interaction encoder to process observed trajectories and corresponding group-level tactics, using a classifier-free guidance diffusion model to guide trajectory generation. Additionally, we introduce a multi-grained feature enhancement module that captures both global and local information through attention mechanisms to refine agent representations. Then we model the task as a cooperative game, where agents and the tactics adopted by each group are treated as players. Furthermore, we calculate Banzhaf Interactions to represent cooperation trends within coalitions of players. To facilitate the learning of semantic intention similarities, we leverage knowledge from the Banzhaf Interaction Calculation as supervision for the Banzhaf Interaction Learner. Finally, we fuse the enhanced agent tokens with the learned semantic intention assignments, and input to the prediction head to obtain group interaction probabilities.
+Fig. 2:
+The overview of our proposed method. It consists of two main parts: (1) denoising module for diffusion-based trajectory prediction and (2) semantic intention prediction module for team-level tactics. Specifically, the interaction encoder processes observed trajectories and group-level tactics to generate agent tokens that serve as conditions for diffusion model to predict future trajectories. The multi-grained feature enhancement module captures global and local information to enhance agent tokens. Banzhaf Interaction Learner predicts the similarity between agents and potential Top-k tactics, which can be viewed as semantic intentions, while Banzhaf Interaction Calculation computes ground truth for supervision.
+Finally, we fuse the enhanced agent tokens with the semantic intentions and feed this information into the prediction head to obtain tactic predictions. The blue background denotes team-level predictions.
+IV-B
+Interaction Encoder
+Firstly, we introduce the Interaction Encoder to process observed data, including past trajectories and the given tactic labels, to generate agent tokens that represent the encoded group interactions for two-fold prediction tasks in subsequent sections. In our method, we introduce a group-level tactic vocabulary serving as a guidance for diffusion model, which includes embeddings for a comprehensive array of tactics. This is designed to facilitate nuanced understanding and application of team strategies within the predictive model.
+Initially, we employ a Transformer architecture to process the historical trajectories of all agents, denoted by
+X
+=
+{
+x
+i
+}
+i
+=
+1
+N
+∈
+ℝ
+N
+×
+2
+X=\{x_{i}\}_{i=1}^{N}\in\mathbb{R}^{N\times 2}
+, to generate trajectory embeddings
+A
+=
+{
+a
+i
+}
+i
+=
+1
+N
+∈
+ℝ
+N
+×
+D
+A
+A=\{a_{i}\}_{i=1}^{N}\in\mathbb{R}^{N\times D_{A}}
+, encapsulating the dynamic spatial interactions among agents and their movement patterns over time. To integrate tactical considerations directly into the prediction process, we utilize the observed tactic labels for each team, represented by
+l
+−
+T
+o
+​
+b
+​
+s
++
+1
+:
+0
+∈
+ℝ
+M
+×
+1
+l^{-T_{obs}+1:0}\in\mathbb{R}^{M\times 1}
+, and these labels allow us to extract the corresponding tactic embeddings from our learnable tactic vocabulary. Given an input tactic label
+l
+j
+l_{j}
+and an embedding matrix
+W
+∈
+ℝ
+V
+×
+D
+C
+W\in\mathbb{R}^{V\times D_{C}}
+, where
+V
+V
+is the tactic vocabulary size (number of unique tactic indices) and
+D
+C
+D_{C}
+is the embedding dimension, the embedding operation can be expressed as:
+Φ
+tactic
+(
+l
+j
+−
+T
+o
+​
+b
+​
+s
++
+1
+:
+0
+)
+=
+W
+[
+l
+j
+−
+T
+o
+​
+b
+​
+s
++
+1
+:
+0
+]
+=
+c
+j
+∈
+ℝ
+D
+C
+,
+\displaystyle\Phi_{\text{tactic}}({l_{j}^{-T_{obs}+1:0}})=W[l_{j}^{-T_{obs}+1:0}]=c_{j}\in\mathbb{R}^{D_{C}},
+(6)
+where
+Φ
+tactic
+​
+(
+⋅
+)
+\Phi_{\text{tactic}}(\cdot)
+is a embedding layer that maps the tactic label
+l
+j
+l_{j}
+to the tactic embedding
+c
+j
+c_{j}
+,
+W
+⁡
+[
+l
+j
+]
+W[l_{j}]
+denotes the
+l
+j
+l_{j}
+-th row of the embedding matrix
+W
+W
+,
+𝐜
+j
+\mathbf{c}_{j}
+is the resulting tactic embedding vector for tactic label
+l
+j
+l_{j}
+, which has dimension as
+D
+C
+D_{C}
+. Then we can obtain the expanded tactic embeddings
+C
+e
+C_{\text{e}}
+at scene-level according to agent-team correspondence:
+C
+e
+=
+[
+c
+1
+,
+m
+⁡
+(
+1
+)
+,
+…
+,
+c
+N
+,
+m
+⁡
+(
+N
+)
+]
+,
+\displaystyle C_{\text{e}}=\left[c_{1,m(1)},\dots,c_{N,m(N)}\right],
+(7)
+where each agent
+i
+i
+is assigned the tactic embedding
+c
+i
+,
+m
+⁡
+(
+i
+)
+c_{i,m(i)}
+, with
+m
+⁡
+(
+i
+)
+m(i)
+mapping agent
+i
+i
+to their corresponding team
+j
+j
+. We then formulate a comprehensive condition vector
+G
+=
+[
+g
+1
+;
+g
+2
+;
+…
+;
+g
+N
+]
+∈
+ℝ
+N
+×
+D
+g
+G=\left[g_{1};g_{2};\dots;g_{N}\right]\quad\in\mathbb{R}^{N\times D_{g}}
+, where
+D
+g
+D_{g}
+is the feature dimension, and the condition of the
+i
+i
+-th agent
+g
+i
+g_{i}
+is formulated as:
+g
+i
+=
+[
+a
+i
+;
+c
+i
+,
+m
+⁡
+(
+i
+)
+]
+,
+\displaystyle g_{i}=\left[a_{i};c_{i,m(i)}\right],
+(8)
+where
+[
+;
+]
+[;]
+indicates the concatenation,
+a
+i
+a_{i}
+denotes trajectory embedding for agent
+i
+i
+and
+c
+i
+,
+m
+⁡
+(
+i
+)
+c_{i,m(i)}
+denotes the tactic embedding for agent
+i
+i
+.
+This vector effectively integrates individual movements with team-level strategic intents, capturing the intricate interplay between individual actions and team tactics in sports scenarios. This integration also provides a solid foundation for our model to generate context-aware trajectory forecasts, enhancing its ability to anticipate and adapt to dynamic sports environments. Thus, we define the function of
+Interaction Encoder
+as
+G
+=
+f
+ϕ
+(
+X
+,
+L
+−
+T
+o
+​
+b
+​
+s
++
+1
+:
+0
+)
+G=f_{\phi}(X,L^{-T_{obs}+1:0})
+.
+IV-C
+Denoising Module
+To predict trajectories, we employ a denoising module that generates future trajectories from noisy trajectories conditioned on agent embeddings from the interaction encoder, which are derived from observed trajectories and tactic labels.
+We introduce observed tactic labels as additional guidance signal by adopting the Interaction Module
+f
+ϕ
+​
+(
+⋅
+)
+f_{\phi}(\cdot)
+. Inspired by classifier-free guidance diffusion
+[
+17
+]
+, the reverse process of diffusion model becomes
+p
+θ
+​
+(
+y
+t
+−
+1
+|
+y
+t
+,
+G
+)
+p_{\theta}(y^{t-1}|y^{t},G)
+, where
+G
+G
+denotes the agent embeddings generated by the Interaction Encoder in Sec.
+IV-B
+, enhanced with team tactic information, and we interpret the output of diffusion models as the score function, the DDPM sampling procedure can be guided to sample
+y
+y
+with high
+p
+⁡
+(
+y
+|
+G
+)
+p(y|G)
+following specific tactic styles by:
+f
+ϵ
+​
+(
+y
+,
+G
+)
+\displaystyle f_{\epsilon}(y,G)
+=
+f
+ϵ
+​
+(
+y
+,
+A
+)
++
+s
+g
+⋅
+∇
+y
+​
+log
+​
+p
+​
+(
+y
+|
+G
+)
+\displaystyle=f_{\epsilon}(y,A)+s_{g}\cdot\nabla_{y}\log p(y|G)
+(9)
+∝
+f
+ϵ
+​
+(
+y
+,
+A
+)
++
+s
+g
+⋅
+(
+f
+ϵ
+​
+(
+y
+,
+G
+)
+−
+f
+ϵ
+​
+(
+y
+,
+A
+)
+)
+,
+\displaystyle\propto f_{\epsilon}(y,A)+s_{g}\cdot(f_{\epsilon}(y,G)-f_{\epsilon}(y,A)),
+where
+f
+ϵ
+​
+(
+⋅
+)
+f_{\epsilon}(\cdot)
+denotes the noise estimation module of the diffusion model, the hyperparameter
+s
+g
+s_{g}
+indicates the scale of the guidance with additional tactic information besides observed trajectory embedding. Evaluating the diffusion model with only observed trajectories as condition is done by randomly dropping out tactic information during training and replacing it with a raw observed trajectory embedding
+A
+A
+.
+Then we can formulate the estimated noise and the denoised trajectory at
+τ
+\tau
+th denoising step as:
+ϵ
+^
+θ
+τ
+\displaystyle\centering\hat{\epsilon}^{\tau}_{\theta}
+=
+f
+ϵ
+​
+(
+y
+^
+τ
++
+1
+,
+G
+,
+τ
++
+1
+)
+,
+\displaystyle=f_{\epsilon}(\hat{y}^{\tau+1},G,\tau+1),
+(10)
+y
+^
+τ
+\displaystyle\centering\hat{y}^{\tau}
+=
+1
+α
+τ
+​
+(
+y
+^
+τ
++
+1
+−
+1
+−
+α
+τ
+1
+−
+α
+¯
+τ
+​
+ϵ
+^
+θ
+τ
+)
++
+1
+−
+α
+τ
+​
+𝐳
+,
+\displaystyle=\frac{1}{\sqrt{\alpha_{\tau}}}\left(\hat{y}^{\tau+1}-\frac{1-\alpha_{\tau}}{\sqrt{1-\bar{\alpha}_{\tau}}}\hat{\epsilon}^{\tau}_{\theta}\right)+\sqrt{1-\alpha_{\tau}}\mathbf{z},
+where
+α
+τ
+\alpha_{\tau}
+and
+α
+¯
+τ
+=
+∏
+i
+=
+1
+τ
+α
+i
+\bar{\alpha}_{\tau}=\prod_{i=1}^{\tau}\alpha_{i}
+are parameters in the diffusion process,
+y
+^
+τ
++
+1
+\hat{y}^{\tau+1}
+is the trajectories directly at denoising step
+τ
+\tau
+provided by the initializer
+[
+14
+]
+to accelerate the inference and
+𝐳
+∼
+𝒩
+⁡
+(
+𝐳
+,
+0
+,
+𝐈
+)
+\mathbf{z}\sim\mathcal{N}(\mathbf{z};0,\mathbf{I})
+is a noise. We denote the prediction result after
+τ
++
+1
+\tau+1
+denoising steps as
+Y
+^
+s
+\hat{Y}_{s}
+.
+Afterwards, we optimize the denosing module following
+[
+13
+]
+through diffusion generation by performing mean square error (MSE) loss between the output and a noise variable in standard Gaussian distribution for the current iteration
+τ
+\tau
+as in Eq. (
+10
+), formulated as the following:
+ℒ
+n
+​
+o
+​
+i
+​
+s
+​
+e
+=
+‖
+𝐳
+−
+f
+ϵ
+(
+𝐲
+τ
++
+1
+,
+τ
++
+1
+,
+f
+θ
+(
+X
+,
+L
+−
+T
+o
+​
+b
+​
+s
++
+1
+:
+0
+)
+)
+‖
+2
+,
+\mathcal{L}_{noise}=\left\|\boldsymbol{\mathbf{z}}-f_{\epsilon}\left(\mathbf{y}^{\tau+1},\tau+1,f_{\theta}{\left(X,L^{-T_{obs}+1:0}\right)}\right)\right\|_{2},
+(11)
+where
+ϵ
+\epsilon
+and
+ϕ
+\phi
+are parameters of the diffusion model and interaction encoder respectively, and
+𝐳
+∼
+(
+𝟎
+,
+𝐈
+)
+\mathbf{z}\sim\mathbf{\left(0,I\right)}
+.
+To optimize the trajectory prediction in two-fold prediction framework, we formulate trajectory prediction loss as:
+ℒ
+dist
+\displaystyle\mathcal{L}_{\text{dist}}
+=
+min
+s
+⁡
+‖
+Y
+−
+Y
+^
+s
+‖
+2
+,
+\displaystyle=\min_{s}\left\|Y-\hat{Y}_{s}\right\|_{2},
+(12)
+ℒ
+unc
+\displaystyle\mathcal{L}_{\text{unc}}
+=
+∑
+s
+‖
+Y
+−
+Y
+^
+s
+‖
+2
+σ
+θ
+2
+​
+S
++
+log
+⁡
+σ
+θ
+2
+,
+\displaystyle=\frac{\sum_{s}\left\|Y-\hat{Y}_{s}\right\|_{2}}{\sigma^{2}_{\theta}S}+\log\sigma^{2}_{\theta},
+where
+ℒ
+dist
+\mathcal{L}_{\text{dist}}
+constrains the minimum distance in
+S
+=
+20
+S=20
+predictions using a variety loss
+[
+10
+]
+as formulated and explained in Sec.
+VI-B
+, and
+ℒ
+unc
+\mathcal{L}_{\text{unc}}
+regularizes the variance
+σ
+θ
+\sigma_{\theta}
+in the initializer
+[
+14
+]
+through an uncertainty loss, balancing the diversity and accuracy of trajectory predictions while preventing them from being overly dispersed or consistent.
+IV-D
+Multi-Grained Feature Enhancement
+We introduce a Multi-grained Feature Enhancement Module to enhance group-level agent embeddings by aggregating global and local information, which uses global scene and local key object data (e.g., ball in sports) to enrich agent embeddings for group-level prediction, as shown in Figure
+2
+. The module employs both global and local attention mechanisms, using scene-level agent tokens
+G
+=
+{
+g
+i
+}
+i
+=
+1
+N
+G=\{g_{i}\}_{i=1}^{N}
+generated by the Interaction Encoder. Each player has an associated team index
+j
+j
+and an agent index
+i
+i
+. In sports games (e.g., basketball), with N agents and M teams, we represent group interaction tokens for team
+j
+j
+as
+G
+j
+=
+[
+g
+j
+,
+1
+,
+…
+,
+g
+j
+,
+N
+T
+−
+1
+,
+g
+ball
+]
+∈
+ℝ
+OPEN
+N
+T
+×
+D
+g
+)
+G_{j}=\left[g_{j,1},\ldots,g_{j,N_{T}-1},g_{\text{ball}}\right]\in\mathbb{R}^{N_{T}\times D_{g})}
+, where
+g
+j
+,
+i
+T
+g_{j,i_{T}}
+represents the interaction feature for the
+i
+T
+i_{T}
+-th player in team
+j
+j
+,
+g
+ball
+g_{\text{ball}}
+is the basketball feature,
+N
+T
+−
+1
+N_{T}-1
+is the number of agents per team,
+D
+g
+D_{g}
+is the dimension of group interaction tokens.
+Global attention mechanism
+aggregates context and interactions to obtain team-level tokens. We generate query (Q), key (K), and value (V) vectors from agent tokens
+G
+j
+G_{j}
+as
+Q
+,
+K
+,
+V
+=
+G
+j
+​
+𝐖
+𝐪
+,
+G
+​
+𝐖
+𝐤
+,
+G
+​
+𝐖
+𝐯
+Q,K,V={G_{j}}\mathbf{W_{q}},{G}\mathbf{W_{k}},{G}\mathbf{W_{v}}
+. Then we can obtain the weighted sum as global interactions feature:
+G
+j
+′
+\displaystyle\centering G_{j}^{{}^{\prime}}
+=
+Softmax
+​
+(
+Q
+​
+K
+⊤
+D
+k
+)
+​
+V
+,
+\displaystyle=\text{Softmax}\left(\frac{Q{K^{\top}}}{{\sqrt{D_{k}}}}\right)V,
+(13)
+where
+D
+k
+\sqrt{D_{k}}
+is for the numerical stability of the Softmax, and
+G
+j
+′
+G_{j}^{{}^{\prime}}
+is global interactions.
+Local attention mechanism
+enhances features using key object information, with the ball in basketball influencing player positioning and tactics. Similarly, we substitute the query, key and value as follows:
+Q
+,
+K
+,
+V
+=
+G
+j
+′
+𝐖
+𝐪
+,
+G
+b
+​
+a
+​
+l
+​
+l
+𝐖
+𝐤
+,
+G
+b
+​
+a
+​
+l
+​
+l
+𝐖
+𝐯
+Q,K,V={G_{j}^{{}^{\prime}}}\mathbf{W_{q}},{G_{ball}}\mathbf{W_{k}},{G_{ball}}\mathbf{W_{v}}
+. Then other processing is as similar as the Global Attention Mechanism.
+Finally, we can obtain the global and local fusion interactions
+G
+j
+^
+\hat{G_{j}}
+by using the global interactions
+G
+j
+′
+G_{j}^{{}^{\prime}}
+as query for the local interactions. More details of the attention mechanism are in the supplementary material.
+IV-E
+Semantic Intention Prediction Module
+Interactions and cooperation among agents are crucial for determining their trajectories. An agent’s behavior is influenced by its objectives, the actions of other agents, and group strategies, such as positioning, passing, or defending in response to specific team tactics. Agents may also adapt the certain tactic based on the strategies of opposing teams. To model these complex interactions and dynamic changes in semantic intentions among agents and teams, we employ Banzhaf Interaction
+[
+65
+,
+18
+]
+according to the game theory, enabling more accurate multi-agent trajectory prediction. This module mainly contains three parts, as shown in Figure
+2
+: Tactic Prediction heads, Banzhaf Interaction Learner, and Banzhaf Interaction Calculation. To this end, we introduce an auxiliary task of tactic prediction, modeling it as a cooperative game. In this game, agents in the scene denoted as
+A
+=
+{
+a
+i
+}
+i
+=
+1
+N
+A=\{a_{i}\}_{i=1}^{N}
+and the potential tactics adopted by the
+j
+j
+-th team,
+L
+j
+^
+=
+{
+l
+^
+j
+}
+j
+=
+1
+k
+\hat{L_{j}}=\{\hat{l}_{j}\}_{j=1}^{k}
+, are treated as players, where
+k
+k
+represents the top-
+k
+k
+potential tactics that team
+j
+j
+will adopt.
+IV-E
+1
+Banzhaf Interaction Learner
+As the calculation of the exact Banzhaf Interaction is an NP-hard problem
+[
+18
+]
+, in order to speed up the computation of Banzhaf Interaction, we use Banzhaf Interaction Learner to learn the mapping from a set of agent embeddings to the similarity matrix between agents and potential tactics
+[
+65
+]
+.
+We adopt Banzhaf Interaction Learner
+f
+⁡
+(
+⋅
+)
+f(\cdot)
+to model and learn the complex interactions between agents in a multi-agent system. It leverages a combination of multi-layer perceptrons (MLPs) and self-attention mechanisms to effectively capture both local and global dependencies within the system.
+Specifically, we use
+γ
+c
+​
+t
+​
+x
+​
+(
+⋅
+)
+\gamma_{ctx}(\cdot)
+to encode agents’ trajectory embedding to obtain context embedding. Then we utilize a self-attention layer
+SA
+​
+(
+⋅
+)
+\text{SA}(\cdot)
+to capture global interactions among multi agents in the scene. Then to obtain the predicted Banzhaf Interaction value, we use
+γ
+o
+​
+(
+⋅
+)
+\gamma_{o}(\cdot)
+to project the high-dimensional feature vector into a set of real number. The output predicted Banzhaf Interaction value
+I
+pred
+I_{\text{pred}}
+and overall mapping function
+f
+⁡
+(
+⋅
+)
+f(\cdot)
+can be formulated as follows:
+I
+pred
+=
+f
+⁡
+(
+A
+)
+=
+γ
+o
+​
+(
+SA
+​
+(
+γ
+c
+​
+t
+​
+x
+​
+(
+A
+)
+)
+)
+∈
+ℝ
+N
+×
+k
+,
+I_{\text{pred}}=f(A)=\gamma_{o}\left(\text{SA}(\gamma_{ctx}(A))\right)\in\mathbb{R}^{N\times k},
+(14)
+where we implemented
+γ
+c
+​
+t
+​
+x
+​
+(
+⋅
+)
+\gamma_{ctx}(\cdot)
+and
+γ
+o
+​
+(
+⋅
+)
+\gamma_{o}(\cdot)
+using MLPs, to incorporate information for extracting social interaction features in the scene for subsequent analyse.
+Then we can obtain the predicted Banzhaf Interaction
+I
+pred
+j
+∈
+ℝ
+N
+T
+×
+K
+I^{j}_{\text{pred}}\in\mathbb{R}^{N_{T}\times K}
+for
+j
+j
+-th team, where
+N
+T
+N_{T}
+denotes the number of agent in a team plus a ball.
+To regulate predicted
+I
+p
+​
+r
+​
+e
+​
+d
+j
+I^{j}_{pred}
+with precise and reasonable semantic information, we use
+I
+B
+j
+∈
+ℝ
+N
+T
+×
+k
+I^{j}_{B}\in\mathbb{R}^{N_{T}\times k}
+, which is the output of
+Banzhaf Calculation Module
+, as supervision to optimize the Banzhaf Learner model, which represents the importance of each agent in the group for achieving a specific potential tactic with the highest likelihood. The detailed calculation process of
+I
+B
+j
+I^{j}_{B}
+is described in Sec.
+IV-E3
+. The training objective of
+f
+⁡
+(
+⋅
+)
+f(\cdot)
+is formulated as follows:
+ℒ
+b
+​
+i
+j
+\displaystyle\mathcal{L}^{j}_{bi}
+=
+‖
+I
+pred
+j
+−
+I
+B
+j
+‖
+2
+,
+ℒ
+b
+​
+i
+\displaystyle=\left\|I^{j}_{\text{pred}}-I^{j}_{B}\right\|_{2},\quad\mathcal{L}_{bi}
+=
+∑
+j
+=
+1
+M
+ℒ
+b
+​
+i
+j
+,
+\displaystyle=\sum_{j=1}^{M}\mathcal{L}^{j}_{bi},
+(15)
+where it calculates the L2 norm of the difference between
+I
+B
+j
+I^{j}_{\text{B}}
+and
+I
+pred
+j
+I^{j}_{\text{pred}}
+.
+IV-E
+2
+Tactic Prediction Head
+We use the enhanced feature
+G
+j
+^
+\hat{G_{j}}
+of team
+j
+j
+, derived from the multi-grained feature enhancement module, along with the predicted Banzhaf Interaction for each team as input. These are then processed by the tactic prediction head to generate the prediction probabilities and the Top-k predicted tactic labels for each team.
+Specifically, we firstly retrieve
+I
+pred
+j
+I^{j}_{\text{pred}}
+, the predicted Banzhaf Interaction between agents and Top-k potential tactic output from the Banzhaf Interaction Learner.
+Then we fuse the enhanced feature
+G
+j
+^
+\hat{G_{j}}
+with
+I
+pred
+j
+I^{j}_{\text{pred}}
+to obtain weighted agent tokens
+w
+j
+w_{j}
+.
+w
+j
+=
+F
+​
+u
+​
+s
+​
+i
+​
+o
+​
+n
+​
+(
+G
+j
+^
+,
+I
+pred
+j
+)
+,
+\displaystyle w_{j}=Fusion(\hat{G_{j}},I^{j}_{\text{pred}}),
+(16)
+where
+F
+​
+u
+​
+s
+​
+i
+​
+o
+​
+n
+​
+(
+⋅
+)
+Fusion(\cdot)
+represents performing a dot product.
+Then we feed
+w
+j
+w_{j}
+to the the prediction head consisting of a Graph Attention Network (GAT) and MLPs (MLP), denoted as
+h
+j
+​
+(
+⋅
+)
+h_{j}(\cdot)
+, to finally obtain tactic prediction probability
+p
+j
+p_{j}
+:
+p
+j
+\displaystyle\centering p_{j}
+=
+softmax
+​
+(
+h
+j
+​
+(
+w
+j
+)
+)
+\displaystyle=\text{softmax}(h_{j}(w_{j}))
+(17)
+=
+softmax
+(
+MLP
+(
+GAT
+(
+w
+j
+)
+)
+∈
+ℝ
+V
+×
+1
+,
+\displaystyle=\text{softmax}(\text{MLP}(\text{GAT}(w_{j}))\in\mathbb{R}^{V\times 1},
+where
+V
+V
+represents the total number of tactics.
+Then we can extract the predicted Top-k potential tactic labels
+l
+j
+^
+\hat{l_{j}}
+and embeddings
+c
+j
+^
+\hat{c_{j}}
+:
+l
+j
+^
+\displaystyle\centering\hat{l_{j}}
+=
+arg
+⁡
+max
+k
+⁡
+(
+p
+j
+)
+∈
+ℝ
+k
+×
+1
+,
+\displaystyle=\arg\max_{k}(p_{j})\in\mathbb{R}^{k\times 1},
+(18)
+c
+j
+^
+\displaystyle\hat{c_{j}}
+=
+Φ
+t
+​
+a
+​
+c
+​
+t
+​
+i
+​
+c
+​
+(
+l
+j
+^
+)
+∈
+ℝ
+k
+×
+D
+C
+,
+\displaystyle=\Phi_{tactic}(\hat{l_{j}})\in\mathbb{R}^{k\times D_{C}},
+where
+arg
+⁡
+max
+k
+\arg\max_{k}
+means extracting the Top-k values and labels based on the softmax probabilities
+p
+j
+p_{j}
+, and
+l
+j
+^
+\hat{l_{j}}
+represents the predicted Top-k tactic labels, while
+c
+j
+^
+\hat{c_{j}}
+represents their corresponding embeddings.
+We use the human-annotated tactic labels for each team in the next 20 frames as supervision, and use the focal loss
+[
+66
+]
+for tactic prediction due to the data distribution imbalance problem
+[
+67
+]
+.
+We convert future tactic labels into one-hot label and denote prediction logits
+p
+p
+as the model’s estimated probability for the class where the label
+y
+=
+1
+y=1
+. Here we define
+p
+j
+t
+​
+a
+​
+c
+​
+t
+​
+i
+​
+c
+p_{j}^{tactic}
+for
+j
+j
+-th team:
+p
+j
+t
+​
+a
+​
+c
+​
+t
+​
+i
+​
+c
+=
+{
+p
+j
+t
+​
+a
+​
+c
+​
+t
+​
+i
+​
+c
+,
+if
+​
+y
+=
+1
+1
+−
+p
+j
+t
+​
+a
+​
+c
+​
+t
+​
+i
+​
+c
+,
+otherwise.
+p_{j}^{tactic}=\begin{cases}p_{j}^{tactic},&\text{if}~y=1\\
+1-p_{j}^{tactic},&\text{otherwise.}\end{cases}
+(19)
+Hence we formulate the tactic prediction classification focal loss for each team as follows:
+ℒ
+tactic
+j
+=
+α
+j
+​
+(
+1
+−
+p
+j
+t
+​
+a
+​
+c
+​
+t
+​
+i
+​
+c
+)
+γ
+j
+​
+log
+⁡
+(
+p
+j
+t
+​
+a
+​
+c
+​
+t
+​
+i
+​
+c
+)
+,
+\mathcal{L}_{\text{tactic}}^{j}=\alpha^{j}\left(1-p_{j}^{tactic}\right)^{\gamma^{j}}\log\left(p_{j}^{tactic}\right),
+(20)
+where
+α
+j
+\alpha^{j}
+is the normalized inverse frequency of tactics, and
+γ
+j
+\gamma^{j}
+is a hyper-parameter. Similarly, we can express
+ℒ
+tactic
+\mathcal{L}_{\text{tactic}}
+as a focal loss for predictive classification. The total prediction loss can be formulated as follows:
+ℒ
+tactic
+=
+∑
+j
+=
+1
+M
+ℒ
+tactic
+j
+.
+\mathcal{L}_{\text{tactic}}=\sum_{j=1}^{M}{\mathcal{L}_{\text{tactic}}^{j}}.
+(21)
+IV-E
+3
+Banzhaf Interaction Calculation
+This part takes the similarity matrix of agent tokens for each group and the predicted Top-k tactic embeddings
+c
+j
+^
+\hat{c_{j}}
+retrieved from Sec.
+IV-E2
+as inputs, which can be viewed as the interaction logits
+S
+S
+, capturing agent-tactic associations. The output can be seen as the ground-truth of Banzhaf Interaction, denoted as
+I
+B
+I_{\text{B}}
+, where
+𝒮
+\mathcal{S}
+encapsulates comparative features across team tactics and their impact on the game.
+I
+B
+I_{\text{B}}
+quantifies each agent’s influence within the team, enabling a detailed analysis of tactic interdependencies in team sports or cooperative scenarios.
+Specifically, the interaction similarity
+S
+S
+is initialized and preprocessed based on the agent and tactic masks and weights. For each pair of agent
+a
+a
+and tactic
+t
+t
+, subsets of agent and tactic tokens are randomly selected and masked, simulating the effects of different token combinations on the interaction. The agent mask and the tactic mask are denoted as
+m
+​
+a
+​
+s
+​
+k
+a
+{mask_{a}}
+and
+m
+​
+a
+​
+s
+​
+k
+t
+{mask_{t}}
+, respectively. The interaction logits are then computed with masking and subjected to softmax normalization. To measure how each agent influences tactic selection, we introduce the agent-to-tactic interaction logits
+S
+a
+​
+2
+​
+t
+S_{a2t}
+, computed as follows:
+S
+a
+​
+2
+​
+t
+=
+softmax
+​
+(
+S
+a
+,
+t
+×
+m
+​
+a
+​
+s
+​
+k
+a
+​
+[
+a
+]
+)
+,
+\displaystyle S_{a2t}=\text{softmax}(S_{a,t}\times{mask_{a}}[a]),
+(22)
+where
+a
+a
+is the index of agent tokens,
+t
+t
+is the index of tactic tokens,
+S
+S
+represents the raw interaction logits, and
+m
+​
+a
+​
+s
+​
+k
+a
+{mask_{a}}
+is the agent mask (indicating valid agent tokens).
+On the other hand, to measure how each tactic influences agent behavior, such as constraining or driving agent actions, we compute the tactic-to-agent interaction logits
+S
+t
+​
+2
+​
+a
+S_{t2a}
+as follows:
+S
+t
+​
+2
+​
+a
+=
+softmax
+​
+(
+S
+a
+,
+t
+×
+m
+​
+a
+​
+s
+​
+k
+t
+​
+[
+t
+]
+)
+,
+\displaystyle S_{t2a}=\text{softmax}(S_{a,t}\times{mask_{t}}[t]),
+(23)
+where
+m
+​
+a
+​
+s
+​
+k
+t
+{mask_{t}}
+is the tactic mask.
+Hence, the Banzhaf Interaction for team
+j
+j
+is computed as follows, which quantifies the importance of each agent in adopting a specific tactic within the multi-agent system:
+I
+B
+j
+=
+(
+S
+a
+​
+2
+​
+t
++
+S
+t
+​
+2
+​
+a
+)
+/
+2
+,
+\displaystyle I^{j}_{B}=(S_{a2t}+S_{t2a})/{2},
+(24)
+where
+S
+a
+​
+2
+​
+t
+S_{a2t}
+and
+S
+t
+​
+2
+​
+a
+S_{t2a}
+represent the weighted logits from agent to tactic and tactic to agent, respectively. Their average yields the Banzhaf Interaction under the current masking configuration.
+By calculating both influences, the model captures bidirectional interactions between agents and tactics. Averaging these measures, the Banzhaf Interaction quantifies mutual influence, providing a clearer understanding of how agents and tactics collaborate to optimize decision-making in multi-agent systems.
+IV-F
+Training Objective
+Based on the before-mentioned parts, the final objective function for training the end-to-end two-fold prediction framework is expressed as:
+ℒ
+\displaystyle\mathcal{L}
+=
+ℒ
+n
+​
+o
+​
+i
+​
+s
+​
+e
++
+ℒ
+distance
++
+η
+​
+ℒ
+unc
++
+α
+⁡
+(
+ℒ
+tactic
++
+β
+​
+ℒ
+bi
+)
+,
+\displaystyle=\mathcal{L}_{noise}+\mathcal{L}_{\text{distance}}+\eta\mathcal{L}_{\text{unc}}+\alpha(\mathcal{L}_{\text{tactic}}+\beta\mathcal{L}_{\text{bi}}),
+(25)
+where
+η
+\eta
+is the hyperparameter controlling uncertainty estimation, while
+α
+\alpha
+and
+β
+\beta
+are hyperparameters that govern the influence of tactic prediction in the overall trajectory prediction task and the influence of the game prediction in the tactic prediction task, respectively.
+V
+NBA Tactic Dataset
+In this section, we introduce the expanded version of the NBA SportVU dataset, including manual annotations of the strategies employed by each team during different periods of each game, aimed at enhancing group interactions.
+V-A
+Data Preparation
+To incorporate detailed information about players and teams, we resample the raw SportVU data logs
+1
+1
+1
+https://github.com/linouk23/NBA-Player-Movements
+from the 2015-2016 NBA season to obtain trajectory sequences containing the IDs of players and teams. In total, we extract 90,618 trajectory sequences for 30 frames at 5 Hz. These sequences are visualized as videos to observe the team tactics involved, which aids in data expansion.
+We extend the data consisting of the following steps: First, we surveyed various NBA videos to categorize and identify popular and representative team tactics. We then select 16 widely-used types of team tactics (7 offensive and 9 defensive) for annotation in the dataset, which are commonly observed in NBA games. Offensive tactics include
+Pick-and-Roll
+,
+Ball Movement
+,
+Fast Break
+, and
+Single
+, while defensive tactics include five types of
+zone defense
+,
+Man-to-Man defense
+,
+defensive rebound
+,
+defensive transition
+, and
+scramble defense
+.
+Using the visualized scene-level trajectories, we train 25 human annotators on expert knowledge to identify these tactics and establish a standardized annotation protocol. Finally, we manually verify the annotations to ensure their accuracy and consistency.
+V-B
+Data Annotation
+We construct the extended NBA SportVU dataset, annotated with human-labeled tactics for the previous 10 frames and the following 20 frames at 5 Hz. Annotators select one tactic for each team and time period from 16 representative team tactics. For example, ”zone defense” refers to a more structured and fixed formation compared to the other 8 defensive tactics, while ”man-to-man defense” involves strong motion trends and more similar trajectories between offenders and their corresponding defenders.
+The dataset consists of trajectories for 11 agents per scene: five players from the offensive team, five players from the defensive team, and one basketball. Annotators’ responses, which denote the tactics selected for each team during specific time intervals, are stored in a JSON file. Each entry in the file includes the scene ID, which preserves the order of the trajectory data stored in the associated .npy file, the selected tactics for each team, and the corresponding time period. In total, the dataset contains 8,238 entries, with each entry representing four selected tactics per scene (two teams).
+We present team-level annotation statistics for our extended NBA SportVU dataset as follows in the Fig.
+4
+. All tactics can be categorized into two primary classes: offensive and defensive.
+Each class is further subdivided into specific types by studying manuals of world association of basketball coaches
+2
+2
+2
+https://wabc-chn.fiba.com
+and observing the team movement patterns associated with different strategies in basketball games. Offensive tactics are classified to common offensive movement, screening-based, rebounding-based, common offensive sets and others, while defensive tactics are categorized into zone defenses, man to man defense and others. More details of dataset statistics including scene-level team-wise tactic adoption statistics, and tactic transition statistics are shown in the supplementary material.
+Fig. 3:
+3D t-SNE visualized results of utilizing clustering to generate tactic pseudo-labels on NBA SportVU dataset.
+Fig. 4:
+Illustration of the team-level tactic annotation distribution of NBA SportVU dataset.
+Furthermore, due to limited human resources, we introduce group-level pseudo labels as an alternative for validating trajectory prediction performance on the TeamTrack-soccer and TeamTrack-basketball datasets
+[
+68
+]
+. We generate these pseudo labels using an unsupervised K-means clustering method. To reduce manual effort, we modeled our clustering approach after tactic annotation methods, grouping trajectories into 16 distinct movement patterns based on shared motion trends, which streamlined the annotation and analysis process. The 3D t-SNE visualization on the NBA SportVU dataset, shown in Figure
+3
+, along with the experimental results evaluating generalizability in the supplementary material, validate the feasibility of using this clustering method to produce pseudo labels for trajectory prediction.
+VI
+Experiment
+VI-A
+Datasets
+NBA SportVU dataset.
+Following previous literature
+[
+14
+]
+, we train our model to observe 2 seconds of past trajectory and predict 4 seconds in the future for all agents in the scene (respectively 10 and 20 frames). We split 70% of our extended dataset for training, and the remain 30% data for testing.
+TeamTrack dataset.
+We use the TeamTrack dataset
+[
+68
+]
+including basketball and soccer games to validate our method. Following
+[
+68
+]
+, we utilized observed trajectories for 3.2 seconds and predicting the trajectories for the next 4.8 seconds (respectively 96 and 144 frames) in experiments.
+VI-B
+Metrics
+VI-B
+1
+Trajectory prediction
+To evaluate the performance of trajectory prediction, we use Average Displacement Error (ADE) and Final Displacement Error (FDE) as validation metric:
+Average Displacement Error (ADE)
+measures the euclidean distance between prediction and the ground truth averaged by the prediction length
+T
+p
+​
+r
+​
+e
+​
+d
+T_{pred}
+.
+Final Displacement Error (FDE)
+calculates the L2 error between the prediction and the ground truth at the last time-step
+T
+p
+​
+r
+​
+e
+​
+d
+T_{pred}
+.
+Note that, we adopt a widely-used best-of-20 strategy
+[
+10
+,
+13
+,
+14
+]
+during evaluation, where multiple diverse predictions are generated in 20 modes, and the minimum ADE and FDE are computed between the predictions and the ground truth.
+VI-B
+2
+Tactic prediction
+For the tactic prediction task, we use Top-k accuracy to evaluate the performance.
+Specifically, we use the Top-1, Top-2, Top-3 and Top-5 accuracy as the evaluation metric. More details please refer to the supplementary material.
+VI-C
+Implementation details
+We implement our method with PyTorch
+[
+69
+]
+on a single NVIDIA RTX 3090 GPU. We train our model with the Adam optimizer.
+For both datasets, the number of training epochs is 100, and we set the diffusion step to 100.
+We set
+s
+g
+s_{g}
+in classifier free guidance diffusion to 0.1. We train the denoising module for 100 epochs with an initial learning rate 1e-3 and decay to half every 16 epochs. We train the tactic prediction model for 100 epochs with an initial learning rate 1e-3 and decay to half every 16 epochs, and the two-fold prediction framework for 30 epochs with an initial learning rate of 2e-3 and decay by 0.9 every 32 epochs.
+We set the game factor to 0.001 and the
+γ
+\gamma
+in Eq. (
+21
+) to 4.0. The tactic prediction rate is set at 1000. More implementation details are in the supplementary material.
+VI-D
+Compared Methods
+Trajectory prediction.
+For the NBA SportVU dataset, we compare our method with state-of-the-art methods as the following: 1)
+S-LSTM
+[
+6
+]
+adopts a grid based pooling mechanism to capture the social information of surrounding agents. 2)
+STGAT
+[
+7
+]
+encodes spatial-temporal relationship with LSTM and Graph Attention Networks, and then use a LSTM to decode future trajectory. 3)
+GroupNet
+[
+4
+]
+utilizes hyper-graph to model the interactions, and use CVAE to generate future trajectories. 4)
+MID
+[
+13
+]
+encodes the history behavior information and the social interactions as a state embedding and devise a Transformer-based diffusion model to capture the temporal dependencies of trajectories. 5)
+LED
+[
+14
+]
+adopts a trainable leapfrog initializer to accelerate inference speed by directly learn an expressive multi-modal distribution of future trajectories, which skips a large number of denoising steps. 5)
+SingularTrajectory
+[
+15
+]
+builds a singular space to project all types of motion patterns from each task into one embedding space, and adopts a diffusion-based predictor using a cascaded denoising process. 6)
+SocialCircle
+[
+70
+]
+builds a new angle-based trainable social interaction representation SocialCircle for trajectory prediction. For the TeamTrack-trajectory datasets, we implement the following compared method:
+1) Linear Velocity
+represents a simple linear model that predicts the next position based on the last observed time step, using a constant velocity model.
+2) LSTM motion
+represents a simple LSTM-based encoder and decoder, and an MLP for mapping hidden features to 2D positions for each agent to model their motion behaviors.
+3) MID
+and
+4) LED
+are mentioned before.
+Tactic prediction.
+We introduce several methods for comparison, including vanilla Transformer, and large language model (LLM) based approaches.
+1) Baseline
+adopts the Transformer to encode past trajectories and use a two-layer MLP for prediction.
+2) Baseline*
+adopts the Transformer to encode past trajectories and use one-hot to encode the tactic embedding, and use a two-layer MLP for prediction.
+3) Pooling*
+adopts the Transformer to encode past trajectories and uses one-hot to encode the tactic embedding, then a pooling mechanism for each team to aggregate group-level information, and then we use a two-layer MLP for prediction.
+4) Llama3-8B
+adopts a zero-shot LLama3-8B to inference the prediction results.
+5) Llama3-8B*
+adopts a finetuned version of LLama3-8B with our benchmark using LoRA
+[
+71
+]
+to inference the prediction results. We format the trajectories and annotations of our dataset in language prompt with Alpaca format. The detailed information are shown in the supplementary material.
+VI-E
+Quantitative Results
+TABLE I:
+Quantitative evaluation results of trajectory prediction on NBA SportVU dataset.
+†
+denotes that values are reproduced using the official implementation. The best results are highlighted in bold.
+Method
+S-LSTM
+STGAT
+GroupNet
+MID
+LED
+†
+SingularTraj
+†
+SocialCircle
+†
+Ours
+Time
+CVPR2016
+CVPR2019
+CVPR2022
+CVPR2022
+CVPR2023
+CVPR2024
+CVPR2024
+Tactic-e2e
+1.0s
+0.45/0.67
+0.38/0.55
+0.34/0.48
+0.28/0.37
+0.21/0.31
+0.28/0.44
+0.45/0.61
+0.19
+/
+0.29
+2.0s
+0.88/1.53
+0.73/1.18
+0.62/0.95
+0.51/0.72
+0.42/0.63
+0.61/1.00
+0.67/0.90
+0.39
+/
+0.59
+3.0s
+1.33/2.38
+1.07/1.74
+0.87/1.31
+0.71/0.98
+0.65/0.92
+0.96/1.47
+0.99/1.25
+0.61
+/
+0.86
+4.0s
+1.79/3.16
+1.41/2.22
+1.13/1.69
+0.96/1.27
+0.89/1.24
+1.31/1.98
+1.18/1.46
+0.84
+/
+1.17
+TABLE II:
+Quantitative evaluation results of trajectory prediction on TeamTrack-Soccer and TeamTrack-Basketball datasets.
+The best results are highlighted in bold.
+Method
+TeamTrack-Soccer
+TeamTrack-Basketball
+T
+p
+​
+r
+​
+e
+​
+d
+T_{pred}
+1.2s
+2.4s
+3.6s
+4.8s
+1.2s
+2.4s
+3.6s
+4.8s
+Linear
+0.93 / 1.89
+1.97 / 4.11
+3.10 / 6.62
+4.32 / 9.27
+1.01 / 2.03
+2.08 / 4.18
+3.15 / 6.38
+4.26 / 8.75
+LSTM
+2.32 / 3.99
+4.02 / 7.18
+5.50 / 9.49
+6.72 / 11.22
+1.37 / 2.30
+2.27 / 3.96
+3.08 / 5.34
+3.80 / 6.51
+MID
+0.33 / 0.61
+0.89 / 2.00
+1.65 / 3.57
+2.44 / 4.81
+0.56 / 1.08
+1.29 / 2.57
+2.07 / 3.76
+2.74 / 4.28
+LED
+0.27 / 0.52
+0.68 / 1.30
+1.19 / 2.16
+1.75 / 3.01
+0.49 / 0.76
+1.00 / 1.61
+1.50 / 2.33
+2.01 / 3.99
+Ours
+0.23
+/
+0.45
+0.58
+/
+1.10
+1.00
+/
+1.89
+1.48
+/
+2.72
+0.42
+/
+0.72
+0.88
+/
+1.44
+1.31
+/
+2.05
+1.72
+/
+2.78
+Trajectory prediction.
+We report the detailed results obtained by our proposed method on NBA SportVU dataset and comparison to previous state-of-the-arts in Table
+I
+. We can see that our proposed method outperforms other candidates in terms of minADE/minFDE. Specifically, compared to MID
+[
+13
+]
+, LED
+[
+14
+]
+and SingularTrajectory
+[
+15
+]
+which utilize the Transformer diffusion framework and focus solely on simple scene-level agent interaction modeling, our method outperforms all of them across all metrics. It surpasses the state-of-the-art method, LED
+[
+14
+]
+by large margins (up to 9.5% and 6% in minADE for the first second and total four seconds, respectively).
+It validates the importance of integrating group interactions into diffusion models to guide trajectory generation and capture dynamic semantic intentions from a game-theoretic perspective. Furthermore, we also conduct experiments on the TeamTrack-Soccer and TeamTrack-Basketball datasets, utilizing pseudo-labels for group-level guidance to predict trajectories. The corresponding quantitative evaluation results are presented in Table
+II
+. Our method outperforms the previous state-of-the-art, LED
+[
+14
+]
+, by 15.4% and 9.6% on the ADE and FDE metrics for the TeamTrack-Soccer dataset. Similarly, it outperforms LED
+[
+14
+]
+by 14.4% and 30.3% on the ADE and FDE metrics for the TeamTrack-Basketball dataset, respectively, over a total of 4.8 seconds. These results demonstrate the effectiveness of group-level guidance in our method, leading to a reduction in cumulative errors.
+Tactic prediction.
+We report the evaluation results of the auxiliary tactic prediction in Table
+III
+. To ensure fair comparisons, we employ the same Transformer as the context encoder and the same training scheme across all methods. We compare our model against three classical baselines and two LLM-based baselines.
+It is important to note that the task is a prediction, not a classification, and we use only the observed information to predict future tactics. Our method outperforms all other baselines in each metric, improving Top-1 accuracy by 5% over the Pooling method and 22% over the fine-tuned Llama3-8B model. Although LLMs possess common-sense knowledge and reasoning abilities, they are not adept at comprehending trajectory sequence data or inferring group interactions effectively in complex sports games. This demonstrates the superiority of our approach in understanding dynamic group-level semantic intentions and predicting changes in group interactions from trajectory data by introducing knowledge of Banzhaf Interaction.
+TABLE III:
+Quantitative evaluation results of tactic prediction on NBA SportVU dataset. We introduce LLM to validate the performance of our prediction. Llama3-8B means zero-shot model, Llama3-8B* means using LoRA to finetune with our dataset.
+Method (%)
+Top-1
+Top-2
+Top-3
+Top-5
+Baseline
+34.56
+59.77
+73.78
+88.53
+Baseline*
+53.31
+71.64
+81.99
+91.78
+Pooling
+55.22
+75.82
+86.05
+94.67
+Llama3-8B
+22.39
+-
+-
+-
+Llama3-8B*
+38.17
+-
+-
+-
+Ours
+60.23
+81.15
+90.53
+96.79
+Fig. 5:
+Illustration of visualization results of trajectory prediction on the NBA SportVU dataset, where the ground truth show in the last column, LED method
+[
+14
+]
+and our proposed approach is show in the first column and the second column, respectively. Main differences are zoom in for highlight.
+VI-F
+Qualitative Results
+We present a two-fold prediction qualitative example on the NBA SportVU dataset in Figure
+6
+.
+The comparison of future trajectories is shown in the second row, with specific trajectories and group interactions highlighted for clarity.
+We also show the tactic prediction results for each team of our method.
+The first team (depicted in blue) employed the ”single” tactic for the past 10 frames. Our method predicts correctly that the tactic for the next 20 frames will be ”ball movement” with a notably higher probability than the others.
+Meanwhile, the second team starts with the ”Zone defense (2-3)” tactic but switches to ”Man-to-man defense” for the next 20 frames, which our model successfully predicts. This tactic change is largely due to the first team’s tactic threatening their defense and the ball handler’s proximity to the basket, prompting a strategic shift to a more flexible and compact defense. As a result, the trajectories of the defensive players mirror those of the offensive players, as shown in the trajectory prediction comparison. In contrast, the prediction from LED
+[
+14
+]
+displays an unclear ”man-to-man defense” motion pattern, with the corresponding players positioned too far apart. This suggests that LED
+[
+14
+]
+lacks the ability to model group interactions and understand semantic intentions. However, our model effectively captures and predicts this pattern, using it to guide future trajectory predictions and yielding more realistic, interactive results that closely align with the ground truth.
+Furthermore, we present additional visual comparisons of generated trajectories in Fig.
+5
+.
+Our proposed method outperforms the LED method in trajectory prediction, delivering superior accuracy and flexibility. It effectively captures complex player interactions, rapid directional changes, and tactical coordination. Specifically, our method offers more accurate predictions of player passes in the three scenarios presented in the figure. In contrast, the LED method generates more linear predictions, with significant discrepancies between player and ball trajectories, struggling with rapid movements and failing to capture tactical understanding, often resulting in deviations when agents change positions or directions abruptly. More qualitative results are shown in the supplementary material.
+Fig. 6:
+Qualitative results of two-fold prediction tasks on NBA SportVU dataset. The past trajectories of the first team, second team, and basketball are shown in light blue, light orange, and light green, respectively, with future trajectories in dark blue, red, and dark green.
+The first row shows the ground truth across frames, while the second row compares future trajectories with key interactions (e.g., ”man-to-man defense” by Team 2 and ”ball movement” by Team 1), and the bottom row displays tactic prediction results.
+Fig. 7:
+The visualization results of the predicted Banzhaf Interaction on the NBA SportVU dataset. This figure shows the ground truth (in the last column) alongside results from various methods for direct comparison, including LED
+[
+14
+]
+(in the first column) and our proposed method (in the second column). The predicted Banzhaf Interaction for each agent on each team is also provided, with agents who have relative higher Banzhaf Interactions for the predicted top-1 tactic highlighted in the figure. The detailed values are shown in the bar chart.
+VI-G
+Ablation Studies
+We conduct the ablation studies to validate the effectiveness of each design in our method, including Denoising Module and Semantic Intention Prediction Module, and the results are shown in each section. The experiments are conducted on the NBA SportVU dataset and we keep all the other settings the same.
+VI-G
+1
+Denoising Module
+To validate the importance of a diffusion-based framework, we implement two baselines as variants: an MLP-based method and a query-based method. The MLP-based method encodes and decodes trajectories using MLPs, while the query-based method employs learnable queries with an attention mechanism to generate agent tokens for trajectory prediction. Both methods use the same interaction encoder as ours. We report the experimental results in Table
+IV
+, and we can clearly observe that our proposed diffusion-based method outperforms alternative approaches, primarily due to its ability to handle temporal dynamics of group interactions and semantic changes effectively in complex environments like sports games, while the query-based model struggles with long-term interactions due to static queries and attention mechanisms.
+TABLE IV:
+Comparison of trajectory prediction frameworks using minADE/minFDE metrics, including MLP-based, query-based, and diffusion-based methods. The best results are highlighted in bold.
+T
+p
+​
+r
+​
+e
+​
+d
+T_{pred}
+MLPs
+Query-based
+Diffusion-based
+1.0s
+1.80/2.97
+0.37/0.56
+0.19/0.29
+2.0s
+3.15/5.44
+0.67/1.00
+0.39/0.59
+3.0s
+4.31/7.34
+0.96/1.34
+0.61/0.86
+4.0s
+5.28/8.71
+1.24/1.63
+0.84/1.17
+TABLE V:
+Ablation study of tactic prediction on the NBA SportVU dataset. ”BI” refers to the Banzhaf Interaction module, while ”Type” indicates the type of Banzhaf Interaction Learner we design, which includes both team-level and scene-level models.
+BI
+Type
+Top-1
+Top-2
+Top-3
+Top-5
+×
+\times
+-
+58.44
+78.44
+88.11
+94.89
+✓
+Team
+60.09
+80.99
+90.43
+96.75
+✓
+Scene
+60.23
+81.15
+90.53
+96.79
+VI-G
+2
+Semantic Intention Prediction Module
+We explore the role of game theory in our method, comparing two Banzhaf Interaction Learner variants: (1) the
+Scene
+-level, which uses tokens from the entire scene to predict interactions, and (2) the
+Team
+-level, which processes tokens for each team separately.
+Experimental results show in Table
+V
+, and we can see that the Banzhaf Interaction module improves Top-1 to Top-5 accuracy by 2%. In addition, the scene-level method outperforms the team-level by capturing broader agent interactions across the scene, leading to better predictions of agents’ intentions and behaviors.
+Furthermore, we present a case to valid our proposed Banzhaf Interaction. The visualization of trajectory prediction and Banzhaf Interaction on the NBA SportVU dataset is shown in Fig.
+7
+.
+From the figure, over 30 frames, the first team (blue) executes a fast-break tactic toward the second team (red), which is transitioning to defense. The Banzhaf Interaction is calculated for the five players and the ball. The ball has the highest interaction value (about 0.285) for both teams. For the first team, Player 5, holding the ball, has the highest Banzhaf Interaction, highlighting the key role. For the second team, Player 6 and Player 8, positioned near the ball handler, show the highest values, indicating their critical role in defending. This visualization demonstrates the effectiveness and interpretability of our Banzhaf Interaction-based semantic intention modeling.
+VII
+Conclusion and Future Works
+In this work, we presented a novel diffusion-based trajectory prediction method, utilizing group interactions and semantic intention among agents. We also build a benchmark by annotating tactics on NBA SportVU dataset for two-fold prediction tasks. Extensive experiments demonstrates the effectiveness and superiority of our method. In the future, we aim to extend our proposed approach to more tasks such as multi-object tracking and sports video captioning.
+References
+[1]
+P. Felsen, P. Lucey, and S. Ganguly, “Where will they go? predicting fine-grained adversarial multi-agent motion using conditional variational autoencoders,” in
+Proceedings of the European conference on computer vision
+, 2018, pp. 732–747.
+[2]
+M. Qi, J. Qin, Y. Wu, and Y. Yang, “Imitative non-autoregressive modeling for trajectory forecasting and imputation,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2020, pp. 12 736–12 745.
+[3]
+M. Qi, J. Qin, A. Li, Y. Wang, J. Luo, and L. Van Gool, “stagnet: An attentive semantic rnn for group activity recognition,” in
+Proceedings of the European conference on computer vision
+, 2018, pp. 101–117.
+[4]
+C. Xu, M. Li, Z. Ni, Y. Zhang, and S. Chen, “Groupnet: Multiscale hypergraph neural networks for trajectory prediction with relational reasoning,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2022, pp. 6498–6507.
+[5]
+Z. Zhou, J. Wang, Y.-H. Li, and Y.-K. Huang, “Query-centric trajectory prediction,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2023, pp. 17 863–17 873.
+[6]
+A. Alahi, K. Goel, V. Ramanathan, A. Robicquet, L. Fei-Fei, and S. Savarese, “Social lstm: Human trajectory prediction in crowded spaces,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2016, pp. 961–971.
+[7]
+Y. Huang, H. Bi, Z. Li, T. Mao, and Z. Wang, “Stgat: Modeling spatial-temporal interactions for human trajectory prediction,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2019, pp. 6272–6281.
+[8]
+A. Rasouli, M. Rohani, and J. Luo, “Bifold and semantic reasoning for pedestrian behavior prediction,” in
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, 2021, pp. 15 600–15 610.
+[9]
+Y. Cheng, L. Sun, C. Liu, and M. Tomizuka, “Towards efficient human-robot collaboration with robust plan recognition and trajectory prediction,”
+IEEE Robotics and Automation Letters
+, vol. 5, no. 2, pp. 2602–2609, 2020.
+[10]
+A. Gupta, J. Johnson, L. Fei-Fei, S. Savarese, and A. Alahi, “Social gan: Socially acceptable trajectories with generative adversarial networks,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2018, pp. 2255–2264.
+[11]
+T. Salzmann, B. Ivanovic, P. Chakravarty, and M. Pavone, “Trajectron++: Dynamically-feasible trajectory forecasting with heterogeneous data,” in
+Proceedings of the European conference on computer vision
+. Springer, 2020, pp. 683–700.
+[12]
+K. Mangalam, H. Girase, S. Agarwal, K.-H. Lee, E. Adeli, J. Malik, and A. Gaidon, “It is not the journey but the destination: Endpoint conditioned trajectory prediction,” in
+Proceedings of the European conference on computer vision
+. Springer, 2020, pp. 759–776.
+[13]
+T. Gu, G. Chen, J. Li, C. Lin, Y. Rao, J. Zhou, and J. Lu, “Stochastic trajectory prediction via motion indeterminacy diffusion,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2022, pp. 17 113–17 122.
+[14]
+W. Mao, C. Xu, Q. Zhu, S. Chen, and Y. Wang, “Leapfrog diffusion model for stochastic trajectory prediction,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2023, pp. 5517–5526.
+[15]
+I. Bae, Y.-J. Park, and H.-G. Jeon, “Singulartrajectory: Universal trajectory predictor using diffusion model,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2024, pp. 17 890–17 901.
+[16]
+A. Mohamed, K. Qian, M. Elhoseiny, and C. Claudel, “Social-stgcnn: A social spatio-temporal graph convolutional neural network for human trajectory prediction,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2020, pp. 14 424–14 432.
+[17]
+J. Ho and T. Salimans, “Classifier-free diffusion guidance,”
+CoRR
+, vol. abs/2207.12598, 2022.
+[18]
+P. Jin, J. Huang, P. Xiong, S. Tian, C. Liu, X. Ji, L. Yuan, and J. Chen, “Video-text as game players: Hierarchical banzhaf interaction for cross-modal representation learning,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2023, pp. 2472–2482.
+[19]
+A. Kumar, O. Irsoy, P. Ondruska, M. Iyyer, J. Bradbury, I. Gulrajani, V. Zhong, R. Paulus, and R. Socher, “Ask me anything: Dynamic memory networks for natural language processing,” in
+International Conference on Machine Learning
+. Proceedings of Machine Learning Research, 2016, pp. 1378–1387.
+[20]
+D. Helbing and P. Molnar, “Social force model for pedestrian dynamics,”
+Physical review E
+, vol. 51, no. 5, p. 4282, 1995.
+[21]
+A. Vemula, K. Muelling, and J. Oh, “Social attention: Modeling attention in human crowds,” in
+2018 IEEE international Conference on Robotics and Automation (ICRA)
+. IEEE, 2018, pp. 4601–4607.
+[22]
+M. Qi, Y. Wang, A. Li, and J. Luo, “Stc-gan: Spatio-temporally coupled generative adversarial networks for predictive scene parsing,”
+IEEE Transactions on Image Processing
+, vol. 29, pp. 5420–5430, 2020.
+[23]
+W. Yun, M. Qi, C. Wang, and H. Ma, “Weakly-supervised temporal action localization by inferring salient snippet-feature,” in
+Proceedings of the AAAI Conference on Artificial Intelligence
+, vol. 38, no. 7, 2024, pp. 6908–6916.
+[24]
+M. Qi, W. Li, Z. Yang, Y. Wang, and J. Luo, “Attentive relational networks for mapping images to scene graphs,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2019, pp. 3957–3966.
+[25]
+J. Li, F. Yang, M. Tomizuka, and C. Choi, “Evolvegraph: Multi-agent trajectory prediction with dynamic relational reasoning,”
+Advances in neural information processing systems
+, vol. 33, pp. 19 783–19 794, 2020.
+[26]
+A. Mohamed, D. Zhu, W. Vu, M. Elhoseiny, and C. Claudel, “Social-implicit: Rethinking trajectory prediction evaluation and the effectiveness of implicit maximum likelihood estimation,” in
+Proceedings of the European conference on computer vision
+. Springer, 2022, pp. 463–479.
+[27]
+L. Shi, L. Wang, C. Long, S. Zhou, M. Zhou, Z. Niu, and G. Hua, “Sgcn: Sparse graph convolution network for pedestrian trajectory prediction,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2021, pp. 8994–9003.
+[28]
+Y. Xu, L. Wang, Y. Wang, and Y. Fu, “Adaptive trajectory prediction via transferable gnn,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2022, pp. 6520–6531.
+[29]
+A. Sadeghian, V. Kosaraju, A. Sadeghian, N. Hirose, H. Rezatofighi, and S. Savarese, “Sophie: An attentive gan for predicting paths compliant to social and physical constraints,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2019, pp. 1349–1358.
+[30]
+P. Dendorfer, S. Elflein, and L. Leal-Taixé, “Mg-gan: A multi-generator model preventing out-of-distribution samples in pedestrian trajectory prediction,” in
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, 2021, pp. 13 158–13 167.
+[31]
+J. Sun, Y. Li, L. Chai, and C. Lu, “Stimulus verification is a universal and effective sampler in multi-modal human trajectory prediction,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2023, pp. 22 014–22 023.
+[32]
+G. Chen, J. Li, N. Zhou, L. Ren, and J. Lu, “Personalized trajectory prediction via distribution discrimination,” in
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, 2021, pp. 15 580–15 589.
+[33]
+B. Ivanovic and M. Pavone, “The trajectron: Probabilistic multi-agent trajectory modeling with dynamic spatiotemporal graphs,” in
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, 2019, pp. 2375–2384.
+[34]
+M. Lee, S. S. Sohn, S. Moon, S. Yoon, M. Kapadia, and V. Pavlovic, “Muse-vae: Multi-scale vae for environment-aware long term trajectory prediction,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2022, pp. 2221–2230.
+[35]
+N. Lee, W. Choi, P. Vernaza, C. B. Choy, P. H. Torr, and M. Chandraker, “Desire: Distant future prediction in dynamic scenes with interacting agents,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2017, pp. 336–345.
+[36]
+D. Rempe, Z. Luo, X. Bin Peng, Y. Yuan, K. Kitani, K. Kreis, S. Fidler, and O. Litany, “Trace and pace: Controllable pedestrian animation via guided trajectory diffusion,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2023, pp. 13 756–13 766.
+[37]
+C. Jiang, A. Cornman, C. Park, B. Sapp, Y. Zhou, D. Anguelov
+et al.
+, “Motiondiffuser: Controllable multi-agent motion prediction using diffusion,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2023, pp. 9644–9653.
+[38]
+Y. Yang, P. Zhu, M. Qi, and H. Ma, “Following in the footsteps: Predicting human trajectories using motion pattern memory,” in
+Proceedings of the 6th ACM International Conference on Multimedia in Asia
+, 2024.
+[39]
+H. Xue, D. Q. Huynh, and M. Reynolds, “Ss-lstm: A hierarchical lstm model for pedestrian trajectory prediction,” in
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision
+. IEEE, 2018, pp. 1186–1194.
+[40]
+F. Marchetti, F. Becattini, L. Seidenari, and A. D. Bimbo, “Mantra: Memory augmented networks for multiple trajectory prediction,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2020, pp. 7143–7152.
+[41]
+H. Kim, H.-J. Choi, C. J. Kim, J. Yoon, and S.-K. Ko, “Ball trajectory inference from multi-agent sports contexts using set transformer and hierarchical bi-lstm,” in
+Proceedings of the 29th ACM SIGKDD Conference on Knowledge Discovery and Data Mining
+, 2023, pp. 4296–4307.
+[42]
+S. Hauri, N. Djuric, V. Radosavljevic, and S. Vucetic, “Multi-modal trajectory prediction of nba players,” in
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision
+, 2021, pp. 1640–1649.
+[43]
+M. Qi, Y. Wang, A. Li, and J. Luo, “Sports video captioning via attentive motion representation and group relationship modeling,”
+IEEE Transactions on Circuits and Systems for Video Technology
+, vol. 30, no. 8, pp. 2617–2633, 2019.
+[44]
+W. Yun, M. Qi, F. Peng, and H. Ma, “Semi-supervised teacher-reference-student architecture for action quality assessment,” in
+Proceedings of the European conference on computer vision
+. Springer, 2025, pp. 161–178.
+[45]
+M. Qi, J. Qin, Y. Yang, Y. Wang, and J. Luo, “Semantics-aware spatial-temporal binaries for cross-modal video retrieval,”
+IEEE Transactions on Image Processing
+, vol. 30, pp. 2989–3004, 2021.
+[46]
+J. Ho, A. Jain, and P. Abbeel, “Denoising diffusion probabilistic models,”
+Advances in neural information processing systems
+, vol. 33, pp. 6840–6851, 2020.
+[47]
+J. Song, C. Meng, and S. Ermon, “Denoising diffusion implicit models,”
+arXiv preprint arXiv:2010.02502
+, 2020.
+[48]
+J. Austin, D. D. Johnson, J. Ho, D. Tarlow, and R. Van Den Berg, “Structured denoising diffusion models in discrete state-spaces,”
+Advances in Neural Information Processing Systems
+, vol. 34, pp. 17 981–17 993, 2021.
+[49]
+P. Dhariwal and A. Nichol, “Diffusion models beat gans on image synthesis,”
+Advances in neural information processing systems
+, vol. 34, pp. 8780–8794, 2021.
+[50]
+R. Rombach, A. Blattmann, D. Lorenz, P. Esser, and B. Ommer, “High-resolution image synthesis with latent diffusion models,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2022, pp. 10 684–10 695.
+[51]
+A. Ajay, Y. Du, A. Gupta, J. Tenenbaum, T. Jaakkola, and P. Agrawal, “Is conditional generative modeling all you need for decision-making?”
+arXiv preprint arXiv:2211.15657
+, 2022.
+[52]
+M. Rabin
+et al.
+,
+Incorporating fairness into game theory and economics
+. University of California at Berkeley, Department of Economics, 1992.
+[53]
+D. M. Kreps,
+Game theory and economic modelling
+. Oxford University Press, 1990.
+[54]
+S. J. Brams,
+Game theory and politics
+. Courier Corporation, 2011.
+[55]
+M. Osborne and A. Rubinstein,
+A Course in Game Theory
+, ser. A Course in Game Theory. MIT Press, 1994. [Online]. Available:
+https://books.google.com.hk/books?id=5ntdaYX4LPkC
+[56]
+W.-C. Ma, D.-A. Huang, N. Lee, and K. M. Kitani, “Forecasting interactive dynamics of pedestrians with fictitious play,” in
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition
+, 2017, pp. 774–782.
+[57]
+J. Li, X. He, L. Wei, L. Qian, L. Zhu, L. Xie, Y. Zhuang, Q. Tian, and S. Tang, “Fine-grained semantically aligned vision-language pre-training,”
+Advances in neural information processing systems
+, vol. 35, pp. 7290–7303, 2022.
+[58]
+L. S. Shapley, “A value for n-person games,” in
+Contributions to the Theory of Games II
+, H. W. Kuhn and A. W. Tucker, Eds. Princeton: Princeton University Press, 1953, pp. 307–317.
+[59]
+E. Winter, “The shapley value,” ser. Handbook of Game Theory with Economic Applications. Elsevier, 2002, vol. 3, pp. 2025–2054.
+[60]
+J. Banzhaf, “Weighted voting doesn’t work: A mathematical analysis,”
+Rutgers Law Review
+, vol. 19, no. 2, pp. 317–343, 1965.
+[61]
+E. Lehrer, “An axiomatization of the banzhaf value,”
+International Journal of Game Theory
+, vol. 17, pp. 89–99, 1988.
+[62]
+Y. Yang, S. Kim, and J. Joo, “Explaining deep convolutional neural networks via latent visual-semantic filter attention,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2022, pp. 8333–8343.
+[63]
+Z. Huang, H. Liu, and C. Lv, “Gameformer: Game-theoretic modeling and learning of transformer-based interactive prediction and planning for autonomous driving,” in
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, 2023, pp. 3903–3913.
+[64]
+A. Ramesh, P. Dhariwal, A. Nichol, C. Chu, and M. Chen, “Hierarchical text-conditional image generation with clip latents,”
+arXiv preprint arXiv:2204.06125
+, vol. 1, no. 2, p. 3, 2022.
+[65]
+M. Grabisch and M. Roubens, “An axiomatic approach to the concept of interaction among players in cooperative games,”
+International Journal of game theory
+, vol. 28, pp. 547–565, 1999.
+[66]
+T.-Y. Ross and G. Dollár, “Focal loss for dense object detection,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2017, pp. 2980–2988.
+[67]
+S. Zhang, A. Hao, H. Qin
+et al.
+, “Knowledge-inspired 3d scene graph prediction in point cloud,”
+Advances in Neural Information Processing Systems
+, vol. 34, pp. 18 620–18 632, 2021.
+[68]
+A. Scott, I. Uchida, N. Ding, R. Umemoto, R. P. Bunker, R. Kobayashi, T. Koyama, M. Onishi, Y. Kameda, and K. Fujii, “Teamtrack: A dataset for multi-sport multi-object tracking in full-pitch videos,”
+CoRR
+, vol. abs/2404.13868, 2024.
+[69]
+A. Paszke, S. Gross, F. Massa, A. Lerer, J. Bradbury, G. Chanan, T. Killeen, Z. Lin, N. Gimelshein, L. Antiga, A. Desmaison, A. Köpf, E. Z. Yang, Z. DeVito, M. Raison, A. Tejani, S. Chilamkurthy, B. Steiner, L. Fang, J. Bai, and S. Chintala, “Pytorch: An imperative style, high-performance deep learning library,” in
+Advances in Neural Information Processing Systems 32: Annual Conference on Neural Information Processing Systems 2019, NeurIPS 2019, December 8-14, 2019, Vancouver, BC, Canada
+, 2019, pp. 8024–8035.
+[70]
+C. Wong, B. Xia, Z. Zou, Y. Wang, and X. You, “Socialcircle: Learning the angle-based social interaction representation for pedestrian trajectory prediction,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, 2024, pp. 19 005–19 015.
+[71]
+E. J. Hu, Y. Shen, P. Wallis, Z. Allen-Zhu, Y. Li, S. Wang, L. Wang, and W. Chen, “Lora: Low-rank adaptation of large language models,”
+arXiv preprint arXiv:2106.09685
+, 2021.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

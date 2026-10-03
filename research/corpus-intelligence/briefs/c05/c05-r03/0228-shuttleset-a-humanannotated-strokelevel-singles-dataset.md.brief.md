@@ -1,0 +1,13 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0228-shuttleset-a-humanannotated-strokelevel-singles-dataset.md
+## What it is (1-2 sentences)
+A KDD '23 dataset paper (Wang et al.) releasing ShuttleSet: 44 professional badminton matches (2018–2021) annotated stroke-by-stroke by 6 experts via a computer-aided S²-labeling tool, with three benchmark tasks. Verdict in file: REJECT — badminton-only artifact with zero transferable concept to NFL prediction.
+## Key metrics/methods (formulas where given, else "not specified")
+Only equation stated: camera-to-world homography p' = Hp (H in R^3x3 from ≥4 court-corner correspondences; court 13.4m x 6.1m). Benchmarks: shot influence (metrics AUC/accuracy/Brier); stroke forecasting (cross-entropy for 18 shot types; MSE/MAE for landing locations); movement forecasting (+ trajectory MSE/MAE). Models: ShuttleScorer, ShuttleNet, DyMF vs Bi-GRU/Seq2Seq/Transformer/Reformer/GCN variants. Annotation consistency: temporal MAE 0.24 (serve) / 0.02 (return) / 0 (dead bird) frames; spatial MAE 0.18 (shuttle) / 0.86 (player); shot-type accuracy difference 0 / 0.05 / 0.11.
+## Data sources named
+44 matches (quarter-finals+ of Super 1000/BWF World Tour Finals, 2018–2021), videos crawled from bwf.tv at 30fps 1280x720; 104 sets, 3,685 rallies, 36,492 strokes; 27 top players (16 men's, 11 women's). Code: github.com/wywyWang/CoachAI-Projects; Flask visualisation platform at coachai.cs.nctu.edu.tw:55000.
+## Findings (numbers and facts, not vibes)
+ShuttleScorer shot-influence: AUC 0.8371, ACC 0.7869, Brier 0.1574 (vs Bi-GRU 0.6603/0.7054/0.2158 — 26.8% AUC, 11.6% ACC, 27.1% BR improvement per paper). ShuttleNet stroke forecasting τ=8: CE 2.4125 / MSE 1.8121 / MAE 1.3582. DyMF movement forecasting τ=8: 2.3566/1.0963/1.5875. Most common men's shots: net shot 3,781 (15.45%), lob 3,124 (12.76%), return net 2,130 (8.70%). Case study: Ng Ka Long Angus's right side identified as weak area; Momota net-shot proficiency quantified. Per file: no fixed train/test split (latest 10 matches = test for benchmark 1; 80/20 rally split per match for 2–3); player coverage highly imbalanced; "used by national teams" deployment claim unverifiable.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: annotation-pipeline lesson — expert-annotated structured sequential data unlocks analyses raw video cannot — already embodied in GSE's programmatic nflverse/NGS stack; no new transfer.
+## Engine-actionable? (yes/no + one-line what)
+No — REJECT per file; badminton stroke dataset, 18-class badminton shot taxonomy, and rally-forecasting models have no NFL application.

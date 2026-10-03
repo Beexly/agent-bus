@@ -1,0 +1,23 @@
+# ops/queue-status.md
+## What it is (1-2 sentences)
+Read-only snapshot (2026-09-29 ~15:30–15:40 CDT) of every git worktree and clone on the Windows machine `C:\Users\Garrett`, classifying which hold work that exists nowhere on `origin` and would be destroyed by a cleanup.
+## Key metrics/methods (formulas where given, else "not specified")
+- Inventory method: `git worktree list`, `git fetch origin --prune`, `git status --porcelain`, `rev-list --left-right --count origin/main...<branch>`, `for-each-ref --points-at`, `cat-file -e origin/main:<path>`, `gh pr list`.
+- **65 registered + 9 unregistered worktrees = 74 checkout directories across 5 git roots**; staleness: 18 on main, 26 at 1–49 behind, **21 at 1000+ behind** (re-rooted port branches sharing no history with main beyond the root commit `4a7d07feb016a8218fa01b349ce901fd416718cf`).
+- At-risk headline: **2,146,276 bytes (~2.1 MB) in 50 untracked `*-bridge.ts` / `*-bridge.test.ts` files** under `packages/ingestion-pipeline/src/` in unregistered worktree `Sports-wt-wire-2026-09-25` — blobs not in the object store, so no git recovery path; a single `git worktree remove --force` or `rm -rf` destroys them.
+- Largest at-risk files: `decision-core-bridge.ts` (113,637 B), `props-tracking-nfl-bridge.ts` (109,390 B), `experimental-risk-bridge.ts` (88,763 B), `ratings-strength-bridge.ts` (84,588 B), `markets-price-bridge.ts` (84,240 B), `calibration-quality-bridge.ts` (76,034 B), `ensemble-model-bridge.ts` (73,116 B), `metrics-core-bridge.ts` (67,931 B), `sizing-kelly-bridge.ts` (64,545 B).
+## Data sources named
+- Git object store and origin refs as ground truth; branch inventory of 123 local branches: 91 ahead-but-on-origin (safe), 20 fully contained (safe), **10 stranded**; PR coverage: #881 (`wire/port-contract`), #879 (`cursor/wire-port-contract-79e9`), #944 (`hermes/shard-rotation`, covers hermes/ledger-0928), #950 (main ref commit).
+- `reference point: origin/main = 4611da083f12d3c8218716ebe236d0863286e9b0` ("SURF-16: the provenance guard from #949 was itself wrong (35 vs 52) (#950)"), verified live via `git ls-remote`.
+## Findings (numbers and facts, not vibes)
+- Superrepo trap: **`C:\Users\Garrett` itself is a clone of `Beexly/Sports`** on branch `Autonomous-Revenue-Engine` with 10,769 tracked files and 586 dirty files — any `Sports-*` dir that is not a worktree silently resolves to it. Its dirty files are Hermes/agent skill installs (`.agents/skills/**`, `.claude/settings.json`, `.grok/config.toml`), not Sports work; branch tip `724bfc71a` is an ancestor of `origin/main` (safe).
+- `wire/port-contract` has 9 files unique vs main: `docs/ops/ENGINE_DOCTRINE.md`, `docs/research/2026-09-21/wiring/IMPLEMENTED.md`, `docs/research/2026-09-22/full-tables/README.md`, two dated research CSVs (magicsportsguy-cardio-index-week2, samhoppen-composite-power-ratings-week3), `packages/prediction-engine/src/frontier-signal-catalog.ts` + test, `packages/verifier/src/loaders/nflverse-releases.ts` + test.
+- `cursor/wire-port-contract-79e9` has 43 unique files: mostly dated research CSVs under `docs/research/2026-09-23|24/full-tables/` plus 4 source modules (`1301-0594-information-incorporation-surprise`, `2108-02419v1-bbe-implementer`, `frontier-signal-catalog`, `nflverse-releases`).
+- `hermes/v528-week1` has 5 unique files of working code with NO PR: `apps/web/lib/admin/trigger-refresh*.ts` + 3 tests.
+- Stranded with no origin ref: `mimo/handinhand-20260925` (4 commits, ratings-bridge wire-up), `gse/consensus-bookset-reconstruct` (3 commits, consensus→mint-time binding, independent-reasoning gate), `founder/week3-narrative-live-2026-09-27` (2 commits, narrative STORED→LIVE, MODEL_VERSION v5.2.7→v5.3.0).
+- Six Cursor Cloud Agents were already working adjacent areas (odds blackout, PR backlog triage, provenance fix, deploy-lag audit) — overlap to avoid.
+- What was NOT checked: no DB access (dirty-file claims about row counts like "84,500 → 0" unverified); re-rooted branches assessed by file existence in `origin/main`, not content diff, so unique-file counts are lower bounds.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: pure ops — worktree/clone inventory, stranded-work recovery ordering (2.1 MB bridges first, then no-PR branches, then uncommitted code by size).
+## Engine-actionable? (yes/no + one-line what)
+Yes — before any worktree cleanup, recover the 2.1 MB bridge files (`frontier-signal-catalog`, `nflverse-releases` loaders, `props-tracking-nfl`, `decision-core` bridges) and the no-PR code branches; the unique file lists name exactly which modules to rescue, and several are signal/loader implementations the engine wiring backlog may already assume exist.

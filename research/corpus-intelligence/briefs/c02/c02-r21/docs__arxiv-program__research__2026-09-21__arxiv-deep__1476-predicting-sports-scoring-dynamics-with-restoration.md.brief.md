@@ -1,0 +1,30 @@
+# docs/arxiv-program/research/2026-09-21/arxiv-deep/1476-predicting-sports-scoring-dynamics-with-restoration.md
+## What it is (1-2 sentences)
+Peel & Clauset (2015, arXiv:1504.05872) fit a family of generative latent-skill Bradley–Terry models to within-game scoring-event sequences across four leagues, testing whether next-score probability depends on game state (lead-size "restoration", last-scorer "anti-persistence") or latent skill alone; the NFL-specific result is independent anti-persistent with no restoration. The corpus reader verdict is ADAPT — an interpretable generative foundation for GSE's live in-game win-probability and next-score models.
+## Key metrics/methods (formulas where given, else "not specified")
+- Lead: L_i = Σ_{j=1..i} φ_j δ(ψ_j,r) − φ_j δ(ψ_j,b) (Eq. 1).
+- Independent: P(ψ_i=r) = d_rb = π_r/(π_r+π_b) (Eq. 2–3), π ∈ [0,1] latent skill.
+- Restorative: P(ψ_i=r) = d_rb + ℓ^r_i c_rb, c_rb = γ_r+γ_b (Eq. 4–5); logisticized to σ(m_rb ℓ+v_rb) with m_rb=4c_rb, v_rb=−4(1/2−d_rb) (Eq. 6–9).
+- Independent anti-persistent: P(ψ_i=r|ψ_{i−1}=r)=π^def_r/(π^def_r+π^off_b), P(ψ_i=r|ψ_{i−1}=b)=π^off_r/(π^off_r+π^def_b) (Eq. 10) — encodes forced possession change after a score.
+- Restorative anti-persistent: combination. Rotational symmetry: P(ψ_i=r|L_{i−1}) = 1 − P(ψ_i=b|−L_{i−1}).
+- First-order Markov baseline: P(ψ_{i+1}=ψ_i) from empirical bigram frequencies over first T games (Eq. 11).
+- Fit per season via MCMC; goodness-of-fit = 10-fold CV held-out log-likelihood per season per sport; online prediction: train on first T games (T ≥ 10%), predict remaining events; metric = AUC.
+## Data sources named
+- STATS LLC scoring-event data (proprietary, copyright 2015; not public): per-game sequences of (time, scoring team/player, point value). CFB 10 seasons 2000–2009 (461 teams, 13,689 games, 117,752 events, mean 8.60/game); NFL 10 seasons 2000–2009 (32 teams, 2,561 games, 20,115 events, mean 7.85); NBA 9 seasons 2002–2010 (30 teams, 11,744 games, 1,096,179 events, mean 93.34); NHL 9 seasons (30 teams, 10,259 games, 59,227 events, 5.77/game; 2004 lost to lockout). Preprocessing: OT removed (0.88% of events), one-team-scored games removed (6.24%).
+## Findings (numbers and facts, not vibes)
+- [SCHEME] Bigram self-rates (rr+bb): NBA 0.35, CFB 0.45, NFL 0.44, NHL 0.49 — NBA strongly anti-persistent; NFL moderately anti-persistent (possession alternation).
+- [SCHEME] Held-out log-likelihood per sport (NFL, 2000): independent anti-persistent −1,278 vs independent −1,286; restorative models always worse for NFL — NFL = anti-persistence yes, restoration no. Independent anti-persistent favored in 8/10 NFL seasons.
+- [SCHEME] Cross-sport contrast: NBA — restorative anti-persistent best all 9 seasons (2002: −75,627 vs independent −80,849, indep. anti-pers. −75,655); CFB — independent best (only sport strongly favoring independence; 2000: −7,487 vs restorative −8,114); NHL — no clear winner (margins tiny; restorative tentatively preferred given faceoff design).
+- [SCHEME] Who-scores-next AUC: best model significantly beats all baselines for CFB and NBA (95% CI); for NFL/NHL beats baselines after ≥50% of season observed. First-order Markov is the strongest baseline — best NFL predictor early in season (until ~30% observed), near-best for NBA — but beaten later because it cannot learn team heterogeneity.
+- [SCHEME] Who-wins AUC: best model ≥80% accuracy at halftime in all four leagues; beats BT baseline early (BT cannot update mid-game); leading baseline barely above chance.
+- [OTHER] Skill dynamics: Spearman rank correlation shows skills evolve slowly; CFB highest long-term correlation (regional recruiting monopolies vs pro free agency); champions not necessarily top-skilled (Patriots/Steelers, Lakers/Spurs cited); LeBron's 2010 departure drops Cleveland's offensive skill to bottom rank.
+- [OTHER] Stated limitations: skills fitted on full-season events for goodness-of-fit tables (within-season CV); OT excluded (model cannot score overtime); point values collapsed to season mean for winner prediction; timestamps discarded (no clock/score interaction); AUC values read from plots, not tabulated; data is 2000–2010 (NFL rules changed: OT, 2-pt, PAT distance, kickoff).
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- [SCHEME] NFL next-score architecture: offense/defense skill split with anti-persistence (Eq. 10) is the empirically winning NFL structure — GSE's live next-score model should condition on (lead, who scored last) with separate offensive/defensive skills, not raw BT.
+- [SCHEME] No-lead-restoration for NFL: trailing teams do not systematically gain comeback scoring force (unlike NBA) — a direct prior for the live-WP model's lead-state term.
+- [SCHEME] Per-event online win-probability: the model updates per scoring event and hits ≥80% accuracy at halftime across all four leagues, beating static BT early — the design GSE's live WP engine should follow rather than generic WP curves.
+- [COACHING] Reader's improvement experiment: clock-aware extension — add clock remaining/timeout state as covariates σ(m_rb ℓ + v_rb + α·clock_frac + β·(clock_frac × ℓ)) to capture garbage-time/urgency ("safe lead") state dependence the order-only model misses; test on 4th quarters.
+- [TRUST-SIGNAL] First-order Markov bigram baseline as the early-season floor: any next-score model must beat it after ~30% of season observed; failure earlier is expected, not a bug.
+- [OTHER] Data gap named in the file: STATS LLC data is proprietary — rebuild the NFL arm on nflverse pbp (public), replace naive mean-φ with empirical point-value distributions for spread/total extensions.
+## Engine-actionable? (yes/no + one-line what)
+yes — Rebuild the NFL arm on nflverse pbp 2015–2024 (fit first 30% of each season, predict rest) as an independent anti-persistent model with offense/defense skill split for live next-score and per-event win-probability, gated on beating de-vigged market-implied next-score by ≥0.01 AUC and GSE's existing WP by ≥0.005 AUC at halftime over 2022–2024.

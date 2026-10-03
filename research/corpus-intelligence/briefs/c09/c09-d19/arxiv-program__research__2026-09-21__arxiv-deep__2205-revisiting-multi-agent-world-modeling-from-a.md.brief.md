@@ -1,0 +1,20 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/2205-revisiting-multi-agent-world-modeling-from-a.md
+## What it is (1-2 sentences)
+A full-paper research note (ledger 2205, ADAPT verdict) on Zhang et al. 2025 (arXiv:2505.20922): DIMA, a centralized multi-agent world model that factorizes the joint transition P(s_{t+1}|s_t,a^{1:n}) as a diffusion-reverse-like process revealing one agent's action per "denoising step" — giving linear-in-n modeling cost while staying faithful to the global MDP — and trains a policy purely on imagined rollouts via a learned reward/termination head. The note maps it to GSE's NFL play simulator: DIMA is the missing mathematical core for a Khora-style 22-player transition model.
+## Key metrics/methods (formulas where given, else "not specified")
+- Assumption 1 / factorization (eq. 6): P(s_{t+1}, s_{t+1}^{(1):(n)} | s_t, a_t^{1:n}) = p(s_{t+1}^{(n)}) ∏_{k=1}^n p(s_{t+1}^{(k−1)} | s_{t+1}^{(k)}, a_t^k, s_t) — one agent's action revealed per denoising step, over noise levels σ_n>…>σ_1>σ_0=0.
+- Training objective (eq. 9): L(θ) = E_τ E_{k∼Uniform{1..n}} ‖D_θ(s_{t+1}^τ; σ(τ), s_t, a_t^k) − s_{t+1}‖², with conditioning order ρ sampled uniformly over all permutations (permutation invariance) and EDM preconditioners (eq. 10): D_θ = c_skip·s + c_out·F_θ(c_in·s; c_noise, s_t, a_t^k).
+- Behavior learning in imagination: Transformer (MinGPT backbone) over state/action sequences with 3-layer MLP heads for reward (scalar regression) and termination (binary classification); VQ-VAE with Finite Scalar Quantization autoencoder mapping global state to joint observations; decentralized actors π_ψ(a_t^i|o_t^i) + centralized critic V_ξ(s_t) trained with MAPPO + λ-returns (CTDE); policy trained purely on imagined rollouts (H=15).
+- Complexity claim: per-step conditioning compresses |S|×|A|×|S| → |S| vs joint |S|×|A|^n×|S| → |S| — linear, not exponential, in n.
+## Data sources named
+Online MBRL with simulator-generated replay buffers (no fixed corpus): Multi-Agent MuJoCo (7 partitions: HalfCheetah 2x3/3x2/6x1, Walker 2x3/3x2, Ant 2x4/4x2; 1M samples) and Bi-DexHands (dual 26-DoF Shadow Hands, 4 tasks, 300k samples). No DIMA code link; dependencies: karpathy/minGPT, lucidrains/vector-quantize-pytorch, breez3young/MARIE, jbr-ai-labs/mamba.
+## Findings (numbers and facts, not vibes)
+- Final episode returns, mean±std over 4 seeds (DIMA best on ALL tasks): Ant-2x4 4881±756 (vs MARIE 4471±553, MAMBA 1314±756, HASAC 1344±282, HAPPO 1716±449, MAPPO 859±47); Ant-4x2 4766±450 (vs MARIE 1173±136); HalfCheetah-2x3 6370±121 (vs MARIE 4045±275); HalfCheetah-3x2 6175±212; HalfCheetah-6x1 5643±163 (6 agents, hardest partition).
+- Long-horizon imagination (H=15): DIMA rollouts align with ground truth across the full horizon; MARIE/MAMBA distort by t=4/t=12.
+- Permutation invariance: random/ascending/descending conditioning orders give aligned cumulative-error curves through H=10, diverging only at t=12.
+- Ablation: DIMA matches conventional centralized joint modeling on return with consistently lower variance across seeds.
+- Stated limitation: scalability untested beyond ~6 agents / 52-DoF hands; authors flag challenges at hundreds of agents. NFL needs 22+ball.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: multi-agent world-modeling mathematics for play simulation — the proposed NFL use is a 22-player + ball next-state transition model from NGS tracking (counterfactual rollouts, learned EPA/termination reward head) for the "what-if" desk. SCHEME-adjacent via the improvement experiment: reveal ordering by football-meaningful hierarchy (ball carrier first, then blockers, then defenders) and role+matchup embeddings (e.g., "WR3 vs CB2 in Cover-3").
+## Engine-actionable? (yes/no + one-line what)
+Yes — DIMA's sequential agent-wise diffusion factorization is the candidate transition-model architecture for an NGS-tracking-based NFL play simulator (linear-in-23-entity cost, counterfactual rollouts, learned play-outcome reward head); the note pre-registers adopt gates (+0.5s position error ≤0.8 yards, EPA reward head ±0.75 on ≥70% of held-out 2024 plays).

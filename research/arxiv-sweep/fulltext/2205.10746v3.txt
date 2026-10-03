@@ -1,0 +1,4388 @@
+Athlete rating in multi-competitor games with scored outcomes via monotone transformations
+Jonathan Che
+Mark Glickman
+Abstract
+Sports organizations often want to estimate athlete strengths.
+For games with scored outcomes, a common approach is to
+assume observed game scores follow a normal distribution conditional
+on athletes’ latent abilities, which may change over time.
+In many games, however, this assumption of conditional
+normality does not hold.
+To estimate athletes’ time-varying latent abilities using non-normal game score data, we propose a Bayesian dynamic linear model with flexible monotone response transformations.
+Our model learns nonlinear monotone transformations to address non-normality in athlete scores and can be easily fit using standard regression and optimization routines, which we implement in the
+dlmt
+package in
+R
+.
+We demonstrate our method on data from several Olympic sports, including biathlon, diving, rugby, and fencing.
+keywords
+Dynamic linear model
+, Kalman filter
+, Monotone spline
+and
+Harvard University
+1
+Introduction
+Sports and gaming organizations, athletes, and fans often wish to estimate how good athletes are at their sports.
+This problem of athlete rating can affect planning and preparation for games, at both organizational and individual levels.
+For example, ratings may influence how sports organizations allocate resources across their athletes prior to an event to maximize their chances of winning.
+Ratings may also be used for designing tournaments and league play.
+This includes pairing athletes with similar estimated abilities in head-to-head competitions, dividing a large set of competitors into smaller tournaments according to skill level, or selecting top athletes to compete in elite “by invitation only” events.
+Approaches that rely on
+statistical modeling enable researchers to infer athletes’ abilities from their game outcomes in a principled manner.
+A typical method for constructing athlete ratings treats each athlete’s strength as a latent parameter (or vector of parameters) within a probability model.
+The models then use observed game outcomes to estimate the latent ability parameters, which may be thought of as fixed or varying over time.
+A variety of methods for estimating dynamic (i.e., time-varying) athlete ratings have been proposed for games with binary (i.e., win/loss) and rank-ordered outcomes.
+For multi-competitor games, approaches to rating competitors typically extend the Plackett-Luce model
+(
+Plackett 1975
+)
+through the evolution of the latent ability parameters.
+For example,
+Glickman and
+Hennessy 2015
+models the evolution as a discrete stochastic process,
+Caron and Teh 2012
+uses a nonparametric stochastic process,
+Baker and McHale 2015a
+interpolates abilities between discrete time points, and
+McKeough 2020
+considers parametric growth curves over time.
+Dynamic models have also been proposed for head-to-head games with win/loss outcomes, in both team
+(
+Herbrich, Minka and
+Graepel 2006
+)
+and individual
+(
+Glickman 1999
+;
+Glickman 2001
+;
+Cattelan, Varin and
+Firth 2013
+;
+Baker and McHale 2015b
+)
+game settings.
+Score outcomes are more granular than rank-order outcomes; as a result, models that effectively use score data may outperform models that only use ranking data.
+Observed rank outcomes can be viewed as partially censored score outcomes.
+For example, in a race, each runner’s performance can be recorded as a race time, which can then be mapped into a race placement.
+In this instance, the race placement is the ranking and the race time is the score.
+Score data can potentially provide information, particularly about the gaps in performances between athletes, which may be useful to a rating model.
+While various dynamic models that use score or score-related information have been proposed for head-to-head games
+(
+Harville 1977
+;
+Glickman and Stern 1998
+;
+Lopez, Matthews and
+Baumer 2018
+;
+Ingram 2019
+;
+Kovalchik 2020
+)
+, we are unaware of similar work for multi-competitor games.
+In this paper, we extend the normal dynamic linear model (DLM) proposed by
+Harville 1977
+and
+Glickman and Stern 1998
+, who
+model NFL football game scores using DLMs, to rate athletes who compete in multi-competitor games.
+DLMs have a rich history of use in fields spanning engineering, finance, ecology, and medicine, among many others (e.g., see
+Auger-Méthé et al. 2021
+;
+Zhou and Ji 2020
+;
+Wang et al. 2019
+;
+Hotz-Behofsits, Huber and
+Zörner 2018
+for some recent examples).
+They provide a simple, natural framework for
+modeling time-varying outcomes through parameters that are assumed
+to follow a latent stochastic process.
+In the context of sports, they assume that an athlete’s latent ability varies across time periods as a discrete stochastic process, and that an athlete’s scores are normally distributed around their latent ability parameter within each time period.
+Athletes’ game scores, however, can often be heavy-tailed or skewed, which suggests that the normal assumption in DLMs may not hold.
+Furthermore, games with blowouts or close wins may produce scores that do not accurately reflect athletes’ skills.
+To directly account for blowouts,
+Harville 2003
+considers simple strategies such as capping margins of victory and adjusting extreme scores using hazard functions.
+In this paper, we improve on this idea by directly learning a flexible transformation of the scores from the data.
+We propose a Bayesian DLM with a monotone spline outcome transformation
+(
+Ramsay 1988
+)
+to rate athletes who compete in multi-competitor games with scored outcomes.
+Our model uses a Bayesian approach to learn the best transformation from the data in a principled manner.
+Once the transformation has been estimated, we apply a DLM to the transformed data, thus addressing the non-normality of the score outcomes while still preserving the efficiency and transparency of standard methods for time-series data.
+We implement our model in the
+dlmt
+package in
+R
+.
+1
+1
+1
+Available at
+https://github.com/jche/dlmt
+.
+DLMs are classically used in applications where fixed, known (or assumed) processes dictate both how latent parameters evolve over time and how observations are generated from latent parameters.
+For example, DLMs have been applied to trajectory estimation, where physics equations determine how an object’s true position varies over time.
+In these settings, much work has been done with Extended and Unscented Kalman Filters
+(
+Wan and Van
+Der Merwe 2000
+)
+, which allow for nonlinearities in these relationships.
+In our setting, however, it is unclear a priori how to fix an assumed nonlinear relationship between athletes’ latent abilities and their game scores;
+as such, this relationship must be learned from the data.
+To learn this relationship, early research on DLMs considered learning an optimal Box-Cox transformation of the data, either by using a naive grid search
+(
+Lenk and Tsai 1990
+)
+or by using score-based methods
+(
+Atkinson and
+Shephard 1996
+)
+.
+While these methods are straightforward and intuitive, the Box-Cox transformation lacks the flexibility required for many real-world settings.
+Recent work has considered using more flexible spline transformations, albeit in different settings from the one in this paper;
+Xia et al. 2000
+uses a monotone spline transformation in the simpler setting of univariate autoregression with static parameters for an ecological time-series dataset, and
+King and Kowal 2021
+utilizes a spline-based transformation for the analysis of count data in a DLM setting.
+We extend this line of work by applying a flexible monotone spline transformation to the case of multicompetitor game scores in a DLM setting, where athletes may compete in any number of games within each time period.
+The paper proceeds as follows.
+Section
+2
+describes the general DLM framework and demonstrates the incorporation of monotone transformations into the model.
+Section
+3
+describes an efficient model-fitting algorithm for the DLM with transformations.
+Finally, Section
+4
+compares our DLM to other candidate models for rating athletes in multi-competitor games, using data provided by the US Olympic and Paralympic Committee.
+2
+Model
+We introduce the model proposed in this paper in two stages.
+First, we present a standard DLM framework for rating athletes.
+We then modify it to account for game effects and non-normal outcomes, and address the special case of head-to-head games.
+2.1
+Standard DLM for athlete rating
+A standard DLM for rating athletes models each athlete’s observed scores as normally distributed around their latent ability, which evolves over time.
+The model likelihood for the score observed from a single athlete competing during time
+t
+t
+takes the form:
+p
+⁡
+(
+y
+t
+∣
+θ
+t
+,
+σ
+2
+)
+=
+N
+⁡
+(
+y
+t
+∣
+θ
+t
+,
+σ
+2
+)
+,
+p(y_{t}\mid\theta_{t},\sigma^{2})=N(y_{t}\mid\theta_{t},\sigma^{2}),
+(1)
+where
+y
+t
+y_{t}
+is the observed score,
+θ
+t
+\theta_{t}
+is the athlete’s latent ability parameter at time
+t
+t
+, and
+σ
+2
+\sigma^{2}
+is the observation variance.
+In this paper, we allow the latent ability parameter to evolve between time points as a normal random walk:
+p
+⁡
+(
+θ
+t
++
+1
+∣
+θ
+t
+,
+σ
+2
+,
+w
+)
+=
+N
+⁡
+(
+θ
+t
++
+1
+∣
+θ
+t
+,
+σ
+2
+​
+w
+)
+,
+p(\theta_{t+1}\mid\theta_{t},\sigma^{2},w)=N(\theta_{t+1}\mid\theta_{t},\sigma^{2}w),
+(2)
+where
+w
+w
+is an additional parameter that controls how much latent abilities may vary over time relative to the observation variance.
+Other stochastic processes may also be considered for the evolution of latent ability parameters, such as a mean-preserving random walk
+(
+Glickman and
+Hennessy 2015
+)
+or an autoregressive process
+(
+Glickman and Stern 1998
+)
+.
+In this paper, we use a simple normal random walk rather than an autoregressive process to acknowledge that weak athletes’ latent abilities are not likely to improve, i.e., revert to the mean, when they avoid playing games over several time periods.
+Unlike these other stochastic processes, the normal random walk diverges over time;
+this increasing variance represents the increasing uncertainty about each athlete’s latent ability if they do not play any games.
+In practice, we place an upper limit on the variance of athlete latent abilities to prevent them from growing too large (see Appendix
+A.1
+for details).
+In a general sporting setting, we divide time into discrete
+rating periods
+, with multiple games within each rating period and multiple athletes within each game.
+The choice of rating period should reflect the structure of the data.
+Our model assumes that athletes’ latent abilities remain constant within each rating period, but that they may vary between rating periods.
+Sports typically have regularly spaced seasons which serve as natural rating period breakpoints; for example, the biathlon season spans November through March, so we may assign the full season to a single rating period or split each season into two rating periods to allow mid-season changes in ability.
+Shorter rating periods generally reduce prediction bias, since more recent data is used for prediction, but they increase variance, since fewer games are used to infer latent abilities within each period.
+Appendix
+A.2
+provides further guidance on this bias-variance tradeoff and illustrates how different choices of rating periods marginally affect results on real data.
+Let
+p
+p
+denote the total number of athletes in the data.
+Let
+T
+T
+denote the total number of discrete rating periods, indexed by
+t
+=
+1
+,
+…
+,
+T
+t=1,\dots,T
+.
+Finally, let
+n
+t
+n_{t}
+denote the total number of observed scores within rating period
+t
+t
+.
+Athletes may compete in any number (including zero) of games within each rating period.
+The data model (Equation
+1
+) and innovation model (Equation
+2
+) may now be rewritten in multivariate form as:
+p
+⁡
+(
+𝐲
+t
+∣
+𝜽
+t
+,
+σ
+2
+)
+\displaystyle p(\mathbf{y}_{t}\mid{\bm{\theta}}_{t},\sigma^{2})
+=
+N
+⁡
+(
+𝐲
+t
+∣
+X
+t
+​
+𝜽
+t
+,
+σ
+2
+​
+I
+n
+t
+)
+\displaystyle=N(\mathbf{y}_{t}\mid X_{t}{\bm{\theta}}_{t},\sigma^{2}I_{n_{t}})
+p
+⁡
+(
+𝜽
+t
++
+1
+∣
+𝜽
+t
+,
+σ
+2
+,
+w
+)
+\displaystyle p({\bm{\theta}}_{t+1}\mid{\bm{\theta}}_{t},\sigma^{2},w)
+=
+N
+⁡
+(
+𝜽
+t
++
+1
+∣
+𝜽
+t
+,
+σ
+2
+​
+w
+​
+I
+p
+)
+.
+\displaystyle=N({\bm{\theta}}_{t+1}\mid{\bm{\theta}}_{t},\sigma^{2}wI_{p}).
+Here,
+𝐲
+t
+\mathbf{y}_{t}
+is the
+n
+t
+×
+1
+n_{t}\times 1
+column vector of observed scores,
+𝜽
+t
+{\bm{\theta}}_{t}
+is the
+p
+×
+1
+p\times 1
+column vector of athlete latent abilities for rating period
+t
+t
+, and
+I
+k
+I_{k}
+denotes the
+k
+×
+k
+k\times k
+identity matrix.
+The
+n
+t
+×
+p
+n_{t}\times p
+model matrix
+X
+t
+X_{t}
+simply matches each athlete’s observed score(s) to their latent ability parameter.
+2
+2
+2
+Temporarily suppressing the time subscript
+t
+t
+, the matrix
+X
+X
+has a single nonzero entry per row.
+Per row
+r
+r
+, if entry
+r
+r
+of the column vector
+𝐲
+\mathbf{y}
+corresponds to a score earned by athlete
+a
+a
+, then
+X
+r
+​
+a
+X_{ra}
+is set to equal 1.
+2.2
+Addressing game effects
+In practice, athlete-rating DLMs need to account for conditions that affect game scores in a manner unrelated to latent athlete abilities.
+For example, a hot day might make all athletes in a race run more slowly, but the increased race times do not indicate weaker athletes.
+One approach to incorporate game-specific variation is to assume game-specific intercepts as part of the outcome model.
+This approach has been used, for example, by
+Glickman and Stern 1998
+.
+Instead of assuming game-specific intercepts, we pre-process the data by subtracting game-specific means from the observed scores.
+This approach avoids concerns relating to the arbitrary specification of priors for the intercepts, which could affect downstream results.
+Each game-centered score
+y
+~
+t
+​
+g
+\tilde{y}_{tg}
+for an individual athlete in game
+g
+g
+within rating period
+t
+t
+may then be modeled
+using a game-centered latent ability, as:
+p
+⁡
+(
+y
+~
+t
+​
+g
+∣
+θ
+t
+,
+σ
+2
+)
+=
+N
+⁡
+(
+y
+~
+t
+​
+g
+∣
+θ
+t
+−
+θ
+¯
+t
+​
+g
+,
+σ
+2
+)
+.
+p(\tilde{y}_{tg}\mid\theta_{t},\sigma^{2})=N(\tilde{y}_{tg}\mid\theta_{t}-\bar{\theta}_{tg},\sigma^{2}).
+The value
+θ
+¯
+t
+​
+g
+\bar{\theta}_{tg}
+denotes the average latent ability across all of the players in game
+g
+g
+within rating period
+t
+t
+.
+Subtracting
+θ
+¯
+t
+​
+g
+\bar{\theta}_{tg}
+from each athlete’s latent ability adjusts for the fact that competing against a stronger pool of opponents in a game naturally results in worse scores relative to the competition.
+The variation in scores may also differ across games within a sport.
+For example, biathlon races vary in length.
+Longer races give strong athletes more time to build a larger lead and weak athletes more time to fall behind, increasing the observed variation in scores.
+Ideally, the transformation introduced in the following section would address this issue by shrinking extreme game-centered scores toward the mean.
+If the variation in scores significantly differs from game to game in a particular application, however, it may be reasonable to additionally pre-process the scores
+e.g., by log-transforming them, prior to game-centering, or (for large multicompetitor sports) by game-centering and then scaling each game’s scores to have variance 1.
+To simplify notation for vector of pre-processed, game-centered scores
+𝐲
+~
+t
+\tilde{\mathbf{y}}_{t}
+, we write:
+p
+⁡
+(
+𝐲
+~
+t
+∣
+𝜽
+t
+,
+σ
+2
+)
+=
+N
+⁡
+(
+𝐲
+~
+t
+∣
+X
+¯
+t
+​
+𝜽
+t
+,
+σ
+2
+​
+I
+n
+t
+)
+,
+p(\tilde{\mathbf{y}}_{t}\mid{\bm{\theta}}_{t},\sigma^{2})=N(\tilde{\mathbf{y}}_{t}\mid\bar{X}_{t}{\bm{\theta}}_{t},\sigma^{2}I_{n_{t}}),
+(3)
+where
+𝐲
+~
+t
+≡
+[
+𝐲
+~
+t
+​
+1
+𝐲
+~
+t
+​
+q
+]
+\tilde{\mathbf{y}}_{t}\equiv\begin{bmatrix}\tilde{\mathbf{y}}_{t1}\\
+\vdots\\
+\tilde{\mathbf{y}}_{tq}\end{bmatrix}
+and
+X
+¯
+t
+≡
+[
+H
+n
+t
+​
+1
+​
+X
+t
+​
+1
+H
+n
+t
+​
+g
+t
+​
+X
+t
+​
+g
+t
+]
+\bar{X}_{t}\equiv\begin{bmatrix}H_{n_{t1}}X_{t1}\\
+\vdots\\
+H_{n_{tg_{t}}}X_{tg_{t}}\end{bmatrix}
+,
+for centering matrices
+H
+k
+≡
+I
+k
+−
+𝟏
+k
+​
+𝟏
+k
+T
+H_{k}\equiv I_{k}-\mathbf{1}_{k}\mathbf{1}_{k}^{T}
+with
+𝟏
+k
+\mathbf{1}_{k}
+denoting the
+k
+×
+1
+k\times 1
+column vector with entries equal to one.
+For games
+g
+=
+1
+,
+…
+,
+g
+t
+g=1,\dots,g_{t}
+within rating period
+t
+t
+, the
+n
+g
+×
+1
+n_{g}\times 1
+vector of scores and
+n
+g
+×
+p
+n_{g}\times p
+model matrix for game
+g
+g
+are written as
+𝐲
+~
+t
+​
+g
+\tilde{\mathbf{y}}_{tg}
+and
+X
+t
+​
+g
+X_{tg}
+, respectively.
+2.3
+Addressing non-normal outcomes
+In many games, we might also suspect that athletes’ game-centered scores are not normally distributed around their game-centered latent abilities as assumed by Equation
+3
+.
+Instead, we may assume that some transformation of the athletes’ scores is normally distributed around their latent abilities, so that the resulting model for transformed outcomes is:
+p
+⁡
+(
+τ
+𝝀
+​
+(
+𝐲
+~
+t
+)
+∣
+𝜽
+t
+,
+σ
+2
+,
+𝝀
+)
+=
+N
+⁡
+(
+τ
+𝝀
+​
+(
+𝐲
+~
+t
+)
+∣
+X
+¯
+t
+​
+𝜽
+t
+,
+σ
+2
+​
+I
+n
+t
+)
+.
+p(\tau_{\bm{\lambda}}(\tilde{\mathbf{y}}_{t})\mid{\bm{\theta}}_{t},\sigma^{2},{\bm{\lambda}})=N(\tau_{\bm{\lambda}}(\tilde{\mathbf{y}}_{t})\mid\bar{X}_{t}{\bm{\theta}}_{t},\sigma^{2}I_{n_{t}}).
+The transformation
+τ
+𝝀
+​
+(
+⋅
+)
+\tau_{\bm{\lambda}}(\cdot)
+is a function parameterized by a vector-valued parameter
+𝝀
+{\bm{\lambda}}
+.
+While the above assumption is likely reasonable for most sports, we note that it may be difficult to justify for sports with very low scores, e.g., soccer or hockey.
+In this paper, we use the monotone spline transformation from
+Ramsay 1988
+, but any monotone transformation with a computable Jacobian would work as well.
+The monotone spline transformation is a polynomial spline built from an I-spline basis (see
+Ramsay 1988
+for more detail).
+For a given polynomial order
+d
+d
+and knot sequence
+𝐤
+\mathbf{k}
+, an I-spline basis consists of
+B
+B
+fixed, monotonically increasing basis functions
+I
+b
+​
+(
+y
+∣
+d
+,
+𝐤
+)
+I_{b}(y\mid d,\mathbf{k})
+,
+b
+=
+1
+,
+…
+,
+B
+b=1,\ldots,B
+.
+The monotone spline transformation is then constructed as a linear combination of these basis functions:
+τ
+𝝀
+M
+​
+S
+​
+(
+y
+)
+=
+λ
+0
++
+∑
+b
+=
+1
+B
+λ
+b
+​
+I
+b
+​
+(
+y
+∣
+d
+,
+𝐤
+)
+,
+\tau_{{\bm{\lambda}}}^{MS}(y)=\lambda_{0}+\sum_{b=1}^{B}\lambda_{b}I_{b}(y\mid d,\mathbf{k}),
+where
+λ
+0
+\lambda_{0}
+represents an intercept term and
+λ
+1
+,
+…
+,
+λ
+B
+\lambda_{1},\dots,\lambda_{B}
+determine the shape of the transformation.
+We treat
+λ
+0
+\lambda_{0}
+as fixed, and define the transformation parameter
+𝝀
+{\bm{\lambda}}
+as
+𝝀
+≡
+[
+λ
+1
+​
+…
+​
+λ
+B
+]
+T
+{\bm{\lambda}}\equiv\begin{bmatrix}\lambda_{1}\ \dots\ \lambda_{B}\end{bmatrix}^{T}
+.
+Note that because each basis function
+I
+b
+​
+(
+⋅
+)
+I_{b}(\cdot)
+is monotone increasing, constraining the parameters
+λ
+1
+,
+…
+,
+λ
+B
+\lambda_{1},\dots,\lambda_{B}
+to be non-negative ensures that the resulting spline transformation is also monotone increasing.
+Also, the sum
+∑
+b
+=
+1
+B
+λ
+b
+\sum_{b=1}^{B}\lambda_{b}
+determines the range of the monotone spline transformation function, so we constrain it to equal a constant
+c
+c
+for identifiability.
+Choosing the number and placement of the spline knots is generally a challenging problem.
+In this paper, we simply place three interior knots at evenly spaced quantiles
+(
+James et al. 2013
+, Section 7.4.4)
+.
+Adding more knots increases the flexibility of the transformation, but also increases the number of parameters that will need to be optimized in our model-fitting procedure.
+In our application, we found that three interior knots provided sufficient flexibility while maintaining computational efficiency and stability.
+Appendix
+A.1
+provides further guidance about knot choice.
+2.4
+Full Bayesian model
+The full DLM with transformations is therefore as follows:
+p
+⁡
+(
+𝝍
+t
+∣
+𝜽
+t
+,
+σ
+2
+,
+𝝀
+)
+\displaystyle p({\bm{\psi}}_{t}\mid{\bm{\theta}}_{t},\sigma^{2},{\bm{\lambda}})
+=
+N
+⁡
+(
+𝝍
+t
+∣
+X
+¯
+t
+​
+𝜽
+t
+,
+σ
+2
+​
+I
+n
+t
+)
+\displaystyle=N({\bm{\psi}}_{t}\mid\bar{X}_{t}{\bm{\theta}}_{t},\sigma^{2}I_{n_{t}})
+(4)
+p
+⁡
+(
+𝜽
+t
++
+1
+∣
+𝜽
+t
+,
+σ
+2
+,
+w
+)
+\displaystyle p({\bm{\theta}}_{t+1}\mid{\bm{\theta}}_{t},\sigma^{2},w)
+=
+N
+⁡
+(
+𝜽
+t
++
+1
+∣
+𝜽
+t
+,
+σ
+2
+​
+w
+​
+I
+p
+)
+,
+\displaystyle=N({\bm{\theta}}_{t+1}\mid{\bm{\theta}}_{t},\sigma^{2}wI_{p}),
+(5)
+where we define
+𝝍
+t
+≡
+τ
+𝝀
+​
+(
+𝐲
+~
+t
+)
+{\bm{\psi}}_{t}\equiv\tau_{\bm{\lambda}}(\tilde{\mathbf{y}}_{t})
+, the transformed, game-centered observations, suppressing dependence on
+𝝀
+{\bm{\lambda}}
+to simplify notation.
+To complete the model specification, we specify prior distributions for
+𝜽
+1
+{\bm{\theta}}_{1}
+,
+σ
+2
+\sigma^{2}
+,
+w
+w
+, and
+𝝀
+{\bm{\lambda}}
+:
+p
+⁡
+(
+𝜽
+1
+∣
+σ
+2
+,
+v
+0
+)
+\displaystyle p({\bm{\theta}}_{1}\mid\sigma^{2},v_{0})
+=
+N
+⁡
+(
+𝜽
+1
+∣
+0
+,
+σ
+2
+​
+v
+0
+​
+I
+p
+)
+\displaystyle=N({\bm{\theta}}_{1}\mid 0,\sigma^{2}v_{0}I_{p})
+p
+⁡
+(
+σ
+2
+)
+\displaystyle p(\sigma^{2})
+=
+Inv-Gamma
+​
+(
+σ
+2
+∣
+a
+0
+,
+b
+0
+)
+\displaystyle=\text{Inv-Gamma}(\sigma^{2}\mid a_{0},b_{0})
+p
+⁡
+(
+w
+)
+\displaystyle p(w)
+=
+Half-Normal
+​
+(
+w
+∣
+s
+w
+2
+)
+\displaystyle=\text{Half-Normal}(w\mid s_{w}^{2})
+p
+⁡
+(
+𝝀
+)
+\displaystyle p({\bm{\lambda}})
+=
+c
+⋅
+Dirichlet
+​
+(
+𝝀
+∣
+𝜶
+)
+.
+\displaystyle=c\cdot\text{Dirichlet}({\bm{\lambda}}\mid\bm{\alpha}).
+The hyperparameters
+v
+0
+v_{0}
+,
+a
+0
+a_{0}
+,
+b
+0
+b_{0}
+,
+s
+w
+s_{w}
+,
+c
+c
+, and
+𝜶
+\bm{\alpha}
+may be set to reflect prior beliefs about
+𝜽
+1
+{\bm{\theta}}_{1}
+,
+σ
+2
+\sigma^{2}
+,
+w
+w
+, and
+𝝀
+{\bm{\lambda}}
+.
+In the absence of available prior information, we set
+v
+0
+=
+10
+v_{0}=10
+,
+a
+0
+=
+b
+0
+=
+0.1
+a_{0}=b_{0}=0.1
+, and
+s
+w
+=
+1
+s_{w}=1
+to keep the priors fairly uninformative about
+𝜽
+1
+{\bm{\theta}}_{1}
+,
+σ
+2
+\sigma^{2}
+, and
+w
+w
+(
+Gelman et al. 1995
+)
+.
+We set
+𝜶
+\bm{\alpha}
+to be proportional to the
+λ
+\lambda
+parameters corresponding to the identity transformation, but keep
+∑
+b
+=
+1
+B
+α
+b
+=
+1
+\sum_{b=1}^{B}\alpha_{b}=1
+to keep the prior diffuse.
+If more shrinkage toward the identity transformation is desired,
+∑
+b
+=
+1
+B
+α
+b
+\sum_{b=1}^{B}\alpha_{b}
+can be set to a higher value.
+Finally, we set
+λ
+0
+\lambda_{0}
+to equal the lowest score in the data and
+c
+c
+to equal the range of the scores in the data so that the learned transformation roughly preserves the scale of the original data.
+The Dirichlet prior on
+𝝀
+{\bm{\lambda}}
+constrains the transformation parameter
+𝝀
+{\bm{\lambda}}
+to have nonnegative components that sum to
+c
+c
+.
+In practice, we find that using a weakly regularizing unconstrained prior for
+𝝀
+{\bm{\lambda}}
+(
+Kowal and
+Canale 2020
+)
+often results in better performance:
+p
+⁡
+(
+λ
+b
+)
+=
+N
++
+​
+(
+λ
+b
+∣
+α
+b
+,
+s
+𝝀
+2
+)
+​
+for
+​
+b
+=
+1
+,
+…
+,
+B
+,
+p(\lambda_{b})=N^{+}(\lambda_{b}\mid\alpha_{b},s^{2}_{\bm{\lambda}})\text{ for }b=1,\dots,B,
+where
+N
++
+N^{+}
+indicates a normal distribution truncated below at 0.
+Theoretically, the shape of the monotone spline transformation is unidentifiable without a constraint on
+∑
+b
+=
+1
+B
+λ
+b
+\sum_{b=1}^{B}\lambda_{b}
+; empirically, the mild regularization induced by the truncated normal priors effectively addresses this issue.
+For this unconstrained model, we set
+𝜶
+\bm{\alpha}
+equal to the
+λ
+\lambda
+parameters corresponding to the identity transformation and control shrinkage toward the identity transformation using
+s
+𝝀
+2
+s^{2}_{\bm{\lambda}}
+.
+To allow maximum flexibility, we set
+s
+𝝀
+2
+s^{2}_{\bm{\lambda}}
+to a large value.
+Figure
+1
+displays the graphical model representing the relationships between the model parameters
+{
+𝜽
+t
+}
+t
+=
+1
+,
+…
+,
+T
+\{{\bm{\theta}}_{t}\}_{t=1,\dots,T}
+,
+σ
+2
+\sigma^{2}
+,
+w
+w
+, and
+𝝀
+{\bm{\lambda}}
+and the transformed data
+{
+𝝍
+t
+}
+t
+=
+1
+,
+…
+,
+T
+\{{\bm{\psi}}_{t}\}_{t=1,\dots,T}
+.
+𝜽
+1
+{\bm{\theta}}_{1}
+𝜽
+2
+{\bm{\theta}}_{2}
+𝜽
+3
+{\bm{\theta}}_{3}
+…
+\dots
+𝝍
+1
+{\bm{\psi}}_{1}
+𝝍
+2
+{\bm{\psi}}_{2}
+𝝍
+3
+{\bm{\psi}}_{3}
+…
+\dots
+w
+w
+𝝀
+{\bm{\lambda}}
+σ
+2
+\sigma^{2}
+Fig 1:
+Graphical model for DLM with transformations
+Figure
+1
+displays the conditional independences implied by Equations
+4
+and
+5
+, which allow us to factor the joint distribution of our untransformed data and model parameters as:
+p
+(
+𝐲
+1
+:
+T
+,
+𝜽
+1
+:
+T
+,
+σ
+2
+,
+w
+,
+𝝀
+)
+=
+\displaystyle p(\mathbf{y}_{1:T},{\bm{\theta}}_{1:T},\sigma^{2},w,{\bm{\lambda}})=
+J
+(
+𝝍
+1
+:
+T
+→
+𝐲
+1
+:
+T
+)
+×
+p
+(
+σ
+2
+)
+p
+(
+w
+)
+p
+(
+𝝀
+)
+×
+∏
+t
+=
+1
+T
+p
+(
+𝝍
+t
+∣
+𝜽
+t
+,
+σ
+2
+,
+𝝀
+)
+×
+∏
+t
+=
+1
+T
+p
+(
+𝜽
+t
+∣
+𝜽
+t
+−
+1
+,
+σ
+2
+,
+w
+)
+,
+\displaystyle J({\bm{\psi}}_{1:T}\to\mathbf{y}_{1:T})\times p(\sigma^{2})p(w)p({\bm{\lambda}})\times\prod_{t=1}^{T}p({\bm{\psi}}_{t}\mid{\bm{\theta}}_{t},\sigma^{2},{\bm{\lambda}})\times\prod_{t=1}^{T}p({\bm{\theta}}_{t}\mid{\bm{\theta}}_{t-1},\sigma^{2},w),
+where
+J
+(
+𝝍
+1
+:
+T
+→
+𝐲
+1
+:
+T
+)
+J({\bm{\psi}}_{1:T}\to\mathbf{y}_{1:T})
+is the Jacobian of the inverse transformation,
+τ
+𝝀
+−
+1
+​
+(
+⋅
+)
+\tau_{\bm{\lambda}}^{-1}(\cdot)
+.
+The Jacobian term is vital to appropriately account for how the transformation rescales the data.
+For example, the Jacobian of the inverse monotone spline transformation is:
+J
+M
+​
+S
+​
+(
+ψ
+→
+y
+)
+=
+∑
+b
+=
+1
+B
+𝝀
+b
+​
+M
+b
+​
+(
+y
+∣
+d
+,
+𝐤
+)
+.
+J^{MS}(\psi\to y)=\sum_{b=1}^{B}{\bm{\lambda}}_{b}M_{b}(y\mid d,\mathbf{k}).
+The I-spline basis functions used for the monotone spline are constructed by integrating M-spline basis functions; here,
+M
+b
+​
+(
+⋅
+)
+M_{b}(\cdot)
+are the M-spline basis functions corresponding to their respective I-splines.
+Figure
+2
+displays the seven spline basis functions constructed for the biathlon relay training dataset we study in Section
+4
+.
+Figure
+2
+shows how each I-spline basis function is constructed as the integral of an M-spline basis function.
+Fig 2:
+Spline basis functions for biathlon relay training set
+2.5
+Head-to-head games
+While the general multi-competitor setup introduced above can be used for games with any number of players, we introduce a slightly simpler setup for the special case of head-to-head games.
+In head-to-head games, it is generally more natural to consider monotone transformations of score differences, which have no direct analogues in the multi-competitor setting.
+Instead of modeling the
+2
+​
+g
+t
+×
+1
+2g_{t}\times 1
+vector of athlete scores
+𝐲
+t
+\mathbf{y}_{t}
+, we can model the
+g
+t
+×
+1
+g_{t}\times 1
+vector of score differences
+𝐳
+t
+\mathbf{z}_{t}
+, where we subtract the second athlete’s score from the first athlete’s score.
+The resulting model likelihood is:
+p
+⁡
+(
+τ
+𝝀
+​
+(
+𝐳
+t
+)
+∣
+𝜽
+t
+,
+σ
+2
+,
+𝝀
+)
+=
+N
+⁡
+(
+τ
+𝝀
+​
+(
+𝐳
+t
+)
+∣
+Z
+t
+​
+𝜽
+t
+,
+σ
+2
+​
+I
+n
+t
+)
+.
+p(\tau_{\bm{\lambda}}(\mathbf{z}_{t})\mid{\bm{\theta}}_{t},\sigma^{2},{\bm{\lambda}})=N(\tau_{\bm{\lambda}}(\mathbf{z}_{t})\mid Z_{t}{\bm{\theta}}_{t},\sigma^{2}I_{n_{t}}).
+Note that we have simply replaced the model matrix
+X
+¯
+t
+\bar{X}_{t}
+with the model matrix
+Z
+t
+Z_{t}
+, which we define as a matrix with two nonzero entries per row: 1 in the column corresponding to the first athlete and -1 in the column corresponding to the second athlete.
+Each observed score difference is taken as the first athlete’s score minus the second athlete’s score, so that each transformed score difference is normally distributed around the latent ability parameter difference between the two competing athletes.
+3
+Model fitting
+3.1
+Model-fitting procedure
+We estimate the model parameters
+(
+𝜽
+1
+:
+T
+,
+σ
+2
+,
+w
+,
+𝝀
+)
+({\bm{\theta}}_{1:T},\sigma^{2},w,{\bm{\lambda}})
+via a two-step procedure.
+In our application of interest, we would like to be able to quickly update athlete ratings (i.e., latent ability estimates) shortly after the results from a game.
+While we could estimate the full posterior distribution of all of the model parameters after each game, this may be an unnecessarily slow and computationally expensive process.
+Instead, we fit the model using the following procedure:
+1.
+Estimate
+w
+w
+and
+𝝀
+{\bm{\lambda}}
+: using a training subset consisting of the first
+T
+t
+​
+r
+​
+a
+​
+i
+​
+n
+T_{train}
+rating periods in the dataset, obtain estimates
+w
+^
+\hat{w}
+and
+𝝀
+^
+\hat{{\bm{\lambda}}}
+.
+2.
+Estimate
+𝜽
+1
+:
+T
+{\bm{\theta}}_{1:T}
+and
+σ
+2
+\sigma^{2}
+: given
+w
+^
+\hat{w}
+and
+𝝀
+^
+\hat{{\bm{\lambda}}}
+, use the full dataset to obtain estimates
+𝜽
+^
+1
+:
+T
+\hat{{\bm{\theta}}}_{1:T}
+and
+σ
+^
+2
+\hat{\sigma}^{2}
+.
+While step 1 is computationally expensive, step 2 can be implemented efficiently.
+When the results from a new game become available, we can just run step 2 using the previously learned values of
+w
+^
+\hat{w}
+and
+𝝀
+^
+\hat{{\bm{\lambda}}}
+to quickly update ratings.
+We first describe step 2, the final estimation of
+𝜽
+1
+:
+T
+{\bm{\theta}}_{1:T}
+and
+σ
+2
+\sigma^{2}
+.
+Given fixed values for
+w
+w
+and
+𝝀
+{\bm{\lambda}}
+, we can transform the full dataset using
+t
+𝝀
+​
+(
+⋅
+)
+t_{{\bm{\lambda}}}(\cdot)
+and then use standard Kalman filter equations for a model with an unknown constant variance parameter to estimate the posterior distributions of
+𝜽
+1
+:
+T
+{\bm{\theta}}_{1:T}
+and
+σ
+2
+\sigma^{2}
+(
+Prado and West 2010
+, Section 4.3.2)
+.
+The posterior distributions of
+𝜽
+t
+{\bm{\theta}}_{t}
+and
+σ
+2
+\sigma^{2}
+after each time step
+t
+t
+can be expressed as:
+p
+(
+𝜽
+t
+∣
+σ
+2
+,
+w
+,
+𝝀
+,
+𝝍
+1
+:
+t
+)
+\displaystyle p({\bm{\theta}}_{t}\mid\sigma^{2},w,{\bm{\lambda}},{\bm{\psi}}_{1:t})
+∼
+N
+⁡
+(
+𝜽
+t
+∣
+𝐦
+t
+,
+σ
+2
+​
+V
+t
+)
+\displaystyle\sim N({\bm{\theta}}_{t}\mid\mathbf{m}_{t},\sigma^{2}V_{t})
+p
+(
+σ
+2
+∣
+w
+,
+𝝀
+,
+𝝍
+1
+:
+t
+)
+\displaystyle p(\sigma^{2}\mid w,{\bm{\lambda}},{\bm{\psi}}_{1:t})
+∼
+Inv-Gamma
+​
+(
+σ
+2
+∣
+a
+t
+,
+b
+t
+)
+,
+\displaystyle\sim\text{Inv-Gamma}(\sigma^{2}\mid a_{t},b_{t}),
+where
+𝐦
+t
+\mathbf{m}_{t}
+,
+V
+t
+V_{t}
+a
+t
+a_{t}
+, and
+b
+t
+b_{t}
+are computed using the transformed data as:
+V
+t
+\displaystyle V_{t}
+=
+(
+(
+V
+t
+−
+1
++
+w
+​
+I
+p
+)
+−
+1
++
+X
+¯
+t
+T
+​
+X
+¯
+t
+)
+−
+1
+\displaystyle=((V_{t-1}+wI_{p})^{-1}+\bar{X}_{t}^{T}\bar{X}_{t})^{-1}
+𝐦
+t
+\displaystyle\mathbf{m}_{t}
+=
+V
+t
+​
+(
+(
+V
+t
+−
+1
++
+w
+​
+I
+p
+)
+−
+1
+​
+𝐦
+t
+−
+1
++
+X
+¯
+t
+T
+​
+𝝍
+t
+)
+\displaystyle=V_{t}((V_{t-1}+wI_{p})^{-1}\mathbf{m}_{t-1}+\bar{X}_{t}^{T}{\bm{\psi}}_{t})
+a
+t
+\displaystyle a_{t}
+=
+a
+t
+−
+1
++
+1
+2
+​
+n
+t
+\displaystyle=a_{t-1}+\frac{1}{2}n_{t}
+b
+t
+\displaystyle b_{t}
+=
+b
+t
+−
+1
++
+1
+2
+​
+[
+𝐦
+t
+−
+1
+T
+​
+(
+V
+t
+−
+1
++
+w
+​
+I
+p
+)
+−
+1
+​
+𝐦
+t
+−
+1
++
+𝝍
+t
+T
+​
+𝝍
+t
+−
+𝐦
+t
+T
+​
+V
+t
+−
+1
+​
+𝐦
+t
+]
+\displaystyle=b_{t-1}+\frac{1}{2}[\mathbf{m}_{t-1}^{T}(V_{t-1}+wI_{p})^{-1}\mathbf{m}_{t-1}+{\bm{\psi}}_{t}^{T}{\bm{\psi}}_{t}-\mathbf{m}_{t}^{T}V_{t}^{-1}\mathbf{m}_{t}]
+=
+b
+t
+−
+1
++
+1
+2
+​
+(
+𝝍
+t
+−
+X
+¯
+t
+​
+𝐦
+t
+−
+1
+)
+T
+​
+(
+I
+n
+t
++
+X
+¯
+t
+​
+(
+V
+t
+−
+1
++
+w
+​
+I
+p
+)
+​
+X
+¯
+t
+T
+)
+−
+1
+​
+(
+𝝍
+t
+−
+X
+¯
+t
+​
+𝐦
+t
+−
+1
+)
+,
+\displaystyle=b_{t-1}+\frac{1}{2}({\bm{\psi}}_{t}-\bar{X}_{t}\mathbf{m}_{t-1})^{T}(I_{n_{t}}+\bar{X}_{t}(V_{t-1}+wI_{p})\bar{X}_{t}^{T})^{-1}({\bm{\psi}}_{t}-\bar{X}_{t}\mathbf{m}_{t-1}),
+where we initialize
+V
+0
+=
+v
+0
+⋅
+I
+p
+V_{0}=v_{0}\cdot I_{p}
+and
+𝐦
+0
+=
+𝟎
+\mathbf{m}_{0}=\mathbf{0}
+.
+It is worth noting
+that the
+V
+t
+V_{t}
+matrix allows the variance of
+𝜽
+t
+{\bm{\theta}}_{t}
+to vary from athlete to athlete as a function of sample size.
+Athletes with many observed scores in a particular rating period will have less posterior uncertainty around their latent ability parameter for that period.
+The observation variance parameter
+σ
+2
+\sigma^{2}
+, on the other hand, is driven by residual variation across all athletes, as demonstrated by the update equation for
+b
+t
+b_{t}
+.
+Finally, we note that under this framework, if an athlete does not compete in a given time period, the estimated mean of their latent ability parameter does not change.
+The variance of their latent ability parameter, however, still increases by
+w
+⋅
+σ
+2
+w\cdot\sigma^{2}
+to reflect the increased uncertainty about their current ability.
+To estimate
+w
+w
+and
+𝝀
+{\bm{\lambda}}
+for step 1, we use the marginal posterior density of
+w
+w
+and
+𝝀
+{\bm{\lambda}}
+where
+𝜽
+1
+:
+T
+{\bm{\theta}}_{1:T}
+and
+σ
+2
+\sigma^{2}
+are integrated out,
+which can be expressed in closed form (up to a normalizing constant) as:
+p
+⁡
+(
+w
+,
+𝝀
+CLOSE
+\displaystyle p(w,{\bm{\lambda}}
+∣
+𝐲
+1
+:
+T
+train
+)
+∝
+J
+(
+𝝍
+1
+:
+T
+train
+→
+𝐲
+1
+:
+T
+train
+)
+p
+(
+w
+)
+p
+(
+𝝀
+)
+∏
+t
+=
+1
+T
+train
+p
+(
+𝝍
+t
+∣
+𝝍
+1
+:
+t
+−
+1
+,
+w
+,
+𝝀
+)
+\displaystyle\mid\mathbf{y}_{1:T_{\text{train}}})\propto J({\bm{\psi}}_{1:T_{\text{train}}}\to\mathbf{y}_{1:T_{\text{train}}})p(w)p({\bm{\lambda}})\prod_{t=1}^{T_{\text{train}}}p({\bm{\psi}}_{t}\mid{\bm{\psi}}_{1:t-1},w,{\bm{\lambda}})
+for the priors on
+w
+w
+and
+𝝀
+{\bm{\lambda}}
+and posterior predictive densities:
+p
+(
+𝝍
+t
+∣
+𝝍
+1
+:
+t
+−
+1
+,
+w
+,
+𝝀
+)
+=
+t
+2
+​
+a
+t
+−
+1
+(
+𝝍
+t
+∣
+X
+¯
+t
+𝐦
+t
+−
+1
+,
+b
+t
+−
+1
+a
+t
+−
+1
+[
+I
+n
+t
++
+X
+¯
+t
+(
+V
+t
+−
+1
++
+w
+I
+p
+)
+X
+¯
+t
+T
+]
+)
+,
+p({\bm{\psi}}_{t}\mid{\bm{\psi}}_{1:t-1},w,{\bm{\lambda}})=t_{2a_{t-1}}({\bm{\psi}}_{t}\mid\bar{X}_{t}\mathbf{m}_{t-1},\frac{b_{t-1}}{a_{t-1}}[I_{n_{t}}+\bar{X}_{t}(V_{t-1}+wI_{p})\bar{X}_{t}^{T}]),
+where the
+V
+t
+V_{t}
+,
+𝐦
+t
+\mathbf{m}_{t}
+,
+a
+t
+a_{t}
+, and
+b
+t
+b_{t}
+values are all computed using the Kalman filter as described above.
+We can obtain samples of
+w
+w
+and
+𝝀
+{\bm{\lambda}}
+from
+p
+(
+w
+,
+𝝀
+∣
+𝐲
+1
+:
+T
+train
+)
+p(w,{\bm{\lambda}}\mid\mathbf{y}_{1:T_{\text{train}}})
+using standard Markov Chain Monte Carlo (MCMC) methods.
+We implement our model in Stan
+(
+Stan Development Team 2021
+)
+, which uses Hamiltonian Monte Carlo and a no-U-turn sampler
+(
+Hoffman et al. 2014
+)
+.
+In practice, we can instead take a maximum a posteriori (MAP) approach using standard optimization routines to greatly reduce the computational burden.
+Note that each evaluation of
+p
+(
+𝝍
+t
+∣
+𝝍
+1
+:
+t
+−
+1
+,
+w
+,
+𝝀
+)
+p({\bm{\psi}}_{t}\mid{\bm{\psi}}_{1:t-1},w,{\bm{\lambda}})
+for
+t
+=
+1
+,
+…
+,
+T
+train
+t=1,\dots,T_{\text{train}}
+in the marginal posterior density
+p
+(
+w
+,
+𝝀
+∣
+𝐲
+1
+:
+T
+train
+)
+p(w,{\bm{\lambda}}\mid\mathbf{y}_{1:T_{\text{train}}})
+requires a Kalman filter to be run on the full training dataset.
+MCMC sampling requires many such likelihood evaluations, so even though each Kalman filter run is relatively efficient, MCMC sampling ultimately requires significant computation.
+For most applications, however, we are only interested in estimating reasonable values for
+w
+w
+and
+𝝀
+{\bm{\lambda}}
+, not in conducting full Bayesian inference on them; as such, it often makes sense to simply find the posterior mode of
+p
+(
+w
+,
+𝝀
+∣
+𝐲
+1
+:
+T
+train
+)
+p(w,{\bm{\lambda}}\mid\mathbf{y}_{1:T_{\text{train}}})
+, which requires fewer evaluations of
+p
+(
+𝝍
+t
+∣
+𝝍
+1
+:
+t
+−
+1
+,
+w
+,
+𝝀
+)
+p({\bm{\psi}}_{t}\mid{\bm{\psi}}_{1:t-1},w,{\bm{\lambda}})
+for
+t
+=
+1
+,
+…
+,
+T
+train
+t=1,\dots,T_{\text{train}}
+.
+Importantly, integrating
+𝜽
+1
+:
+T
+train
+{\bm{\theta}}_{1:T_{\textbf{train}}}
+and
+σ
+2
+\sigma^{2}
+out of the posterior instead of maximizing
+p
+(
+w
+,
+𝝀
+,
+𝜽
+1
+:
+T
+train
+,
+σ
+2
+∣
+𝐲
+1
+:
+T
+train
+)
+p(w,{\bm{\lambda}},{\bm{\theta}}_{1:T_{\text{train}}},\sigma^{2}\mid\mathbf{y}_{1:T_{\text{train}}})
+with respect to each parameter produces a better-informed posterior mode of
+w
+w
+and
+𝝀
+{\bm{\lambda}}
+.
+Any nonlinear optimization algorithm can be used to obtain MAP estimates.
+For the constrained optimization (with a Dirichlet prior on
+𝝀
+{\bm{\lambda}}
+), we choose to use the Augmented Lagrangian Adaptive Barrier Minimization Algorithm
+(
+Varadhan 2015
+)
+.
+For the unconstrained optimization (with normal priors on the
+λ
+b
+\lambda_{b}
+parameters), we find that the Nelder-Mead algorithm
+(
+Nelder and Mead 1965
+)
+generally gives the most stable results, though the L-BFGS algorithm
+(
+Liu and Nocedal 1989
+)
+is much faster in practice.
+While these optimization-based approaches may theoretically get stuck in local modes, we find that in practice they produce reasonable and effective results.
+We implement the full model-fitting procedure in the
+dlmt
+package in
+R
+.
+Full implementation details for our model-fitting procedure can be found in Appendix
+A.1
+, and a simulation study confirming appropriate parameter recovery can be found in Appendix
+B
+.
+3.2
+Smoothing
+The Kalman filter equations produce estimates of the filtered latent ability parameter distributions
+p
+(
+𝜽
+t
+∣
+𝝍
+1
+:
+t
+,
+σ
+2
+,
+𝝀
+)
+p({\bm{\theta}}_{t}\mid{\bm{\psi}}_{1:t},\sigma^{2},{\bm{\lambda}})
+.
+In the second stage of the model-fitting procedure, we may also wish to calculate the smoothed latent ability parameter distributions
+p
+(
+𝜽
+t
+∣
+𝝍
+1
+:
+T
+,
+σ
+2
+,
+𝝀
+)
+p({\bm{\theta}}_{t}\mid{\bm{\psi}}_{1:T},\sigma^{2},{\bm{\lambda}})
+, where the full dataset informs each latent ability parameter estimate.
+The Rauch-Tung-Striebel smoother
+(
+Rauch, Tung and
+Striebel 1965
+)
+provides a simple algorithm for doing so.
+We can compute the smoother updates as:
+p
+(
+𝜽
+t
+∣
+𝝍
+1
+:
+T
+,
+σ
+2
+,
+𝝀
+)
+\displaystyle p({\bm{\theta}}_{t}\mid{\bm{\psi}}_{1:T},\sigma^{2},{\bm{\lambda}})
+=
+N
+⁡
+(
+𝜽
+t
+∣
+𝐦
+t
+s
+,
+σ
+2
+​
+V
+t
+s
+)
+\displaystyle=N({\bm{\theta}}_{t}\mid\mathbf{m}_{t}^{s},\sigma^{2}V_{t}^{s})
+for:
+𝐦
+t
+s
+\displaystyle\mathbf{m}_{t}^{s}
+=
+𝐦
+t
++
+S
+t
+​
+(
+𝐦
+t
++
+1
+s
+−
+𝐦
+t
+)
+\displaystyle=\mathbf{m}_{t}+S_{t}(\mathbf{m}_{t+1}^{s}-\mathbf{m}_{t})
+V
+t
+s
+\displaystyle V_{t}^{s}
+=
+V
+t
++
+S
+t
+​
+(
+V
+t
++
+1
+s
+−
+V
+t
+−
+w
+​
+I
+)
+​
+S
+t
+T
+\displaystyle=V_{t}+S_{t}(V_{t+1}^{s}-V_{t}-wI)S_{t}^{T}
+for scaling matrix
+S
+t
+=
+V
+t
+​
+(
+V
+t
++
+w
+​
+I
+)
+−
+1
+S_{t}=V_{t}(V_{t}+wI)^{-1}
+, where the
+𝐦
+t
+\mathbf{m}_{t}
+and
+V
+t
+V_{t}
+values are the original
+𝐦
+t
+\mathbf{m}_{t}
+and
+V
+t
+V_{t}
+values computed using the Kalman filter equations.
+The smoother updates are computed starting from rating period
+t
+=
+T
+t=T
+backwards to rating period
+t
+=
+1
+t=1
+, starting from
+𝐦
+T
+s
+=
+𝐦
+T
+\mathbf{m}_{T}^{s}=\mathbf{m}_{T}
+and
+V
+T
+s
+=
+V
+T
+V_{T}^{s}=V_{T}
+.
+4
+Empirical results
+4.1
+USOPC athletic data
+We illustrate our model on a variety of Olympic sport datasets provided to us by the US Olympic and Paralympic Committee.
+The data roughly span from 2004 to 2019 and include the score outcomes from selected national and international competitions.
+We briefly describe each dataset below:
+Biathlon
+The biathlon data come from the men’s 20km individual biathlon and the men’s
+4
+×
+7.5
+4\times 7.5
+km relay.
+In the 20km biathlon, athletes ski a cross-country track between four rifle-shooting rounds.
+In each shooting round, they shoot at five targets.
+Each miss incurs a penalty, which may be extra time added or a penalty skiing lap, depending on the particular race’s rules.
+The biathlon relay is similar, with two shooting rounds per relay leg.
+In both competitions, athletes compete to finish the race as quickly as possible, so we use each athlete’s total time (in seconds) as their score.
+Diving
+The diving data come from women’s 3m springboard.
+In diving competitions, athletes receive scores for each of their dives in a round.
+After each round of diving, only the top-scoring athletes may qualify for the next round.
+Only the scores from the final round of competition are recorded, so we use these scores as the game outcomes.
+Fencing
+The fencing data come from women’s sabre fencing.
+In each bout, the first athlete to score fifteen points wins.
+We record the score difference between the two athletes as the outcome of each game.
+Rugby
+The rugby data come from men’s rugby sevens.
+We record the score difference between the two teams as the outcome of each game.
+Table
+1
+summarizes the dimensions of the five datasets.
+We see a wide range in the numbers of athletes and events across the five sports.
+For example, the biathlon dataset contains over 700 individual athletes who compete in only one or two large multicompetitor events per rating period, with each event averaging over 100 competitors.
+At the other end of the spectrum, the rugby dataset contains only 90 national teams that compete in many head-to-head games across the 71 rating periods.
+In the individual-competitor sports (i.e., biathlon, diving, fencing), there is significant right skew in the number of events per athlete; most athletes in the data compete in only a couple of events, but some athletes compete in many events.
+The teams in biathlon relay and rugby tend to compete more consistently.
+For the multicompetitor sports of biathlon, biathlon relay, and diving, we divide the sixteen years of data into biannual (i.e., six-month-long) rating periods, resulting in roughly 30 rating periods.
+The head-to-head sports of fencing and rugby naturally have more games, so we divide them into quarterly (i.e., three-month-long) rating periods.
+3
+3
+3
+The fencing data starts in 2010 rather than 2004, so there are only 35 total rating periods.
+Choosing a shorter rating period allows more flexibility for athlete abilities to change, but reduces the number of games that can be used to infer abilities within the rating period.
+The results shown in this section are generally robust to the choice of rating period (see Appendix
+A.2
+for details).
+Sport
+Athletes
+T
+T
+Events
+Avg.
+Athletes
+Event
+\frac{\text{Athletes}}{\text{Event}}
+Min.
+Events
+Athlete
+\frac{\text{Events}}{\text{Athlete}}
+Med.
+Events
+Athlete
+\frac{\text{Events}}{\text{Athlete}}
+Max.
+Events
+Athlete
+\frac{\text{Events}}{\text{Athlete}}
+Biathlon
+703
+31
+56
+106
+1
+4
+49
+Biathlon Relay
+30
+31
+80
+18.6
+1
+60
+80
+Diving
+459
+32
+218
+15
+1
+3
+80
+Fencing
+489
+35
+5806
+2
+1
+14
+361
+Rugby
+90
+71
+6639
+2
+5
+57
+784
+Table 1:
+Summary table of sport dataset dimensions, containing number of athletes, number of rating periods, number of events, average number of athletes per event, and minimum/median/maximum number of events per athlete.
+4.2
+Model fitting and validation
+We fit our unconstrained model to the biathlon, biathlon relay, diving, fencing, and rugby datasets.
+We conduct full MCMC (four chains, 1000 burn-in iterations, 1000 samples) as well as MAP estimation using the Nelder-Mead and L-BFGS optimization algorithms.
+To assess the convergence of our MCMC estimates of the posterior distributions of
+w
+w
+and
+𝝀
+{\bm{\lambda}}
+, we check trace plots and the
+R
+^
+\hat{R}
+diagnostic for Hamiltonian Monte Carlo.
+Visual inspection of the trace plots does not suggest any evidence of non-convergence, and
+R
+^
+\hat{R}
+is nearly equal to one for all model parameters.
+The Nelder-Mead and L-BFGS algorithms converge under default convergence tolerances.
+Before examining the DLM results, we first confirm that the MAP estimates produce similar results as full MCMC.
+Figure
+3
+compares the posterior mean of the transformations learned using full MCMC to the transformations learned using MAP with the Nelder-Mead and L-BFGS algorithms.
+Fig 3:
+Comparison of algorithms for estimating
+𝝀
+{\bm{\lambda}}
+.
+Dotted line represents the identity transformation,
+y
+=
+x
+y=x
+.
+We see that the learned transformations are essentially the same across all three algorithms for all five sports.
+The learned
+w
+w
+parameters (not shown) are also very similar.
+As a result, using MAP methods rather than full MCMC does not significantly impact model performance, while it can lead to significant speedups.
+For example, for the biathlon dataset (~6000 observations from ~700 athletes over ~60 events), full MCMC took roughly 8 hours, but the Nelder-Mead optimization took only 30 minutes, and L-BFGS converged in less than one minute (all on a laptop with an Intel Core i7-8550U CPU).
+To simplify assessment, visualization, and discussion of our results, we will focus on the transformations estimated using full MCMC moving forward, though results are naturally similar for the transformations estimated using MAP.
+Next, we assess the fit of the DLM on our transformed datasets.
+To do so, we use the first two-third rating periods as a training set to learn an appropriate transformation and leave the last one-third rating periods as a test set.
+We then visualize
+(
+𝝍
+t
+−
+X
+¯
+t
+​
+𝐦
+t
+−
+1
+)
+({\bm{\psi}}_{t}-\bar{X}_{t}\mathbf{m}_{t-1})
+, i.e., the one-step prediction residuals, on the test set.
+If the learned transformation is effective, the residuals should be approximately normally distributed.
+Figure
+4
+shows Q-Q plots of standardized test-set residuals against standard normal quantiles.
+Fig 4:
+Q-Q plots of test-set residuals compared to standard normal quantiles
+While the residuals show some slight outliers at the extremes, they are largely normally distributed.
+The learned transformations thus appear to produce reasonable fits of the standard DLM to these datasets.
+4.3
+Case studies: biathlon and rugby
+We use the biathlon and rugby datasets to illustrate the results from our model.
+For both datasets, we learn an unconstrained monotone spline transformation using MCMC, transform the dataset, and run the Kalman filter on the transformed data.
+Figure
+5
+shows the smoothed biannual latent ability point estimates for the 25 biathletes with the most biathlons entered.
+In the biathlon, low race times are better, so negative ability parameters indicate strong athletes.
+Fig 5:
+Means from 2004-2018 of ability parameters of 25 biathletes with the most races entered, estimated using the Rauch-Tung-Striebel smoother (Section
+3.2
+). 90% central posterior interval shown for Ole Einar Bjørndalen and Martin Fourcade.
+Of the visualized latent ability trajectories, two stand out, and Figure
+5
+additionally shows their 90% central posterior probability intervals.
+The trajectory in blue belongs to the “King of Biathlon,” Ole Einar Bjørndalen, the winningest biathlete of all time at the Olympics, Biathlon World Championships, and the Biathlon World Cup tour.
+Though the scope of our dataset does not include the start of his career in the 1990s, the model clearly notes his dominance in the early 2000s.
+The trajectory in red belongs to Martin Fourcade, who began serious international competition in 2008 (hence the wide probability intervals prior to 2008) and proceeded to put together a record-breaking string of seven overall World Cup titles in a row from 2011 to 2018.
+Bjørndalen and Fourcade are the two names considered in discussions of the greatest male biathlete of all time.
+Our model notes Fourcade’s quick rise to prominence, projecting that he would begin to outperform Bjørndalen as early as 2009, though interestingly it never projects Fourcade’s latent ability to exceed Bjørndalen’s peak latent ability in 2005.
+Figure
+6
+shows the smoothed quarterly latent ability point estimates and corresponding 90% posterior intervals for the national rugby teams of Fiji and New Zealand, two countries popularly known for their strong rugby teams.
+Here, more positive latent ability estimates represent stronger teams.
+Fig 6:
+Means of ability parameters and 90% central posterior intervals shown for Fiji and New Zealand national teams, estimated using the Rauch-Tung-Striebel smoother (Section
+3.2
+)
+.
+While the two teams have similar estimated strengths during the time span of the data, we see that the model briefly estimates New Zealand to be significantly stronger in 2007 and 2013, and Fiji to be significantly stronger in 2015.
+4.4
+Model results
+Another result of interest is the monotone spline transformation learned by the DLM with transformations.
+Figure
+7
+displays 100 posterior transformation samples for each of the five sports, under the unconstrained optimization.
+Fig 7:
+Transformations learned by DLM with transformations
+The transformations generally reflect conventional wisdom about scores from these sports.
+For example, we sometimes see very slow race times in the biathlon and biathlon relay, which occur when an athlete makes a few shooting mistakes and takes penalties.
+We expect to see a negative feedback loop in the biathlon where taking penalties causes athletes to get more frustrated or tired from penalty laps, which causes more penalties.
+This means that extremely slow race times may not reflect extremely poor skill.
+The learned transformation shrinks the very slow race times to be less extreme, which intuitively helps to make them better reflect athlete skill in the normal DLM.
+On the other hand, the transformation learned for fencing magnifies extreme score differences.
+In a fencing bout, points are scored one-at-a-time; after each touch (i.e., point scored), the fencers reset to their starting positions.
+This makes very one-sided matches relatively rare, since even outmatched fencers can typically score some number of lucky points in a match to fifteen points.
+The transformation notes this and indicates that when a fencer wins by many points, they are much stronger than their opponent, even more so than the large score gap may suggest.
+Table
+2
+shows the posterior means of the
+w
+\sqrt{w}
+and
+σ
+\sigma
+parameters for each of the five sports.
+Recall that
+σ
+2
+\sigma^{2}
+represents the observation variance and
+w
+w
+represents the ratio of the innovation variance to the observation variance, so
+σ
+\sigma
+and
+σ
+​
+w
+\sigma\sqrt{w}
+would represent the observation and innovation standard deviations, respectively.
+For example, in the biathlon data, the model estimates that the innovation standard deviation is approximately 28% as large as the observation standard deviation of 98.5.
+We make two notes about the
+w
+\sqrt{w}
+values estimated in these datasets.
+First, we see that
+w
+<
+1
+\sqrt{w}<1
+in all five datasets, i.e., that the athletes’ period-to-period variability in their latent abilities is generally much smaller than the game-to-game variability in their scores.
+The competitors in our datasets are all professional-level athletes.
+As such, while they may still improve or worsen over time, their game scores are largely driven by how well they perform in each particular game rather than by major changes to their skill level.
+Secondly, we note that the
+w
+\sqrt{w}
+values vary across sports.
+In addition to capturing period-to-period variability, the value of
+w
+\sqrt{w}
+also reflects the extent to which skill, rather than random chance, appears to drive game results;
+for example, a game with results driven almost entirely by skill would have minimal game-to-game variation, i.e.,
+σ
+≈
+0
+\sigma\approx 0
+, so any period-to-period variation in athlete abilities would imply a large value of
+w
+\sqrt{w}
+.
+The results in Table
+2
+therefore suggest that of the five sporting events, the results from diving competitions may be the most driven by skill.
+On the other hand, the random chance associated with particular performances appears to play a significant role in the outcomes of fencing bouts, which has been noted by other sources as well (e.g.,
+Zappalà et al. 2022
+).
+Sport
+w
+\sqrt{w}
+σ
+\sigma
+Biathlon
+0.28
+98.5
+Biathlon relay
+0.22
+71.6
+Diving
+0.40
+49.7
+Fencing
+0.06
+3.2
+Rugby
+0.18
+14.5
+Table 2:
+Posterior means of variance parameters.
+Note that the
+σ
+\sigma
+parameters are on the scale of the transformed data rather than the original scale of the data.
+4.5
+Comparing rating methods
+To evaluate the DLM with transformations, we compared the accuracy of its predictions to predictions made by other models for multi-competitor and head-to-head athlete rating.
+For multi-competitor sports, we compared the DLM with transformations (LM-T) to the DLM without transformations (LM) and the dynamic rank-order logit model (ROL) from
+Glickman and
+Hennessy 2015
+.
+For head-to-head sports, we compare to the Glicko rating system
+(
+Glickman 1999
+, GLO;)
+.
+We use the first two-third rating periods in each dataset as a training set to tune the model hyperparameters
+w
+w
+and
+𝝀
+{\bm{\lambda}}
+, fit the model on the full dataset, and finally evaluate its predictions for the test set (i.e., the last one-third rating periods).
+For multi-competitor games, we evaluate predictions using the Spearman correlations between the observed and predicted athlete rankings in each game.
+This approach was taken in
+Glickman and
+Hennessy 2015
+to evaluate predictability on a test set.
+We summarize these game correlations
+ρ
+t
+​
+g
+\rho_{tg}
+over the test set using a game-size-weighted average
+(
+Glickman and
+Hennessy 2015
+)
+:
+ρ
+=
+∑
+t
+=
+⌈
+2
+3
+​
+T
+⌉
+T
+∑
+g
+=
+1
+g
+t
+(
+n
+t
+​
+g
+−
+1
+)
+​
+ρ
+g
+​
+t
+∑
+t
+=
+⌈
+2
+3
+​
+T
+⌉
+T
+∑
+g
+=
+1
+g
+t
+(
+n
+t
+​
+g
+−
+1
+)
+.
+\rho=\frac{\sum_{t=\lceil\frac{2}{3}T\rceil}^{T}\sum_{g=1}^{g_{t}}(n_{tg}-1)\rho_{gt}}{\sum_{t=\lceil\frac{2}{3}T\rceil}^{T}\sum_{g=1}^{g_{t}}(n_{tg}-1)}.
+(6)
+Note that we limit ourselves to using rank-based metrics to facilitate comparison with the ROL model, which predicts athlete ranking probabilities rather than scores.
+For head-to-head games, we evaluate predictions using the average accuracy of winner predictions in the test set.
+Tables
+3
+and
+4
+show the weighted Spearman correlation (Equation
+6
+) of the ranking predictions for the multi-competitor sports and the accuracy of winner/loser predictions for the head-to-head sports.
+Model
+Sport
+LM-T
+LM
+ROL
+Biathlon
+.64
+.61
+.61
+Biathlon Relay
+.77
+.75
+.75
+Diving
+.64
+.62
+.61
+Table 3:
+Weighted spearman correlations of predictions for the 18 biathlon events, 27 biathlon relay events, and 83 diving events in the test sets.
+Model
+Sport
+LM-T
+LM
+GLO
+Fencing
+.70
+.67
+.68
+Rugby
+.71
+.72
+.70
+Table 4:
+Accuracy of winner predictions  across the 1,785 fencing events and 2,503 rugby events in the test set.
+Across the five datasets, we see some evidence that the LM-T model outperforms the other models in terms of predictive performance.
+While it is difficult to generally evaluate the relative empirical performance of the LM-T model with only five datasets, we see that it improves predictive accuracy across nearly all of the datasets.
+The only exception is the rugby dataset, where the LM-T model essentially learns an identity transformation, so we would not expect it to outperform the LM model.
+The results of athletic competitions are generally challenging to predict; small improvements in predictive performance, such as those demonstrated above, can therefore be fairly valuable for generating a competitive edge.
+5
+Discussion
+In this paper, we introduce a novel model to rate athletes who compete in head-to-head and multi-competitor sports with score outcomes.
+Using observed scores rather than rankings to rate athletes provides additional information, which generally improves predictions in the settings we consider.
+We can fit the model either using MCMC or an MAP approach, both which utilize the computational efficiency of the Kalman filter to learn an appropriate transformation to apply to the score outcomes.
+The full model-fitting procedure is implemented in the
+dlmt
+package in
+R
+.
+The simple normal DLM at the core of our model makes a variety of extensions possible.
+For example, we choose to use a normal random walk as the innovation process for athletes’ latent abilities, which may easily be replaced by alternative innovation processes, such as a mean-preserving random walk
+(
+Glickman and
+Hennessy 2015
+)
+or an autoregressive process
+(
+Glickman and Stern 1998
+)
+.
+Also, external covariates related to athletes (e.g., height, age, experience), events (e.g., weather conditions), and/or other factors may be assigned fixed or time-varying coefficients and straightforwardly incorporated into the normal likelihood and innovation equations.
+If transforming outcomes to normality is infeasible in a particular setting, the normal likelihood could be also extended to the likelihood of a generalized linear model
+(
+West, Harrison and
+Migon 1985
+)
+.
+The model introduced in this paper assumes a constant observation variance parameter
+σ
+2
+\sigma^{2}
+for computational efficiency and conceptual simplicity.
+The
+V
+t
+V_{t}
+matrices enable the variances of athletes’ latent ability parameters to differ based on the number of games they have played, reflecting uncertainty in the estimation of their latent abilities.
+They do not, however, allow two athletes who have played the same number of games in each rating period to have different variances, which would reflect fundamental differences in performance variation across athletes.
+Modeling this type of heteroskedasticity across athletes may be useful, particularly in data-rich settings (e.g., settings where most athletes play many games) where it would be feasible to estimate athlete-specific variance parameters.
+Extending the model to learn athlete-specific heteroskedasticity parameters while preserving efficient closed-form Kalman filter updates is beyond the scope of our work and a direction for future research.
+While we focus on athlete rating, our model may be used for a wide range of different problems.
+Dynamic linear models are very popular for analyzing time series data in fields ranging from engineering and finance to health and ecology.
+In many of these applications, the normal likelihood in a standard normal DLM may be misspecified, which can be addressed by learning an order-preserving monotone transformation using the model introduced in this paper.
+The problem of athlete rating has interested organizations and individuals alike for many years.
+Appropriately using the information contained in game scores is an important but challenging task, due to the unusual features of score information in different games.
+This paper provides a general method to address these challenges, which can be applied to a wide range of multi-competitor and head-to-head games.
+Acknowledgements
+We thank Dan Webb at the U.S. Olympic and Paralympic Committee for providing the data for this work.
+We also thank our reviewers for their helpful comments.
+This research was supported in part by a research contract from the U.S. Olympic and Paralympic Committee, and by the National Science Foundation Graduate Research Fellowship Program under Grant No. DGE1745303.
+References
+Atkinson and
+Shephard (1996)
+[author]
+Atkinson, Anthony CurtisA. C.  and Shephard, NeilN.
+(1996).
+Deletion diagnostics for transformations of time series.
+Journal of forecasting
+15
+1–17.
+Auger-Méthé
+et al.
+(2021)
+[author]
+Auger-Méthé, MarieM.,
+Newman, KenK.,
+Cole, DianaD.,
+Empacher, FannyF.,
+Gryba, RowennaR.,
+King, Aaron AA. A.,
+Leos-Barajas, VianneyV.,
+Flemming, JMJ.,
+Nielsen, AndersA.,
+Petris, GiovanniG.  and Thomas, LenL.
+(2021).
+A guide to state–space modeling of ecological time series.
+Ecological Monographs
+4
+1-32.
+Baker and McHale (2015a)
+[author]
+Baker, Rose DR. D.  and McHale, Ian GI. G.
+(2015a).
+Deterministic evolution of strength in multiple comparisons models: who
+is the greatest golfer?
+Scandinavian Journal of Statistics
+42
+180–196.
+Baker and McHale (2015b)
+[author]
+Baker, Rose DR. D.  and McHale, Ian GI. G.
+(2015b).
+Time varying ratings in association football: the all-time greatest
+team is…
+Journal of the Royal Statistical Society. Series A (Statistics in
+Society)
+481–492.
+Caron and Teh (2012)
+[author]
+Caron, FrançoisF.  and Teh, Yee WhyeY. W.
+(2012).
+Bayesian nonparametric models for ranked data.
+arXiv preprint arXiv:1211.4321.
+Cattelan, Varin and
+Firth (2013)
+[author]
+Cattelan, ManuelaM.,
+Varin, CristianoC.  and Firth, DavidD.
+(2013).
+Dynamic Bradley–Terry modelling of sports tournaments.
+Journal of the Royal Statistical Society: Series C (Applied
+Statistics)
+62
+135–150.
+Gelman
+et al.
+(1995)
+[author]
+Gelman, AndrewA.,
+Carlin, John BJ. B.,
+Stern, Hal SH. S.  and Rubin, Donald BD. B.
+(1995).
+Bayesian data analysis.
+Chapman and Hall/CRC.
+Glickman (1999)
+[author]
+Glickman, Mark EM. E.
+(1999).
+Parameter estimation in large dynamic paired comparison experiments.
+Journal of the Royal Statistical Society: Series C (Applied
+Statistics)
+48
+377–394.
+Glickman (2001)
+[author]
+Glickman, Mark EM. E.
+(2001).
+Dynamic paired comparison models with stochastic variances.
+Journal of Applied Statistics
+28
+673–689.
+Glickman and
+Hennessy (2015)
+[author]
+Glickman, Mark EM. E.  and Hennessy, JonathanJ.
+(2015).
+A stochastic rank ordered logit model for rating multi-competitor games
+and sports.
+Journal of Quantitative Analysis in Sports
+11
+131–144.
+Glickman and Stern (1998)
+[author]
+Glickman, Mark EM. E.  and Stern, Hal SH. S.
+(1998).
+A state-space model for National Football League scores.
+Journal of the American Statistical Association
+93
+25–35.
+Harville (1977)
+[author]
+Harville, DavidD.
+(1977).
+The use of linear-model methodology to rate high school or college
+football teams.
+Journal of the American Statistical Association
+72
+278–289.
+Harville (2003)
+[author]
+Harville, David AD. A.
+(2003).
+The selection or seeding of college basketball or football teams for
+postseason competition.
+Journal of the American Statistical Association
+98
+17–27.
+Herbrich, Minka and
+Graepel (2006)
+Herbrich, R.
+,
+Minka, T.
+and
+Graepel, T.
+(2006).
+Trueskill™: A Bayesian skill rating system.
+In
+Proceedings of the 19th international conference on neural
+information processing systems
+569–576.
+Hoffman
+et al.
+(2014)
+[author]
+Hoffman, Matthew DM. D.,
+Gelman, AndrewA. et al.
+(2014).
+The No-U-Turn sampler: adaptively setting path lengths in Hamiltonian
+Monte Carlo.
+J. Mach. Learn. Res.
+15
+1593–1623.
+Hotz-Behofsits, Huber and
+Zörner (2018)
+[author]
+Hotz-Behofsits, ChristianC.,
+Huber, FlorianF.  and Zörner, Thomas OttoT. O.
+(2018).
+Predicting crypto-currencies using sparse non-Gaussian state space
+models.
+Journal of Forecasting
+37
+627–640.
+Ingram (2019)
+[author]
+Ingram, MartinM.
+(2019).
+A point-based Bayesian hierarchical model to predict the outcome of
+tennis matches.
+Journal of Quantitative Analysis in Sports
+15
+313–325.
+James
+et al.
+(2013)
+[author]
+James, GarethG.,
+Witten, DanielaD.,
+Hastie, TrevorT.  and Tibshirani, RobertR.
+(2013).
+An introduction to statistical learning
+112.
+Springer.
+King and Kowal (2021)
+[author]
+King, BrianB.  and Kowal, Daniel RD. R.
+(2021).
+Warped Dynamic Linear Models for Time Series of Counts.
+arXiv preprint arXiv:2110.14790.
+Kovalchik (2020)
+[author]
+Kovalchik, StephanieS.
+(2020).
+Extension of the Elo rating system to margin of victory.
+International Journal of Forecasting
+36
+1329–1341.
+Kowal and
+Canale (2020)
+[author]
+Kowal, Daniel RD. R.  and Canale, AntonioA.
+(2020).
+Simultaneous transformation and rounding (STAR) models for
+integer-valued data.
+Electronic Journal of Statistics
+14
+1744–1772.
+Lenk and Tsai (1990)
+[author]
+Lenk, Peter JP. J.  and Tsai, Chih-LingC.-L.
+(1990).
+Transformations and dynamic linear models.
+Journal of Forecasting
+9
+219–232.
+Liu and Nocedal (1989)
+[author]
+Liu, Dong CD. C.  and Nocedal, JorgeJ.
+(1989).
+On the limited memory BFGS method for large scale optimization.
+Mathematical programming
+45
+503–528.
+Lopez, Matthews and
+Baumer (2018)
+[author]
+Lopez, Michael JM. J.,
+Matthews, Gregory JG. J.  and Baumer, Benjamin SB. S.
+(2018).
+How often does the best team win? A unified approach to understanding
+randomness in North American sport.
+The Annals of Applied Statistics
+12
+2483–2516.
+McKeough (2020)
+[author]
+McKeough, KathrynK.
+(2020).
+A Tale of Two Multi-Phase Inference Applications
+PhD thesis, Harvard University.
+Nelder and Mead (1965)
+[author]
+Nelder, John AJ. A.  and Mead, RogerR.
+(1965).
+A simplex method for function minimization.
+The computer journal
+7
+308–313.
+Plackett (1975)
+[author]
+Plackett, Robin LR. L.
+(1975).
+The analysis of permutations.
+Journal of the Royal Statistical Society: Series C (Applied
+Statistics)
+24
+193–202.
+Prado and West (2010)
+[author]
+Prado, RaquelR.  and West, MikeM.
+(2010).
+Time series: modeling, computation, and inference.
+Chapman and Hall/CRC.
+Ramsay (1988)
+[author]
+Ramsay, J. O.J. O.
+(1988).
+Monotone Regression Splines in Action.
+Statistical Science
+3
+425-441.
+10.1214/SS/1177012761
+Rauch, Tung and
+Striebel (1965)
+[author]
+Rauch, Herbert EH. E.,
+Tung, FF.  and Striebel, Charlotte TC. T.
+(1965).
+Maximum likelihood estimates of linear dynamic systems.
+AIAA journal
+3
+1445–1450.
+Stan Development Team (2021)
+[author]
+Stan Development Team, 
+(2021).
+RStan: the R interface to Stan.
+R package version 2.21.3.
+Varadhan (2015)
+Varadhan, R.
+(2015).
+alabama: Constrained Nonlinear Optimization
+R package version 2015.3-1.
+Wan and Van
+Der Merwe (2000)
+Wan, E. A.
+and
+Van
+Der Merwe, R.
+(2000).
+The unscented Kalman filter for nonlinear estimation.
+In
+Proceedings of the IEEE 2000 Adaptive Systems for Signal
+Processing, Communications, and Control Symposium (Cat. No. 00EX373)
+153–158.
+Ieee.
+Wang and Yan (2021)
+[author]
+Wang, WenjieW.  and Yan, JunJ.
+(2021).
+Shape-Restricted Regression Splines with R Package splines2.
+Journal of Data Science
+19
+498–517.
+10.6339/21-JDS1020
+Wang
+et al.
+(2019)
+[author]
+Wang, HaoH.,
+Zhang, Yi-MingY.-M.,
+Mao, Jian-XiaoJ.-X.,
+Wan, Hua-PingH.-P.,
+Tao, Tian-YouT.-Y.  and Zhu, Qing-XinQ.-X.
+(2019).
+Modeling and forecasting of temperature-induced strain of a long-span
+bridge using an improved Bayesian dynamic linear model.
+Engineering Structures
+192
+220–232.
+West, Harrison and
+Migon (1985)
+[author]
+West, MikeM.,
+Harrison, P JeffP. J.  and Migon, Helio SH. S.
+(1985).
+Dynamic generalized linear models and Bayesian forecasting.
+Journal of the American Statistical Association
+80
+73–83.
+Xia
+et al.
+(2000)
+[author]
+Xia, Y.Y.,
+Tong, H.H.,
+Li, W. K.W. K.  and Zhu, L. X.L. X.
+(2000).
+On the estimation of an instantaneous transformation for time series.
+Journal of the Royal Statistical Society: Series B (Statistical
+Methodology)
+62
+383-397.
+10.1111/1467-9868.00238
+Yeo and Johnson (2000)
+[author]
+Yeo, InKwonI.  and Johnson, Richard AR. A.
+(2000).
+A new family of power transformations to improve normality or
+symmetry.
+Biometrika
+87
+954-959.
+Zappalà
+et al.
+(2022)
+[author]
+Zappalà, ChiaraC.,
+Pluchino, AlessandroA.,
+Rapisarda, AndreaA.,
+Biondo, Alessio EmanueleA. E.  and Sobkowicz, PawelP.
+(2022).
+On the role of chance in fencing tournaments: An agent-based approach.
+Plos one
+17
+e0267541.
+Zhou and Ji (2020)
+[author]
+Zhou, TianjianT.  and Ji, YuanY.
+(2020).
+Semiparametric Bayesian inference for the transmission dynamics of
+COVID-19 with a state-space model.
+Contemporary Clinical Trials
+97
+106146.
+A
+Model implementation details
+A.1
+Practical implementation details
+We make a few minor changes to the model presented in section
+3
+.
+We clear the off-diagonal elements of the
+V
+t
+V_{t}
+matrix between rating periods in the Kalman filter equations.
+This keeps the matrix operations relatively sparse, which speeds up computation time.
+The correlations between players induced by playing in the same games tend to be weak in any case, so this change does not hurt model performance.
+We also cap the diagonal entries of
+V
+t
+V_{t}
+at
+v
+0
+v_{0}
+, assuming that we cannot be less certain about a player’s ability than we are before seeing any data.
+Appendix
+B
+contains a simulation study confirming that these approximations do not significantly hurt model performance.
+In this paper, we consider splines of degree three, with three knots placed at the
+25
+th
+25^{\text{th}}
+,
+50
+th
+50^{\text{th}}
+, and
+75
+th
+75^{\text{th}}
+percentiles of the raw centered data.
+In experiments (not shown here) with the datasets analyzed in this paper, we found that three knots generally provided sufficient flexibility such that the transformations estimated with four or more knots did not produce substantially different transformations from those estimated with three knots.
+Increasing the knots past six typically led to unstable optimization results and unusual transformations with poor predictive power for our datasets.
+We suggest trying a few different placements of three knots to determine sensitivity to knot placement.
+In particular, some applications may require significant flexibility in the tail regions of the transformation, so more knots may need to be placed at extreme quantiles.
+Knot choices may be evaluated either by visual inspection of the learned transformation for unusual or unexpected nonlinearities, or simply by evaluation of the resulting predictions on a test set using a scale-free outcome metric.
+We implement the monotone spline transformations using the
+splines2
+package in
+R
+(
+Wang and Yan 2021
+)
+.
+We implement the Bayesian model using the
+rstan
+package in
+R
+(
+Stan Development Team 2021
+)
+, which uses Hamiltonian Monte Carlo to generate posterior samples.
+For MAP estimates, we primarily use the Nelder-Mead algorithm
+(
+Nelder and Mead 1965
+)
+as implemented in the
+optim()
+function in
+R
+.
+The L-BFGS algorithm
+(
+Liu and Nocedal 1989
+)
+is implemented via the
+optimizing()
+function in the
+rstan
+package.
+A.2
+Sensitivity to choice of rating period
+The choice of rating period length reflects a bias-variance tradeoff; as rating period length increases, we subject our estimates to more potential bias, but decrease their variance.
+Using different rating periods has minimal effects on our models for the datasets we consider in the paper, as we show at the end of this Appendix.
+Nonetheless, we will first show a toy example to illustrate how the bias-variance tradeoff generally occurs.
+Figure
+8
+plots three examples of a single athlete’s performances across six games.
+The athlete’s latent ability is plotted as the red curve, and the observed performances are plotted as points.
+Fig 8:
+Toy example illustrating bias-variance tradeoff in rating period length.
+Consider the problem of predicting the athlete’s score
+y
+y
+in game seven.
+As analysts, we can divide the six previous games into any number of rating periods.
+Our best estimate of
+y
+y
+would then be the inferred distribution of
+θ
+\theta
+after game six.
+The lowest-variance estimate of
+θ
+\theta
+would come from grouping all six games into a single rating period, since doing so avoids adding any between-rating-period innovation variance into our estimate of
+θ
+\theta
+.
+Such an estimate would be ideal for Example 1, where the athlete’s latent ability remains constant over time.
+Importantly, using scores from games 1-5 does not incur any bias in Example 1, since these scores are all generated by the same latent ability parameter as is game six.
+The lowest-bias estimate of
+θ
+\theta
+, on the other hand, comes from assigning each game its own rating period.
+Doing so effectively upweights more recent outcomes, which tend to be the most predictive of future outcomes.
+This approach would provide the best results in Example 2, where the athlete’s latent ability changes after every game according to a normal random walk.
+Adding innovation variance after each game allows the estimated latent ability to strongly adapt to each new data point
+In Example 2, this means that the final latent ability estimate will be closer to the result from game six, and won’t be biased as much by the observed outcomes from games 1-5, which were generated under different latent ability parameters.
+In practice, we recommend navigating this bias-variance tradeoff by choosing rating periods that reflect domain knowledge about how frequently athletes’ abilities may experience significant changes.
+To predict an athlete’s score in a new game, the analyst would ideally rely most heavily on all prior observations generated under the athlete’s most recent latent ability parameter.
+In Example 3, this would be achieved by using three-game-long rating periods; using shorter rating periods would reduce the precision of the final latent ability estimate, and using longer rating periods would introduce additional bias.
+While analysts do not know how frequently athletes’ latent ability parameters experience significant changes, the seasonal structure of most sports provides a reasonable framework for deciding rating periods.
+For example, athletes’ abilities will likely change between seasons due to offseason training.
+Longer sporting seasons may exhibit a “play oneself into shape” effect, which would require shorter rating periods to account for significant within-season ability changes.
+To study the sensitivity of our results to choice of rating period, we run our models on each sport using a variety of reasonable rating periods.
+For biathlon, biathlon relay, and diving, which generally have fewer events, we consider annual and biannual rating periods.
+We consider annual, biannual, and quarterly rating periods for fencing, and we consider annual, biannual, quarterly, bimonthly, and monthly rating periods for rugby.
+We keep the same events in the test set regardless of the choice of rating period, and estimate
+w
+w
+and
+𝝀
+{\bm{\lambda}}
+on the training set using MAP (so results here differ slightly from the results shown the main text).
+The primary results of our analyses remain relatively constant across different choices of rating period.
+Figure
+9
+shows the transformations learned under the different rating period lengths.
+We see that using different rating periods has very little effect on the optimal transformations for the datasets we consider.
+As a result, using different rating periods also has little effect on the posterior means of the observation standard deviation, as seen in Table
+5
+.
+The estimated innovation standard deviation
+w
+\sqrt{w}
+, on the other hand, naturally decreases as the rating period grows shorter, since there is less time between rating periods for athletes’ latent abilities to change.
+Fig 9:
+Learned transformations for each sport, using different rating period lengths.
+Rating Period
+Sport
+Annual
+Biannual
+Quarterly
+Bimonthly
+Monthly
+Biathlon
+98.0
+96.7
+–
+–
+–
+Biathlon Relay
+69.1
+69.5
+–
+–
+–
+Diving
+48.6
+49.0
+–
+–
+–
+Fencing
+3.11
+3.11
+3.11
+–
+–
+Rugby
+14.4
+14.4
+14.2
+13.4
+14.3
+Table 5:
+Posterior means of
+σ
+\sigma
+parameter, using different rating periods.
+Rating Period
+Sport
+Annual
+Biannual
+Quarterly
+Bimonthly
+Monthly
+Biathlon
+.39
+.28
+–
+–
+–
+Biathlon Relay
+.30
+.21
+–
+–
+–
+Diving
+.43
+.39
+–
+–
+–
+Fencing
+.13
+.10
+.08
+–
+–
+Rugby
+.23
+.17
+.17
+.15
+.10
+Table 6:
+MAP estimates of
+w
+w
+parameter, using different rating periods.
+Though rating period has little overall effect, we see some evidence of the bias-variance tradeoff as we shorten the rating period.
+Tables
+7
+and
+8
+show performance of the models on the test set under different rating periods.
+As the rating periods decrease in length, the models’ predictions experience slightly less bias, which in turn results in slight improvements in predictive performance.
+On the other hand, shorter rating periods lead to slightly greater variance in the estimates of athletes’
+θ
+\theta
+parameters.
+Recall that the posterior variance of
+𝜽
+t
+{\bm{\theta}}_{t}
+equals
+σ
+2
+​
+V
+t
+\sigma^{2}V_{t}
+after each rating period
+t
+t
+, so the diagonal entries of
+V
+t
+V_{t}
+indicate how the variance in each athlete’s
+θ
+t
+\theta_{t}
+parameter relates to
+σ
+2
+\sigma^{2}
+.
+To compare athlete variances across different choices of rating period, we record the diagonal entries of
+V
+t
+V_{t}
+for
+t
+=
+1
+,
+…
+,
+T
+t=1,\dots,T
+that correspond to the end of each annual rating period.
+4
+4
+4
+E.g., for a biannual rating period, we would record the diagonal entries of
+V
+2
+,
+V
+4
+,
+…
+V_{2},V_{4},\dots
+, which correspond to the ends of annual rating periods
+1
+,
+2
+,
+…
+1,2,\dots
+.
+We then average these values over all athletes, over all rating periods to produce an average value for the entries in the
+V
+t
+V_{t}
+matrices given a choice of rating period.
+By definition, shorter rating periods always result in larger diagonal entries in
+V
+t
+V_{t}
+at the end of each annual rating period, since they add more innovation variance while maintaining the same total number of events in the annual rating period.
+As Table
+9
+shows, however, the average increases in standard deviation are generally quite small across all of the datasets we consider.
+For example, in the biathlon relay, changing from annual to biannual rating periods only increases the average
+V
+t
+\sqrt{V_{t}}
+value by about
+0.02
+​
+σ
+0.02\sigma
+.
+Of course, depending on their pattern of games played, particular athletes may see smaller or larger increases in the standard deviation of their
+θ
+t
+\theta_{t}
+estimates as the timing window changes;
+for example, the largest individual change for an athlete in the diving dataset is 0.52
+σ
+\sigma
+.
+Rating Period
+Sport
+Annual
+Biannual
+Biathlon
+.63
+.64
+Biathlon Relay
+.77
+.78
+Diving
+.61
+.64
+Table 7:
+Weighted spearman correlations of predictions for events in test set, using different rating periods.
+Rating Period
+Sport
+Annual
+Biannual
+Quarterly
+Bimonthly
+Monthly
+Fencing
+.70
+.70
+.71
+–
+–
+Rugby
+.70
+.70
+.71
+.71
+.71
+Table 8:
+Accuracy of predictions for events in test set, using different rating periods.
+Rating Period
+Sport
+Annual
+Biannual
+Quarterly
+Bimonthly
+Monthly
+Biathlon
+1.43
+1.44
+–
+–
+–
+Biathlon Relay
+0.82
+0.84
+–
+–
+–
+Diving
+1.57
+1.68
+–
+–
+–
+Fencing
+1.05
+1.07
+1.07
+–
+–
+Rugby
+0.97
+0.97
+1.06
+1.06
+1.06
+Table 9:
+Average value of diagonal entry of
+V
+t
+\sqrt{V_{t}}
+, averaged across athletes and rating periods, using different rating periods.
+Overall, while the choice of a rating period theoretically reflects an important bias-variance tradeoff, we found that any reasonable choice led to similar results for the datasets we considered.
+Nonetheless, we recommend using the shortest possible rating period if the research goal is to maximize predictive accuracy, and to use slightly longer rating periods if the research goal is to conduct principled inference on the
+𝜽
+t
+{\bm{\theta}}_{t}
+parameters.
+B
+Simulation study
+In this paper, we make a number of approximations, as described in Appendix
+A.1
+.
+To confirm that these approximations do not significantly hurt performance, we validate our method using a simulation study.
+In particular, we evaluate how well the LM-T model can recover the true data-generating parameters
+σ
+2
+,
+w
+\sigma^{2},w
+, and
+𝝀
+{\bm{\lambda}}
+.
+We simulate data according to the data-generating process implied by the model:
+1.
+Set data size and data-generating parameters
+: pick values for
+p
+p
+,
+T
+T
+,
+{
+g
+t
+}
+\{g_{t}\}
+, and
+{
+n
+t
+​
+g
+}
+\{n_{tg}\}
+; also, pick true values for
+v
+0
+v_{0}
+,
+σ
+2
+\sigma^{2}
+,
+w
+w
+, and
+𝝀
+{\bm{\lambda}}
+for a true transformation
+τ
+𝝀
+​
+(
+⋅
+)
+\tau_{\bm{\lambda}}(\cdot)
+.
+2.
+Generate athlete latent abilities
+: draw
+𝜽
+1
+∼
+N
+⁡
+(
+0
+,
+σ
+2
+​
+v
+0
+)
+{\bm{\theta}}_{1}\sim N(0,\sigma^{2}v_{0})
+and
+𝜽
+t
+∼
+N
+⁡
+(
+𝜽
+t
+−
+1
+,
+σ
+2
+​
+w
+)
+{\bm{\theta}}_{t}\sim N({\bm{\theta}}_{t-1},\sigma^{2}w)
+for
+t
+=
+1
+,
+…
+,
+T
+t=1,\dots,T
+.
+3.
+Generate untransformed scores
+: for each game
+g
+g
+in rating period
+t
+t
+, randomly sample
+n
+t
+​
+g
+n_{tg}
+athletes and generate untransformed scores as:
+𝝍
+t
+​
+g
+∼
+N
+⁡
+(
+𝜽
+t
+​
+g
+−
+𝜽
+¯
+g
+,
+σ
+2
+)
+{\bm{\psi}}_{tg}\sim N({\bm{\theta}}_{tg}-\bar{{\bm{\theta}}}_{g},\sigma^{2})
+.
+4.
+Generate observed scores
+: compute
+𝐲
+t
+​
+g
+=
+t
+𝝀
+−
+1
+​
+(
+𝝍
+t
+​
+g
+)
+\mathbf{y}_{tg}=t^{-1}_{\bm{\lambda}}({\bm{\psi}}_{tg})
+.
+Note that while the simulated untransformed scores are not explicitly game-centered, their mean is zero within each game.
+To evaluate parameter recovery and compare model predictions, we simulate 50 datasets for each of a variety of data-generating parameters.
+We fix
+p
+=
+100
+p=100
+and
+T
+=
+20
+T=20
+, and consider
+n
+t
+​
+g
+=
+n_{tg}=
+2, 10, and 50 to correspond to head-to-head games and small/large multi-competitor games.
+For each setting, we set
+g
+t
+g_{t}
+such that
+n
+t
+​
+g
+∗
+g
+t
+n_{tg}*g_{t}
+equals a range of values from 20 to 250 to simulate low to high data environments.
+Finally, we fix
+v
+0
+=
+10
+v_{0}=10
+,
+σ
+2
+=
+100
+\sigma^{2}=100
+, and
+w
+=
+0.5
+w=0.5
+, and we consider data-generating Yeo-Johnson transformations (
+Yeo and Johnson 2000
+) with
+λ
+=
+0.7
+,
+1
+,
+1.3
+\lambda=0.7,1,1.3
+to see how well the DLM with transformations can recover transformations that shrink, preserve, and stretch the data.
+After simulating the multi-competitor data, we run the LM-T model.
+We record its estimate of the hyperparameters
+(
+w
+,
+𝝀
+)
+(w,{\bm{\lambda}})
+and the posterior mean of
+σ
+2
+\sigma^{2}
+.
+B.1
+Simulation results: parameter recovery
+In this section, we verify that the LM-T model can accurately recover the data-generating parameters in multi-competitor games.
+First, we verify that the LM-T model can accurately recover the
+λ
+\lambda
+parameter for the data-generating Yeo-Johnson transformation.
+Figure
+10
+plots the estimated value of
+λ
+\lambda
+against the number of multi-competitor games per rating period, aggregated across 50 simulations in each setting.
+The dotted lines represent the true data-generating value of
+λ
+\lambda
+.
+Fig 10:
+LM-T model recovery of
+λ
+\lambda
+. Dotted line represents the true data-generating
+λ
+\lambda
+parameter.
+We see that
+λ
+\lambda
+recovery is generally extremely accurate; even with only two ten-player games per rating period, the estimated value of
+λ
+\lambda
+is rarely more than 0.01 away from the true value of
+λ
+\lambda
+.
+Figure
+11
+plots the value of
+w
+w
+estimated by the LM-T model against the number of games per rating period, across 150 datasets.
+5
+5
+5
+We aggregate across the true
+λ
+\lambda
+values in the simulations, since results for
+w
+w
+are qualitatively identical regardless of
+λ
+\lambda
+.
+Fig 11:
+LM-T model recovery of
+w
+w
+. Dotted line represents the true data-generating
+w
+w
+parameter.
+We see that
+w
+w
+recovery is less accurate than
+λ
+\lambda
+recovery.
+The LM-T model generally underestimates
+w
+w
+when there are few games, and only consistently recovers the true data-generating
+w
+w
+with 25 ten-player games per rating period.
+This behavior is appropriate; when there are few games per rating period to accurately estimate player strengths, it makes sense to be more conservative when updating the estimates between rating periods, i.e., to have a lower
+w
+w
+.
+Similarly, Figure
+12
+plots the value of
+σ
+\sigma
+estimated by the LM-T model against the number of games per rating period, again across 150 datasets.
+Fig 12:
+LM-T model recovery of
+σ
+\sigma
+. Dotted line represents the true data-generating
+σ
+\sigma
+parameter.
+We see that
+σ
+\sigma
+recovery is also less accurate than
+λ
+\lambda
+recovery for small data sizes, but that the behavior of the
+σ
+\sigma
+estimates is still appropriate.
+When there are few observations per rating period, we cannot be too certain of our estimated latent ability parameters within each rating period; this inflates our
+σ
+\sigma
+estimate (which in turn deflates our
+w
+w
+estimate).
+Again, it makes sense for the model to be somewhat conservative when the data do not provide much information.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

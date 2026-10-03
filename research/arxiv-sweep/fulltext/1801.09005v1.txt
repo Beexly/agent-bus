@@ -1,0 +1,2239 @@
+A Two-point Method for PTZ Camera Calibration in Sports
+Jianhui Chen
+Affiliation:
+University of British Columbia
+Fangrui Zhu
+Affiliation:
+Tongji University
+{jhchen14,fangru1,little}@cs.ubc.ca
+James J. Little
+Affiliation:
+University of British Columbia
+Abstract
+Calibrating narrow field of view soccer cameras is challenging because there are very few field markings in the image. Unlike previous solutions, we propose a two-point method, which requires only two point correspondences given the prior knowledge of base location and orientation of a pan-tilt-zoom (PTZ) camera. We deploy this new calibration method to annotate pan-tilt-zoom data from soccer videos. The collected data are used as references for new images. We also propose a fast random forest method to predict pan-tilt angles without image-to-image feature matching, leading to an efficient calibration method for new images. We demonstrate our system on synthetic data and two real soccer datasets. Our two-point approach achieves superior performance over the state-of-the-art method.
+1
+1
+footnotetext:
+This work was supported by grants from NSERC. The majority of work was performed when Fangrui Zhu visited UBC as a Mitacs intern.
+1
+Introduction
+Computer vision for sports analysis has the potential to increase a team’s competitive ability, identify talented prospects in junior leagues and give fans the statistics of their favorite players. Moreover, companies like SPORTLOGiQ
+[
+35
+]
+extract player statistics from widely available broadcasting videos. At the same time, broadcasting companies like ESPN are building automatic broadcasting systems
+[
+5
+,
+6
+]
+that also require labeled data from the already existed broadcasting videos.
+The sports analysis and autonomous camera systems (ACSs) require robust camera parameter estimation. First, most statistics (
+e.g
+.
+player trajectory and team format) are measured in model (
+e.g
+.
+playing field of soccer) coordinates. Hence, to view the data in model coordinates requires the registration of the broadcasting viewpoint with the model. Second, ACSs require a large amount of camera parameter data as labels to learn a stable broadcast system from human operators. In practice, human operators capture the game from various types of views such as top views and side views. To build an autonomous camera system for different views, calibration methods are in high demand for collecting ground truth data from these views. Our work is motivated by these real applications.
+Camera calibration for soccer games has been studied extensively in the last two decades
+[
+14
+,
+30
+,
+1
+,
+2
+]
+. The problem can be formulated as a homography estimation problem. Estimating the homography requires at least 8 constraints which can be 4 point-to-point correspondences or 3 point-to-point plus 2 point-on-line correspondences
+etc
+. The requirement of 8 constraints may not be satisfied when cameras look at a small area of the model, as in Figure
+1
+(b). Because a considerable percentage of images have fewer constraints (
+e.g
+.
+narrow field-of-view cameras), less-constrained algorithms are needed.
+Figure 1:
+(a) Soccer field model. The red points are marking intersections and two penalty marks. These points are generally used in human annotation. (b) A narrow field of view image with overlaid markings (green lines). There are only two observable model points (red circles) in the image, making minimum four point based correspondences annotation difficult. In this work, we propose a two-point algorithm to calibrate cameras of images like (b).
+Most previous approaches are based on reference images annotation and points matching
+[
+14
+,
+15
+,
+32
+]
+. At first, the camera parameters of the reference image are estimated from human annotated correspondences with satisfactory accuracy. The references are stored in a database with corresponding camera parameters and keypoint features. Then, a new image queries the database to find the most similar reference image. The camera of the new image is calibrated by matching keypoints (
+e.g
+.
+SIFT
+[
+22
+]
+) from a reference image and the new image. These approaches have been extended to automatic reference generation
+[
+37
+,
+16
+]
+and line/ellipse matching
+[
+9
+,
+13
+,
+21
+]
+. However, human annotation is still needed to get ground truth data and a small set of reference images. Moreover, to the best of our knowledge, estimating narrow FOV PTZ cameras for soccer cameras is still an open problem in either manual annotation or automatic calibration
+[
+34
+,
+7
+,
+39
+,
+20
+]
+.
+In this work, we propose a two-point method to calibrate soccer game cameras. In soccer broadcasting, the PTZ camera does not change its location and base rotation under some tolerance. This phenomenon has been observed by Thomas
+[
+36
+]
+and has been used to estimate PTZ configurations. Our work advances this research’s direction to use the PTZ base information as a prior in camera data annotation and automatic camera calibration. With the prior, our method requires only two points to calibrate a PTZ camera. Figure
+1
+shows a soccer field model and an example image calibrated by our method.
+When the FOV is narrow, calibrating new images automatically using conventional reference image methods is time consuming. Because each reference image only covers a small part of the environment (
+e.g
+.
+stadium buildings and commercial boards around the field), the new image query has to search through a large number of references to find the most similar one which still does not always provide sufficient matching points. To address this problem, we propose a
+pan-tilt forest
+algorithm to effectively associate the data from many reference images. During testing, the pan-tilt forest directly predicts the pan-tilt angles from local patch descriptors without image-to-image feature matching, greatly speeding up the algorithm. In summary, our paper has two main contributions:
+•
+a two-point algorithm to calibrate a fixed location PTZ camera,
+•
+a pan-tilt forest algorithm to robustly predict pan/tilt angles given local patch descriptors and speed up the automatic PTZ camera calibration.
+In the following, we start with a discussion of related work, and then describe our method. Finally, we apply our method to a synthetic dataset and two real soccer datasets. The experiments show that our method is robust to noise from feature point locations and camera locations. In addition, our method successfully calibrates images on both real datasets with higher accuracy than one recently developed method, and it requires less running time, demonstrating its practical value in real applications.
+2
+Related Work
+Pan-tilt-zoom (PTZ) cameras have been used in surveillance and events broadcasting
+[
+38
+,
+28
+,
+26
+,
+16
+]
+. Point and line feature matching is widely used to estimate the homography matrix between the playing field model and the image
+[
+40
+,
+8
+]
+. Point features have been used to estimate the camera parameters
+[
+22
+,
+15
+,
+24
+]
+. Okuma
+et al
+.
+[
+27
+]
+and Thomas
+[
+36
+]
+have proposed line feature based methods which are more robust under circumstances when point features are not descriptive such as in ice hockey and soccer games. Other feature based methods such as
+[
+12
+]
+have been proposed in consequence of insufficient visual information provided by point/line features.
+Recently, Homayounfar
+et al
+.
+[
+16
+]
+has proposed a fully automatic sports field relocalization method by formulating the problem as a branch and bound inference in a Markov random field where an energy function is defined in terms of semantic cues (
+e.g
+.
+field surface, lines and circles) obtained from a deep semantic segmentation network. Their method achieves high accuracy which is measured by IoU (Intersection over Union) between ground truth and predicted playing field areas in both soccer and ice hockey games.
+Moreover, Sharma
+et al
+.
+[
+33
+]
+has proposed a method to formulate the calibration as a nearest neighbour search problem over a synthetically generated dictionary of edge map taking from line segments and homography pairs. This approach tackles the problem of insufficient suitable point correspondences in the case of soccer fields. However, it is mainly applied to top zoom-out views.
+3
+Method
+Figure 2:
+Pipeline of our system.
+Given the PTZ camera base information, we first manually annotate reference images using a two-point algorithm. We then use the pan-tilt forest method to encode the reference images. In testing, the predictions from the pan-tilt forest are used to calibrate a new image.
+We use the pinhole model to describe a PTZ camera
+𝙿
+=
+𝙺𝚀
+ϕ
+​
+𝚀
+θ
+⏟
+PTZ
+​
+𝚂
+⁡
+[
+𝙸
+|
+−
+𝐂
+]
+⏟
+prior
+,
+\mathtt{P}=\underbrace{\mathtt{K}\mathtt{Q}_{\phi}\mathtt{Q}_{\theta}}_{\text{PTZ}}\underbrace{\mathtt{S}[\mathtt{I}|-\mathbf{C}]}_{\text{prior}},
+(1)
+where
+𝐂
+\mathbf{C}
+is the camera’s center of projection. The combination of
+𝚀
+ϕ
+​
+𝚀
+θ
+​
+𝚂
+\mathtt{Q}_{\phi}\mathtt{Q}_{\theta}\mathtt{S}
+describes rotations from world to camera coordinates. First, it rotates the camera to the PTZ camera base by
+𝚂
+\mathtt{S}
+. Then the camera pans by
+𝚀
+θ
+\mathtt{Q}_{\theta}
+and tilts by
+𝚀
+ϕ
+\mathtt{Q}_{\phi}
+.
+𝙺
+\mathtt{K}
+is the intrinsic matrix. Assuming square pixels and a principal point at the image center
+(
+u
+,
+v
+)
+(u,v)
+, the focal length
+f
+f
+is the only unknown variable in
+𝙺
+\mathtt{K}
+.
+𝙿
+\mathtt{P}
+can be separated into two parts. The right part
+𝚂
+⁡
+[
+𝙸
+|
+−
+𝐂
+]
+\mathtt{S}[\mathtt{I}|-\mathbf{C}]
+is time invariant for a PTZ camera with a fixed location. This part can be estimated using images from various PTZ configurations
+[
+36
+]
+and used as a prior.
+Because the camera only pans, tilts and zooms, the left part
+𝙺𝚀
+ϕ
+​
+𝚀
+θ
+\mathtt{K}\mathtt{Q}_{\phi}\mathtt{Q}_{\theta}
+projects a ray
+𝐫
+=
+(
+θ
+𝐩
+,
+ϕ
+𝐩
+)
+\mathbf{r}=(\theta_{\mathbf{p}},\phi_{\mathbf{p}})
+to the image location
+𝐩
+=
+(
+x
+,
+y
+)
+\mathbf{p}=(x,y)
+:
+𝐩
+=
+𝙿
+⁡
+(
+𝐫
+)
+=
+[
+f
+​
+tan
+⁡
+(
+θ
+𝐩
+−
+θ
+)
++
+u
+,
+f
+​
+tan
+⁡
+(
+ϕ
+𝐩
+−
+ϕ
+)
++
+v
+]
+T
+,
+\mathbf{p}=\mathtt{P}(\mathbf{r})=[f\tan(\theta_{\mathbf{p}}-\theta)+u,f\tan(\phi_{\mathbf{p}}-\phi)+v]^{T},
+(2)
+where we parameterize the ray by pan/tilt angles of its pixel location
+𝐩
+\mathbf{p}
+. Specially, when
+𝐫
+=
+(
+θ
+,
+ϕ
+)
+\mathbf{r}=(\theta,\phi)
+, the ray passes the image center. Note that the pan/tilt angles of a particular camera can be estimated by two pairs of
+{
+𝐫
+,
+𝐩
+}
+\{\mathbf{r},\mathbf{p}\}
+using (
+2
+). This observation is the initial motivation for the present work.
+Figure
+2
+shows the pipeline of our method. We introduce a two-point algorithm to manually annotate reference images. Then, we introduce the pan-tilt forest algorithm to automatically calibrate new images.
+3.1
+Two-point Algorithm for Data Annotation
+Given two 3D-2D point correspondences (
+e.g
+.
+from human annotation), our method first estimates the focal length from two points
+[
+11
+]
+. Then it estimates the initial pan/tilt angles using one point
+[
+19
+]
+. Finally, it optimizes the PTZ parameter by minimizing the reprojection error using both points. The components of the method have been proposed by Gedikli
+et al
+.
+[
+11
+]
+and Li
+et al
+.
+[
+19
+]
+, separately. However, to the best of our knowledge, we are the first to integrate them and apply them to sports camera calibration.
+Estimate Focal Length from Two Points
+Two 3D points
+X
+1
+\textbf{X}_{1}
+and
+X
+2
+\textbf{X}_{2}
+in the world coordinate are projected to image points
+x
+1
+\textbf{x}_{1}
+and
+x
+2
+\textbf{x}_{2}
+respectively.
+x
+1
+\textbf{x}_{1}
+and
+x
+2
+\textbf{x}_{2}
+can be back-projected to two rays
+d
+1
+\textbf{d}_{1}
+and
+d
+2
+\textbf{d}_{2}
+in the camera coordinate. The cosine formula for the angle
+α
+\alpha
+between two rays is:
+cos
+⁡
+α
+=
+𝐝
+1
+T
+​
+𝐝
+2
+𝐝
+1
+T
+​
+𝐝
+1
+​
+𝐝
+2
+T
+​
+𝐝
+2
+=
+(
+𝙺
+−
+1
+​
+x
+1
+)
+T
+​
+(
+𝙺
+−
+1
+​
+x
+2
+)
+OPEN
+(
+𝙺
+−
+1
+​
+x
+1
+)
+T
+​
+(
+𝙺
+−
+1
+​
+x
+1
+)
+​
+(
+𝙺
+−
+1
+​
+x
+2
+)
+T
+​
+(
+𝙺
+−
+1
+​
+x
+2
+CLOSE
+)
+=
+x
+1
+T
+​
+ω
+​
+x
+2
+x
+1
+T
+​
+ω
+​
+x
+1
+​
+x
+2
+T
+​
+ω
+​
+x
+2
+,
+\begin{split}\cos{\alpha}&=\frac{\mathbf{d}_{1}^{T}\mathbf{d}_{2}}{\sqrt{\mathbf{d}_{1}^{T}\mathbf{d}_{1}}\sqrt{\mathbf{d}_{2}^{T}\mathbf{d}_{2}}}\\
+&=\frac{({\mathtt{K}^{-1}\textbf{x}_{1}})^{T}({\mathtt{K}^{-1}\textbf{x}_{2}})}{\sqrt{({\mathtt{K}^{-1}\textbf{x}_{1}})^{T}(\mathtt{K}^{-1}\textbf{x}_{1})}\sqrt{({\mathtt{K}^{-1}\textbf{x}_{2}})^{T}({\mathtt{K}^{-1}\textbf{x}_{2}}})}\\
+&=\frac{\textbf{x}_{1}^{T}\omega\textbf{x}_{2}}{\sqrt{\textbf{x}_{1}^{T}\omega\textbf{x}_{1}}\sqrt{\textbf{x}_{2}^{T}\omega\textbf{x}_{2}}},\end{split}
+(3)
+where
+ω
+\omega
+is the image of the absolute conic (IAC) and it is related to the intrinsic matrix by
+ω
+=
+𝙺
+−
+T
+​
+𝙺
+−
+1
+\omega={\mathtt{K}}^{-T}{\mathtt{K}}^{-1}
+. The angle
+α
+\alpha
+is determined by three known points
+𝐂
+\mathbf{C}
+,
+X
+1
+\textbf{X}_{1}
+and
+X
+2
+\textbf{X}_{2}
+. Thus the focal length
+f
+f
+is the only unknown element in (
+3
+). It can be solved in the standard quadratic equation
+[
+11
+]
+( details in Appendix
+6.1
+).
+Estimate Pan, Tilt from One Point
+With known focal length, a PTZ camera becomes a pan, tilt (PT) camera. Li
+et al
+.
+[
+19
+]
+has proposed a method for PT camera calibration using a single point. The method first builds a nonlinear PT camera model with respect to pan and tilt angles. Then a closed-form solution of pan and tilt can be derived by solving a quadratic equation of tangent of pan. The solution for our camera model is in Appendix
+6.2
+.
+With initial values of pan, tilt and focal length, our method further optimizes parameters by minimizing the reprojection error using Levenberg-Marquardt optimization. Figure
+1
+(b) shows an example of the two-point method. There are fewer than 4 observable points (i.e. marking intersections and penalty marks) in the image. In that situation, the classic four-point method is not applicable and our two-point method is very useful.
+3.2
+Pan-tilt Forests
+We use a learning-based method to predict the ray
+𝐫
+\mathbf{r}
+given its appearance in the image. We model this problem as a regression problem:
+𝐫
+^
+𝐩
+=
+h
+⁡
+(
+x
+𝐩
+)
+,
+\hat{\mathbf{r}}_{\mathbf{p}}=h(\textbf{x}_{\mathbf{p}}),
+(4)
+where
+x
+𝐩
+\textbf{x}_{\mathbf{p}}
+is the feature (
+e.g
+.
+SIFT descriptor) that describes the image patch whose center is at
+𝐩
+\mathbf{p}
+. The label
+𝐫
+𝐩
+\mathbf{r}_{\mathbf{p}}
+is given by:
+𝐫
+𝐩
+=
+[
+θ
++
+arctan
+⁡
+x
+−
+u
+f
+,
+ϕ
++
+arctan
+⁡
+y
+−
+v
+f
+]
+T
+,
+\mathbf{r}_{\mathbf{p}}=[\theta+\arctan{\frac{x-u}{f}},\phi+\arctan{\frac{y-v}{f}}]^{T},
+(5)
+where
+θ
+,
+ϕ
+{\theta,\phi}
+are pan and tilt angles of the camera. In training,
+{
+(
+x
+𝐩
+,
+𝐫
+)
+}
+\{(\textbf{x}_{\mathbf{p}},\mathbf{r})\}
+are paired training data. In testing, the ray
+𝐫
+^
+𝐩
+\hat{\mathbf{r}}_{\mathbf{p}}
+is predicted by the learned regressor
+h
+⁡
+(
+⋅
+)
+h(\cdot)
+.
+We use a random forest to predict the ray as it has achieved state-of-the-art in indoor and outdoor camera pose estimation
+[
+4
+,
+25
+]
+and denote it as
+pan-tilt forest
+.
+A random forest is an ensemble of randomized decision trees. Each decision tree is a binary-tree consisting of split nodes and prediction nodes. Following a top-down approach, the decision tree optimizes parameters
+π
+n
+\pi_{n}
+of
+n
+t
+​
+h
+n^{th}
+node from the root node and recursively processes the child nodes till the leaf nodes. The parameter
+π
+n
+\pi_{n}
+is chosen from a set of randomly sampled candidates
+Π
+n
+\Pi_{n}
+.
+At each split node
+n
+n
+, decision trees learn the
+π
+n
+\pi_{n}
+that “best” splits the incoming training set
+S
+n
+S_{n}
+into
+S
+n
+L
+S_{n}^{L}
+and
+S
+n
+R
+S_{n}^{R}
+which are training sets of left and right sub-trees, respectively. This problem is formulated as the maximization of the information gain at the
+n
+t
+​
+h
+n^{th}
+node
+arg
+⁡
+max
+π
+n
+∈
+Π
+n
+⁡
+E
+⁡
+(
+S
+n
+,
+θ
+)
+,
+\arg\max_{\pi_{n}\in\Pi_{n}}E(S_{n},\theta),
+(6)
+where
+E
+⁡
+(
+S
+n
+,
+θ
+)
+=
+∑
+(
+x
+,
+𝐫
+)
+∈
+S
+n
+(
+𝐫
+−
+𝐫
+¯
+)
+2
+−
+∑
+j
+∈
+L
+,
+R
+(
+∑
+(
+x
+,
+𝐫
+)
+∈
+S
+n
+j
+(
+𝐫
+−
+𝐫
+¯
+)
+2
+)
+,
+E(S_{n},\theta)=\sum_{(\textbf{x},\mathbf{r})\in S_{n}}(\mathbf{r}-\bar{\mathbf{r}})^{2}-\sum_{j\in{L,R}}(\sum_{(\textbf{x},\mathbf{r})\in S_{n}^{j}}(\mathbf{r}-\bar{\mathbf{r}})^{2}),
+(7)
+where
+𝐫
+¯
+\bar{\mathbf{r}}
+indicates the mean value of
+𝐫
+\mathbf{r}
+for all training samples reaching the node. Note that left and right subsets
+S
+n
+j
+S_{n}^{j}
+are implicitly conditioned on the parameter
+π
+n
+\pi_{n}
+. Here we omit the subscript
+𝐩
+\mathbf{p}
+of
+𝐫
+𝐩
+\mathbf{r}_{\mathbf{p}}
+and
+x
+𝐩
+\textbf{x}_{\mathbf{p}}
+for notation convenience.
+Training terminates when a node reaches a maximum depth
+D
+D
+or contains too few examples. In a leaf node, we store mean values of samples that reaches that leaf node
+(
+x
+¯
+l
+,
+𝐫
+¯
+l
+)
+(\bar{\textbf{x}}_{l},\bar{\mathbf{r}}_{l})
+. During testing, a sample traverses the tree
+t
+t
+from the root node to a leaf node. The leaf outputs the
+𝐫
+¯
+l
+\bar{\mathbf{r}}_{l}
+as the prediction. We also use the feature distance
+‖
+x
+¯
+l
+−
+x
+‖
+2
+2
+\|\bar{\textbf{x}}_{l}-\textbf{x}\|^{2}_{2}
+(lower than a threshold) to remove outliers (
+e.g
+.
+features on players). As we will show in the experiment, this pre-processing is very effective in practice. We keep predictions from all trees and choose the one that minimizes the reprojection error in the camera pose optimization process.
+3.3
+Camera Pose Optimization
+From the pan-tilt forest, we obtain a set of pixel location and predicted ray pairs
+{
+(
+𝐩
+,
+𝐫
+^
+)
+}
+\{(\mathbf{p},\hat{\mathbf{r}})\}
+. The camera pose optimization is to minimize the re-projection error:
+{
+θ
+,
+ϕ
+,
+f
+}
+=
+arg
+⁡
+min
+⁡
+∑
+i
+𝙿
+⁡
+‖
+𝐩
+i
+−
+𝙿
+⁡
+(
+𝐫
+^
+i
+)
+‖
+2
+.
+\{\theta,\phi,f\}=\arg\min_{\mathtt{P}}\sum_{i}{\|\mathbf{p}_{i}-\mathtt{P}(\hat{\mathbf{r}}_{i})\|^{2}}.
+(8)
+Because the predictions from the pan-tilt forest may still have large errors, we use the RANSAC method
+[
+10
+]
+to remove outliers. In the internal loop of RANSAC, the minimal number of points required to fit the model is two. As RANSAC is a standard method to perform model estimation with the presence of outliers, the fewer iterations needed, the better. Table
+1
+shows the number of iterations needed as a function of the minimum sets of points
+[
+31
+]
+. The assumptions are: probability of success=99%, percentage of outliers=50%. Our two-point method is better than the four-point based homography estimation method. That enables our method to find the optimal solution efficiently given the large ratio of outliers.
+Min. set of points
+4
+2
+1
+No. of iterations
+71
+16
+7
+Table 1:
+Number of RANSAC iterations.
+4
+Experiments
+Highlights Dataset
+This dataset was collected from the public soccer highlights dataset
+[
+23
+]
+. It contains four image sequences from two professional soccer games (two sequences for each game). The image resolution is
+1280
+×
+720
+1280\times 720
+and the sample rate is about 6 FPS. The total frame number is 116.
+The ground truth camera parameters are manually calibrated. We first calibrate the images that have at least four correspondences. Then we run a global optimization algorithm to estimate the PTZ camera base parameters. Then we calibrate the rest of the images using the two-point method. After that, we check camera parameters by projecting the model to images. This process is repeated until there are satisfactory results.
+Figure 3:
+Examples of ground truth annotation.
+Top row: highlights dataset; bottom row: World Cup dataset.
+Figure 4:
+Distribution of field of view of the two datasets.
+World Cup Dataset
+This dataset was selected from the World Cup 2014 dataset collected by Homayounfar
+et al
+.
+[
+16
+]
+. The original dataset has 20 games and has been used to automatically localize soccer fields. Because our method requires the prior knowledge of camera bases, we selected two games (BRA vs. MEX and BRA vs. NED) because they have sufficient number of images (42 and 33) to cover the whole stadium. The ground truth data was obtained by manual annotation. In these two games, we found that the assumption of fixed PTZ camera base generally holds in soccer broadcasting, providing evidence of potential wide applications of our method.
+Figure
+4
+shows the distribution of field-of-view of two datasets. Both datasets have narrow FOV images (smaller than
+25
+o
+25^{o}
+) although the World Cup dataset has some wide FOV images. Figure
+3
+shows examples of ground truth annotation by overlapping the markings on the image and warping the image to the model. These example images demonstrate the correctness of our decomposition of the pinhole camera into “prior” and “PTZ” parts.
+4.1
+Synthetic Data Experiments
+Figure 5:
+Synthetic experiments results.
+(a) An example of the synthetic stadium used in the experiment. (b-d) Mean errors as a function of the noise in feature location, camera base location and rotation, respectively. Error bars show standard deviations.
+To estimate the accuracy of the method under typical feature location noise conditions, we conducted experiments with synthetic data. We set the camera base parameter as the one we estimated from the highlights dataset. That camera is located on the right corner of the playing field. Then, we randomly set pan, tilt and focal length values in the range of
+[
+15
+o
+,
+75
+o
+]
+[15^{o},75^{o}]
+,
+[
+−
+14
+o
+,
+−
+5
+o
+]
+[-14^{o},-5^{o}]
+and
+[
+1500
+,
+5000
+]
+[1500,5000]
+, respectively. Then, we randomly sample 200 rays in which about
+90
+%
+90\%
+of them are projected out of the playing field. The number of
+90
+%
+90\%
+is chosen experimentally to simulate keypoint distribution in real data. Finally, we add different levels of Gaussian noise to disturb the feature locations in the image and estimate the PTZ configuration using our method. The experiment was performed on 100 cameras. For each camera, we repeated the experiment 100 times with different random values.
+Figure
+5
+(b) shows the mean errors of rotation and focal length as a function of noise levels. Up to
+σ
+=
+3.0
+\sigma=3.0
+, the mean rotation error is smaller than
+0.02
+o
+0.02^{o}
+and the mean focal length error is smaller than 2.5 pixels, demonstrating the stability of our method in terms of Gaussian noise in feature locations.
+Because the estimation of camera base location and orientation may have errors in practice, we study the influence of estimation errors on our method. Figure
+5
+(c,d) show the PTZ parameter errors as a function of camera base location and rotation uncertainties, respectively. Our method is robust to the uncertainties from camera location (see Figure
+5
+(c)). One explanation is that the movement of camera location is relatively small compared to the spatial extent of the stadium. On the other hand, the rotation error of our method is sensitive to camera base rotation uncertainties. It is not unexpected as the base rotation error can be directly propagated from the “prior” part to the “PTZ” part in (
+1
+). We report the absolute errors of the estimated focal length in Figure
+5
+. The relative error of 100 pixels is about 3.2% of the ground truth.
+4.2
+Real Data Experiments
+Error Metric
+We use the IoU (Intersection over Union)
+[
+16
+]
+to measure the calibration accuracy of different methods. The IoU is calculated by warping the projected model to the topview by the ground truth camera and the estimated camera (see the third row in Figure
+6
+). For our method, we also report the rotation and focal length error distribution.
+In the highlights dataset, we employ leave-one-sequence-out cross validation (
+e.g
+.
+train on sequence 1, 2, 3 and test on sequence 4) in the experiment. In the World Cup dataset, half of the images were held out for training and the rest were used for testing in each game.
+We compare our method with the CalibMe method
+[
+6
+]
+, a representative reference image based method that has achieved good performance on soccer videos. For each sequence, we manually select 3-5 reference images to cover the whole stadium to make sure the CalibMe method works well. The number of the references is limited by the running time budget.
+Main Results
+Method
+Range
+CalibMe
+[
+6
+]
+Ours
+Pan
+Tilt
+Focal length
+Seq1
+[49,68]
+[-13, -9]
+[1586,4346]
+0.75
+±
+0.22
+0.75\pm 0.22
+0.88
+±
+0.06
+\mathbf{0.88}\pm 0.06
+Seq2
+[49,68]
+[-11, -8]
+[3330, 4947]
+0.73
+±
+0.27
+0.73\pm 0.27
+0.81
+±
+0.21
+\mathbf{0.81}\pm 0.21
+Seq3
+[17,67]
+[-9,-5]
+[1938, 4225]
+0.61
+±
+0.37
+0.61\pm 0.37
+0.69
+±
+0.36
+\mathbf{0.69}\pm 0.36
+Seq4
+[54, 69]
+[-8, -7]
+[2642, 4074]
+0.62
+±
+0.33
+0.62\pm 0.33
+0.94
+±
+0.04
+\mathbf{0.94}\pm 0.04
+Avg
+-
+-
+-
+0.68
+±
+0.30
+0.68\pm 0.30
+0.83
+±
+0.16
+\mathbf{0.83}\pm 0.16
+Times/frame
+-
+-
+-
+3.0 s
+0.3s
+Table 2:
+Quantitative comparison
+. The table shows pan, tilt and focal length ranges in each sequence of the highlights dataset. The most right two columns are IoUs and corresponding standard deviations using different methods. The bottom line shows the average running time per frame for each method. The best performance is highlighted.
+Figure 6:
+Qualitative results and corresponding IoU scores.
+Top row: results on highlights dataset; bottom row: results on World Cup dataset. In the top row, the most right column shows a typical challenging case for our method. The image has a very small texture-rich area, resulting in insufficient number of SIFT features for our method.
+In Table
+2
+, we present mean IoU scores of different methods. The average IoU of our method is significantly higher (0.83 vs. 0.68) than the
+CalibMe method. Also, our method is faster (0.3 vs. 3.0 seconds) than CalibMe for two reasons. First, the running time of CalibMe increases linearly with the number of reference images. Because each narrow FOV image covers a small part of the stadium, CalibMe requires a large number of reference images to produce a good result. On the other hand, our pan-tilt forest groups nearby rays in the same leaf node, effectively encoding a large number of reference images. Second, our method requires fewer points (2 vs. 4) to estimate the initial camera parameters than CalibMe. Thus, it needs fewer iterations to find the optimal solution in RANSAC.
+Among four sequences, our method has a relative smaller IoU score in sequence 3. We found that the main reason is that sequence 3 has a larger range of pan angles and some of them are not covered by the training data.
+Games
+CalibMe
+Ours
+BRA vs. MEX
+0.84
+±
+0.24
+0.84\pm 0.24
+0.99
+±
+0.01
+0.99\pm 0.01
+BRA vs. NED
+0.69
+±
+0.37
+0.69\pm 0.37
+0.98
+±
+0.01
+0.98\pm 0.01
+Table 3:
+World Cup dataset results.
+Table
+3
+shows the results on the World Cup dataset. Our method achieves very high IoU scores in this dataset because the images in this dataset cover larger areas than those in the highlights dataset.
+Figure 7:
+Cumulative distribution of the rotation and focal length estimation error on two datasets.
+Left: rotation errors; right: focal length errors. For the focal length, the relative error of 100 pixels is about 3.2% of the ground truth.
+Figure
+7
+shows the errors of our method measured by rotation error (degrees) and focal length error (pixels), separately. The rotation errors of more than about 85% of images are less than 1 degree. Our method has small focal length errors in both datasets, with the good performance being especially pronounced in the World Cup dataset.
+Figure
+6
+shows qualitative result of our method. In most cases, our method can calibrate pan-tilt-zoom cameras from very challenging camera angles.
+Further Analysis
+I
+​
+n
+​
+l
+​
+i
+​
+e
+​
+r
+0.5
+Inlier_{0.5}
+Mean IoU
+w/o threshold
+0.09
+0.53
+w threshold
+0.33
+0.83
+improvement
++0.24
++0.30
+Table 4:
+Influence of using the feature distance threshold in our method
+.
+I
+​
+n
+​
+l
+​
+i
+​
+e
+​
+r
+0.5
+Inlier_{0.5}
+means the inlier percentage of pan-tilt predictions that has angular error less than 0.5 degrees.
+Table
+4
+shows the influence of with and without the feature distance thresholding in pan/tilt angle prediction. Our method removes outliers using a simple feature distance threshold, resulting in a much higher (0.33 vs. 0.09) percentage of inliers (rotation error less than 0.5 degrees) in pan/tilt angle prediction. The accurate pan/tilt prediction provides a significantly higher (0.83 vs. 0.53) mean IoU score. We also found that the local patch descriptor method is also important for a good performance. For example, if we replace the SIFT descriptor with the SURF descriptor
+[
+3
+]
+, the mean IoU score drops from 0.83 to 0.74.
+Figure 8:
+IoU as a function of the field of view values on two datasets.
+Figure
+8
+shows the IoU measurement as a function of the field of view values on the both datasets of our method. When the FOV values are smaller than about
+25
+o
+25^{o}
+, our method has more incorrect estimates (red crosses) whose IoUs are blow a threshold (0.6). When the FOV values are larger than about
+40
+o
+40^{o}
+, our method has no incorrect estimates on these two datasets. This result suggests that the narrow field of view still causes incorrect estimates.
+Figure 9:
+Impact of tree number.
+The figure shows percentage of frames whose calibration errors (1 - IoU) are within a sequence of thresholds. The curve closer to top-left is better.
+As an ensemble method, adding more trees also improves the performance at the cost of running time. Figure
+9
+shows that the performance of our method increases by adding a small number of trees (around 5).
+Implementation Details
+Our approach is implemented with C++ on an Intel 3.0 GHz CPU, 16GB memory Mac system. For the pan-tilt forest, the parameter settings are: tree number is 5, maximum depth is 20. In the test, the computation of SIFT feature costs about 0.2 seconds/frame. The pan/tilt prediction and camera pose optimization costs about 0.1 seconds/frame. In the current implementation, the speed is not optimized. The speed can be improved by using a GPU SIFT implementation and a small number of iterations in RANSAC
+etc
+. The code is available online
+1
+1
+1
+https://github.com/lood339/two_point_calib
+.
+4.3
+Limitations
+Conversely, there are several limitations of this work. First, it assumes the camera base parameters are available and fixed. However, these parameters may change from one game to another. In that case, fully automatic methods
+[
+37
+,
+16
+]
+can be used to estimate the camera base parameters before using our method. Second, our camera model does not consider lens distortion which may be significant in some games. One solution is to jointly optimize camera pose and lens distortion
+[
+17
+]
+in the camera pose optimization stage. Third, our method uses a real-value feature descriptor which is computationally expensive in running time. One option is to use binary features such as LATCH
+[
+18
+]
+.
+5
+Discussion
+In this work, we proposed a two-point algorithm to efficiently annotate PTZ cameras and a pan-tilt forest method to automatically estimate camera parameters in soccer games. To the best of our knowledge, we are the first to use the two-point method in a random forest framework to calibrate narrow FOV sport cameras. More importantly, our method outperforms the state-of-the-art method in terms of accuracy and speed.
+Currently, we have only evaluated our method on soccer games. However, we expect a similar approach will work for other sports (
+e.g
+.
+basketball and ice hockey) as well. In the future, we will also investigate using line and ellipse features
+[
+29
+]
+in our two-point framework.
+6
+Appendix
+6.1
+Focal Length from Two Points
+f
+2
+=
+2
+​
+(
+d
+2
+​
+a
+​
+b
+−
+c
+2
+)
+2
+​
+c
+−
+d
+2
+​
+(
+a
++
+b
+)
++
+(
+d
+2
+​
+(
+a
++
+b
+)
+−
+2
+​
+c
+)
+2
+−
+4
+​
+(
+d
+2
+​
+a
+​
+b
+−
+c
+2
+)
+​
+(
+d
+2
+−
+1
+)
+\begin{split}&f^{2}=\\
+&\frac{2(d^{2}ab-c^{2})}{2c-d^{2}(a+b)+\sqrt{(d^{2}(a+b)-2c)^{2}-4(d^{2}ab-c^{2})(d^{2}-1)}}\end{split}
+(9)
+where
+a
+\displaystyle a
+=
+x
+1
+T
+​
+x
+1
+b
+=
+x
+2
+T
+​
+x
+2
+\displaystyle=\textbf{x}_{1}^{T}\textbf{x}_{1}\;\;\;\;\;\;b=\textbf{x}_{2}^{T}\textbf{x}_{2}
+c
+\displaystyle c
+=
+x
+1
+T
+​
+x
+2
+d
+=
+X
+¯
+1
+T
+​
+X
+¯
+2
+\displaystyle=\textbf{x}_{1}^{T}\textbf{x}_{2}\;\;\;\;\;\;d=\bar{\textbf{X}}_{1}^{T}\bar{\textbf{X}}_{2}
+where
+X
+¯
+=
+X
+−
+𝐂
+‖
+X
+−
+𝐂
+‖
+\bar{\textbf{X}}=\frac{\textbf{X}-\mathbf{C}}{\|\textbf{X}-\mathbf{C}\|}
+,
+X
+are 3D world points,
+x
+are pixel locations and
+𝐂
+\mathbf{C}
+is the camera center.
+6.2
+Single Point PT Camera Calibration
+Recall our camera model:
+𝙿
+=
+𝙺𝚀
+ϕ
+​
+𝚀
+θ
+​
+𝚂
+​
+[
+𝙸
+|
+−
+𝐂
+]
+\mathtt{P}=\mathtt{K}\mathtt{Q}_{\phi}\mathtt{Q}_{\theta}\mathtt{S}[\mathtt{I}|-\mathbf{C}]
+(10)
+There is one 3D point
+P
+w
+P_{w}
+and its projection
+p
+i
+p_{i}
+in the image. We have
+(
+X
+,
+Y
+,
+Z
+)
+=
+S
+⁡
+(
+P
+w
+−
+C
+)
+(X,Y,Z)=S(P_{w}-C)
+and
+(
+U
+,
+V
+,
+1
+)
+T
+=
+(
+K
+−
+1
+​
+p
+i
+)
+T
+.
+(U,V,1)^{T}=(K^{-1}p_{i})^{T}.
+As a result, we have
+[
+U
+V
+1
+]
+=
+𝚀
+ϕ
+​
+𝚀
+θ
+​
+[
+X
+Y
+Z
+]
+=
+[
+c
+p
+0
+−
+s
+p
+s
+t
+​
+s
+p
+c
+t
+s
+t
+​
+c
+p
+c
+t
+​
+s
+p
+−
+s
+t
+c
+t
+​
+c
+p
+]
+​
+[
+X
+Y
+Z
+]
+\begin{bmatrix}U\\
+V\\
+1\end{bmatrix}=\mathtt{Q}_{\phi}\mathtt{Q}_{\theta}\begin{bmatrix}X\\
+Y\\
+Z\end{bmatrix}=\begin{bmatrix}c_{p}&0&-s_{p}\\
+s_{t}s_{p}&c_{t}&s_{t}c_{p}\\
+c_{t}s_{p}&-s_{t}&c_{t}c_{p}\end{bmatrix}\begin{bmatrix}X\\
+Y\\
+Z\end{bmatrix}
+(11)
+where
+s
+p
+s_{p}
+,
+c
+p
+c_{p}
+,
+s
+t
+s_{t}
+and
+c
+t
+c_{t}
+are short for
+sin
+⁡
+(
+p
+​
+a
+​
+n
+)
+,
+cos
+⁡
+(
+p
+​
+a
+​
+n
+)
+,
+sin
+⁡
+(
+t
+​
+i
+​
+l
+​
+t
+)
+,
+cos
+⁡
+(
+t
+​
+i
+​
+l
+​
+t
+)
+\sin(pan),\cos(pan),\sin(tilt),\cos(tilt)
+. Because the cross product of two sides of (
+11
+) is a zero vector (
+i.e
+.
+cross produt of a vector with itself), we have:
+[
+A
+p
+​
+a
+​
+n
+B
+p
+​
+a
+​
+n
+]
+​
+[
+c
+t
+s
+t
+1
+]
+=
+[
+0
+0
+]
+\begin{bmatrix}A_{pan}&B_{pan}\end{bmatrix}\begin{bmatrix}c_{t}\\
+s_{t}\\
+1\end{bmatrix}=\begin{bmatrix}0\\
+0\end{bmatrix}
+(12)
+where
+A
+p
+​
+a
+​
+n
+\displaystyle A_{pan}
+=
+[
+V
+​
+X
+​
+s
+p
++
+V
+​
+Z
+​
+c
+p
+−
+Y
+−
+V
+​
+Y
+−
+X
+​
+s
+p
+−
+Z
+​
+c
+p
+U
+​
+X
+​
+s
+p
++
+U
+​
+Z
+​
+c
+p
+−
+Y
+​
+U
+]
+\displaystyle=\begin{bmatrix}VXs_{p}+VZc_{p}-Y&-VY-Xs_{p}-Zc_{p}\\
+UXs_{p}+UZc_{p}&-YU\\
+\end{bmatrix}
+B
+p
+​
+a
+​
+n
+\displaystyle B_{pan}
+=
+[
+0
+Z
+​
+s
+p
+−
+X
+​
+c
+p
+]
+\displaystyle=\begin{bmatrix}0\\
+Zs_{p}-Xc_{p}\end{bmatrix}
+From (
+12
+), we have
+c
+t
+=
+(
+V
+​
+Y
++
+X
+​
+s
+p
++
+Z
+​
+c
+p
+)
+​
+(
+X
+​
+c
+p
+−
+Z
+​
+s
+p
+)
+d
+​
+e
+​
+t
+A
+​
+p
+​
+a
+​
+n
+c_{t}=\frac{(VY+Xs_{p}+Zc_{p})(Xc_{p}-Zs_{p})}{det_{Apan}}
+(13)
+and
+s
+t
+=
+(
+V
+​
+X
+​
+s
+p
++
+V
+​
+Z
+​
+c
+p
+−
+Y
+)
+​
+(
+X
+​
+c
+p
+−
+Z
+​
+s
+p
+)
+d
+​
+e
+​
+t
+A
+​
+p
+​
+a
+​
+n
+s_{t}=\frac{(VXs_{p}+VZc_{p}-Y)(Xc_{p}-Zs_{p})}{det_{Apan}}
+(14)
+where
+d
+​
+e
+​
+t
+A
+​
+p
+​
+a
+​
+n
+=
+U
+⁡
+(
+Y
+2
++
+(
+Z
+​
+c
+p
++
+X
+​
+s
+p
+)
+2
+)
+det_{Apan}=U(Y^{2}+(Zc_{p}+Xs_{p})^{2})
+.
+Because
+c
+t
+2
++
+s
+t
+2
+=
+1
+c_{t}^{2}+s_{t}^{2}=1
+, we have a quadratic equation of
+t
+p
+t_{p}
+(short for
+tan
+⁡
+(
+p
+​
+a
+​
+n
+)
+\tan(pan)
+) by
+a
+​
+t
+p
+2
++
+b
+​
+t
+p
++
+c
+=
+0
+a{t_{p}}^{2}+b{t_{p}}+c=0
+(15)
+where
+a
+\displaystyle a
+=
+(
+V
+2
++
+1
+)
+​
+Z
+2
+−
+U
+2
+​
+(
+X
+2
++
+Y
+2
+)
+\displaystyle=(V^{2}+1)Z^{2}-U^{2}(X^{2}+Y^{2})
+b
+\displaystyle b
+=
+−
+2
+​
+X
+​
+Z
+​
+(
+U
+2
++
+V
+2
++
+1
+)
+\displaystyle=-2XZ(U^{2}+V^{2}+1)
+c
+\displaystyle c
+=
+(
+V
+2
++
+1
+)
+​
+X
+2
+−
+U
+2
+​
+(
+Y
+2
++
+Z
+2
+)
+.
+\displaystyle=(V^{2}+1)X^{2}-U^{2}(Y^{2}+Z^{2}).
+From (
+15
+), we can calculate
+p
+​
+a
+​
+n
+pan
+angle up to 2 solutions. We can eliminate one of them by setting the valid range to
+(
+−
+90
+o
+,
+90
+o
+)
+(-90^{o},90^{o})
+. The tilt angle can be calculated from (
+13
+) and (
+14
+).
+References
+[1]
+M. Alemán-Flores, L. Alvarez, L. Gómez, P. Henríquez, and
+L. Mazorra.
+Camera calibration in sport event scenarios.
+Pattern Recognition
+, 47(1):89–95, 2014.
+[2]
+L. Alvarez, L. Gomez, P. Henriquez, and J. Sánchez.
+Real-time camera motion tracking in planar view scenarios.
+Journal of Real-Time Image Processing
+, 11(2):287–299, 2016.
+[3]
+H. Bay, A. Ess, T. Tuytelaars, and L. Van Gool.
+Speeded-up robust features (SURF).
+CVIU
+, 110(3):346–359, 2008.
+[4]
+T. Cavallari, S. Golodetz, N. A. Lord, J. Valentin, L. Di Stefano, and P. H. S.
+Torr.
+On-the-fly adaptation of regression forests for online camera
+relocalisation.
+In
+CVPR
+, 2017.
+[5]
+J. Chen, H. M. Le, P. Carr, Y. Yue, and J. J. Little.
+Learning online smooth predictors for realtime camera planning using
+recurrent decision trees.
+In
+CVPR
+, 2016.
+[6]
+J. Chen and J. J. Little.
+Where should cameras look at soccer games: Improving smoothness using
+the overlapped hidden Markov model.
+CVIU
+, 159:59–73, 2017.
+[7]
+A. Del Bimbo, F. Dini, G. Lisanti, and F. Pernici.
+Exploiting distinctive visual landmark maps in pan–tilt–zoom camera
+networks.
+CVIU
+, 114(6):611–623, 2010.
+[8]
+E. Dubrofsky and R. J. Woodham.
+Combining line and point correspondences for homography estimation.
+In
+ISVC
+, 2008.
+[9]
+D. Farin, J. Han, and P. H. de With.
+Fast camera calibration for the analysis of sport sequences.
+In
+ICME
+, 2005.
+[10]
+M. A. Fischler and R. C. Bolles.
+Random sample consensus: a paradigm for model fitting with
+applications to image analysis and automated cartography.
+Communications of the ACM
+, 24(6):381–395, 1981.
+[11]
+S. Gedikli.
+Continual and robust estimation of camera parameters in
+broadcasted sports games
+.
+PhD thesis, München, Techn. Univ., Diss., 2009.
+[12]
+B. Ghanem, T. Zhang, and N. Ahuja.
+Robust video registration applied to field-sports video analysis.
+In
+ICASSP
+, 2012.
+[13]
+A. Gupta, J. J. Little, and R. J. Woodham.
+Using line and ellipse features for rectification of broadcast hockey
+video.
+In
+Canadian Conference on Computer and Robot Vision (CRV)
+,
+2011.
+[14]
+J.-B. Hayet, J. Piater, and J. Verly.
+Robust incremental rectification of sports video sequences.
+In
+BMVC
+, 2004.
+[15]
+R. Hess and A. Fern.
+Improved video registration using non-distinctive local image
+features.
+In
+CVPR
+, 2007.
+[16]
+N. Homayounfar, S. Fidler, and R. Urtasun.
+Sports field localization via deep structured models.
+In
+CVPR
+, 2017.
+[17]
+Z. Kukelova, J. Heller, M. Bujnak, and T. Pajdla.
+Radial distortion homography.
+In
+CVPR
+, 2015.
+[18]
+G. Levi and T. Hassner.
+LATCH: learned arrangements of three patch codes.
+In
+WACV
+, 2016.
+[19]
+Y. Li, J. Zhang, W. Hu, and J. Tian.
+Method for pan-tilt camera calibration using single control point.
+JOSA A
+, 32(1):156–163, 2015.
+[20]
+G. Lisanti, I. Masi, F. Pernici, and A. Del Bimbo.
+Continuous localization and mapping of a pan–tilt–zoom camera for
+wide area tracking.
+Machine Vision and Applications
+, 27(7):1071–1085, 2016.
+[21]
+S. Liu, J. Chen, C.-H. Chang, and Y. Ai.
+A new accurate and fast homography computation algorithm for sports
+and traffic video analysis.
+IEEE TCSVT
+, 2017.
+[22]
+D. G. Lowe.
+Distinctive image features from scale-invariant keypoints.
+IJCV
+, 60(2):91–110, 2004.
+[23]
+K. Lu, J. Chen, J. Little J., and H. Hangen.
+Light cascaded convolutional neural networks for accurate player
+detection.
+In
+BMVC
+, 2017.
+[24]
+L. Meng, J. Chen, F. Tung, J. J. Little, and C. Silva.
+Exploiting random RGB and sparse features for camera pose
+estimation.
+In
+BMVC
+, 2016.
+[25]
+L. Meng, J. Chen, F. Tung, J. Little J., J. Valentin, and C. Silva.
+Backtracking regression forests for accurate camera relocalization.
+In
+IROS
+, 2017.
+[26]
+J. C. Neves, J. C. Moreno, S. Barra, and H. Proença.
+Acquiring high-resolution face images in outdoor environments: A
+master-slave calibration algorithm.
+In
+IEEE BTAS
+, 2015.
+[27]
+K. Okuma, J. J. Little, and D. G. Lowe.
+Automatic rectification of long image sequences.
+In
+ACCV
+, 2004.
+[28]
+U. Park, H.-C. Choi, A. K. Jain, and S.-W. Lee.
+Face tracking and recognition at a distance: A coaxial and concentric
+PTZ camera system.
+IEEE Transactions on Information Forensics and Security
+,
+8(10):1665–1677, 2013.
+[29]
+V. Pătrăucean, P. Gurdjos, and R. G. von Gioi.
+Joint a contrario ellipse and line detection.
+IEEE TPAMI
+, 39(4):788–802, 2017.
+[30]
+J. Puwein, R. Ziegler, L. Ballan, and M. Pollefeys.
+PTZ camera network calibration from moving people in sports
+broadcasts.
+In
+WACV
+, 2012.
+[31]
+D. Scaramuzza.
+1-point-RANSAC structure from motion for vehicle-mounted cameras by
+exploiting non-holonomic constraints.
+IJCV
+, 95(1):74, 2011.
+[32]
+J. L. Schönberger, H. Hardmeier, T. Sattler, and M. Pollefeys.
+Comparative evaluation of hand-crafted and learned local features.
+In
+CVPR
+, 2017.
+[33]
+R. A. Sharma, B. Bhat, V. Gandhi, and C. Jawahar.
+Automated top view registration of broadcast football videos.
+arXiv preprint arXiv:1703.01437
+, 2017.
+[34]
+S. N. Sinha and M. Pollefeys.
+Pan–tilt–zoom camera calibration and high-resolution mosaic
+generation.
+CVIU
+, 103(3):170–183, 2006.
+[35]
+SPORTLOGiQ.
+http://sportlogiq.com/
+.
+[36]
+G. Thomas.
+Real-time camera tracking using sports pitch markings.
+Journal of Real-Time Image Processing
+, 2(2-3):117–132, 2007.
+[37]
+P.-C. Wen, W.-C. Cheng, Y.-S. Wang, H.-K. Chu, N. C. Tang, and H.-Y. M. Liao.
+Court reconstruction for camera calibration in broadcast basketball
+videos.
+IEEE TVCG
+, 22(5):1517–1526, 2016.
+[38]
+F. W. Wheeler, R. L. Weiss, and P. H. Tu.
+Face recognition at a distance system for surveillance applications.
+In
+IEEE BTAS
+, 2010.
+[39]
+Z. Wu and R. J. Radke.
+Keeping a pan-tilt-zoom camera calibrated.
+IEEE TPAMI
+, 35(8):1994–2007, 2013.
+[40]
+H. Zeng, X. Deng, and Z. Hu.
+A new normalized method on line-based homography estimation.
+Pattern Recognition Letters
+, 29(9):1236–1244, 2008.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

@@ -1,0 +1,3727 @@
+Large-Scale In-Game Outcome Forecasting for Match, Team and Players in Football using an Axial Transformer Neural Network
+Michael Horton
+Affiliation:
+Stats Perform Inc., Chicago, IL, USA 60611
+Patrick Lucey
+Affiliation:
+Stats Perform Inc., Chicago, IL, USA 60611
+Abstract
+Football (soccer) is a sport that is characterised by complex game play, where players perform a variety of actions, such as passes, shots, tackles, fouls, in order to score goals, and ultimately win matches.
+Accurately forecasting the total number of each action that each player will complete during a match is desirable for a variety of applications, including tactical decision-making, sports betting, and for television broadcast commentary and analysis.
+Such predictions must consider the game state, the ability and skill of the players in both teams, the interactions between the players, and the temporal dynamics of the game as it develops.
+In this paper, we present a transformer-based neural network that jointly and recurrently predicts the expected totals for thirteen individual actions at multiple time-steps during the match, and where predictions are made for each individual player, each team and at the game-level.
+The neural network is based on an
+axial transformer
+that efficiently captures the temporal dynamics as the game progresses, and the interactions between the players at each time-step.
+We present a novel axial transformer design that we show is equivalent to a regular sequential transformer, and the design performs well experimentally.
+We show empirically that the model can make consistent and reliable predictions, and efficiently makes
+∼
+\sim
+75,000
+live predictions at low latency for each game.
+Figure 1
+:
+Real-time forecasts at game, team and player level for Fulham (1) vs. Aston Villa (3) on 19 October 2024. As time progresses with the
+x
+x
+-axis, the probability of each outcome is updated to account for the current game state. A selection of key events indicated by dashed vertical lines, including goals (blue), red cards (red) and start and end of each half (black).
+1
+Introduction
+Football (soccer) is a game that can be viewed as a sequence of
+actions
+such as passes, shots, tackles, fouls, etc., that are carried out by the players with the objective of scoring goals and ultimately winning the match.
+The ability to accurately forecast—at a given point in the match—the total number of each such action that will be carried out by each player, and by each team, during the entire match is important for a variety of applications,
+such as: determining the starting lineup and substitutions; evaluating player and team performance; setting markets for sports betting; and supporting commentary and analysis during live broadcasts.
+Until recently, match forecasting information was primarily obtained from betting markets
+(
+Graham 2024
+, chapter 6)
+, which can be viewed as machines for aggregating the “wisdom of crowds”, where bettors vote their opinions through the liquidity they provide.
+However, betting markets were only available on a limited number of outcomes such as game result and team goals scored, and were not available in-game.
+Betting markets currently rely on human intervention, restricting their ability to scale to offering in-game player-level markets on multiple actions
+(
+Miller and Davidow 2019
+, chapter 5)
+.
+Subsequently, machine learning has facilitated data-driven forecasting models that address the scalability issue, however to-date these models have been limited in one or more ways: predicting a single target only, not making player-level predictions, or only making predictions pre-game.
+Yet, there are many advantages to being able to make consistent in-game player-level forecasts on multiple target outcomes, such as the ability to analyse the impact of changes in game-state across all forecast outcomes, identify correlated forecasts, and to perform counter-factual analysis.
+To that end, we present a single neural network model that jointly makes forecasts of the total number of actions made by each
+agent
+(i.e. a player, a team or the overall game-state), for multiple actions, and at multiple time-steps during a match, see Figure
+1
+.
+The model accepts
+multi-modal
+input features on all agents, and features that denote the a-priori strength and playing style of each player and team.
+This model is characterized by a simple network structure, that still captures
+the interactions between the agents since the match started, and uses this shared state to forecast the final totals for each action by each agent, as well as the overall game outcome.
+The model is based on the
+transformer
+, a neural network component that has proven to be an effective and reliable learner across many domains, due to its apparent ability to capture interactions and dependencies across sequential, grid, and graphical data structures.
+Moreover, it has been shown to effectively integrate and learn from the heterogeneous inputs inherent in multi-modal settings.
+Initially designed for language modelling, the transformer is currently the backbone of state-of-the-art models in computer vision, vehicle motion forecasting, weather forecasting and drug discovery
+Grattafiori and et al. 2024
+;
+Nayakanti et al. 2023
+;
+Price et al. 2024
+;
+Abramson et al. 2024
+.
+The actions that occur during a football match are the product of a complex system of interactions between players, teams and the game-state, and the task of predicting the total number of actions that will accrue to an individual agent over the duration of the match has several considerations that contextualise the prediction.
+Consider the task of forecasting, at a particular point in time during the game, the total number of successful passes that a particular player will make during the match.
+The prediction will be conditioned by several factors, including:
+•
+The number of passes already made by the player.
+•
+The offensive strength of the player’s team-mates, and the strategy the team is performing.
+•
+The defensive strength of the opposition team players, and their strategy.
+•
+The
+game state
+, i.e. the current score, remaining time, number of sent-off players, etc.
+•
+The
+game context
+, i.e. the competition stage the game is player in e.g, whether it is a final in a knock-out tournament, or a meaningless end-of-season game.
+•
+The expected time remaining until the player is substituted or the game ends.
+•
+The
+momentum
+of the current game state, e.g. whether one team has been dominating the game-play recently.
+A model for this task must be
+consistent
+in the predictions that it makes for the various actions.
+The consistency may be trivial e.g., the number of shots on target by a particular player must be no greater than the total shots made,
+or more complex, for example the total assists by all players in a team must be no greater than the total number of goals for the team.
+The model should also be sensitive to the correlations between actions:
+a team that is dominant will tend to make more passes and shots, and concede fewer fouls and yellow cards.
+Ideally, the model has the capacity to make joint predictions on the game totals of all actions by learning the correlations and patterns between the actions.
+Moreover, since the predictions are updated as the match progresses, the predictions must be temporally consistent in the sense that the predicted totals should never be less than the actual running totals, be smooth locally (with the exception of when significant events take place, such as goals), and converge to the actual totals at the end of the match.
+The model should also be able to capture in-game dynamics, such as shifts in momentum, or the effects of goals, player dismissals, etc. as the rate that actions occur varies with the stage of the game, and with key events
+Dixon and Robinson 1998
+.
+Figure
+2
+is an example of action forecasts for a single player that illustrates the impact of an opponent being red-carded.
+Figure 2
+:
+Live predictions for Youri Telemans (Aston Villa) for the 12 target actions during the Fulham vs. Aston Villa game, see Figure
+1
+. For each target, the blue line represents the number of events that have already occurred, and the orange line is a live prediction of the total number of events that will occur during the game. The predictions are sensitive to actions of other players, for example a red card was shown to an opposition player in the 62nd minute (indicated by the dashed vertical line).
+The required model thus has the following desiderata:
+•
+Accepts inputs on a set of players with no implicit ordering, or requirement that the cardinality of the set is fixed.
+•
+Accepts inputs with different modalities, e.g. player, team, game-state, and both pre-game and in-game.
+•
+Makes consistent predictions for multiple actions for all agents.
+•
+Makes sequential predictions that are temporally consistent, and can capture in-game momentum and dynamics.
+The presented neural network model, using only axial transformer layers and fully-connected linear layers, is able to fulfil these requirements.
+The model is based on a novel formulation of the
+axial transformer
+that efficiently integrates the temporal dynamics of the game as it progresses, and the interactions between players within each time-step in simple, efficient and principled approach.
+The learned embeddings output by the final transformer layer are used to forecast the total of each action for each agent, by inputting them to a linear layer.
+This model architecture is efficient: there are no duplicate features in the input; and the model makes multiple predictions at each time-step, currently it forecasts totals for each of twelve actions for each player in the match-day squad and for the two teams, and also predicts the game outcome at the game-state level, up to 505 predictions per time-step, and predictions are made temporally
+∼
+\sim
+150 time per match.
+At inference time, the model achieves sub-second latency on commodity CPU hardware, and is thus appropriate for running in a real-time setting.
+We are unaware of any existing work for the task of making such consistent real-time agent-level forecasts during matches from single model.
+As such, the model was tested empirically and shown to obtain consistent performance across all the target actions.
+Ablation tests were also performed that demonstrate that both player interactions and temporal dynamics contribute to fully capturing the current game state and subsequently making predictions.
+The paper is arranged as follows.
+We contextualise the work in Section
+2
+by reviewing related work in sports prediction and the use of transformers for sequential and set-based prediction.
+The data inputs and model are formally described in Section
+3
+and empirical results are presented in Section
+4
+.
+2
+Related Work
+Match Forecasting
+Sports analysis is a research field that has developed significantly in recent years, enabled by a number of factors, including: the increased interest and commercialisation of professional sports and the related broadcasting and betting industries; the availability of detailed game data; and the relatively-constrained nature of games in terms of location and agents make it suitable for algorithmic analysis.
+A particular area of research is
+forecasting
+: predicting game outcomes, either prior to or during the game, see
+Wunderlich and Memmert 2020
+for a review.
+Historically, forecasting was restricted by the unavailability of detailed data to coarse targets, such as the outcome of a game
+Koopman and Lit 2019
+;
+Wong et al. 2025
+, or the number of goals scored by each team
+Maher 1982
+;
+Dixon and Coles 1997
+;
+Lee 1997
+;
+Karlis and Ntzoufras 2003
+, and predictions were made
+pre-game
+, typically based on the results of prior games.
+The collection of fine-grained event tracking data in professional football allowed for predictions to be made on actions beyond just goals. Event tracking is captured by human operators who log all action events, along with contextual attributes, such as the time, location, identity of involved players.
+1
+1
+1
+e.g.
+Opta
+https://www.statsperform.com/opta/
+,
+StatsBomb
+https://statsbomb.com/what-we-do/soccer-data/
+These data allow for predictions to be made on actions other than just goals, and for each individual player.
+Furthermore, event data allows for predictions to be made
+in-game
+, where forecasts are made
+for individual players on actions,
+and are adjusted as the game proceeds and actions are recorded.
+The event data may be further contextualised by combining it with player tracking data, so that the location and velocity of each player is known throughout the match
+Lucey et al. 2015
+;
+Chawla et al. 2017
+;
+Klemp et al. 2021
+.
+Event and tracking has enabled models to make short-term predictions, such as estimating the type
+Simpson et al. 2022
+, or the value of the next event or events
+Lucey et al. 2015
+;
+Decroos et al. 2019
+;
+Fernández et al. 2021
+.
+Estimating the game outcome as the match proceeds, often known as
+live win probability
+, is also possible with the game context extracted from event and tracking data
+Zou et al. 2020
+;
+Robberechts et al. 2021
+;
+Klemp et al. 2021
+;
+Rahimian et al. 2024
+;
+Yeung et al. 2025
+.
+Axial Transformer
+The
+transformer
+architecture
+Vaswani et al. 2017
+was initially designed for natural language processing (NLP) tasks such as machine translation, and was based on an encoder-decoder model.
+Subsequently, the encoder component of the transformer was shown to be effective own its own on many NLP tasks, and that is was possible to leverage large unlabelled datasets in pre-training, and that the pre-trained model would transfer easily to directed tasks with minimal fine-tuning
+Devlin et al. 2018
+.
+The transformer was subsequently shown to be effective in many other domains with structured sequential or grid-based data, including image recognition
+Dosovitskiy et al. 2020
+, drug discovery
+Jiang et al. 2024
+;
+Abramson et al. 2024
+and weather forecasting
+Price et al. 2024
+;
+Bojesomo et al. 2024
+It is also used as the backbone of multi-modal architectures that fuse text and image inputs
+Kim et al. 2021
+;
+Wang et al. 2022
+.
+The core operator in the transformer is the attention mechanism
+Bahdanau et al. 2014
+which operates over a single dimension, such as a sequence of word tokens in NLP tasks.
+The
+axial transformer
+Ho et al. 2019
+extended this to operate alternately over the rows and columns of pixels in an image.
+The approach has subsequently been applied to learning the joint movement of agents over time
+Monti et al. 2022
+;
+Nayakanti et al. 2023
+;
+Xu et al. 2023
+;
+Jiang et al. 2023
+.
+Multi-task and Multi-modal Learning
+Many approaches described above for action prediction problems are
+single-task
+approaches, where predictions are made for a single action and a single player or team only, or for both teams at a time
+Karlis and Ntzoufras 2003
+.
+However,
+multi-task
+learning, making simultaneous predictions on multiple targets, has been shown to improve the performance on all targets
+Caruana 1997
+.
+In the case of transformers, multi-task learning is routinely employed during pre-training
+Devlin et al. 2018
+, and has been shown to improve performance on downstream tasks
+Raffel et al. 2020
+.
+Transformers have also been shown to be effective for
+multi-modal
+learning, and
+have been used to integrate inputs of different modalities into a single model framework
+Mizrahi et al. 2023
+;
+Bachmann et al. 2024
+.
+3
+Method
+We present a model that accepts input features for different agents, both pre-game and over a time-series spanning a match, and uses a single transformer encoder backbone to learn embeddings that subsequently make predictions on multiple actions for each agent.
+The model backbone is a series of axial transformer encoder layers, where each layer applies attention along both the temporal and agent dimensions.
+3.1
+Preliminaries
+The objective of the model is to predict the end-of-match totals for various actions for all involved agents. Each
+target
+is thus a discrete random variable
+Y
+a
+,
+p
+,
+t
+Y_{a,p,t}
+, where
+a
+a
+is the action,
+p
+p
+is the agent and
+t
+t
+is the time-step .
+Ideally, the model would predict the joint distribution of all targets
+P
+(
+𝐘
+)
+:
+𝐘
+=
+{
+Y
+a
+,
+p
+,
+t
+|
+a
+∈
+𝒜
+,
+p
+∈
+𝒫
+,
+t
+∈
+𝒯
+}
+P(\mathbf{Y})\colon\mathbf{Y}=\{Y_{a,p,t}|a\in\mathcal{A},p\in\mathcal{P},t\in\mathcal{T}\}
+, where
+𝒜
+\mathcal{A}
+,
+𝒫
+\mathcal{P}
+and
+𝒯
+\mathcal{T}
+are the sets of actions, agents and time-steps, respectively.
+However this is generally intractable as the space of possible outcomes is at least
+2
+|
+𝒜
+|
+×
+|
+𝒫
+|
+×
+|
+𝒯
+|
+2^{|\mathcal{A}|\times|\mathcal{P}|\times|\mathcal{T}|}
+(assuming that each
+Y
+a
+,
+p
+,
+t
+Y_{a,p,t}
+has only two outcomes).
+Instead, we train a model to learn the marginal distribution for each target,
+P
+⁡
+(
+Y
+a
+,
+p
+,
+t
+)
+=
+∑
+𝐘
+∖
+Y
+a
+,
+p
+,
+t
+P
+⁡
+(
+𝐘
+)
+P(Y_{a,p,t})=\sum_{\mathbf{Y}\setminus Y_{a,p,t}}P(\mathbf{Y})
+, where
+𝐘
+∖
+Y
+a
+,
+p
+,
+t
+\mathbf{Y}\setminus Y_{a,p,t}
+is the set of all targets except
+Y
+a
+,
+p
+,
+t
+Y_{a,p,t}
+.
+Internally, the intention is that the model will approximate the joint distribution, and use this to determine the marginal distributions, and thus ensure consistency between the distributions for each target.
+Notation
+Matrices and tensors are denoted in boldface capitals, e.g.
+𝐌
+\boldsymbol{\mathrm{M}}
+, and vectors as lowercase, e.g.
+𝐯
+\boldsymbol{\mathrm{v}}
+.
+Subscripts are used to distinguish objects, e.g.
+𝐯
+i
+\boldsymbol{\mathrm{v}}_{i}
+or
+𝐌
+row
+\boldsymbol{\mathrm{M}}_{\mathrm{row}}
+.
+Bracketed superscripts are used to distinguish entities with the same structure, e.g. input examples
+𝐗
+(
+n
+)
+\boldsymbol{\mathrm{X}}^{(n)}
+. Where ambiguity exists between e.g. matrix subscripts and element indices, indexing is denoted by the notation
+(
+𝐌
+)
+i
+​
+j
+(\boldsymbol{\mathrm{M}})_{ij}
+, which is the
+i
+i
+-th element of the first dimension and
+j
+j
+-th element of the second dimension, etc.
+All enumerations used for indexing start with
+1
+1
+.
+3.2
+Data
+The models is trained on a set of
+N
+N
+training examples
+𝒳
+\mathcal{X}
+.
+The granularity of each training example is a single match, and for each match
+n
+n
+there are
+T
+(
+n
+)
+T^{(n)}
+time-steps where an action event occurs.
+There are also
+P
+(
+n
+)
+P^{(n)}
+players in the match-day squad, and
+2
+2
+teams for each match
+n
+n
+.
+Each training example is a tuple
+(
+𝐗
+(
+n
+)
+,
+𝐘
+(
+n
+)
+)
+\left(\mathbf{X}^{(n)},\mathbf{Y}^{(n)}\right)
+, where
+𝐗
+(
+n
+)
+\mathbf{X}^{(n)}
+is the tuple of input tensors, and
+𝐘
+(
+n
+)
+\mathbf{Y}^{(n)}
+is the tuple of target tensors for match
+n
+n
+.
+Input
+The input tuple
+𝐗
+(
+n
+)
+\mathbf{X}^{(n)}
+contains the following tensors:
+•
+𝐗
+player
+(
+n
+)
+∈
+ℝ
+P
+(
+n
+)
+×
+T
+(
+n
+)
+×
+D
+player
+\mathbf{X}^{(n)}_{\mathrm{player}}\in\mathbb{R}^{P^{(n)}\times T^{(n)}\times D_{\mathrm{player}}}
+is the tensor of live player features, where
+D
+player
+D_{\mathrm{player}}
+is the dimension of the player feature vectors. The tensor contains indicator features for the player’s position and team, and running totals of the twelve actions.
+•
+𝐗
+player
+−
+strength
+(
+n
+)
+∈
+ℝ
+P
+(
+n
+)
+×
+D
+player
+−
+strength
+\mathbf{X}^{(n)}_{\mathrm{player-strength}}\in\mathbb{R}^{P^{(n)}\times D_{\mathrm{player-strength}}}
+is the tensor of player strength features, with feature dimension
+D
+player
+−
+strength
+D_{\mathrm{player-strength}}
+.
+The player strength features are intended to capture the a-priori strength of the player, and are primarily aggregate statistics of the player’s actions in recent games, such as the mean number of passes in the previous 5 games, the maximum fouls conceded in the previous 10 games, etc.
+In addition, there are features for the time since the previous match, distance from the player’s home ground and distance from the previous match location, etc.
+•
+𝐗
+team
+(
+n
+)
+∈
+ℝ
+2
+×
+T
+(
+n
+)
+×
+D
+team
+\mathbf{X}^{(n)}_{\mathrm{team}}\in\mathbb{R}^{2\times T^{(n)}\times D_{\mathrm{team}}}
+is the tensor of live team features, with feature dimension
+D
+team
+D_{\mathrm{team}}
+.
+The tensor contains indicator features for the team, and running totals of the actions already made by the team, similar to the live player features.
+•
+𝐗
+team
+−
+strength
+(
+n
+)
+∈
+ℝ
+2
+×
+D
+team
+−
+strength
+\mathbf{X}^{(n)}_{\mathrm{team-strength}}\in\mathbb{R}^{2\times D_{\mathrm{team-strength}}}
+is the tensor of team strength features, with feature dimension
+D
+team
+−
+strength
+D_{\mathrm{team-strength}}
+.
+The team strength features are primarily aggregate statistics of the team’s actions in previous games, similar to the player strength features.
+•
+𝐗
+game
+(
+n
+)
+∈
+ℝ
+T
+(
+n
+)
+×
+D
+game
+\mathbf{X}^{(n)}_{\mathrm{game}}\in\mathbb{R}^{T^{(n)}\times D_{\mathrm{game}}}
+is the tensor of live game state features of dimension
+D
+game
+D_{\mathrm{game}}
+.
+The game state features contain attributes of the current event, such as the event-type, the game-clock time, and the event location.
+•
+𝐗
+game
+−
+context
+(
+n
+)
+∈
+ℝ
+D
+game
+−
+context
+\mathbf{X}^{(n)}_{\mathrm{game-context}}\in\mathbb{R}^{D_{\mathrm{game-context}}}
+is the game context features vector of dimension
+D
+game
+−
+context
+D_{\mathrm{game-context}}
+.
+The event context features capture the context in which the game is played, such as indicator features for the competition (EPL, Champions’ League, etc.), the hour the game is played at, etc.
+An important attribute of this input scheme is that features are not duplicated.
+the features are categorised by their
+modality
+, such as: player-, team- or game-level; pre-game or time-step, and they are included in the corresponding tensor.
+The model relies on the attention mechanism in the transformer layers to learn which features at each modality are relevant to predictions at other modalities.
+Target
+The target tuple
+𝐘
+(
+n
+)
+\mathbf{Y}^{(n)}
+contains tensors for each of the modelled actions for each agent.
+For a given action
+a
+a
+, the target tensor contains the remaining number of actions for each agent in a tensor
+𝐘
+a
+(
+n
+)
+∈
+ℝ
+P
+(
+n
+)
+×
+T
+(
+n
+)
+\mathbf{Y}^{(n)}_{a}\in\mathbb{R}^{P^{(n)}\times T^{(n)}}
+.
+For example if
+a
+a
+is the number of shots, for player
+p
+p
+and for time-step
+t
+t
+,
+(
+𝐘
+a
+(
+n
+)
+)
+p
+​
+t
+\left(\mathbf{Y}^{(n)}_{a}\right)_{pt}
+is the number of shots made by player
+p
+p
+in the interval
+(
+t
+,
+T
+(
+n
+)
+]
+(t,T^{(n)}]
+.
+Using the remaining action count as ground-truth, rather than the total count, allows the count to be modelled using the Poisson distribution, which is a appropriate for many of the action targets considered here.
+3.3
+Axial Transformer
+The axial transformer
+(
+Ho et al. 2019
+)
+is a key component of the model proposed in Section
+3.4
+. We propose a simple variation of the axial transformer that is simple, easy to implement using standard frameworks such as PyTorch, and we show that it is a computationally efficient implementation of the regular sequential masked self-attention
+Vaswani et al. 2017
+.
+Following
+Vaswani et al. 2017
+, masked self-attention is an operation on a
+sequence
+of embedding vectors contained in a matrix
+𝐒
+:=
+[
+𝐞
+1
+,
+𝐞
+2
+,
+…
+,
+𝐞
+s
+]
+⊺
+\boldsymbol{\mathrm{S}}:=[\boldsymbol{\mathrm{e}}_{1},\boldsymbol{\mathrm{e}}_{2},\dotsc,\boldsymbol{\mathrm{e}}_{s}]^{\intercal}
+of length
+S
+S
+:
+Attention
+⁡
+(
+𝐊
+,
+𝐐
+,
+𝐕
+,
+𝐌
+)
+\displaystyle\attention\left(\boldsymbol{\mathrm{K}},\boldsymbol{\mathrm{Q}},\boldsymbol{\mathrm{V}},\boldsymbol{\mathrm{M}}\right)
+:
+=
+Softmax
+⁡
+(
+𝐀
+)
+​
+𝐕
+​
+, where
+\displaystyle:=\softmax\left(\boldsymbol{\mathrm{A}}\right)\boldsymbol{\mathrm{V}}\text{, where}
+(1)
+𝐀
+\displaystyle\boldsymbol{\mathrm{A}}
+=
+𝐌
++
+𝐊𝐐
+⊺
+d
+​
+,
+\displaystyle=\dfrac{\boldsymbol{\mathrm{M}}+\boldsymbol{\mathrm{K}}\boldsymbol{\mathrm{Q}}^{\intercal}}{\sqrt{d}}\text{,}
+(2)
+where
+𝐊
+,
+𝐐
+,
+𝐕
+∈
+ℝ
+S
+×
+D
+\boldsymbol{\mathrm{K}},\boldsymbol{\mathrm{Q}},\boldsymbol{\mathrm{V}}\in\mathbb{R}^{S\times D}
+are matrices computed from
+𝐒
+\boldsymbol{\mathrm{S}}
+using a linear transformation (e.g.
+𝐊
+:=
+𝐒𝐖
+𝐊
+\boldsymbol{\mathrm{K}}:=\boldsymbol{\mathrm{S}}\boldsymbol{\mathrm{W_{K}}}
+for some learnable
+𝐖
+k
+∈
+ℝ
+D
+×
+D
+\boldsymbol{\mathrm{W}}_{k}\in\mathbb{R}^{D\times D}
+), and
+𝐌
+∈
+ℝ
+S
+×
+S
+\boldsymbol{\mathrm{M}}\in\mathbb{R}^{S\times S}
+is a
+mask matrix
+that describes which elements in the sequence can be attended to. The mask matrix is application-specific, and is constructed as
+𝐌
+i
+​
+j
+=
+0
+\boldsymbol{\mathrm{M}}_{ij}=0
+if
+𝐒
+i
+\boldsymbol{\mathrm{S}}_{i}
+can attend to
+𝐒
+j
+\boldsymbol{\mathrm{S}}_{j}
+, and
+−
+∞
+-\infty
+otherwise.
+The
+Softmax
+\softmax
+operator is applied row-wise
+using the element-wise operators exponential
+exp
+\exp
+and Hadamard division:
+Softmax
+⁡
+(
+𝐀
+)
+\displaystyle\softmax(\boldsymbol{\mathrm{A}})
+:
+=
+exp
+⁡
+(
+𝐀
+)
+𝐧𝟏
+⊺
+​
+, where
+\displaystyle:=\frac{\exp(\boldsymbol{\mathrm{A}})}{\boldsymbol{\mathrm{n}}\boldsymbol{\mathrm{1}}^{\intercal}}\text{, where}
+(3)
+𝐧
+\displaystyle\boldsymbol{\mathrm{n}}
+=
+exp
+⁡
+(
+𝐀
+)
+​
+𝟏
+​
+,
+\displaystyle=\exp(\boldsymbol{\mathrm{A}})\boldsymbol{\mathrm{1}}\text{, }
+(4)
+where
+𝟏
+\boldsymbol{\mathrm{1}}
+is the ones vector of dimension
+S
+S
+, and the vector
+𝐧
+∈
+ℝ
+s
+\boldsymbol{\mathrm{n}}\in\mathbb{R}^{s}
+is the vector containing the normalizing factor for each row
+and thus normalizes each row of
+exp
+⁡
+(
+𝐀
+)
+\exp(\boldsymbol{\mathrm{A}})
+so that the each row sums to
+1
+1
+.
+Given an input
+𝐒
+\boldsymbol{\mathrm{S}}
+, the
+Attention
+⁡
+(
+)
+\attention()
+operator returns
+𝐑
+∈
+ℝ
+S
+×
+D
+\boldsymbol{\mathrm{R}}\in\mathbb{R}^{S\times D}
+, where each embedding vector
+(
+𝐑
+)
+i
+(\boldsymbol{\mathrm{R}})_{i}
+is used to update the corresponding embedding vector
+(
+𝐒
+)
+i
+(\boldsymbol{\mathrm{S}})_{i}
+in the subsequent layers of the transformer block.
+In contrast to sequential attention, axial attention operates on a
+grid
+of embedding vectors, contained in a
+H
+×
+W
+×
+D
+H\times W\times D
+-dimensional tensor
+𝐆
+\boldsymbol{\mathrm{G}}
+, where the
+Attention
+⁡
+(
+)
+\attention()
+operator is applied to each row and to each column of the grid independently, obtaining the output tensors
+𝐑
+row
+,
+𝐑
+col
+∈
+ℝ
+H
+×
+W
+×
+D
+\boldsymbol{\mathrm{R}}^{\mathrm{row}},\boldsymbol{\mathrm{R}}^{\mathrm{col}}\in\mathbb{R}^{H\times W\times D}
+, and then the outputs from these operations are aggregated.
+The embedding vector
+(
+𝐆
+)
+i
+​
+j
+(\boldsymbol{\mathrm{G}})_{ij}
+is updated from the outputs of the
+Attention
+⁡
+(
+)
+\attention()
+operation on row
+i
+i
+and column
+j
+j
+, see Figure
+3
+.
+Figure 3
+:
+Axial attention is used on a grid of embeddings. For the given cell
+(
+𝐆
+)
+i
+​
+j
+(\boldsymbol{\mathrm{G}})_{ij}
+(with red border), self-attention is applied over the column
+𝐆
+⋅
+j
+\boldsymbol{\mathrm{G}}_{\cdot j}
+(yellow) and
+masked
+self-attention over the row
+𝐆
+i
+⋅
+\boldsymbol{\mathrm{G}}_{i\cdot}
+(green).
+Intuitively, it is desirable that the axial attention operation for updating
+(
+𝐆
+)
+i
+​
+j
+(\boldsymbol{\mathrm{G}})_{ij}
+should attend
+equally
+to both the embedding vectors in row
+i
+i
+and in column
+j
+j
+.
+This is achieved by simply adding
+(
+𝐑
+row
+)
+i
+​
+j
+(\boldsymbol{\mathrm{R}}^{\mathrm{row}})_{ij}
+, i.e. the
+j
+j
+-th element of the output of the row attention operation on row
+i
+i
+, with
+(
+𝐑
+col
+)
+i
+​
+j
+(\boldsymbol{\mathrm{R}}^{\mathrm{col}})_{ij}
+, the output of the
+i
+i
+-th element of the output of the column attention on row
+j
+j
+.
+However, since the respective row and column
+Softmax
+⁡
+(
+)
+\softmax()
+operations have been individually normalized, we re-normalize over both using the row and column normalizing factors
+(
+𝐧
+row
+)
+i
+(\boldsymbol{\mathrm{n}}^{\mathrm{row}})_{i}
+and
+(
+𝐧
+col
+)
+j
+(\boldsymbol{\mathrm{n}}^{\mathrm{col}})_{j}
+respectively.
+Naively, this approach will attend to the embedding vector
+(
+𝐆
+)
+i
+​
+j
+(\boldsymbol{\mathrm{G}})_{ij}
+twice, in both the row and column operation, however this can be avoided by asserting that this vector is masked in either the row or column
+Attention
+⁡
+(
+)
+\attention()
+operation.
+See Algorithm
+1
+for the full
+AxialAttention
+\axialattention
+operation.
+Algorithm 1
+Axial Attention
+1:
+𝐖
+Q
+,
+𝐖
+K
+,
+𝐖
+V
+\boldsymbol{\mathrm{W}}_{Q},\boldsymbol{\mathrm{W}}_{K},\boldsymbol{\mathrm{W}}_{V}
+⊳
+\triangleright
+Weight matrices
+2:
+procedure
+AxialAttention
+(
+𝐆
+,
+{
+𝐌
+i
+row
+}
+i
+=
+1
+H
+,
+{
+𝐌
+j
+col
+}
+j
+=
+1
+W
+\boldsymbol{\mathrm{G}},\bigl\{\boldsymbol{\mathrm{M}}^{\mathrm{row}}_{i}\bigr\}_{i=1}^{H},\bigl\{\boldsymbol{\mathrm{M}}^{\mathrm{col}}_{j}\bigr\}_{j=1}^{W}
+)
+⊳
+\triangleright
+Perform axial attention on grid, using mask and weights
+3:
+𝐑
+row
+,
+𝐑
+col
+←
+∅
+,
+∅
+\boldsymbol{\mathrm{R}}^{\mathrm{row}},\boldsymbol{\mathrm{R}}^{\mathrm{col}}\leftarrow\emptyset,\emptyset
+⊳
+\triangleright
+3D tensors for results
+4:
+𝐍
+row
+,
+𝐍
+col
+←
+∅
+,
+∅
+\boldsymbol{\mathrm{N}}^{\mathrm{row}},\boldsymbol{\mathrm{N}}^{\mathrm{col}}\leftarrow\emptyset,\emptyset
+⊳
+\triangleright
+Matrices for normalizing factors
+5:
+for
+i
+←
+1
+,
+H
+i\leftarrow 1,H
+do
+6:
+𝐒
+←
+(
+𝐆
+)
+i
+⋅
+\boldsymbol{\mathrm{S}}\leftarrow(\boldsymbol{\mathrm{G}})_{i\cdot}
+⊳
+\triangleright
+𝐒
+\boldsymbol{\mathrm{S}}
+is
+W
+×
+D
+W\times D
+matrix
+7:
+𝐑
+,
+𝐧
+←
+Attention
+⁡
+(
+𝐒𝐖
+Q
+,
+𝐒𝐖
+K
+,
+𝐒𝐖
+V
+,
+𝐌
+i
+row
+)
+\boldsymbol{\mathrm{R}},\boldsymbol{\mathrm{n}}\leftarrow\attention(\boldsymbol{\mathrm{S}}\boldsymbol{\mathrm{W}}_{Q},\boldsymbol{\mathrm{S}}\boldsymbol{\mathrm{W}}_{K},\boldsymbol{\mathrm{S}}\boldsymbol{\mathrm{W}}_{V},\boldsymbol{\mathrm{M}}^{\mathrm{row}}_{i})
+,
+8:
+𝐑
+row
+←
+[
+𝐑
+row
+𝐑
+]
+\boldsymbol{\mathrm{R}}^{\mathrm{row}}\leftarrow\begin{bmatrix}\boldsymbol{\mathrm{R}}^{\mathrm{row}}\\
+\boldsymbol{\mathrm{R}}\end{bmatrix}
+9:
+𝐍
+row
+←
+[
+𝐍
+row
+𝐧
+]
+\boldsymbol{\mathrm{N}}^{\mathrm{row}}\leftarrow\begin{bmatrix}\boldsymbol{\mathrm{N}}^{\mathrm{row}}\\
+\boldsymbol{\mathrm{n}}\end{bmatrix}
+10:
+end
+for
+11:
+for
+i
+←
+1
+,
+W
+i\leftarrow 1,W
+do
+12:
+𝐒
+←
+(
+𝐆
+)
+⋅
+j
+\boldsymbol{\mathrm{S}}\leftarrow(\boldsymbol{\mathrm{G}})_{\cdot j}
+⊳
+\triangleright
+𝐒
+\boldsymbol{\mathrm{S}}
+is
+H
+×
+D
+H\times D
+matrix
+13:
+𝐑
+,
+𝐧
+←
+Attention
+⁡
+(
+𝐒𝐖
+Q
+,
+𝐒𝐖
+K
+,
+𝐒𝐖
+V
+,
+𝐌
+j
+col
+)
+\boldsymbol{\mathrm{R}},\boldsymbol{\mathrm{n}}\leftarrow\attention(\boldsymbol{\mathrm{S}}\boldsymbol{\mathrm{W}}_{Q},\boldsymbol{\mathrm{S}}\boldsymbol{\mathrm{W}}_{K},\boldsymbol{\mathrm{S}}\boldsymbol{\mathrm{W}}_{V},\boldsymbol{\mathrm{M}}^{\mathrm{col}}_{j})
+,
+14:
+𝐑
+col
+←
+[
+𝐑
+col
+𝐑
+]
+\boldsymbol{\mathrm{R}}^{\mathrm{col}}\leftarrow\begin{bmatrix}\boldsymbol{\mathrm{R}}^{\mathrm{col}}&\boldsymbol{\mathrm{R}}\end{bmatrix}
+15:
+𝐍
+col
+←
+[
+𝐍
+col
+𝐧
+]
+\boldsymbol{\mathrm{N}}^{\mathrm{col}}\leftarrow\begin{bmatrix}\boldsymbol{\mathrm{N}}^{\mathrm{col}}&\boldsymbol{\mathrm{n}}\end{bmatrix}
+16:
+end
+for
+17:
+𝐑
+←
+𝐍
+row
+𝐍
+row
++
+𝐍
+col
+⊙
+𝐑
+row
++
+𝐍
+col
+𝐍
+row
++
+𝐍
+col
+⊙
+𝐑
+col
+\boldsymbol{\mathrm{R}}\leftarrow\frac{\boldsymbol{\mathrm{N}}^{\mathrm{row}}}{\boldsymbol{\mathrm{N}}^{\mathrm{row}}+\boldsymbol{\mathrm{N}}^{\mathrm{col}}}\odot\boldsymbol{\mathrm{R}}^{\mathrm{row}}+\frac{\boldsymbol{\mathrm{N}}^{\mathrm{col}}}{\boldsymbol{\mathrm{N}}^{\mathrm{row}}+\boldsymbol{\mathrm{N}}^{\mathrm{col}}}\odot\boldsymbol{\mathrm{R}}^{\mathrm{col}}
+⊳
+\triangleright
+Division is element-wise,
+⊙
+\odot
+is Hadamard product
+18:
+return
+𝐑
+\boldsymbol{\mathrm{R}}
+⊳
+\triangleright
+𝐑
+\boldsymbol{\mathrm{R}}
+has same dimension as
+𝐆
+\boldsymbol{\mathrm{G}}
+19:
+end
+procedure
+During a single
+AxialAttention
+⁡
+(
+)
+\axialattention()
+operation,
+H
+H
+row
+Attention
+⁡
+(
+)
+\attention()
+operations on sequences of length
+W
+W
+, and
+W
+W
+column
+Attention
+⁡
+(
+)
+\attention()
+operations on sequences of length
+H
+H
+, are performed. Since the runtime and storage complexity of the
+Attention
+⁡
+(
+)
+\attention()
+operation is quadratic in the sequence length, then the overall complexity is
+O
+⁡
+(
+(
+H
++
+W
+)
+​
+H
+​
+W
+)
+O((H+W)HW)
+.
+In contrast to previous works using axial attention
+Ho et al. 2019
+;
+Wang et al. 2022
+;
+Nayakanti et al. 2023
+where the row and column attention operations are applied sequentially using distinct layers:
+𝐑
+=
+(
+Attention
+col
+∘
+Attention
+row
+)
+​
+(
+𝐆
+)
+\boldsymbol{\mathrm{R}}=(\attention_{\mathrm{col}}\circ\attention_{\mathrm{row}})(\boldsymbol{\mathrm{G}})
+, here we add the weighted outputs of the row and column operations and share the attention weights between these operations.
+Equivalence to masked sequential attention
+Next, we show that the additive axial attention operation can be reformulated to regular masked sequential attention with the following attention mask.
+The grid of embedding vectors is “unravelled” to a row-major sequence of vectors
+𝐒
+=
+[
+𝐆
+11
+,
+𝐆
+12
+,
+…
+,
+𝐆
+1
+​
+W
+,
+𝐆
+21
+,
+…
+,
+𝐆
+H
+​
+W
+]
+\boldsymbol{\mathrm{S}}=[\boldsymbol{\mathrm{G}}_{11},\boldsymbol{\mathrm{G}}_{12},\dotsc,\boldsymbol{\mathrm{G}}_{1W},\boldsymbol{\mathrm{G}}_{21},\dotsc,\boldsymbol{\mathrm{G}}_{HW}]
+.
+Let
+𝐏
+∈
+{
+0
+,
+1
+}
+H
+​
+W
+×
+H
+​
+W
+\boldsymbol{\mathrm{P}}\in\{0,1\}^{HW\times HW}
+be the permutation matrix that reorders a column-major sequence to row-major, i.e.
+𝐏
+⁡
+[
+𝐆
+11
+,
+𝐆
+21
+,
+…
+,
+𝐆
+H
+​
+1
+,
+𝐆
+12
+,
+…
+,
+𝐆
+H
+​
+W
+]
+=
+𝐒
+​
+.
+\boldsymbol{\mathrm{P}}[\boldsymbol{\mathrm{G}}_{11},\boldsymbol{\mathrm{G}}_{21},\dotsc,\boldsymbol{\mathrm{G}}_{H1},\boldsymbol{\mathrm{G}}_{12},\dotsc,\boldsymbol{\mathrm{G}}_{HW}]=\boldsymbol{\mathrm{S}}\text{.}
+The axial attention described above is equivalent to sequential attention on
+𝐒
+\boldsymbol{\mathrm{S}}
+with the following attention mask:
+𝐌
+\displaystyle\boldsymbol{\mathrm{M}}
+:
+=
+𝐌
+row
++
+𝐏
+⁡
+(
+𝐌
+col
+)
+​
+𝐏
+⊺
+​
+, where
+\displaystyle:=\boldsymbol{\mathrm{M}}^{\mathrm{row}}+\boldsymbol{\mathrm{P}}\left(\boldsymbol{\mathrm{M}}^{\mathrm{col}}\right)\boldsymbol{\mathrm{P}}^{\intercal}\text{, where}
+(5)
+𝐌
+row
+\displaystyle\boldsymbol{\mathrm{M}}^{\mathrm{row}}
+:
+=
+𝐝𝐢𝐚𝐠
+⁡
+(
+𝐌
+1
+row
+,
+𝐌
+2
+row
+,
+…
+,
+𝐌
+H
+row
+)
+\displaystyle:=\boldsymbol{\mathrm{diag}}\left(\boldsymbol{\mathrm{M}}^{\mathrm{row}}_{1},\boldsymbol{\mathrm{M}}^{\mathrm{row}}_{2},\dotsc,\boldsymbol{\mathrm{M}}^{\mathrm{row}}_{H}\right)
+(6)
+𝐌
+col
+\displaystyle\boldsymbol{\mathrm{M}}^{\mathrm{col}}
+:
+=
+𝐝𝐢𝐚𝐠
+⁡
+(
+𝐌
+1
+col
+,
+𝐌
+2
+col
+,
+…
+,
+𝐌
+W
+col
+)
+\displaystyle:=\boldsymbol{\mathrm{diag}}\left(\boldsymbol{\mathrm{M}}^{\mathrm{col}}_{1},\boldsymbol{\mathrm{M}}^{\mathrm{col}}_{2},\dotsc,\boldsymbol{\mathrm{M}}^{\mathrm{col}}_{W}\right)
+(7)
+and
+𝐌
+i
+row
+\boldsymbol{\mathrm{M}}^{\mathrm{row}}_{i}
+and
+𝐌
+j
+col
+\boldsymbol{\mathrm{M}}^{\mathrm{col}}_{j}
+are the mask matrices for row
+i
+i
+and column
+j
+j
+, respectively.
+See Appendix
+A
+for a sketch proof of the equivalence.
+This reformulation implies that any theoretical results, bounds, intuitions and heuristics that apply to regular masked self-attention will also apply to this formulation of axial attention.
+Moreover, the time and storage complexity on this sequential self-attention operation is
+O
+⁡
+(
+H
+2
+​
+W
+2
+)
+O(H^{2}W^{2})
+, whereas axial attention is
+sub-quadratic in the sequence length
+H
+​
+W
+HW
+.
+The axial attention operator is the core operator in the
+axial transformer
+layer using a similar structure to the regular sequential transformer encoder layer. Axial attention is applied to the input grid, and this is followed by the standard feed-forward, layer-norm and skip connection components
+(
+Vaswani et al. 2017
+, Figure 1)
+.
+The grid structure inherent in axial attention is appealing in the match forecasting setting; consider an embedding vector
+(
+𝐆
+)
+i
+​
+j
+(\boldsymbol{\mathrm{G}})_{ij}
+, representing the state of a player
+i
+i
+at a particular time-step
+j
+j
+.
+In this case, the state contained in the embedding should be conditioned on all previous states for player
+i
+i
+, and also on the states of all other agents in time-step
+j
+j
+.
+To update
+(
+𝐆
+)
+i
+​
+j
+(\boldsymbol{\mathrm{G}})_{ij}
+, a row (temporal) attention operation
+Attention
+⁡
+(
+𝐆
+i
+)
+\attention(\boldsymbol{\mathrm{G}}_{i})
+is applied that attends only to previous embedding vectors
+{
+(
+𝐑
+)
+i
+​
+j
+′
+∣
+∀
+j
+′
+<
+j
+}
+\{(\boldsymbol{\mathrm{R}})_{ij^{\prime}}\mid\forall j^{\prime}<j\}
+, which can be implemented using as the mask an upper-triangular mask matrix.
+This allows the axial attention mechanism to capture the dynamics in the input features for each player over time, and thus can model changes in momentum, player fatigue, recency of significant in-game events, etc.
+Similarly, a column (agent) attention operation
+Attention
+(
+𝐆
+.
+j
+)
+\attention(\boldsymbol{\mathrm{G}}_{.j})
+attends to all embedding vectors in the column
+{
+(
+𝐆
+)
+i
+′
+​
+j
+∣
+∀
+i
+′
+}
+\{(\boldsymbol{\mathrm{G}})_{i^{\prime}j}\mid\forall i^{\prime}\}
+, thus permitting the axial attention mechanism to capture interactions between players.
+3.4
+Model
+The model is a multi-layer neural network consisting of three groups of layers, see Figure
+4
+:
+•
+Embedding layer
+that maps the component tensors of the input into tensors with a common feature dimension, and concatenates them into a single input tensor.
+•
+Axial transformer layers
+that performs attention along the temporal and agent dimensions.
+•
+Target layers
+that map the output embeddings from the last transformer layer into tensors with the required feature dimension of each target metric.
+Figure 4
+:
+Overview of the neural network architecture.
+The tensors in the input are passed through the embedding layers to standardise the feature dimension, and then are stacked into a single tensor.
+This tensor is passed through the transformer layers, and the output embeddings are used to compute the outputs for each of the action targets.
+Embedding Layers
+The embedding layer is a linear transform on each input tensor that maps it to a tensor with a common feature dimension
+D
+D
+.
+For example, with the player input tensor the linear transform is a function
+f
+player
+:
+ℝ
+P
+(
+n
+)
+×
+T
+(
+n
+)
+×
+D
+player
+→
+ℝ
+P
+(
+n
+)
+×
+T
+(
+n
+)
+×
+D
+f_{\mathrm{player}}:\mathbb{R}^{P^{(n)}\times T^{(n)}\times D_{\mathrm{player}}}\rightarrow\mathbb{R}^{P^{(n)}\times T^{(n)}\times D}
+.
+The output of the linear layer is a tuple of tensors, each with a common feature dimension, and so they may be concatenated along the temporal and agent dimensions to form a single tensor, in the following arrangement:
+𝐄
+0
+(
+n
+)
+\displaystyle\boldsymbol{\mathrm{E}}^{(n)}_{0}
+=
+[
+f
+game
+−
+context
+​
+(
+𝐗
+game
+−
+context
+(
+n
+)
+)
+f
+game
+​
+(
+𝐗
+game
+(
+n
+)
+)
+f
+team
+−
+strength
+​
+(
+𝐗
+team
+−
+strength
+(
+n
+)
+)
+f
+team
+​
+(
+𝐗
+team
+(
+n
+)
+)
+f
+player
+−
+strength
+​
+(
+𝐗
+player
+−
+strength
+(
+n
+)
+)
+f
+player
+​
+(
+𝐗
+player
+(
+n
+)
+)
+]
+\displaystyle=\begin{bmatrix}f_{\mathrm{game-context}}\left(\boldsymbol{\mathrm{X}}^{(n)}_{\mathrm{game-context}}\right)&f_{\mathrm{game}}\left(\boldsymbol{\mathrm{X}}^{(n)}_{\mathrm{game}}\right)\\
+f_{\mathrm{team-strength}}\left(\boldsymbol{\mathrm{X}}^{(n)}_{\mathrm{team-strength}}\right)&f_{\mathrm{team}}\left(\boldsymbol{\mathrm{X}}^{(n)}_{\mathrm{team}}\right)\\
+f_{\mathrm{player-strength}}\left(\boldsymbol{\mathrm{X}}^{(n)}_{\mathrm{player-strength}}\right)&f_{\mathrm{player}}\left(\boldsymbol{\mathrm{X}}^{(n)}_{\mathrm{player}}\right)\end{bmatrix}
+∈
+ℝ
+H
+×
+W
+×
+D
+​
+, where
+​
+H
+=
+P
+(
+n
+)
++
+2
++
+1
+​
+, and
+​
+W
+=
+T
+(
+n
+)
++
+1
+​
+.
+\displaystyle\in\mathbb{R}^{H\times W\times D}\text{, where }H=P^{(n)}+2+1\text{, and }W=T^{(n)}+1\text{.}
+The embedding tensor
+𝐄
+(
+n
+)
+\boldsymbol{\mathrm{E}}^{(n)}
+is thus a grid of embedding vectors
+𝐞
+i
+​
+j
+∈
+R
+D
+\boldsymbol{\mathrm{e}}_{ij}\in R^{D}
+, where each embedding vector contains the information about the corresponding agent at a time-step.
+Each row of
+𝐄
+(
+n
+)
+\boldsymbol{\mathrm{E}}^{(n)}
+contains a time-series for a particular
+agent
+such, as a player, a team or the game-state.
+Each column of
+𝐄
+(
+n
+)
+\boldsymbol{\mathrm{E}}^{(n)}
+is the set of embedding vectors for each agent at a particular time-step.
+Axial Transformer Layers
+The tensor
+𝐄
+0
+(
+n
+)
+\boldsymbol{\mathrm{E}}^{(n)}_{0}
+is then passed through a series of
+L
+L
+axial transformer layers, as detailed in Section
+3.3
+.
+Each layer
+ℓ
+\ell
+accepts a tensor
+𝐄
+ℓ
+−
+1
+(
+n
+)
+\boldsymbol{\mathrm{E}}^{(n)}_{\ell-1}
+and outputs a tensor
+𝐄
+ℓ
+(
+n
+)
+\boldsymbol{\mathrm{E}}^{(n)}_{\ell}
+of the same dimension.
+An autoregressive attention mask (i.e. a strict upper-triangular mask) is applied to the row (temporal) attention in each layer so that the embeddings in the current time-step
+i
+i
+can only attend to previous time-steps
+[
+1
+.
+.
+i
+−
+1
+]
+[1..i-1]
+.
+The column (agent) attention allows agent
+j
+j
+in time-step
+i
+i
+to attend to all agents the current time-step.
+The output
+𝐄
+L
+(
+n
+)
+\boldsymbol{\mathrm{E}}^{(n)}_{L}
+of the final layer
+has been updated by the transformer layers to integrate information from all input features up to and including the current time step.
+This embedding is then used to directly make predictions for the required targets.
+Target Layers
+The final layer of the model is a set of linear layers that map the output embeddings
+𝐄
+L
+(
+n
+)
+\boldsymbol{\mathrm{E}}^{(n)}_{L}
+of the final transformer layer to the required feature dimension of each target metric.
+For each action target and modality (e.g. player, team or game), a linear layer is required that is shared over all agents and time-steps.
+For example, if the target is the final goal count for a player, and we choose to model this as a Poisson distribution it is necessary to estimate a single parameter
+λ
+\lambda
+for each player at each time step.
+The linear layer is thus a function
+h
+a
+:
+ℝ
+P
+(
+n
+)
+×
+T
+(
+n
+)
+×
+D
+→
+ℝ
+P
+(
+n
+)
+×
+T
+(
+n
+)
+×
+1
+h_{a}:\mathbb{R}^{P^{(n)}\times T^{(n)}\times D}\rightarrow\mathbb{R}^{P^{(n)}\times T^{(n)}\times 1}
+.
+Different distribution assumptions can be made and the only difference in the model is to the output parameter dimension of the corresponding linear layer.
+We utilised several such assumptions, including Bernouilli, Poisson, log Gaussian, and “model-free” discrete distributions.
+3.5
+Training
+The corresponding loss function for the distribution assumption of each output target was chosen, e.g. Poisson negative log-likelihood for the Poisson distribution, binary cross entropy for the Bernouilli distribution, etc.
+The losses were computed according to the ground truth value for each target in the training set, and the loss values were summed.
+The model weights were updated from the total loss using the Adam optimizer
+Kingma and Ba 2014
+, and the learning rate was adjusted on a schedule by cosine annealing, without warm restarts
+Loshchilov and Hutter 2017
+.
+3.6
+Inference
+The model is designed to run in a live setting, where the invocation of the model is triggered by a key event occurring, of which there are 35 types, such as a foul, corner, goal, etc.
+When a key event occurs, a message is triggered containing the attributes required to populate
+𝐗
+game
+(
+n
+)
+\boldsymbol{\mathrm{X}}^{(n)}_{\mathrm{game}}
+,
+𝐗
+team
+(
+n
+)
+\boldsymbol{\mathrm{X}}^{(n)}_{\mathrm{team}}
+, and
+𝐗
+player
+(
+n
+)
+\boldsymbol{\mathrm{X}}^{(n)}_{\mathrm{player}}
+.
+The contextual features for
+𝐗
+game
+−
+context
+(
+n
+)
+\boldsymbol{\mathrm{X}}^{(n)}_{\mathrm{game-context}}
+,
+𝐗
+team
+−
+strength
+(
+n
+)
+\boldsymbol{\mathrm{X}}^{(n)}_{\mathrm{team-strength}}
+and
+𝐗
+player
+−
+strength
+(
+n
+)
+\boldsymbol{\mathrm{X}}^{(n)}_{\mathrm{player-strength}}
+are obtained from a relational database of historical game data, and are generated for the first (pre-game) event.
+Once the features have been obtained they are stored in a key-value database, so for each event trigger, the contextual features and state features from all previous events are available.
+The input is then assembled from the current contextual and previous features, and passed to the model. The outputs are then enclosed in a data-structure that is sent to a messaging system for subsequent processing.
+4
+Experiments
+The model was evaluated using a dataset of 62,610 games from 28 competitions. The dataset was split into a training set with games from 8 seasons from 2016–17 through to 2023–24 (58,501 games) and a test set with games from the partial 2024-25 season up until 15th December, 2024 (4,109 games).
+The model makes approximately 505 predictions at each of the
+∼
+\sim
+150 time-steps per match, consisting of predictions on 12 target metrics for each of the
+∼
+\sim
+40 players (starting players and substitutes), and two teams, and a prediction for the game outcome.
+The purpose of the experiments is twofold.
+1.
+To evaluate the extent to which the model yields consistent results across all target actions, agents, and time-steps.
+Given the unavailability of existing baseline models or in-game player-level betting data, we examine how well
+calibrated
+the model is.
+2.
+To determine the importance of the model components to the quality of the results, we conduct several ablation tests to evaluate the importance of the inter-agent interactions, the temporal dynamics, and the pre-game context information.
+In addition, we compare the performance of the axial transformer presented here with the “stacked” axial transformer presented in
+Ho et al. 2019
+.
+In order to aggregate the performance over predictions for comparison, we use the following metrics:
+Log-probability
+The log-probability assigned to the ground-truth value from the estimated distribution provided by the model. A simple average of all log-probabilities for a given agent (e.g. player or team) and target (e.g. goals, shots, passes) is computed.
+Calibration error
+For a given agent and target, the modal value of the estimated distribution (i.e. the random variable that obtains the largest probability) is compared against the ground-truth value and the binary calibration is computed.
+4.1
+Model Selection
+The models were trained on the training dataset of which 10% of the examples were held back for validation. Training occurred over
+∼
+\sim
+150,000 training-steps, and took approximately 15 hours running on a single NVIDIA A10 GPU.
+Candidate models were created by varying the hyper-parameters used to train them, in particular the size of the latent dimension, the number of axial transformer layers, and the learning rate of the optimizer.
+The data batch size was selected as the largest possible for the GPU memory limit.
+For example, for “our” model, the configuration that obtained the best outcome, determined by the total validation loss, was configured with: a latent dimension of 128; 4 transformer layers; an optimizer learning rate of
+0.0003
+0.0003
+; and a batch size of
+30
+30
+.
+Figure 5
+:
+One-vs-one calibration plots for all targets, with the
+x
+x
+-axis showing the predicted probability and the
+y
+y
+-axis the actual probability.
+The blue line is the calibration, the red dashed line indicates the optimal calibration, and the grey histogram shows the density of predictions in each bin.
+4.2
+Calibration
+Figure
+5
+contains the calibration curves for each of the action targets, using 20 bins.
+In general, the model obtains well-calibrated predictions, however the calibration is weaker for targets where there are intervals that lack support, as shown by the grey histograms, e.g. attempted and accurate passes, own-goals and red cards.
+Red cards and own-goals are low probability events, and over the test set, the probability the model assigns to the zero category is no less than
+0.84
+0.84
+and
+0.97
+0.97
+, respectively.
+On the other hand, attempted and accurate passes are relatively frequent actions, and the range of possible values is large, and thus a relatively small probability is assigned to each value.
+In both cases, the distribution of assigned probabilities as highly skewed.
+Table 1
+:
+Calibration error and log-probability by each action target for each of the models in the ablation study.
+The best score across the models is marked in
+bold
+.
+Log-probability
+Calibration error
+Ours
+Ours w/o
+agent
+Ours w/o
+temporal
+Ours w/o
+pre-game
+Ours w/
+stacked
+Ours
+Ours w/o
+agent
+Ours w/o
+temporal
+Ours w/o
+pre-game
+Ours w/
+stacked
+Goals
+−
+0.111
+-0.111
+−
+0.114
+-0.114
+−
+0.124
+-0.124
+−
+0.124
+-0.124
+−
+0.112
+-0.112
+0.002
+0.002
+0.013
+0.013
+0.004
+0.004
+0.014
+0.014
+0.002
+0.002
+Assists
+−
+0.088
+-0.088
+−
+0.090
+-0.090
+−
+0.098
+-0.098
+−
+0.094
+-0.094
+−
+0.089
+-0.089
+0.001
+0.001
+0.002
+0.002
+0.004
+0.004
+0.001
+0.001
+0.001
+0.001
+Shots
+−
+0.515
+-0.515
+−
+0.532
+-0.532
+−
+0.575
+-0.575
+−
+0.597
+-0.597
+−
+0.520
+-0.520
+0.021
+0.021
+0.022
+0.022
+0.028
+0.028
+0.044
+0.044
+0.021
+0.021
+Shots on target
+−
+0.260
+-0.260
+−
+0.266
+-0.266
+−
+0.289
+-0.289
+−
+0.296
+-0.296
+−
+0.262
+-0.262
+0.016
+0.016
+0.018
+0.018
+0.011
+0.011
+0.031
+0.031
+0.015
+0.015
+Corners
+−
+0.289
+-0.289
+−
+0.299
+-0.299
+−
+0.323
+-0.323
+−
+0.320
+-0.320
+−
+0.292
+-0.292
+0.019
+0.019
+0.020
+0.020
+0.013
+0.013
+0.030
+0.030
+0.017
+0.017
+Attempted passes
+−
+3.039
+-3.039
+−
+3.333
+-3.333
+−
+3.501
+-3.501
+−
+3.735
+-3.735
+−
+3.062
+-3.062
+0.074
+0.074
+0.093
+0.093
+0.093
+0.093
+0.102
+0.102
+0.076
+0.076
+Accurate passes
+−
+2.765
+-2.765
+−
+3.002
+-3.002
+−
+3.199
+-3.199
+−
+3.403
+-3.403
+−
+2.781
+-2.781
+0.075
+0.075
+0.094
+0.094
+0.096
+0.096
+0.109
+0.109
+0.078
+0.078
+Tackles
+−
+0.608
+-0.608
+−
+0.620
+-0.620
+−
+0.674
+-0.674
+−
+0.661
+-0.661
+−
+0.614
+-0.614
+0.027
+0.027
+0.025
+0.025
+0.029
+0.029
+0.028
+0.028
+0.024
+0.024
+Fouls
+−
+0.517
+-0.517
+−
+0.530
+-0.530
+−
+0.569
+-0.569
+−
+0.558
+-0.558
+−
+0.524
+-0.524
+0.018
+0.018
+0.023
+0.023
+0.021
+0.021
+0.028
+0.028
+0.020
+0.020
+Yellow cards
+−
+0.202
+-0.202
+−
+0.209
+-0.209
+−
+0.220
+-0.220
+−
+0.211
+-0.211
+−
+0.203
+-0.203
+0.019
+0.019
+0.020
+0.020
+0.004
+0.004
+0.023
+0.023
+0.019
+0.019
+Red cards
+−
+0.018
+-0.018
+−
+0.019
+-0.019
+−
+0.020
+-0.020
+−
+0.019
+-0.019
+−
+0.019
+-0.019
+<
+0.001
+{<}0.001
+<
+0.001
+{<}0.001
+0.003
+0.003
+<
+0.001
+{<}0.001
+<
+0.001
+{<}0.001
+Own goals
+−
+0.006
+-0.006
+−
+0.007
+-0.007
+−
+0.007
+-0.007
+−
+0.007
+-0.007
+−
+0.006
+-0.006
+<
+0.001
+{<}0.001
+<
+0.001
+{<}0.001
+0.001
+0.001
+<
+0.001
+{<}0.001
+<
+0.001
+{<}0.001
+4.3
+Ablation Study
+A key property of the model design is that it accepts and integrates the available game data using a principled approach, thus allowing joint prediction on all the targets for all the agents at all time-steps.
+To evaluate the effectiveness of the model in integrating the available data, we conducted experiments where the model was modified to disable attention to different agents and time-steps.
+The following ablated models were used:
+Agent Attention
+The temporal attention layers in the axial encoder were removed, so that
+the model would attend to other agents, but not temporally.
+For each agent, the pre-game context features were concatenated to the time-step features, so the available information remains the same.
+Temporal Attention
+The agent attention layers in the axial encoder were removed, so that predictions for each agent were made without being able to attend to the other agents.
+Pre-game Context
+The game context and team and player strength features were omitted from the model so that each in-game prediction was made with only reference to events that had occurred during the game.
+Stacked Axial Attention
+The stacked axial attention mechanism from
+Ho et al. 2019
+is used.
+The summary results are shown in Table
+1
+.
+Our model obtained smaller mean log-probabilities than all the ablated models, thus demonstrating that effectiveness of this implementation of the axial transformer.
+For calibration, our model obtained the best score against a plurality of the targets, and was close to best for most of the remaining actions.
+The exception is yellow cards, where the temporal ablation is best, however it was found that this classifier was simply predicting the majority class in all cases.
+5
+Conclusion
+We present a model for forecasting the total number of multiple actions performed in football matches for all players, teams and for the game overall, and that can be made multiple times as the match progresses,
+∼
+\sim
+75,000 predictions per game.
+The model is a novel variation of axial attention that computes a weighted sum of the row and column attention operations.
+We show that this variation is equivalent to an instance of regular sequential self-attention, yet is computationally more efficient, and experiments show the this variation obtains better performance in comparison to the typical “stacked” axial attention.
+The model was empirically evaluated by ablating different components, and the results showed that capacity of the model architecture to attend along both the temporal and agent dimensions, and the ability of the model to integrate different modalities of data, both contributed to the obtained performance.
+References
+(1)
+Abramson et al
+.
+(2024)
+Josh Abramson, Jonas
+Adler, Jack Dunger, Richard Evans,
+Tim Green, Alexander Pritzel,
+Olaf Ronneberger, Lindsay Willmore,
+Andrew J. Ballard, Joshua Bambrick,
+Sebastian W. Bodenstein, David A. Evans,
+Chia-Chun Hung, Michael O’Neill,
+David Reiman, Kathryn Tunyasuvunakool,
+Zachary Wu, Akvilė Žemgulytė,
+Eirini Arvaniti, Charles Beattie,
+Ottavia Bertolli, Alex Bridgland,
+Alexey Cherepanov, Miles Congreve,
+Alexander I. Cowen-Rivers, Andrew Cowie,
+Michael Figurnov, Fabian B. Fuchs,
+Hannah Gladman, Rishub Jain,
+Yousuf A. Khan, Caroline M. R. Low,
+Kuba Perlin, Anna Potapenko,
+Pascal Savy, Sukhdeep Singh,
+Adrian Stecula, Ashok Thillaisundaram,
+Catherine Tong, Sergei Yakneen,
+Ellen D. Zhong, Michal Zielinski,
+Augustin Žídek, Victor Bapst,
+Pushmeet Kohli, Max Jaderberg,
+Demis Hassabis, and John M. Jumper.
+2024.
+Accurate structure prediction of biomolecular
+interactions with AlphaFold 3.
+Nature
+630,
+8016 (May 2024),
+493–500.
+doi:
+10.1038/s41586-024-07487-w
+Bachmann et al
+.
+(2024)
+Roman Bachmann,
+Oğuzhan Fatih Kar, David Mizrahi,
+Ali Garjani, Mingfei Gao,
+David Griffiths, Jiaming Hu,
+Afshin Dehghan, and Amir Zamir.
+2024.
+4M-21: An Any-to-Any Vision Model for Tens of Tasks
+and Modalities.
+doi:
+10.48550/ARXIV.2406.09406
+Bahdanau et al
+.
+(2014)
+Dzmitry Bahdanau,
+Kyunghyun Cho, and Yoshua Bengio.
+2014.
+Neural Machine Translation by Jointly Learning to
+Align and Translate.
+doi:
+10.48550/ARXIV.1409.0473
+Bojesomo et al
+.
+(2024)
+Alabi Bojesomo, Hasan
+AlMarzouqi, and Panos Liatsis.
+2024.
+A Novel Transformer Network With Shifted Window
+Cross-Attention for Spatiotemporal Weather Forecasting.
+IEEE Journal of Selected Topics in Applied
+Earth Observations and Remote Sensing
+17
+(2024), 45–55.
+doi:
+10.1109/jstars.2023.3323729
+Caruana (1997)
+Rich Caruana.
+1997.
+Multitask Learning.
+Machine Learning
+28,
+1 (1997), 41–75.
+doi:
+10.1023/a:1007379606734
+Chawla et al
+.
+(2017)
+Sanjay Chawla, Joël
+Estephan, Joachim Gudmundsson, and
+Michael Horton. 2017.
+Classification of Passes in Football Matches Using
+Spatiotemporal Data.
+ACM Transactions on Spatial Algorithms and
+Systems
+3, 2 (aug
+2017), 1–30.
+doi:
+10.1145/3105576
+Decroos et al
+.
+(2019)
+Tom Decroos, Lotte
+Bransen, Jan Van Haaren, and Jesse
+Davis. 2019.
+Actions Speak Louder than Goals: Valuing Player
+Actions in Soccer. In
+Proceedings of the 25th ACM
+SIGKDD International Conference on Knowledge Discovery & Data Mining
+(KDD ’19)
+. ACM,
+Anchorage, AK, USA, 1851–1861.
+doi:
+10.1145/3292500.3330758
+Devlin et al
+.
+(2018)
+Jacob Devlin, Ming-Wei
+Chang, Kenton Lee, and Kristina
+Toutanova. 2018.
+BERT: Pre-training of Deep Bidirectional Transformers
+for Language Understanding.
+doi:
+10.48550/ARXIV.1810.04805
+Dixon and Robinson (1998)
+Mark Dixon and Michael
+Robinson. 1998.
+A Birth Process Model for Association Football
+M10.1109/CVPR52729.2023.00929atches.
+Journal of the Royal Statistical Society:
+Series D (The Statistician)
+47, 3
+(Sept. 1998), 523–538.
+doi:
+10.1111/1467-9884.00152
+Dixon and Coles (1997)
+Mark J. Dixon and
+Stuart G. Coles. 1997.
+Modelling Association Football Scores and
+Inefficiencies in the Football Betting Market.
+Journal of the Royal Statistical Society
+Series C: Applied Statistics
+46, 2
+(June 1997), 265–280.
+doi:
+10.1111/1467-9876.00065
+Dosovitskiy et al
+.
+(2020)
+Alexey Dosovitskiy, Lucas
+Beyer, Alexander Kolesnikov, Dirk
+Weissenborn, Xiaohua Zhai, Thomas
+Unterthiner, Mostafa Dehghani, Matthias
+Minderer, Georg Heigold, Sylvain Gelly,
+Jakob Uszkoreit, and Neil Houlsby.
+2020.
+An Image is Worth 16x16 Words: Transformers for Image
+Recognition at Scale.
+doi:
+10.48550/ARXIV.2010.11929
+Fernández et al
+.
+(2021)
+Javier Fernández, Luke
+Bornn, and Daniel Cervone.
+2021.
+A framework for the fine-grained evaluation of the
+instantaneous expected value of soccer possessions.
+Machine Learning
+110,
+6 (May 2021),
+1389–1427.
+doi:
+10.1007/s10994-021-05989-6
+Graham (2024)
+Ian Graham.
+2024.
+How to Win the Premier League The Inside
+Story of Football’s Data Revolution
+.
+Penguin Random House.
+Grattafiori and et al. (2024)
+Aaron Grattafiori and et
+al. 2024.
+The Llama 3 Herd of Models.
+doi:
+10.48550/ARXIV.2407.21783
+Ho et al
+.
+(2019)
+Jonathan Ho, Nal
+Kalchbrenner, Dirk Weissenborn, and Tim
+Salimans. 2019.
+Axial Attention in Multidimensional Transformers.
+doi:
+10.48550/ARXIV.1912.12180
+Jiang et al
+.
+(2023)
+Chiyu “Max” Jiang,
+Andre Cornman, Cheolho Park,
+Benjamin Sapp, Yin Zhou, and
+Dragomir Anguelov. 2023.
+MotionDiffuser: Controllable Multi-Agent Motion
+Prediction Using Diffusion. In
+2023 IEEE/CVF
+Conference on Computer Vision and Pattern Recognition (CVPR)
+.
+IEEE, 9644–9653.
+doi:
+10.1109/cvpr52729.2023.00930
+Jiang et al
+.
+(2024)
+Jian Jiang, Long Chen,
+Lu Ke, Bozheng Dou,
+Chunhuan Zhang, Hongsong Feng,
+Yueying Zhu, Huahai Qiu,
+Bengong Zhang, and Guowei Wei.
+2024.
+A review of transformers in drug discovery and
+beyond.
+Journal of Pharmaceutical Analysis
+(Aug. 2024), 101081.
+doi:
+10.1016/j.jpha.2024.101081
+Karlis and Ntzoufras (2003)
+Dimitris Karlis and
+Ioannis Ntzoufras. 2003.
+Analysis of sports data by using bivariate Poisson
+models.
+Journal of the Royal Statistical Society:
+Series D (The Statistician)
+52, 3
+(Oct. 2003), 381–393.
+doi:
+10.1111/1467-9884.00366
+Kim et al
+.
+(2021)
+Wonjae Kim, Bokyung Son,
+and Ildoo Kim. 2021.
+ViLT: Vision-and-Language Transformer Without
+Convolution or Region Supervision. In
+Proceedings
+of the 38th International Conference on Machine Learning
+(Proceedings of Machine Learning Research,
+Vol. 139)
+, Marina
+Meila and Tong Zhang (Eds.). PMLR,
+Virtual Event, 5583–5594.
+https://proceedings.mlr.press/v139/kim21k.html
+Kingma and Ba (2014)
+Diederik P. Kingma and
+Jimmy Ba. 2014.
+Adam: A Method for Stochastic Optimization.
+doi:
+10.48550/ARXIV.1412.6980
+Klemp et al
+.
+(2021)
+Maximilian Klemp, Fabian
+Wunderlich, and Daniel Memmert.
+2021.
+In-play forecasting in football using event and
+positional data.
+Scientific Reports
+11,
+1 (Dec. 2021),
+24139.
+doi:
+10.1038/s41598-021-03157-3
+Koopman and Lit (2019)
+Siem Jan Koopman and
+Rutger Lit. 2019.
+Forecasting football match results in national
+league competitions using score-driven time series models.
+International Journal of Forecasting
+35, 2 (April
+2019), 797–809.
+doi:
+10.1016/j.ijforecast.2018.10.011
+Lee (1997)
+Alan J. Lee.
+1997.
+Modeling Scores in the Premier League: Is
+Manchester United Really the Best?
+CHANCE
+10,
+1 (Jan. 1997),
+15–19.
+doi:
+10.1080/09332480.1997.10554791
+Loshchilov and Hutter (2017)
+Ilya Loshchilov and
+Frank Hutter. 2017.
+Decoupled Weight Decay Regularization.
+doi:
+10.48550/ARXIV.1711.05101
+Lucey et al
+.
+(2015)
+Patrick Lucey, Alina
+Bialkowski, Mathew Monfort, Peter Carr,
+and Iain Matthews. 2015.
+Quality vs quantity: improved shot prediction in
+soccer using strategic features from spatiotemporal data. In
+Proceedings of the 9th Sloan Sports Analytics
+Conference
+. Sloan Sports Analytics Conference, MIT,
+Boston, MA, USA, 1–9.
+Maher (1982)
+M. J. Maher.
+1982.
+Modelling association football scores.
+Statistica Neerlandica
+36, 3 (1982),
+109–118.
+doi:
+10.1111/j.1467-9574.1982.tb00782.x
+Miller and Davidow (2019)
+Ed Miller and Matthew
+Davidow. 2019.
+The Logic Of Sports Betting
+.
+Independently Published. 237 pages.
+Mizrahi et al
+.
+(2023)
+David Mizrahi, Roman
+Bachmann, Oguzhan Kar, Teresa Yeo,
+Mingfei Gao, Afshin Dehghan, and
+Amir Zamir. 2023.
+4M: Massively Multimodal Masked Modeling. In
+Advances in Neural Information Processing
+Systems
+, A. Oh,
+T. Naumann, A. Globerson,
+K. Saenko, M. Hardt, and
+S. Levine (Eds.), Vol. 36.
+Curran Associates, Inc., New Orleans,
+LA, USA, 58363–58408.
+https://proceedings.neurips.cc/paper_files/paper/2023/file/b6446566965fa38e183650728ab70318-Paper-Conference.pdf
+Monti et al
+.
+(2022)
+Alessio Monti, Angelo
+Porrello, Simone Calderara, Pasquale
+Coscia, Lamberto Ballan, and Rita
+Cucchiara. 2022.
+How Many Observations Are Enough? Knowledge
+Distillation for Trajectory Forecasting. In
+Proceedings of the IEEE/CVF Conference on Computer
+Vision and Pattern Recognition (CVPR)
+. IEEE,
+New Orleans, LA, USA, 6553–6562.
+Nayakanti et al
+.
+(2023)
+Nigamaa Nayakanti, Rami
+Al-Rfou, Aurick Zhou, Kratarth Goel,
+Khaled S. Refaat, and Benjamin Sapp.
+2023.
+Wayformer: Motion Forecasting via Simple &
+Efficient Attention Networks. In
+2023 IEEE
+International Conference on Robotics and Automation (ICRA)
+.
+IEEE, London, UK,
+2980–2987.
+doi:
+10.1109/icra48891.2023.10160609
+Price et al
+.
+(2024)
+Ilan Price, Alvaro
+Sanchez-Gonzalez, Ferran Alet, Tom R.
+Andersson, Andrew El-Kadi, Dominic
+Masters, Timo Ewalds, Jacklynn Stott,
+Shakir Mohamed, Peter Battaglia,
+Remi Lam, and Matthew Willson.
+2024.
+Probabilistic weather forecasting with machine
+learning.
+Nature
+637,
+8044 (Dec. 2024),
+84–90.
+doi:
+10.1038/s41586-024-08252-9
+Raffel et al
+.
+(2020)
+Colin Raffel, Noam
+Shazeer, Adam Roberts, Katherine Lee,
+Sharan Narang, Michael Matena,
+Yanqi Zhou, Wei Li, and
+Peter J. Liu. 2020.
+Exploring the Limits of Transfer Learning with a
+Unified Text-to-Text Transformer.
+J. Mach. Learn. Res.
+21,
+1, Article 140
+(January 2020), 67 pages.
+Rahimian et al
+.
+(2024)
+Pegah Rahimian,
+Balazs Mark Mihalyi, and Laszlo Toka.
+2024.
+In-game soccer outcome prediction with offline
+reinforcement learning.
+Machine Learning
+113,
+10 (Sept. 2024),
+7393–7419.
+doi:
+10.1007/s10994-024-06611-1
+Robberechts et al
+.
+(2021)
+Pieter Robberechts, Jan
+Van Haaren, and Jesse Davis.
+2021.
+A Bayesian Approach to In-Game Win Probability in
+Soccer. In
+Proceedings of the 27th ACM SIGKDD
+Conference on Knowledge Discovery & Data Mining
+(KDD
+’21)
+. ACM, Singapore,
+3512–3521.
+doi:
+10.1145/3447548.3467194
+Simpson et al
+.
+(2022)
+Ian Simpson, Ryan J.
+Beal, Duncan Locke, and Timothy J.
+Norman. 2022.
+Seq2Event: Learning the Language of Soccer Using
+Transformer-based Match Event Prediction. In
+Proceedings of the 28th ACM SIGKDD Conference on
+Knowledge Discovery and Data Mining
+(KDD ’22)
+.
+ACM, Washington, DC, USA,
+3898–3908.
+doi:
+10.1145/3534678.3539138
+Vaswani et al
+.
+(2017)
+Ashish Vaswani, Noam
+Shazeer, Niki Parmar, Jakob Uszkoreit,
+Llion Jones, Aidan N Gomez,
+Lukasz Kaiser, and Illia Polosukhin.
+2017.
+Attention is All you Need. In
+Advances in Neural Information Processing
+Systems
+, Vol. 30. Curran Associates,
+Inc., Long Beach, CA, USA, 11.
+https://proceedings.neurips.cc/paper_files/paper/2017/file/3f5ee243547dee91fbd053c1c4a845aa-Paper.pdf
+Wang et al
+.
+(2022)
+Wenhui Wang, Hangbo Bao,
+Li Dong, Johan Bjorck,
+Zhiliang Peng, Qiang Liu,
+Kriti Aggarwal, Owais Khan Mohammed,
+Saksham Singhal, Subhojit Som, and
+Furu Wei. 2022.
+Image as a Foreign Language: BEiT Pretraining for All
+Vision and Vision-Language Tasks.
+doi:
+10.48550/ARXIV.2208.10442
+Wong et al
+.
+(2025)
+Albert Wong, Eugene Li,
+Huan Le, Gurbir Bhangu, and
+Suveer Bhatia. 2025.
+A predictive analytics framework for forecasting
+soccer match outcomes using machine learning models.
+Decision Analytics Journal
+14 (March 2025),
+100537.
+doi:
+10.1016/j.dajour.2024.100537
+Wunderlich and Memmert (2020)
+Fabian Wunderlich and
+Daniel Memmert. 2020.
+Forecasting the outcomes of sports events: A
+review.
+European Journal of Sport Science
+21, 7 (July
+2020), 944–957.
+doi:
+10.1080/17461391.2020.1793002
+Xu et al
+.
+(2023)
+Yi Xu, Armin Bazarjani,
+Hyung-gun Chi, Chiho Choi, and
+Yun Fu. 2023.
+Uncovering the Missing Pattern: Unified Framework
+Towards Trajectory Imputation and Prediction. In
+2023 IEEE/CVF Conference on Computer Vision and
+Pattern Recognition (CVPR)
+. IEEE,
+9632–9643.
+doi:
+10.1109/cvpr52729.2023.00929
+Yeung et al
+.
+(2025)
+Calvin Yeung, Tony Sit,
+and Keisuke Fujii. 2025.
+Transformer-based neural marked spatio temporal
+point process model for analyzing football match events.
+Applied Intelligence
+55,
+5 (Jan. 2025),
+335.
+doi:
+10.1007/s10489-024-05996-9
+Zou et al
+.
+(2020)
+Qingrong Zou, Kai Song,
+and Jian Shi. 2020.
+A Bayesian In-Play Prediction Model for Association
+Football Outcomes.
+Applied Sciences
+10,
+8 (April 2020),
+2904.
+doi:
+10.3390/app10082904
+Appendix A
+Axial Attention
+In Section
+3.3
+, we claim that an instance of masked axial attention is equivalent to an instance of regular masked sequential self-attention, where the grid
+𝐆
+\boldsymbol{\mathrm{G}}
+of embedding vectors is unravelled to the sequence
+𝐒
+\boldsymbol{\mathrm{S}}
+and the attention mask is defined in Equation (
+5
+).
+The following is a sketch proof of this claim, where we use this observation:
+Observation A.1
+.
+The
+Softmax
+⁡
+(
+)
+\softmax()
+operator, when applied to the attention matrix
+𝐀
+\boldsymbol{\mathrm{A}}
+is
+permutation equivariant
+with respect to both row- and column-permutations, i.e. for any permutation matrix
+𝐏
+\boldsymbol{\mathrm{P}}
+, we have:
+Softmax
+⁡
+(
+𝐏𝐀
+)
+\displaystyle\softmax(\boldsymbol{\mathrm{P}}\boldsymbol{\mathrm{A}})
+=
+𝐏
+​
+Softmax
+⁡
+(
+𝐀
+)
+​
+, and
+\displaystyle=\boldsymbol{\mathrm{P}}\softmax(\boldsymbol{\mathrm{A}})\text{, and}
+Softmax
+⁡
+(
+𝐀𝐏
+)
+\displaystyle\softmax(\boldsymbol{\mathrm{A}}\boldsymbol{\mathrm{P}})
+=
+Softmax
+⁡
+(
+𝐀
+)
+​
+𝐏
+​
+.
+\displaystyle=\softmax(\boldsymbol{\mathrm{A}})\boldsymbol{\mathrm{P}}\text{.}
+Proof.
+The
+Softmax
+\softmax
+operator is applied in a row-wise manner to the
+𝐀
+\boldsymbol{\mathrm{A}}
+matrix and ensures that each row sums to
+1
+1
+.
+Thus the rows of the input can be reordered without altering the results in any row, and the result has a corresponding reordering.
+Furthermore, reordering the columns of the input does not change the resulting values, as the vector dot product and scalar division operations in Equation (
+3
+) are both permutation invariant.
+∎
+Recall from Section
+3.3
+, that the input grid of embedding vectors
+𝐆
+∈
+ℝ
+H
+×
+W
+×
+D
+\boldsymbol{\mathrm{G}}\in\mathbb{R}^{H\times W\times D}
+is unravelled into a sequence
+𝐒
+∈
+ℝ
+H
+​
+W
+×
+D
+\boldsymbol{\mathrm{S}}\in\mathbb{R}^{HW\times D}
+in row-major format, and that the permutation matrix
+𝐏
+∈
+{
+0
+,
+1
+}
+H
+​
+W
+×
+H
+​
+W
+\boldsymbol{\mathrm{P}}\in\{0,1\}^{HW\times HW}
+reorders a sequence from column-major to row-major format.
+We claim that the masked sequential self-attention operation
+Vaswani et al. 2017
+from Equation (
+3
+) on
+𝐒
+\boldsymbol{\mathrm{S}}
+using the mask matrix from Equation (
+5
+), is equivalent to the masked axial attention operation, detailed in Algorithm
+1
+.
+Consider the mask matrix from Equation (
+5
+).
+The component
+𝐌
+row
+\boldsymbol{\mathrm{M}}^{\mathrm{row}}
+ensures that (at most) an embedding vector will only attend to the vectors in the same row of
+𝐆
+\boldsymbol{\mathrm{G}}
+and, likewise,
+𝐌
+col
+\boldsymbol{\mathrm{M}}^{\mathrm{col}}
+ensures that (at most) the embedding vector will only attend to the vectors in the same column of
+𝐆
+\boldsymbol{\mathrm{G}}
+, see Figure
+6
+for an illustration of the mask pattern.
+Given the mask
+𝐌
+\boldsymbol{\mathrm{M}}
+, it is sufficient to only compute the elements of the attention matrix
+𝐀
+\boldsymbol{\mathrm{A}}
+that are not masked.
+For
+𝐌
+row
+\boldsymbol{\mathrm{M}}^{\mathrm{row}}
+, the unmasked components of
+𝐀
+\boldsymbol{\mathrm{A}}
+is the block diagonal matrix
+𝐀
+row
+:=
+𝐝𝐢𝐚𝐠
+⁡
+(
+𝐀
+1
+row
+,
+𝐀
+2
+row
+,
+…
+,
+𝐀
+H
+row
+)
+\boldsymbol{\mathrm{A}}^{\mathrm{row}}:=\boldsymbol{\mathrm{diag}}\left(\boldsymbol{\mathrm{A}}^{\mathrm{row}}_{1},\boldsymbol{\mathrm{A}}^{\mathrm{row}}_{2},\dotsc,\boldsymbol{\mathrm{A}}^{\mathrm{row}}_{H}\right)
+where
+𝐀
+i
+row
+∈
+ℝ
+W
+×
+W
+\boldsymbol{\mathrm{A}}^{\mathrm{row}}_{i}\in\mathbb{R}^{W\times W}
+.
+The unmasked components of
+𝐀
+\boldsymbol{\mathrm{A}}
+in
+𝐌
+col
+\boldsymbol{\mathrm{M}}^{\mathrm{col}}
+are also a block diagonal matrix under row and column permutations, i.e.
+𝐏
+⁡
+(
+𝐀
+col
+)
+​
+𝐏
+⊺
+\boldsymbol{\mathrm{P}}(\boldsymbol{\mathrm{A}}^{\mathrm{col}})\boldsymbol{\mathrm{P}}^{\intercal}
+where
+𝐀
+col
+:=
+𝐝𝐢𝐚𝐠
+⁡
+(
+𝐀
+1
+col
+,
+𝐀
+2
+col
+,
+…
+,
+𝐀
+W
+col
+)
+\boldsymbol{\mathrm{A}}^{\mathrm{col}}:=\boldsymbol{\mathrm{diag}}\left(\boldsymbol{\mathrm{A}}^{\mathrm{col}}_{1},\boldsymbol{\mathrm{A}}^{\mathrm{col}}_{2},\dotsc,\boldsymbol{\mathrm{A}}^{\mathrm{col}}_{W}\right)
+where
+𝐀
+j
+col
+∈
+ℝ
+H
+×
+H
+\boldsymbol{\mathrm{A}}^{\mathrm{col}}_{j}\in\mathbb{R}^{H\times H}
+.
+Using the pre-condition that either
+𝐌
+row
+\boldsymbol{\mathrm{M}}^{\mathrm{row}}
+or
+𝐌
+col
+\boldsymbol{\mathrm{M}}^{\mathrm{col}}
+masks the diagonal elements of
+𝐀
+row
+\boldsymbol{\mathrm{A}}^{\mathrm{row}}
+or
+𝐀
+col
+\boldsymbol{\mathrm{A}}^{\mathrm{col}}
+and thus
+𝐀
+row
+\boldsymbol{\mathrm{A}}^{\mathrm{row}}
+and
+𝐀
+col
+\boldsymbol{\mathrm{A}}^{\mathrm{col}}
+are disjoint, we have that
+𝐀
+=
+𝐀
+row
++
+𝐏
+⁡
+(
+𝐀
+col
+)
+​
+𝐏
+⊺
+\boldsymbol{\mathrm{A}}=\boldsymbol{\mathrm{A}}^{\mathrm{row}}+\boldsymbol{\mathrm{P}}(\boldsymbol{\mathrm{A}}^{\mathrm{col}})\boldsymbol{\mathrm{P}}^{\intercal}
+.
+Furthermore, from Equation (
+1
+), we can see that
+Softmax
+⁡
+(
+𝐀
+)
+​
+𝐕
+=
+\displaystyle\softmax(\boldsymbol{\mathrm{A}})\boldsymbol{\mathrm{V}}=
+Softmax
+⁡
+(
+𝐀
+row
++
+𝐏
+⁡
+(
+𝐀
+col
+)
+​
+𝐏
+⊺
+)
+​
+𝐕
+\displaystyle\softmax(\boldsymbol{\mathrm{A}}^{\mathrm{row}}+\boldsymbol{\mathrm{P}}(\boldsymbol{\mathrm{A}}^{\mathrm{col}})\boldsymbol{\mathrm{P}}^{\intercal})\boldsymbol{\mathrm{V}}
+(8)
+=
+\displaystyle=
+(
+𝐧
+row
+𝐧
+row
++
+𝐧
+col
+⊙
+Softmax
+⁡
+(
+𝐀
+row
+)
++
+CLOSE
+\displaystyle\biggl(\frac{\boldsymbol{\mathrm{n}}^{\mathrm{row}}}{\boldsymbol{\mathrm{n}}^{\mathrm{row}}+\boldsymbol{\mathrm{n}}^{\mathrm{col}}}\odot\softmax(\boldsymbol{\mathrm{A}}^{\mathrm{row}})+
+OPEN
+𝐧
+col
+𝐧
+row
++
+𝐧
+col
+⊙
+𝐏
+​
+Softmax
+⁡
+(
+𝐀
+col
+)
+​
+𝐏
+⊺
+)
+​
+𝐕
+\displaystyle\frac{\boldsymbol{\mathrm{n}}^{\mathrm{col}}}{\boldsymbol{\mathrm{n}}^{\mathrm{row}}+\boldsymbol{\mathrm{n}}^{\mathrm{col}}}\odot\boldsymbol{\mathrm{P}}\softmax(\boldsymbol{\mathrm{A}}^{\mathrm{col}})\boldsymbol{\mathrm{P}}^{\intercal}\biggr)\boldsymbol{\mathrm{V}}
+(9)
+=
+\displaystyle=
+𝐧
+row
+𝐧
+row
++
+𝐧
+col
+⊙
+Softmax
+⁡
+(
+𝐀
+row
+)
+​
+𝐕
++
+\displaystyle\frac{\boldsymbol{\mathrm{n}}^{\mathrm{row}}}{\boldsymbol{\mathrm{n}}^{\mathrm{row}}+\boldsymbol{\mathrm{n}}^{\mathrm{col}}}\odot\softmax(\boldsymbol{\mathrm{A}}^{\mathrm{row}})\boldsymbol{\mathrm{V}}+
+𝐧
+col
+𝐧
+row
++
+𝐧
+col
+⊙
+𝐏
+​
+Softmax
+⁡
+(
+𝐀
+col
+)
+​
+(
+𝐏
+−
+1
+​
+𝐕
+)
+\displaystyle\frac{\boldsymbol{\mathrm{n}}^{\mathrm{col}}}{\boldsymbol{\mathrm{n}}^{\mathrm{row}}+\boldsymbol{\mathrm{n}}^{\mathrm{col}}}\odot\boldsymbol{\mathrm{P}}\softmax(\boldsymbol{\mathrm{A}}^{\mathrm{col}})(\boldsymbol{\mathrm{P}}^{-1}\boldsymbol{\mathrm{V}})
+(10)
+=
+\displaystyle=
+𝐧
+row
+𝐧
+row
++
+𝐧
+col
+⊙
+𝐑
+row
+′
++
+𝐧
+col
+𝐧
+row
++
+𝐧
+col
+⊙
+𝐑
+col
+′
+\displaystyle\frac{\boldsymbol{\mathrm{n}}^{\mathrm{row}}}{\boldsymbol{\mathrm{n}}^{\mathrm{row}}+\boldsymbol{\mathrm{n}}^{\mathrm{col}}}\odot\boldsymbol{\mathrm{R}}^{\prime}_{\mathrm{row}}+\frac{\boldsymbol{\mathrm{n}}^{\mathrm{col}}}{\boldsymbol{\mathrm{n}}^{\mathrm{row}}+\boldsymbol{\mathrm{n}}^{\mathrm{col}}}\odot\boldsymbol{\mathrm{R}}^{\prime}_{\mathrm{col}}
+(11)
+=
+\displaystyle=
+𝐑
+′
+​
+,
+\displaystyle\boldsymbol{\mathrm{R}}^{\prime}\text{,}
+(12)
+where
+𝐑
+′
+∈
+ℝ
+H
+​
+W
+×
+D
+\boldsymbol{\mathrm{R}}^{\prime}\in\mathbb{R}^{HW\times D}
+is the unravelled attention results in row-major layout.
+Line
+A
+uses Observation
+A.1
+, and
+the terms are adjusted so that the attention weights from the
+Softmax
+⁡
+(
+)
+\softmax()
+operation sum to
+1
+1
+.
+In line
+A
+we use the identity that
+𝐏
+−
+1
+≡
+𝐏
+⊺
+\boldsymbol{\mathrm{P}}^{-1}\equiv\boldsymbol{\mathrm{P}}^{\intercal}
+for any permutation matrix to reorder the rows of
+𝐕
+\boldsymbol{\mathrm{V}}
+to column-major.
+Since
+𝐀
+row
+\boldsymbol{\mathrm{A}}^{\mathrm{row}}
+and
+𝐀
+col
+\boldsymbol{\mathrm{A}}^{\mathrm{col}}
+are block diagonal, multiplying by
+𝐕
+\boldsymbol{\mathrm{V}}
+and
+𝐏
+−
+1
+​
+𝐕
+\boldsymbol{\mathrm{P}}^{-1}\boldsymbol{\mathrm{V}}
+respectively is equivalent to multiplying each block by the corresponding sub-matrix of
+𝐕
+\boldsymbol{\mathrm{V}}
+and
+𝐏
+−
+1
+​
+𝐕
+\boldsymbol{\mathrm{P}}^{-1}\boldsymbol{\mathrm{V}}
+, as is performed for-loops in lines
+5
+and
+11
+of Algorithm
+1
+.
+By “re-ravelling“to the grid layout, we obtain an equivalent matrix to
+𝐑
+\boldsymbol{\mathrm{R}}
+from line
+17
+in Algorithm
+1
+.
+Figure 6
+:
+Illustration of mask matrix pattern on unravelled sequence
+𝐒
+\boldsymbol{\mathrm{S}}
+for row (blue) and column (orange) axial attention, where colored cells are attended to (i.e. value of
+0
+0
+) and blank cells are masked (value of
+−
+∞
+-\infty
+). If the diagonal elements
+e
+i
+​
+i
+e_{ii}
+are masked in either of the mask matrices, then
+𝐌
+row
+\boldsymbol{\mathrm{M}}^{\mathrm{row}}
+and
+𝐌
+col
+\boldsymbol{\mathrm{M}}^{\mathrm{col}}
+are disjoint.
+Appendix B
+Example Visualizations
+Figure
+7
+are examples of predictions from the running example game Fulham vs. Aston Villa for both teams, and for one player from each team.
+The red dotted vertical line indicates the time-step that a Fulham player is shown a red card and sent off.
+At this point, the expected action totals for both teams and players adjust to this situation, e.g. fewer expected total shots for Fulham, and more for Aston Villa, and for own goals the expected action totals adjust in the opposite direction.
+In Figures
+7(c)
+and
+7(d)
+, the green dotted vertical line indicates the time-step when the player was substituted.
+Note that for all actions, the predicted future actions is zero, with the exception of red and yellow cards, as substituted players may still receive cards, e.g. for dissent.
+In Figure
+1
+, we can see that Fulham were favorites pre-game with a predicted win probability of 0.47.
+At the start of the match, Fulham also have higher forecast totals for actions positively correlated with winning, such as goals, shots and assists, and lower forecasts for negatively correlated actions: fouls, yellow and red cards.
+Furthermore, at the end of the match, Fulham as consistently under-performed the pre-game predictions, and has lost the match 1–3. On the other hand, Aston Villa slightly over-performed their pre-game predictions, and won the match.
+(a)
+Fulham
+(b)
+Aston Villa
+(c)
+Emile Smith Rowe (Fulham)
+(d)
+Morgan Rogers (Aston Villa)
+Figure 7
+:
+Live forecasts for all target actions for Fulham, Aston Villa, and players Emile Smith Rowe (Fulham) and Morgan Rogers (Aston Villa), a match won 1–3 by Aston Villa. The red dotted vertical line indicates the time-step that a Fulham player was given a red-card.
+Both Smith Row and Rogers are substituted, indicated by the green dotted vertical line.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

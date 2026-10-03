@@ -1,0 +1,1380 @@
+                                                LEAP: Likelihood Elicitation and Aggregation for LLM-based
+                                                                 Probabilistic Forecasting
+                                                                   Yufei Chen1 Yiran Zhao2 Xiaogang Xu3,4,†
+                                                                     Qipeng Xie5 Jiafei Wu3,4 Zhe Liu3,4,†
+                                                      1 Shandong University      2 Nanjing University of Aeronautics and Astronautics
+                                                                   3 School of Software Technology, Zhejiang University
+                                                                  4 Ningbo Global Innovation Center, Zhejiang University
+                                                          5 The Hong Kong University of Science and Technology (Guangzhou)
+
+
+
+                                                             Abstract
+                                            LLM-based forecasting systems have improved
+                                                                                                                                                   SAME EVIDENCE
+arXiv:2609.01337v1 [cs.AI] 1 Sep 2026
+
+
+
+
+                                            on real-world tasks such as financial markets
+                                            and sports outcomes, largely through stronger                  Monolithic Prediction                                           LEAP
+                                                                                                        Holistic, high-confidence, hard to audit               Per-evidence likelihood + probabilistic aggregation
+                                            search and tool use. Many systems still ask                                                                                       Likelihood over options
+                                                                                                                                  All evidence                                   A     B         C      D
+
+                                            an LLM to read all collected evidence together                                        read together                                               ×      ×            Probabilistic Model
+                                                                                                                                  in one opaque        Evidence A             (+)     (++)    (− )     (− )
+                                                                                                                                  step
+                                            and produce the final forecast. We call this                                                                                      Likelihood over options
+
+                                                                                                                                                                                 A    B          C      D
+
+                                            design Monolithic Prediction. It can obscure                                                               Evidence B            (− )
+                                                                                                                                                                                 ×    
+                                                                                                                                                                                      (++)
+                                                                                                                                                                                                 
+                                                                                                                                                                                                 (+)
+                                                                                                                                                                                                        ×
+                                                                                                                                                                                                       (− )
+
+
+                                            how individual evidence items affect the re-                                                                                      Likelihood over options
+                                                                                                                                                                                 A     B         C      D
+
+                                            sult and collapse uncertainty across compet-                                                               Evidence C
+                                                                                                                                                                              
+                                                                                                                                                                             (+)
+                                                                                                                                                                                       
+                                                                                                                                                                                      (+)
+                                                                                                                                                                                                 ×
+                                                                                                                                                                                              (− )
+                                                                                                                                                                                                        ×
+                                                                                                                                                                                                       (− )
+                                                                                                                                                                                                                   PREDICTION: B
+
+                                            ing outcomes. We propose LEAP (Likelihood                     PREDICTION:         A                          1.0
+                                                                                                                                                                 Probability distribution over options                      Key
+                                                                                                                                                                                                                            evidence
+
+
+                                            Elicitation and Aggregation for Probabilistic                0.92 (92% confidence)                                              0.65                                            identifiable
+                                                                                                                                        WRONG            0.5                                                            Evidence B
+                                                                                                                                   (high confidence)                0.10
+                                                                                                                                                                                            0.20                        contributes most
+                                                                                                                                                                                                            0.05
+                                            forecasting), which reorganizes how collected                                                                0.0
+                                                                                                                                                                                                                        Evidence A
+                                                                                                                                                                                                                        also supports
+                                                                                                                                Why A?                               A       B               C                D
+
+                                            evidence is used in the prediction stage. LEAP                                 I can’t tell which
+                                                                                                                          evidence mattered!                                         That makes sense! I can see
+                                            examines each evidence item separately and                                                                                                 why B wins, and I can also
+                                                                                                                                                                                     consider other outcomes that
+                                                                                                                                                                                      have a certain probability！
+                                            elicits likelihood parameters that describe its                     Opaque and hard to audit                                   Auditable and interpretable
+
+                                            implications for the target. An explicit prior
+                                            and a deterministic probabilistic model then
+                                            combine these likelihoods into a posterior dis-           Figure 1: The Monolithic baseline can be confidently
+                                            tribution. This procedure supports continuous,            wrong without revealing which evidence drove the an-
+                                            single-choice, and multi-choice forecasts while           swer. LEAP exposes evidence-level support and com-
+                                            preserving reproducible evidence contributions.           bines it through a probabilistic update, making the pre-
+                                            We build a benchmark covering forecasting,                diction auditable.
+                                            information-seeking, and browsing tasks, and
+                                            evaluate LEAP on our own agent loop and sev-
+                                            eral agent CLI frameworks. Given the same                 and other sources for relevant material, then passes
+                                            evidence, LEAP improves most prediction and               the collected evidence to one or more LLM calls
+                                            calibration metrics across models and remains
+                                                                                                      that read it as a whole and produce the final pre-
+                                            stronger under controlled comparisons of prior
+                                            access, inference budget, and aggregation.1               diction. Recent work has improved the first stage
+                                                                                                      through agentic search loops, retrieval, tool use,
+                                                                                                      web interaction, and source integration (Yan et al.,
+                                        1   Introduction                                              2024; Nakano et al., 2021; Yao et al., 2023; Schick
+                                        As large language models (LLMs) and agent har-                et al., 2023; Trivedi et al., 2023; Qin et al., 2024;
+                                        nesses mature, LLM-based agents are increasingly              Liu et al., 2024b; Zhou et al., 2024; Deng et al.,
+                                        used for real-world forecasting, from economic and            2023; Xie et al., 2024). A common design for the
+                                        financial indicators to sports outcomes and geopo-            second stage remains holistic: one or more LLM
+                                        litical events (Zou et al., 2022; Karger et al., 2025;        forecasting calls read everything gathered and write
+                                        Yang et al., 2026; Halawi et al., 2024; Schoenegger           out the answer.
+                                        et al., 2024; Alur et al., 2025). A representative sys-          This final prediction stage has two undesirable
+                                        tem first runs an agent loop that searches the web            properties. First, it is opaque: the user can read the
+                                           †                                                          LLM’s rationale, but cannot isolate the influence
+                                             Corresponding authors: xiaogangxu00@gmail.com and
+                                        zhe.liu@zju.edu.cn.                                           of any specific evidence item on the result; as a re-
+                                           1
+                                             https://github.com/layingfish/LEAP                       sult, the forecast may collapse evidence-supported
+
+                                                                                                  1
+uncertainty over competing outcomes into a single             by removing one item and recomputing the predic-
+answer (DeYoung et al., 2020; Lyu et al., 2023).              tion.
+Second, because a point forecast requires one an-                We evaluate LEAP on a benchmark drawn from
+swer, the LLM must merge evidence from different              FutureX, GAIA, and BrowseComp (Zeng et al.,
+sources into a single supporting context. In this             2026; Mialon et al., 2024; Wei et al., 2025), cover-
+long-context setting, the final prediction is more            ing forecasting, information-seeking, and browsing
+likely to be biased by LLM forgetting and halluci-            tasks. To make the comparison fair, the evalua-
+nation (Liu et al., 2024a; Ji et al., 2023; Niu et al.,       tion uses strict temporal isolation, model selection
+2024; Belém et al., 2025). Figure 1 illustrates this          constrained by knowledge cutoffs, and a shared ev-
+failure mode.                                                 idence set for both methods (details in Section 5.1).
+   Probabilistic models provide a natural way to              Under this setup, LEAP improves over Monolithic
+keep evidence interpretation separate from aggre-             on most settings and metrics, both on our custom
+gation. BIRD uses LLM-generated factors and                   agent loop across multiple base models and as a
+coarse probability judgments to parameterize a                probability skill atop several agent CLI frameworks
+Bayesian model for probabilistic inference (Feng              used in practice.
+et al., 2025). Nafar et al. elicit conditional prob-             Our contributions are: (1) we study how a fixed
+abilities from LLMs to parameterize predefined                evidence set should be converted into a probabilis-
+Bayesian networks (Nafar et al., 2026). Concurrent            tic forecast and isolate this prediction step from
+work on the Bayesian Linguistic Forecaster main-              evidence collection; (2) we propose LEAP, which
+tains a structured belief state during iterative search       uses the LLM as a local interpreter of each evi-
+and combines multiple forecasts through shrink-               dence item and aggregates its outputs through a de-
+age and calibration (Murphy, 2026). These studies             terministic probabilistic model into a posterior over
+demonstrate practical ways to place LLM judg-                 the answer; (3) we construct a benchmark cover-
+ments inside structured probabilistic models. We              ing forecasting, information-seeking, and browsing
+apply the same general idea after evidence collec-            tasks on which LEAP improves prediction accu-
+tion, using an explicit Bayesian model to combine             racy and probabilistic quality across multiple base
+the gathered evidence into a forecast.                        models and several agent CLI frameworks; and (4)
+   We therefore propose LEAP (Likelihood                      we provide diagnostic analyses showing where the
+Elicitation and Aggregation for Probabilistic fore-           gains come from and how forecasts can be audited
+casting), which reorganizes how gathered informa-             at the evidence-item level.
+tion is consumed in the final prediction step. Rather
+than asking the LLM to forecast from the full evi-            2   Related Work
+dence bundle, LEAP uses it as a local interpreter:
+the LLM examines each evidence item in isolation              LLM-based forecasting systems. LLM-based
+and reports likelihood parameters describing what             forecasting has moved from benchmark construc-
+the evidence implies about the target. Alongside              tion toward systems that combine search, reasoning,
+these likelihoods, a prior over the answer is also            aggregation, and calibration. AutoCast introduced
+constructed, supplying a base rate before any evi-            temporally grounded forecasting questions with
+dence is examined. A deterministic probabilistic              timestamped evidence (Zou et al., 2022); Auto-
+model then combines this prior with the individual            Cast++ improved world event prediction through
+evidence likelihoods and returns a posterior distri-          zero-shot context retrieval and summarization (Yan
+bution over the answer.                                       et al., 2024); ForecastBench extends this line with
+   This design gives LEAP two useful properties.              a dynamic benchmark and human comparisons
+First, the output is a posterior distribution rather          (Karger et al., 2025); and Prophet Arena studies
+than a point estimate, improving prediction accu-             the predictive intelligence of LLMs in forecast-
+racy and giving human decision makers richer infor-           ing settings (Yang et al., 2026). Concurrent work
+mation for comparing competing outcomes. Sec-                 shows that ensembles of LLM forecasters can ap-
+ond, every step is inspectable: the user can see              proach human crowd forecasts on binary questions
+which evidence items entered the posterior, what              (Schoenegger et al., 2024). Recent systems give the
+each contributed, and how the final distribution was          LLM search access and combine decomposition,
+assembled. A forecast can therefore be audited at             retrieval, ensembling, and calibration after predic-
+the level of individual evidence items, for example           tion, but the final forecast is still produced by LLM
+
+                                                          2
+calls that read the gathered material as a whole              Auditability and faithful explanations. Our fo-
+(Halawi et al., 2024; Alur et al., 2025). We focus            cus on evidence-level auditability is related to
+on what happens after evidence collection: how                work on rationales and faithful explanations in
+should fixed evidence be converted into the final             NLP. ERASER evaluates rationalized models using
+prediction? Our method assesses what each evi-                human-marked supporting evidence and faithful-
+dence item implies about the candidate outcomes               ness metrics (DeYoung et al., 2020). Faithful chain-
+and keeps these local assessments separate until              of-thought work similarly argues that a reasoning
+aggregation.                                                  trace is most useful when it is coupled to the com-
+                                                              putation that produces the answer, for example by
+LLM-assisted Bayesian inference. BIRD uses                    delegating final execution to a deterministic solver
+LLM-generated factors and coarse probability judg-            (Lyu et al., 2023). LEAP follows this principle
+ments to parameterize a Bayesian model for prob-              in forecasting: the LLM supplies local evidence
+abilistic inference (Feng et al., 2025). Nafar et             interpretations, while the posterior and evidence
+al. elicit conditional probabilities from LLMs to             contributions are computed by an explicit proba-
+parameterize predefined Bayesian networks, espe-              bilistic update rather than by a simple explanation
+cially when observed data are limited (Nafar et al.,          written after the fact.
+2026). The Bayesian Linguistic Forecaster main-
+                                                              Scope of LEAP. LEAP operates after an up-
+tains a linguistic belief state during iterative search
+                                                              stream system has collected evidence and fo-
+and combines multiple forecasts through shrinkage
+                                                              cuses on the final prediction step. BIRD builds a
+and calibration (Murphy, 2026). These systems
+                                                              Bayesian model from LLM-generated factors for a
+show how LLM judgments can support structured
+                                                              target query, while Nafar et al. parameterize prede-
+probabilistic inference.
+                                                              fined domain-level networks from LLM judgments
+                                                              (Feng et al., 2025; Nafar et al., 2026). LEAP starts
+Evidence collection and agent evaluation.
+                                                              from retrieved evidence for one forecasting task
+Agent methods are directly relevant to the first stage
+                                                              and elicits one likelihood per item. The Bayesian
+of our setting: collecting and organizing evidence
+                                                              Linguistic Forecaster maintains a structured be-
+before the prediction is made. Retrieval-augmented
+                                                              lief state during iterative search and aggregates
+generation and passage readers ground generation
+                                                              calibrated forecasts across trials (Murphy, 2026);
+and open-domain question answering in external
+                                                              LEAP keeps evidence collection and prediction sep-
+documents (Lewis et al., 2020; Izacard and Grave,
+                                                              arate, then computes a posterior after the evidence
+2021), retrieval can reduce hallucination in dia-
+                                                              set is fixed. This design is motivated by known
+logue (Shuster et al., 2021), WebGPT connects
+                                                              weaknesses of holistic synthesis, including long-
+browser use with long-form question answering
+                                                              context underuse (Liu et al., 2024a), unsupported
+(Nakano et al., 2021), and ReAct interleaves reason-
+                                                              factual claims in long outputs (Min et al., 2023),
+ing and acting (Yao et al., 2023). Related methods
+                                                              and hallucination relative to supplied sources (Niu
+decompose questions, sample multiple reasoning
+                                                              et al., 2024; Ji et al., 2023; Belém et al., 2025),
+paths, learn tool use, call large API collections, or
+                                                              as well as probabilistic forecasting principles that
+reflect on previous attempts (Press et al., 2023; Wei
+                                                              favor calibrated distributions under proper scoring
+et al., 2022; Wang et al., 2023; Schick et al., 2023;
+                                                              rules (Guo et al., 2017; Brier, 1950; Gneiting and
+Patil et al., 2024; Qin et al., 2024; Shinn et al.,
+                                                              Raftery, 2007). Because LEAP only requires a
+2023). Agent benchmarks then score the combined
+                                                              task, a fixed evidence set, and an output type, it
+effect of search, reasoning, tool use, and answer
+                                                              can plug into different forecasting agents, brows-
+generation, from multi-hop QA and interleaved
+                                                              ing agents, or agent CLI frameworks. The output
+retrieval to web, desktop, browsing, and forecast-
+                                                              type selects the local likelihood schema and poste-
+ing tasks (Yang et al., 2018; Trivedi et al., 2023;
+                                                              rior family, but the collection interface stays fixed.
+Liu et al., 2024b; Zhou et al., 2024; Deng et al.,
+                                                              This interface supports continuous, single-choice,
+2023; Xie et al., 2024; Mialon et al., 2024; Wei
+                                                              and multi-choice targets across different upstream
+et al., 2025; Zou et al., 2022; Karger et al., 2025;
+                                                              systems. The LLM interprets each evidence item
+Zeng et al., 2026). These evaluations score whole
+                                                              locally, while an explicit probabilistic model per-
+systems; our protocol holds the gathered evidence
+                                                              forms the final combination, yielding forecasts that
+fixed, isolating how that evidence is turned into a
+                                                              are more auditable than a single free-text rationale.
+forecast.
+
+                                                          3
+3     Problem Formulation                                     3.3   Monolithic Baseline and Evaluation
+                                                                    Protocol
+3.1    Task and Two-Stage Decomposition
+                                                              The comparison baseline is Monolithic Prediction.
+A forecasting task is specified by a tuple                    It uses the same LLM and the same E as our
+                                                              method, reads (T, E) in a single prompt, and emits
+              T = (q, tfreeze , τ, O),             (1)        a forecast f in the form specified by τ in one pass.
+                                                                 Operationally, both methods share the same col-
+where q is the question; tfreeze is the cutoff time, so       lection stage and are applied to the same (T, E);
+usable information must be timestamped no later               they differ only in how that evidence is consumed
+than this time; τ is the output type, either con-             during prediction. For continuous targets, Mono-
+tinuous, single-choice, or multi-choice; and O is             lithic would normally return a single number; we
+an optional set of candidate options for discrete             additionally ask it to provide an uncertainty range
+outputs. We decompose evidence-grounded LLM                   around that number so continuous predictions can
+forecasting into two stages. A collection stage uses          be compared under the same scoring setup.
+an agent loop to gather evidence items                           For each task T , the collection stage is run once
+                                                              to produce a single E, and both methods are ap-
+                 E = {e1 , . . . , en },           (2)        plied to the same (T, E). Score differences can
+                                                              therefore be attributed to how evidence is turned
+where each ei is a text passage with a timestamp              into a forecast, not to retrieval differences or search
+at or before tfreeze . A prediction stage then maps           budget.
+(T, E) to a forecast f . The prediction stage may
+read E but performs no additional retrieval.                  4     Method
+                                                              LEAP instantiates the prediction stage of Sec-
+3.2    Forecast Targets                                       tion 3.1: it consumes (T, E) and returns a fore-
+The output type τ determines both the latent quan-            cast f in the form specified by τ . Its key design
+tity and the form of the forecast f . We consider             choice is not to ask the LLM for f . Instead, pre-
+three types: continuous targets for numeric quanti-           diction is divided into local parameter elicitation,
+ties, single-choice targets where exactly one of K            in which the LLM analyzes one evidence item at a
+options is correct, and multi-choice targets where            time and estimates parameters for an explicit prob-
+any subset of K options may be correct.                       abilistic model, and deterministic aggregation, in
+                                                              which the probabilistic model combines these pa-
+Continuous. The latent target θ ∈ R is a real-                rameters with a prior through a closed-form update
+valued quantity, such as a closing price or a pub-            to produce the final prediction. The LLM thus
+lished economic indicator. The forecast reports               supplies local evidence interpretations, while the
+values at fixed quantile levels, such as the median           probabilistic model makes the final judgment after
+and the 10th and 90th percentiles, capturing both             all evidence items have been analyzed. Figure 2
+central tendency and uncertainty.                             illustrates the complete procedure, including the
+                                                              upstream collection loop that constructs E.
+Single-choice. The latent target θ ∈ {1, . . . , K}
+is exactly one of the K candidate options in O.               4.1   Probabilistic Model
+The forecast is a probability distribution over these         LEAP starts from a Bayesian probability model
+options: a vector f ∈ [0, 1]K whose entries sum to            on the prediction target θ, the unknown answer
+one, with fk giving the probability that option k is          variable, and the evidence in E:
+the correct one.
+                                                                                               indep
+                                                                    θ ∼ P0 (θ),       ei | θ    ∼ Pi (ei | θ),   (3)
+Multi-choice.     The latent target θ ∈ {0, 1}K is a
+vector of yes/no labels, one per option in O. The             for i = 1, . . . , n. The prior P0 encodes a base
+forecast f ∈ [0, 1]K assigns one probability to each          rate for θ before any evidence is examined. Each
+option, with fk being the probability that option             conditional Pi describes what the appearance of
+k is true. Because options are evaluated indepen-             ei implies about θ, under the working conditional
+dently rather than as alternatives, the entries of f          independence assumption ei ⊥ ej | θ for i ̸= j.
+need not sum to one.                                          Because duplicated or common-source evidence
+
+                                                          4
+can violate this, LEAP later clusters dependent evi-        Evidence likelihood parameters. Each evidence
+dence before aggregation. For any retained subset           item ei is sent to the LLM in isolation: the model
+R ⊆ {1, . . . , n}, the unweighted posterior follows        sees T and exactly one evidence item, never other
+Bayes’ rule:                                                sources, accumulated evidence, or partial posteri-
+                             Y                              ors. The prompt does not ask for a prediction; it
+        P (θ | E) ∝ P0 (θ)         Pi (ei | θ).   (4)       elicits how ei bears on each candidate outcome.
+                             i∈R                            The output is a structured qualitative schema for
+                                                            Pi , plus a dependency key identifying the source
+We instantiate P0 and {Pi } as conjugate pairs so           family of ei .
+Equation (4) is closed form. Our experiments use               For continuous targets, the LLM extracts a target-
+a tempered version with role weights, reducing to           scale observation from ei : an explicit reported
+Equation (4) at unit temperature and weights. The           value when present, or a qualitative assessment oth-
+three output types of Section 3.2 use a Gaussian            erwise. This observation becomes the likelihood
+conjugate pair for continuous targets, a categor-           mean µi . The likelihood standard deviation σi re-
+ical pair with multinomial likelihood for single-           flects evidence strength, determined by the quali-
+choice targets, and independent Bernoulli pairs for         tative label and sampling agreement. Appendix B
+multi-choice targets; closed-form updates are in            details the schema and strength calibration.
+Appendix A.                                                    For single-choice targets, the LLM returns quali-
+                                                            tative support labels for each option k, which deter-
+4.2   Parameter Elicitation
+                                                            mine non-normalized likelihoods Li (k) = P (ei |
+The LLM estimates parameters of P0 and each                 θ = k). For multi-choice targets, it returns support
+Pi ; it does not output a forecast over θ. This is a        and opposition labels that determine log likelihood
+constrained use of the model’s reasoning ability:           ratios. These mappings follow standard elicitation
+modern LLMs are trained and evaluated on analyti-           practice for converting qualitative assessments into
+cal and mathematical tasks, so LEAP uses them to            likelihood parameters. Appendix B gives the com-
+estimate local likelihood signals while leaving the         plete schema.
+posterior update to the probabilistic model. Each
+evidence-level call analyzes T with one evidence            4.3   Deterministic Aggregation
+item and returns a structured likelihood schema.
+The call may see that item, but not the full evidence       Given the elicited prior and likelihood parameters
+set, other evidence items, accumulated evidence,            and the retained evidence set R, aggregation is
+or any partial posterior. It therefore returns inputs       deterministic and uses no additional LLM call: it
+to likelihood factors, not an answer or a final prob-       evaluates the posterior over the retained represen-
+ability. Elicitation has two tasks: estimating prior        tatives, reads out the forecast in the form required
+parameters before any evidence is consulted, and            by τ , and decomposes the update into evidence
+estimating likelihood parameters for each ei from           contributions.
+that evidence item alone.
+                                                            Posterior update. The tempered posterior up-
+Prior parameters. The parameters of P0 come                 date is evaluated over R using the closed-form
+from the most informative source available. When            conjugate update for the chosen family. The fore-
+the target has a recent and reliable numerical his-         cast f is a direct readout of the resulting distribu-
+tory, such as a market price or macroeconomic               tion: quantiles for continuous targets, normalised
+index, the prior is computed from that history. Oth-        option probabilities for single-choice targets, and
+erwise, a single LLM call with no evidence visible          Bernoulli marginals for multi-choice targets.
+returns prior parameters from background knowl-
+edge alone. For discrete tasks that lack even a             Per-evidence contribution. For each retained
+reliable background base rate, we use an unbiased           item j ∈ R, we recompute the update with j ex-
+and conservative prior. The prompt forbids condi-           cluded and report the resulting forecast change as
+tioning on specific evidence, since the prior should        a leave-one-out contribution ∆j . Because the com-
+record a base rate before evidence is examined; let-        putation is deterministic and closed form, ∆j is
+ting the prior call read evidence would count that          reproducible by running the update on R \ {j}.
+evidence twice in Equation (4).                             Appendix A gives the concrete form for each τ .
+
+                                                        5
+                   question                           timestamp                                     output type                        candidate options
+
+
+
+                                                    Agentic evidence collection loop
+
+                                                   Collected evidence set
+
+                   Prior track                                                                    Elicitation & Safeguards track
+
+              Prior estimation                         Isolated per-evidence elicitation                       Safeguards                      Retained set �
+                                                                           R replicated calls                before inference                (after safeguards)
+                      or                                                 (reliability sampling)
+
+
+      From historical data Blind LLM estimates
+                                                                                                             • Dependency clusters
+                      Prior                            Per-evidence LLM calls return                         • Reliability weights
+                                                                                                             • Outlier rejection                 Retained evidence items
+                                                           likelihood parameters                                                                  and final parameters
+
+                                                                    LLM never makes the final prediction; it only produces likelihood parameters.
+
+
+                                                              Closed-form Bayesian aggregation
+
+
+
+
+               Posterior forecast                                                                           Per-evidence contributions (Δⱼ)                          +0.21
+
+                                                                   inspectable, calibrated,                         How each retained evidence
+                                                                                                                                                                    − 0.08
+                                                                         auditable                                  changes the belief
+              Full posterior distribution over θ                                                                                                                     +0.15
+
+
+
+
+Figure 2: Overview of LEAP. After evidence collection, isolated LLM calls estimate a prior and one likelihood
+per evidence item. LEAP applies safeguards, performs a closed-form Bayesian update, and reports the posterior
+forecast with leave-one-out contributions ∆j .
+
+
+4.4     Safeguard Components                                                            dard deviations from the prior mean, the item is
+Dependency clustering. The conditional inde-                                            excluded from R as a likely elicitation error (e.g.,
+pendence assumption in Equation (3) can fail when                                       a unit mismatch). This rule is not applied when the
+evidence items share a source, e.g., multiple pages                                     prior is itself elicited without historical data.
+quoting one report. LEAP uses the dependency key
+                                                                                        5          Experiments
+returned with each likelihood to group common-
+source evidence and retain one representative per                                       5.1          Setup
+group; only the retained set R enters the posterior                                     Benchmark. The benchmark draws forecasting
+update. Appendix C describes how equivalent keys                                        and information-seeking tasks from FutureX (Zeng
+are canonicalised.                                                                      et al., 2026), GAIA (Mialon et al., 2024), and
+Reliability sampling. A single local likelihood                                         BrowseComp (Wei et al., 2025), and converts each
+query may be noisy. LEAP can repeat the same                                            task into the tuple of Section 3.1. The output type
+query for an evidence item R times and use agree-                                       τ follows the ground truth answer type, and rank-
+ment across draws as a reliability adjustment.                                          ing resolutions are excluded. Appendix D reports
+These draws are not a forecast ensemble: each                                           counts, conversion rules, tfreeze assignment, and
+draw still sees only (T, ei ) and returns the same                                      the temporal leakage audit.
+local schema. Agreement only shrinks or preserves
+                                                                                        Evaluation settings. We evaluate LEAP in two
+the local likelihood magnitude, and the final fore-
+                                                                                        settings, both using a single evidence set E shared
+cast is still produced once by the deterministic ag-
+                                                                                        by Monolithic and LEAP for each task. To avoid
+gregation step.
+                                                                                        evidence leakage, retrieval is restricted to material
+Outlier rejection. For continuous targets with a                                        available no later than the task timestamp, and the
+data-derived prior, the prior serves as a numerical                                     base models are chosen so that their knowledge
+anchor for implausible elicited observations: if an                                     cutoffs precede the evaluated timestamps. The first
+evidence likelihood mean exceeds four prior stan-                                       setting uses our ReAct-style agent loop across five
+
+                                                                                  6
+base models: DeepSeek-V3.2, Gemini-3.1-Flash-                                                    FutureX        ECE
+                                                                                                 Brier          Overconf.
+
+
+
+
+                                                            Improvement over Monolithic
+Lite, Claude-Haiku-4.5, GPT-5.4-mini, and Grok-                                           0.20
+4.20-Fast. The second applies LEAP as a proba-
+                                                                                          0.15
+bility skill on unmodified traces from four external
+agent CLI frameworks: DeerFlow, Hermes, Open-                                             0.10
+Claw, and MiroFlow.
+                                                                                          0.05
+Metrics. All metrics are computed on our con-
+                                                                                          0.00
+structed benchmark. The FutureX composite score                                                  10        20         30        40       50   60
+(Zeng et al., 2026) is the headline metric across                                                               Days before resolution
+all output types. Accuracy, Brier score (Brier,
+1950), and Spherical score (Gneiting and Raftery,           Figure 3: Absolute improvement of LEAP over Mono-
+2007) are computed on discrete tasks; NCRPS, a              lithic on the diagnostic subset as a function of the fore-
+length-normalised variant of the continuous ranked          cast horizon (days between evidence collection and
+                                                            ground truth resolution). All four reported metrics move
+probability score, is computed on continuous tasks
+                                                            further in LEAP’s favour as the horizon lengthens.
+(Gneiting and Raftery, 2007). Calibration diag-
+nostics, including expected calibration error and
+overconfidence, are reported in Section 5.3, with           ponents, plus case studies showing evidence-level
+formal definitions in Appendix D.                           contributions. Appendix D describes the diagnostic
+                                                            subset and base model.
+5.2   Main Results
+Comparison across models on our Agent Loop.                 Calibration. Table 6 explains why Brier is the
+Table 1 compares Monolithic and LEAP with our               least uniform metric in Table 1. Following stan-
+ReAct-style agent loop fixed and the base model             dard calibration evaluation (Guo et al., 2017), ECE
+varied. For every base model, LEAP improves Fu-             measures the gap between top-option confidence
+tureX, Spherical score, and accuracy. Absolute              and empirical accuracy; Adaptive ECE uses data-
+gains range from 3.6 to 18.1 points on FutureX              dependent bins, and overconfidence averages the
+and from 2.5 to 15.1 points on Spherical. NCRPS             positive part of this gap. Although LEAP is
+also improves for every base model, with gains              close to or slightly behind Monolithic on Brier
+above 50 points on GPT-5.4-mini and 30 points               for DeepSeek-V3.2 and Gemini-3.1-Flash-Lite, it
+on Gemini-3.1-Flash-Lite. Brier is less uniform:            roughly halves both ECE variants (0.184 to 0.088,
+LEAP improves it on three of five base models,              and 0.177 to 0.091) and reduces overconfidence by
+while the other two are close or essentially tied.          more than half (0.317 to 0.150). This indicates a
+Section 5.3 interprets this with calibration diagnos-       calibration difference rather than a loss in predic-
+tics.                                                       tive quality: Monolithic concentrates probability on
+                                                            one option, lowering Brier when it is right but pay-
+Robustness across external agent CLI frame-                 ing with sharp overconfidence on the rest. LEAP
+works. Table 2 reports the external agent CLI set-          spreads probability more conservatively and keeps
+ting. The pattern from our loop largely carries over:       confidence aligned with accuracy.
+across four frameworks, LEAP improves most re-
+ported metrics over Monolithic, with FutureX gains          Robustness across forecast horizons. Forecast-
+of 7.0 to 13.8 points and Brier reductions of 12.9          ing becomes harder as the horizon between evi-
+to 23.7 points. The macro-average row improves              dence collection and ground truth resolution length-
+on all five metrics, with gains of 9.8 points on            ens. We split the subset into horizons of 7, 30, and
+FutureX, 4.7 on accuracy, 16.5 on Brier, 14.1 on            60 days and plot LEAP’s absolute improvement
+Spherical, and 12.9 on NCRPS. This suggests that            over Monolithic in Figure 3. All four curves rise
+LEAP can improve existing forecasting systems as            monotonically: FutureX gain increases from 6.8
+a plug-in module without modifying their collec-            to 11.9 points, and the overconfidence gap widens
+tion pipelines.                                             from 13.3 to 23.3 points. As evidence becomes
+                                                            more indirect, Monolithic continues to commit
+5.3   Analysis                                              firmly to a single option, while LEAP recognises
+We complement the main results with diagnostics             weaker support in E and produces wider posteri-
+on calibration, forecast horizons, and LEAP com-            ors—degrading by becoming conservative rather
+
+                                                        7
+Model                   Method            FutureX↑        Accuracy↑            Brier↓       Spherical↑       NCRPS↓
+                        Monolithic         0.4895              0.6237          0.2308         0.5581          0.2594
+DeepSeek-V3.2
+                        LEAP               0.6701              0.6407          0.2374         0.7089          0.2578
+                        Monolithic         0.6004              0.6271          0.2334         0.6693          0.4916
+Gemini-3.1-Flash-Lite
+                        LEAP               0.7069              0.6542          0.2336         0.7223          0.1419
+                        Monolithic         0.6211              0.5933          0.2638         0.6726          0.2432
+Claude-Haiku-4.5
+                        LEAP               0.6569              0.6102          0.2522         0.6975          0.1605
+                        Monolithic         0.6456              0.6473          0.2741         0.6857          0.5413
+GPT-5.4-mini
+                        LEAP               0.7222              0.6873          0.2100         0.7484          0.0200
+                        Monolithic         0.6533              0.6314          0.2971         0.6750          0.1282
+Grok-4.20-Fast
+                        LEAP               0.7503              0.7133          0.1916         0.7571          0.1174
+
+Table 1: Main comparison of Monolithic and LEAP across five base models under the evaluation protocol of
+Section 3, with our ReAct-style agent loop fixed across rows. Arrows indicate the better direction. The better value
+per (model, metric) is in bold.
+
+Framework Method              FutureX↑               Accuracy↑            Brier↓          Spherical↑        NCRPS↓
+               Monolithic        0.4135               0.3500               0.5757           0.3790           1.0000
+DeerFlow
+               LEAP              0.4832               0.3500               0.4360           0.4902           0.5024
+               Monolithic        0.4238               0.3810               0.4925           0.4678           0.8661
+Hermes
+               LEAP              0.5619               0.4762               0.2552           0.6723           0.6721
+               Monolithic        0.3472               0.1667               0.5296           0.3974           0.5142
+OpenClaw
+               LEAP              0.4396               0.2222               0.3674           0.5413           0.4808
+               Monolithic        0.5630               0.5185               0.3683           0.5912           0.7611
+MiroFlow
+               LEAP              0.6545               0.5556               0.2393           0.7016           0.7593
+               Monolithic        0.4491               0.3721               0.4806           0.4712           0.7598
+Overall
+               LEAP              0.5471               0.4186               0.3157           0.6117           0.6312
+
+Table 2: Monolithic vs LEAP applied as a downstream probability skill on evidence collected by four external agent
+CLI frameworks. Arrows indicate the better direction. The better value per (framework, metric) is in bold. The
+Overall row is the macro-average across the four frameworks.
+
+
+ Method                      FutureX↑ Brier↓          ECE↓          to 0.213, making it the most important component
+ Monolithic                      0.6512 0.2689 0.1840
+                                                                    on this subset: structured likelihood aggregation
+                                                                    needs a stable starting point when local evidence is
+ LEAP w/o prior                  0.6427     0.2808   0.2134
+                                                                    sparse or noisy.
+ LEAP w/o dep. clustering        0.7089     0.2299   0.1578
+ LEAP w/o reliab. sampling       0.7136     0.2215   0.1219            Dependency clustering. Removing dependency
+ Full LEAP                       0.7284     0.2057   0.0876
+                                                                    clustering lowers FutureX by 1.9 points and raises
+                                                                    ECE from 0.088 to 0.158, consistent with over-
+Table 3: Component ablation on the diagnostic subset.
+Each row removes one component from Full LEAP;                      counting common source evidence and making the
+Monolithic is reported for reference. Best values are in            posterior sharper than the evidence warrants.
+bold.
+                                                                       Reliability sampling. Removing reliability sam-
+                                                                    pling has a smaller but consistent effect, lowering
+than confidently wrong.                                             FutureX to 0.714 and raising ECE to 0.122; re-
+                                                                    peated local checks mainly protect against noisy
+Component ablation. Table 3 reports the results                     likelihood estimates rather than supplying the main
+of removing the prior, dependency clustering, and                   gain. All variants except the one without the prior
+reliability sampling one at a time.                                 remain above Monolithic on FutureX, so structured
+   Prior. Removing the prior drops FutureX below                    aggregation supplies most of the gain while these
+Monolithic (0.643 versus 0.651) and raises ECE                      safeguards add robustness.
+
+                                                                8
+Method                                                               Tokens/task p50 / p95 (s)     FX ↑   Brier ↓   ECE ↓
+Monolithic                                                                5,733     6.2/12.1      0.6512 0.2689 0.1840
+Monolithic + same prior, one sample                                       6,521     9.1/17.0      0.6742 0.2510 0.1508
+LEAP without reliability sampling                                         5,869     7.3/16.5      0.7136 0.2215 0.1219
+Monolithic + same prior, two-sample mean                                 11,753     9.8/20.4      0.6736 0.2497 0.1471
+LEAP                                                                     11,508    10.4/27.8     0.7284 0.2057 0.0876
+
+Table 4: Prediction-time budget and latency under the diagnostic setup in Appendix D.4. The prior-matched
+Monolithic baselines control for prior access, and the two-sample mean controls for LEAP’s token budget.
+
+
+Method                    FX ↑         Brier ↓    ECE ↓          tivity analyses, and case studies illustrating typical
+Aggregation                                                      LEAP successes, failure modes, and how ∆j makes
+Monolithic               0.6512         0.2689    0.1840         forecasts auditable at the evidence-item level.
+Linear opinion pool      0.6808         0.2389    0.1117
+LEAP (η = 1.0)          0.7284         0.2057    0.0876          6     Conclusion
+Likelihood strength for LEAP
+η = 0.5                   0.7181        0.2166    0.1012         This paper studied how LLM-based forecasting
+η = 1.0                  0.7284        0.2057    0.0876          systems turn a fixed set of gathered evidence into
+η = 2.0                   0.7210        0.2139    0.1094         a final prediction. Building on work that uses
+                                                                 LLM judgments within probabilistic models, we
+Table 5: Aggregation baseline and sensitivity to the             proposed LEAP for this setting. LEAP leaves ev-
+global likelihood strength η, which scales the contribu-         idence collection unchanged, interprets each ev-
+tion of elicited likelihoods in the posterior update. The
+                                                                 idence item locally, and combines the resulting
+default is η = 1.0.
+                                                                 likelihoods with a prior through deterministic prob-
+                                                                 abilistic aggregation.
+Metric                      Monolithic             LEAP
+                                                                    Under a protocol that holds evidence fixed across
+FutureX↑                           0.6512          0.7284        methods, LEAP improves prediction accuracy and
+Brier↓                             0.2689          0.2057        probabilistic quality in most settings and metrics
+ECE↓                               0.1840          0.0876
+                                                                 across five base models and four external agent
+Adaptive ECE↓                      0.1765          0.0912
+Overconfidence↓                    0.3167          0.1500        CLI frameworks. Calibration diagnostics show
+                                                                 that LEAP roughly halves expected calibration er-
+Table 6: Calibration diagnostics on the diagnostic subset.       ror and overconfidence, with gains widening as
+Arrows indicate the better direction; bold marks the             the forecast horizon lengthens. Because inference
+better value.                                                    is closed form, evidence contributions are repro-
+                                                                 ducible by removing one item and rerunning the
+                                                                 posterior update, yielding an audit signal not avail-
+Controlled baselines and inference efficiency.                   able from a free-text LLM rationale.
+We also run controlled experiments to measure
+LEAP’s token cost and inference efficiency. Ta-                  Limitations
+bles 4 and 5 show that LEAP retains its advantage
+when Monolithic receives the same prior or a com-                The scope of LEAP is the prediction step after evi-
+parable token budget, and that it performs better                dence has already been collected. It changes how
+than linear opinion pooling. Its median latency is               a fixed evidence set is converted into a forecast,
+close to that of the two-sample ensemble, while                  but it does not improve the upstream collection
+its p95 latency is higher because completion time                stage itself. If the collected evidence is sparse, out-
+depends on the slowest evidence-level calls. Per-                dated, or only weakly relevant, LEAP will usually
+formance changes little across the tested likelihood             express that uncertainty in a wider posterior rather
+strengths. Appendix D.10 reports alternative evi-                than recover information that was never retrieved.
+dence grouping strategies and source-wise results.                  Our evaluation is also bounded by the benchmark
+                                                                 and model families studied here. We evaluate En-
+Details and extended experiments. Appendix D                     glish forecasting and agentic information-seeking
+reports prompts, the ReAct-style agent loop, the                 tasks with a fixed collection protocol and a lim-
+probability skill for external traces, additional sensi-         ited set of base models. Extending the evaluation
+
+                                                             9
+to other languages, specialised scientific domains,            Michael Federici, Richard Zhu, Dennis Fogerty, Hay-
+longer forecast horizons, and substantially differ-            ley Williamson, Nina Lozinski, Aaron Linsky, and
+                                                               Jasjeet S. Sekhon. 2025. AIA forecaster: Technical
+ent agent designs is left to future work. LEAP also
+                                                               report. CoRR, abs/2511.07678.
+uses more inference calls than Monolithic, since ev-
+idence items are interpreted separately and may be           Catarina G. Belém, Pouya Pezeshkpour, Hayate Iso,
+sampled more than once for local verification. This            Seiji Maekawa, Nikita Bhutani, and Estevam Hr-
+                                                               uschka. 2025. From single to multi: How LLMs hal-
+cost is the main practical tradeoff for the added              lucinate in multi-document summarization. In Find-
+calibration and auditability.                                  ings of the Association for Computational Linguistics:
+                                                               NAACL 2025, pages 5291–5324, Albuquerque, New
+Ethical Considerations                                         Mexico. Association for Computational Linguistics.
+
+This work studies probabilistic forecasting systems          Glenn W. Brier. 1950. Verification of forecasts ex-
+that use LLMs. Their outputs should be understood              pressed in terms of probability. Monthly Weather
+                                                               Review, 78(1):1–3.
+as decision support rather than authoritative predic-
+tions. Forecasts about financial, political, public          Xiang Deng, Yu Gu, Boyuan Zheng, Shijie Chen,
+health, or similarly consequential events may affect           Samuel Stevens, Boshi Wang, Huan Sun, and Yu Su.
+downstream decisions if deployed in practice. Such             2023. Mind2Web: Towards a generalist agent for
+                                                               the web. In Advances in Neural Information Process-
+systems should therefore be used with human over-              ing Systems, volume 36, pages 28091–28114. Curran
+sight, clear uncertainty communication, and review             Associates, Inc.
+by domain experts, especially in settings where
+                                                             Jay DeYoung, Sarthak Jain, Nazneen Fatema Rajani,
+incorrect forecasts could cause material harm.                 Eric Lehman, Caiming Xiong, Richard Socher, and
+   LEAP is designed to make the prediction step                Byron C. Wallace. 2020. ERASER: A benchmark to
+more inspectable by exposing retained evidence                 evaluate rationalized NLP models. In Proceedings
+items and their contributions, but this audit trail            of the 58th Annual Meeting of the Association for
+                                                               Computational Linguistics, pages 4443–4458, Online.
+does not eliminate the risks inherited from the up-            Association for Computational Linguistics.
+stream evidence collection stage or from the under-
+lying LLM. Retrieved sources may be incomplete,              Yu Feng, Ben Zhou, Weidong Lin, and Dan Roth. 2025.
+biased, outdated, or unevenly representative, and              BIRD: A trustworthy bayesian inference framework
+                                                               for large language models. In The Thirteenth Inter-
+the LLM’s local interpretations may still reflect              national Conference on Learning Representations,
+model biases or factual errors. The method should              pages 8961–8989. OpenReview.net.
+not be presented as removing the need for source
+                                                             Tilmann Gneiting and Adrian E. Raftery. 2007. Strictly
+verification or independent expert judgment.                    proper scoring rules, prediction, and estimation.
+   Our experiments use benchmark tasks and col-                 Journal of the American Statistical Association,
+lected evidence snapshots rather than private user              102(477):359–378.
+data. We use existing benchmark artifacts only for
+                                                             Chuan Guo, Geoff Pleiss, Yu Sun, and Kilian Q. Wein-
+research evaluation, and any converted derivatives             berger. 2017. On calibration of modern neural net-
+are intended to remain research-only artifacts un-             works. In Proceedings of the 34th International Con-
+der the original access conditions, including the              ference on Machine Learning, volume 70 of Pro-
+gated-access constraints attached to GAIA-derived              ceedings of Machine Learning Research, pages 1321–
+                                                               1330. PMLR.
+records. More broadly, deployments that collect ex-
+ternal evidence should respect data access policies,         Danny Halawi, Fred Zhang, Chen Yueh-Han, and Jacob
+copyright restrictions, and privacy expectations of            Steinhardt. 2024. Approaching human-level forecast-
+                                                               ing with language models. In Advances in Neural
+the sources they use. The same forecasting capabil-            Information Processing Systems, volume 37, pages
+ities could also be misused to support manipulation,           50426–50468. Curran Associates, Inc.
+speculation, or strategic targeting; these risks are
+not specific to LEAP, but they are relevant to any           Gautier Izacard and Edouard Grave. 2021. Leveraging
+                                                               passage retrieval with generative models for open do-
+system that improves the scalability or apparent               main question answering. In Proceedings of the 16th
+credibility of automated forecasting.                          Conference of the European Chapter of the Associ-
+                                                               ation for Computational Linguistics: Main Volume,
+                                                               pages 874–880, Online. Association for Computa-
+References                                                     tional Linguistics.
+Rohan Alur, Bradly C. Stadie, Daniel Kang, Ryan              Ziwei Ji, Nayeon Lee, Rita Frieske, Tiezheng Yu,
+  Chen, Matt McManus, Michael Rickert, Tyler Lee,              Dan Su, Yan Xu, Etsuko Ishii, Yejin Bang, Andrea
+
+
+                                                        10
+  Madotto, and Pascale Fung. 2023. Survey of halluci-          Aliakbar Nafar, Kristen Brent Venable, Zijun Cui, and
+  nation in natural language generation. ACM Comput-             Parisa Kordjamshidi. 2026. Extracting probabilistic
+  ing Surveys, 55(12):248:1–248:38.                              knowledge from large language models for bayesian
+                                                                 network parameterization. Transactions on Machine
+Ezra Karger, Houtan Bastani, Chen Yueh-Han, Zachary              Learning Research.
+  Jacobs, Danny Halawi, Fred Zhang, and Philip E. Tet-
+  lock. 2025. ForecastBench: A dynamic benchmark               Reiichiro Nakano, Jacob Hilton, Suchir Balaji, Jeff
+  of AI forecasting capabilities. In The Thirteenth In-          Wu, Long Ouyang, Christina Kim, Christopher
+  ternational Conference on Learning Representations,            Hesse, Shantanu Jain, Vineet Kosaraju, William
+  pages 93943–93980. OpenReview.net.                             Saunders, Xu Jiang, Karl Cobbe, Tyna Eloundou,
+                                                                 Gretchen Krueger, Kevin Button, Matthew Knight,
+Patrick Lewis, Ethan Perez, Aleksandra Piktus, Fabio             Benjamin Chess, and John Schulman. 2021. We-
+  Petroni, Vladimir Karpukhin, Naman Goyal, Hein-                bGPT: Browser-assisted question-answering with hu-
+  rich Küttler, Mike Lewis, Wen-tau Yih, Tim Rock-               man feedback. CoRR, abs/2112.09332.
+  täschel, Sebastian Riedel, and Douwe Kiela. 2020.
+  Retrieval-augmented generation for knowledge-                Cheng Niu, Yuanhao Wu, Juno Zhu, Siliang Xu,
+  intensive NLP tasks. In Advances in Neural Infor-              KaShun Shum, Randy Zhong, Juntong Song, and
+  mation Processing Systems, volume 33, pages 9459–              Tong Zhang. 2024. RAGTruth: A hallucination cor-
+  9474. Curran Associates, Inc.                                  pus for developing trustworthy retrieval-augmented
+                                                                 language models. In Proceedings of the 62nd An-
+Nelson F. Liu, Kevin Lin, John Hewitt, Ashwin Paran-             nual Meeting of the Association for Computational
+  jape, Michele Bevilacqua, Fabio Petroni, and Percy             Linguistics (Volume 1: Long Papers), pages 10862–
+  Liang. 2024a. Lost in the middle: How language                 10878, Bangkok, Thailand. Association for Compu-
+  models use long contexts. Transactions of the Asso-            tational Linguistics.
+  ciation for Computational Linguistics, 12:157–173.
+                                                               Shishir G. Patil, Tianjun Zhang, Xin Wang, and
+Xiao Liu, Hao Yu, Hanchen Zhang, Yifan Xu, Xuanyu                Joseph E. Gonzalez. 2024. Gorilla: Large language
+  Lei, Hanyu Lai, Yu Gu, Hangliang Ding, Kaiwen                  model connected with massive APIs. In Advances in
+  Men, Kejuan Yang, Shudan Zhang, Xiang Deng, Ao-                Neural Information Processing Systems, volume 37,
+  han Zeng, Zhengxiao Du, Chenhui Zhang, Sheng                   pages 126544–126565. Curran Associates, Inc.
+  Shen, Tianjun Zhang, Yu Su, Huan Sun, and 3 others.
+  2024b. AgentBench: Evaluating LLMs as agents.                Ofir Press, Muru Zhang, Sewon Min, Ludwig Schmidt,
+  In The Twelfth International Conference on Learn-              Noah A. Smith, and Mike Lewis. 2023. Measuring
+  ing Representations, pages 52989–53046. OpenRe-                and narrowing the compositionality gap in language
+  view.net.                                                      models. In Findings of the Association for Computa-
+                                                                 tional Linguistics: EMNLP 2023, pages 5687–5711,
+Qing Lyu, Shreya Havaldar, Adam Stein, Li Zhang,                 Singapore. Association for Computational Linguis-
+  Delip Rao, Eric Wong, Marianna Apidianaki, and                 tics.
+  Chris Callison-Burch. 2023. Faithful chain-of-
+  thought reasoning. In Proceedings of the 13th In-            Yujia Qin, Shihao Liang, Yining Ye, Kunlun Zhu, Lan
+  ternational Joint Conference on Natural Language               Yan, Yaxi Lu, Yankai Lin, Xin Cong, Xiangru Tang,
+  Processing and the 3rd Conference of the Asia-Pacific          Bill Qian, Sihan Zhao, Lauren Hong, Runchu Tian,
+  Chapter of the Association for Computational Lin-              Ruobing Xie, Jie Zhou, Mark Gerstein, Dahai Li,
+  guistics (Volume 1: Long Papers), pages 305–329,               Zhiyuan Liu, and Maosong Sun. 2024. ToolLLM:
+  Nusa Dua, Bali. Association for Computational Lin-             Facilitating large language models to master 16000+
+  guistics.                                                      real-world APIs. In The Twelfth International Confer-
+                                                                 ence on Learning Representations, pages 9695–9717.
+Grégoire Mialon, Clémentine Fourrier, Thomas Wolf,               OpenReview.net.
+  Yann LeCun, and Thomas Scialom. 2024. GAIA: a
+  benchmark for general AI assistants. In The Twelfth          Timo Schick, Jane Dwivedi-Yu, Roberto Dessì, Roberta
+  International Conference on Learning Representa-               Raileanu, Maria Lomeli, Eric Hambro, Luke Zettle-
+  tions, pages 9025–9049. OpenReview.net.                        moyer, Nicola Cancedda, and Thomas Scialom. 2023.
+                                                                 Toolformer: Language models can teach themselves
+Sewon Min, Kalpesh Krishna, Xinxi Lyu, Mike                      to use tools. In Advances in Neural Information
+  Lewis, Wen-tau Yih, Pang Wei Koh, Mohit Iyyer,                 Processing Systems, volume 36, pages 68539–68551.
+  Luke Zettlemoyer, and Hannaneh Hajishirzi. 2023.               Curran Associates, Inc.
+  FActScore: Fine-grained atomic evaluation of factual
+  precision in long form text generation. In Proceed-          Philipp Schoenegger, Indre Tuminauskaite, Peter S.
+  ings of the 2023 Conference on Empirical Methods in            Park, Rafael Valdece Sousa Bastos, and Philip E.
+  Natural Language Processing, pages 12076–12100,                Tetlock. 2024. Wisdom of the silicon crowd: LLM
+  Singapore. Association for Computational Linguis-              ensemble prediction capabilities rival human crowd
+  tics.                                                          accuracy. Science Advances, 10(45):eadp1528.
+Kevin Murphy. 2026. Agentic forecasting using sequen-          Noah Shinn, Federico Cassano, Ashwin Gopinath,
+  tial bayesian updating of linguistic beliefs. CoRR,            Karthik Narasimhan, and Shunyu Yao. 2023. Re-
+  abs/2604.18576.                                                flexion: Language agents with verbal reinforcement
+
+
+                                                          11
+  learning. In Advances in Neural Information Process-         Zhilin Yang, Peng Qi, Saizheng Zhang, Yoshua Ben-
+  ing Systems, volume 36, pages 8634–8652. Curran                gio, William W. Cohen, Ruslan Salakhutdinov, and
+  Associates, Inc.                                               Christopher D. Manning. 2018. HotpotQA: A dataset
+                                                                 for diverse, explainable multi-hop question answer-
+Kurt Shuster, Spencer Poff, Moya Chen, Douwe Kiela,              ing. In Proceedings of the 2018 Conference on Em-
+  and Jason Weston. 2021. Retrieval augmentation                 pirical Methods in Natural Language Processing,
+  reduces hallucination in conversation. In Findings             pages 2369–2380, Brussels, Belgium. Association
+  of the Association for Computational Linguistics:              for Computational Linguistics.
+  EMNLP 2021, pages 3784–3803, Punta Cana, Do-
+  minican Republic. Association for Computational              Shunyu Yao, Jeffrey Zhao, Dian Yu, Nan Du, Izhak
+  Linguistics.                                                   Shafran, Karthik R. Narasimhan, and Yuan Cao. 2023.
+                                                                 ReAct: Synergizing reasoning and acting in language
+Harsh Trivedi, Niranjan Balasubramanian, Tushar Khot,            models. In The Eleventh International Conference
+  and Ashish Sabharwal. 2023. Interleaving retrieval             on Learning Representations. OpenReview.net.
+  with chain-of-thought reasoning for knowledge-
+  intensive multi-step questions. In Proceedings of            Zhiyuan Zeng, Jiashuo Liu, Siyuan Chen, Tianci He,
+  the 61st Annual Meeting of the Association for Com-            Yali Liao, Yixiao Tian, Jinpeng Wang, Zaiyuan Wang,
+  putational Linguistics (Volume 1: Long Papers),                Yang Yang, Lingyue Yin, Mingren Yin, Zhenwei Zhu,
+  pages 10014–10037, Toronto, Canada. Association                Tianle Cai, Zehui Chen, Jiecao Chen, Yantao Du, Xi-
+  for Computational Linguistics.                                 ang Gao, Jiacheng Guo, Liang Hu, and 12 others.
+                                                                 2026. FutureX: An advanced live benchmark for
+Xuezhi Wang, Jason Wei, Dale Schuurmans, Quoc V.                 LLM agents in future prediction. In The Fourteenth
+  Le, Ed H. Chi, Sharan Narang, Aakanksha Chowd-                 International Conference on Learning Representa-
+  hery, and Denny Zhou. 2023. Self-consistency im-               tions, pages 19522–19563. OpenReview.net.
+  proves chain of thought reasoning in language mod-
+  els. In The Eleventh International Conference on             Shuyan Zhou, Frank F. Xu, Hao Zhu, Xuhui Zhou,
+  Learning Representations. OpenReview.net.                      Robert Lo, Abishek Sridhar, Xianyi Cheng, Tianyue
+                                                                 Ou, Yonatan Bisk, Daniel Fried, Uri Alon, and Gra-
+Jason Wei, Zhiqing Sun, Spencer Papay, Scott McK-                ham Neubig. 2024. WebArena: A realistic web en-
+   inney, Jeffrey Han, Isa Fulford, Hyung Won Chung,             vironment for building autonomous agents. In The
+   Alex Tachard Passos, William Fedus, and Amelia                Twelfth International Conference on Learning Repre-
+   Glaese. 2025. BrowseComp: A simple yet chal-                  sentations, pages 15585–15606. OpenReview.net.
+   lenging benchmark for browsing agents. CoRR,
+   abs/2504.12516.                                             Andy Zou, Tristan Xiao, Ryan Jia, Joe Kwon, Mantas
+                                                                 Mazeika, Richard Li, Dawn Song, Jacob Steinhardt,
+Jason Wei, Xuezhi Wang, Dale Schuurmans, Maarten
+                                                                 Owain Evans, and Dan Hendrycks. 2022. Forecast-
+   Bosma, Brian Ichter, Fei Xia, Ed H. Chi, Quoc V. Le,
+                                                                 ing future world events with neural networks. In
+   and Denny Zhou. 2022. Chain-of-thought prompt-
+                                                                 Advances in Neural Information Processing Systems,
+   ing elicits reasoning in large language models. In
+                                                                 volume 35, pages 27293–27305. Curran Associates,
+  Advances in Neural Information Processing Systems,
+                                                                 Inc.
+   volume 35, pages 24824–24837. Curran Associates,
+   Inc.
+                                                               A     Closed-Form Posterior Updates
+Tianbao Xie, Danyang Zhang, Jixuan Chen, Xiaochuan
+   Li, Siheng Zhao, Ruisheng Cao, Toh Jing Hua, Zhou-          We collect here the tempered updates in closed
+   jun Cheng, Dongchan Shin, Fangyu Lei, Yitao Liu,            form used for each output type, along with the cor-
+  Yiheng Xu, Shuyan Zhou, Silvio Savarese, Caiming             responding form of the per-evidence contribution
+  Xiong, Victor Zhong, and Tao Yu. 2024. OSWorld:
+   Benchmarking multimodal agents for open-ended
+                                                               ∆j . Throughout, R denotes the set of represen-
+   tasks in real computer environments. In Advances in         tatives retained after dependency clustering (Sec-
+  Neural Information Processing Systems, volume 37,            tion 4.3), and the prior and per-evidence likelihood
+   pages 52040–52094. Curran Associates, Inc.                  parameters are those elicited as in Section 4.2. Set-
+Qi Yan, Raihan Seraj, Jiawei He, Lili Meng, and Tristan        ting the temperature η and, where applicable, evi-
+  Sylvain. 2024. AutoCast++: Enhancing world event             dence weights wi to one recovers the unweighted
+  prediction with zero-shot ranking-based context re-          Bayesian updates implied by Equation (4).
+  trieval. In The Twelfth International Conference
+  on Learning Representations, pages 34523–34539.              A.1     Continuous Targets
+  OpenReview.net.
+                                                               The target θ ∈ R is modelled with a Gaussian prior,
+Qingchuan Yang, Simon Mahns, Sida Li, Anri Gu,                 and each retained evidence item induces a Gaussian
+  Jibang Wu, and Haifeng Xu. 2026. LLM-as-a-
+  prophet: Understanding predictive intelligence with
+                                                               likelihood factor over θ:
+  prophet arena. In The Fourteenth International Con-
+  ference on Learning Representations, pages 107020–               θ ∼ N (µ0 , σ02 ),   L̃i (θ) ∝ N (θ; µi , σi2 ).
+  107072. OpenReview.net.                                                                                          (5)
+
+                                                          12
+Define the precision τx = 1/σx2 . The posterior
+                                         P      is            and the forecast f ∈ [0, 1]K has entries fk =
+Gaussian with precision τpost = τ0 + η i∈R τi                 σ(logit(πpost (k))), which are not constrained to
+and mean                                                      sum to one. The per-evidence contribution is the
+                                                              L1 distance between the option marginals with and
+                                         !
+                  1              X
+     µpost =           µ0 τ0 + η    µi τi . (6)               without item j:
+               τpost
+                                   i∈R
+                                                                               K
+The forecast f reports quantile values of                             ∆j =
+                                                                               X                  (−j)
+                                                                                     πpost (k) − πpost (k) .    (11)
+N (µpost , 1/τpost ) at the predefined levels of Sec-                          k=1
+tion 3.2. The per-evidence contribution is the
+signed shift in the posterior mean,                           B     Mappings from Elicitation to
+                                 (−j)                               Likelihoods
+               ∆j = µpost − µpost ,               (7)
+        (−j)
+                                                              This section records the deterministic maps used to
+where µpost is recomputed over R \ {j}.                       convert local LLM judgments and evidence meta-
+A.2   Single-Choice Targets                                   data into the likelihood parameters consumed by
+                                                              Appendix A. The LLM is asked to interpret one
+The target θ ∈ {1, . . . , K} is modelled with a cat-         evidence item at a time; the numerical uncertainty,
+egorical prior π0 ∈ ∆K−1 and per-evidence like-               reliability shrinkage, caps based on evidence role,
+lihoods Li (k) = P (ei | θ = k). The qualita-                 and posterior aggregation are then applied by fixed
+tive judgments of Section 4.2 are mapped to Li (k)            code paths. These constants were fixed before the
+through a fixed table that assigns higher likelihood          final evaluation runs and were not tuned separately
+to options the evidence supports and lower likeli-            for individual test tasks or base models.
+hood to options the evidence opposes, with rele-                 Reliability sampling is applied after the raw
+vance acting as the magnitude of the asymmetry.               maps in Table 8. For single-choice tasks, repeated
+The posterior is computed in log space for numeri-            likelihood samples are normalised only for esti-
+cal stability. Let α denote the prior power and wi            mating reliability; the reliability score is the agree-
+the evidence weight based on role:                            ment on the top option multiplied by an exponential
+                                   X
+log πpost (k) ∝ α log π0 (k) + η       wi log Li (k),         penalty on average L1 disagreement, and the raw
+                                   i∈R                        likelihood vector is shrunk toward the uniform vec-
+                                                   (8)        tor by that score. For multi-choice tasks, LEAP
+followed by softmax normalisation over k. The                 takes the median sampled log-LR per option, esti-
+forecast f is the normalised vector πpost . The per-          mates reliability from sign agreement and L1 dis-
+evidence contribution is the signed shift in the prob-        agreement, shrinks the log-LR magnitudes by that
+ability of the most likely option:                            score, and then clips them by the cap for the evi-
+                                 (−j)                         dence role. The aggregation step also applies an evi-
+           ∆j = πpost (k̂) − πpost (k̂),          (9)
+                                                              dence weight based on role in [0.05, 1.5]; for single-
+where k̂ = arg maxk πpost (k).                                choice tasks, multiple retained items peaking at the
+                                                              same option are discounted by rank within that
+A.3   Multi-Choice Targets                                    group with the same direction.
+The target θ ∈ {0, 1}K uses an independent
+Bernoulli prior π0 (k) ∈ (0, 1) per option, and               C     Engineering Safeguards
+per-evidence likelihoods parameterised by a pair              We document here the engineering choices that
+(ptrue   false
+  i,k , pi,k ) giving the probability of observing ei         surround the core aggregation path of Section 4.
+when option k is or is not in the correct set. Map-           None of them changes the form of the posterior
+ping from the qualitative judgments of Section 4.2            update; each protects the update against a specific
+proceeds as in the single-choice case, applied per            failure mode of the elicitation step.
+option. Let ℓi (k) = log(ptrue      false
+                             i,k /pi,k ) denote the
+log-likelihood ratio per option. The independent              C.1    Dependency Key Canonicalisation
+posterior update is                                           The dependency keys returned by the LLM
+                                                              are short strings in free text, and semantically
+                                        X
+logit πpost (k) = logit π0 (k) + η          wi ℓi (k),
+                                         i∈R                  equivalent keys may be written with minor surface
+                                                 (10)         variations (different word order, hyphenation,
+
+                                                         13
+Metadata field          Value                                                           Mapping applied to the relative stan-
+                                                                                        dard deviation ri
+measurement_scope direct_target; proxy_signal; other/context                          Initialise ri to 0.08, 0.18, or 0.45, respec-
+                                                                                      tively.
+observation_type        point; interval; bound; other                                 Multiply by 0.85, 1.00, 1.15, or 1.20.
+source_tier             A; B; C; other                                                Multiply by 0.80, 0.95, 1.15, or 1.10.
+strength                strong; weak                                                  Multiply by 0.85 or 1.20.
+reliability             high; low                                                     Multiply by 0.85 or 1.15.
+target_match            exact/direct/same variable; partial/related; unknown/indirect Multiply by 0.90, 1.05, or 1.10.
+Direct target recency   ≤ 7 days; ≤ 30 days; older                                    Multiply by 0.80, 1.00, or 1.25.
+Threshold numeric       lower or upper bound wording                                  Enforce ri ≥ 0.10 so a threshold does
+                                                                                      not collapse the posterior.
+Final clamp             all evidence                                                  Clamp ri to [0.03, 1.25].
+
+Table 7: Metadata map for continuous targets. For an evidence item with scale si , LEAP
+                                                                                     q sets the data uncertainty
+                                                                                       2
+to ri si . With reliability sampling, the final likelihood standard deviation is σi = σdata,i    2
+                                                                                              + σelicitation,i , and
+qualitative evidence that is only contextual is additionally floored at 0.35si .
+
+
+or stopwords). To make the clustering step in                       D     Additional Experimental Details
+Section 4.3 insensitive to such variations, each raw
+key is mapped to a canonical form by lowercasing,                   D.1    Benchmark Construction
+splitting on common separators, removing a fixed                    Forecasting questions are drawn from FutureX af-
+list of stopwords, sorting the remaining tokens,                    ter removing ranking resolutions, which our output
+and joining them with a single delimiter. Two                       types do not cover. Information-seeking and brows-
+raw keys collapse to the same canonical form                        ing tasks are drawn from GAIA and BrowseComp
+whenever their token sets agree, so that keys such                  and rewritten into structured probabilistic tasks.
+as     bafta_2026_longlist_leading_actress                          The construction proceeds in four stages: source
+and bafta_longlist_2026_leading_actress                             selection, structured rewriting, manual review, and
+are recognised as referring to the same underlying                  final assembly. Manual review checks answer type
+source.                                                             validity, distractor plausibility, label conflicts, and
+                                                                    temporal leakage risk before an item enters the final
+C.2    Calibration Table for Continuous                             manifest. Table 9 reports the resulting counts.
+       Likelihoods
+                                                                       For FutureX, the freeze time tfreeze is the original
+For continuous targets, the LLM returns a location                  question time associated with the forecasting item.
+estimate µi or an effect relative to an anchor, while               For GAIA and BrowseComp, whose original tasks
+the uncertainty σi is assigned by the fixed metadata                are static question answering problems, tfreeze is
+map in Table 7. This keeps the scale of each like-                  assigned from the benchmark snapshot used during
+lihood tied to auditable evidence metadata rather                   construction; it acts as a retrieval cutoff for the con-
+than to an unconstrained confidence value reported                  verted task, not as a forecast resolution date. Struc-
+by the LLM.                                                         tured rewriting pairs the gold answer with plausible
+                                                                    distractors that match its surface type and semantic
+C.3    Outlier Rejection                                            class, removes duplicate or trivially invalid options,
+When the prior is estimated from data, we treat it                  and drops items whose answer cannot be repre-
+as a numerical anchor against which clearly miscal-                 sented cleanly as single_choice, multi_choice,
+ibrated elicitations can be flagged. An item whose                  or continuous. The final assembly also applies a
+elicited mean lies more than four standard devia-                   quarantine file for manually verified label conflicts,
+tions of the prior away from µ0 is excluded from                    which accounts for three removed FutureX items
+R as a likely elicitation error (typically a unit mis-              and three removed GAIA continuous items.
+match, a stale memory of a prior value of the target,                  The final manifest is evaluation-only. Because
+or a confused asset reference). This rule is not                    we do not train, fine-tune, or select models on this
+applied when the prior is itself blind to evidence,                 benchmark, we do not define train/dev/test splits;
+because in that case there is no trusted reference                  the 347 retained tasks are used for the reported eval-
+against which to flag outliers.                                     uation, and the separate 60-task diagnostic subset
+
+                                                               14
+Local evidence judgment                   Single-choice likelihood Multi-choice         log-LR Use case
+                                          Li (k)                   ℓi (k)
+Irrelevant to the option set              All options near 0.5; after ptrue
+                                                                        i,k  ≈ pfalse
+                                                                                 i,k   ≈ 0.5, so Prompt-calibrated neutral
+                                          normalisation this carries ℓi (k) ≈ 0.                  evidence.
+                                          little information.
+Strong support for option k               Supported       option   in ptrue
+                                                                        i,k   ≈ 0.85, pfalse
+                                                                                         i,k   ≈ Prompt-calibrated positive
+                                          [0.70, 0.95] and alterna- 0.15, so ℓi (k) ≈ 1.735.      evidence.
+                                          tives in [0.05, 0.20].
+Strong opposition to option k             Opposed option in the low ptrue
+                                                                        i,k   ≈ 0.15, pfalse
+                                                                                         i,k   ≈ Prompt-calibrated negative
+                                          likelihood range, with the 0.85, so ℓi (k) ≈ −1.735. evidence.
+                                          exact vector determined lo-
+                                          cally by the evidence.
+Deterministic verifier support/opposition Base values: support 0.99, Raw support/opposition Exact answer or structured
+                                          oppose 0.01, neutral 0.02, ± log(0.995/0.005),          verifier fallback.
+                                          then mixed with the uni- clipped by the determinis-
+                                          form vector by metadata re- tic cap 5.30.
+                                          liability.
+Direct option result or forecast signal   Base values: support 0.90, Raw support/opposition Extracted evidence that di-
+                                          oppose 0.08, neutral 0.12, ±1.735, followed by rectly names an option.
+                                          then mixed by reliability. clipping based on evidence
+                                                                      role; direct results and
+                                                                      threshold signals can use
+                                                                      cap 3.00.
+Other extracted support/opposition        Base values: support 0.85, Raw support/opposition Conservative             fallback
+                                          oppose 0.12, neutral 0.35, ±1.735, scaled by meta- when LLM parsing fails
+                                          then mixed by reliability. data reliability and clipped or structured support is
+                                                                      by the evidence role.       already available.
+
+Table 8: Likelihood map for discrete targets. Single-choice tasks use raw likelihoods P (ei | θ = k) that are not
+required to sum to one. Multi-choice tasks convert each evidence item into a log likelihood ratio for each option,
+ℓi (k) = log(ptrue  false
+              i,k /pi,k ).
+
+
+
+is used only for the analyses in Section 5.3.                    vate user data. During manual review, we checked
+                                                                 converted items for answer-type validity, label con-
+D.2    Artifact Licenses and Responsible Use                     flicts, temporal leakage, named or uniquely iden-
+                                                                 tifying personal information, and offensive con-
+Table 11 documents the source artifacts, access
+                                                                 tent. Items were dropped or quarantined when the
+conditions, and intended-use compatibility for the
+                                                                 answer could not be represented cleanly, when a
+benchmark material and external agent frameworks
+                                                                 conflict was verified, or when the converted record
+used in our experiments. We use the artifacts only
+                                                                 risked revealing gated answer material outside the
+for research evaluation of probabilistic forecasting
+                                                                 allowed access context. We did not use external
+and browsing-assisted question answering. We do
+                                                                 crowdworkers or run human-subject experiments;
+not redistribute GAIA answers or gated files, and
+                                                                 manual review was performed by the authors as
+any converted benchmark records produced by our
+                                                                 quality control over benchmark conversion.
+pipeline are intended for research evaluation under
+the same access constraints as the original source
+                                                                 D.3   Temporal Leakage Audit
+material.
+   The source tasks cover forecasting, information-              To verify that no evidence in any collected E is
+seeking, and browsing-oriented question answering.               later than its task’s tfreeze , we run a temporal leak-
+FutureX includes Chinese and English metadata in                 age audit on the evidence snapshots used in our
+its public dataset card, while the converted GAIA                analyses. The audit checks the timestamp of every
+and BrowseComp tasks in our final manifest are                   retrieved page against the corresponding tfreeze and
+evaluated through the structured task format de-                 reports both literal cutoff violations and suspected
+scribed above. The artifacts are task benchmarks                 leakage cases identified by heuristic matching of
+rather than demographic or participant datasets: we              language written after resolution or phrasing that
+do not use demographic labels, do not infer demo-                reveals the answer. Across the audited snapshots
+graphic group membership, and do not evaluate                    used for the reported analyses, no cutoff violations
+demographic representation. We did not collect pri-              and no suspected leakage cases were detected, and
+
+                                                            15
+Source         Initial selected pool Final retained Construction rule
+FutureX                       160             157 Remove ranking resolutions from the structured FutureX pool; retain
+                                                  native single-choice, multi-choice, and continuous tasks; exclude manu-
+                                                  ally verified label conflicts.
+GAIA                          103              99 Use the text-only mirror; rewrite open-ended tasks into single-choice,
+                                                  multi-choice, or continuous targets; retain only reviewed conversions.
+BrowseComp                    100              91 Sample from the public BrowseComp pool; rewrite short answer tasks
+                                                  that require browsing into reviewed single-choice targets with plausible
+                                                  distractors.
+Total                         363             347 Final manifest after review and quarantine.
+
+Table 9: Benchmark construction counts. The initial selected pool consists of 160 FutureX structured tasks after
+removing rankings, 103 GAIA rewrite candidates, and 100 sampled BrowseComp rewrite candidates. The final
+benchmark manifest contains 347 reviewed tasks.
+
+
+Output type                                 Final count           Across the cross-model and cross-framework
+single_choice                                       266        runs, the ReAct-style evidence-collection budget
+multi_choice                                         29        is fixed at B = 10 turns, research budget 6, at
+continuous                                           52        most 4 tool calls per round, one deliberation sam-
+Total                                               347        ple, LEAP temperature η = 1.0, at most 6 evi-
+                                                               dence items entering the likelihood stage, at most
+Table 10: Output type distribution of the final bench-         60 likelihood calls per task, and 10 reliability sam-
+mark manifest.                                                 ples per evidence item. We did not conduct a hy-
+                                                               perparameter search; these values and the map-
+                                                               ping constants in Appendix B were fixed before
+the audit therefore introduced no change to the re-
+                                                               the final evaluation runs. The numbers in Ta-
+ported results.
+                                                               bles 1 and 2 are means over N = 5 indepen-
+D.4      Diagnostic Subset for Analysis                        dent evaluation passes per (model, method) cell
+                                                               using different random seeds, on the fixed eval-
+The analyses in Section 5.3 (calibration, robust-              uation manifest. Run-to-run variability is mod-
+ness across lead times, component ablation) are                est: across all (model/framework, method, metric)
+reported on a diagnostic subset of 60 tasks sampled            cells, the sample standard deviation of the score
+in a stratified manner across the three output types,          over the five seeds has a median of σ ≈ 0.010 (in-
+with GPT-5.4-mini as the base model. The subset                terquartile range [0.007, 0.014], maximum 0.022
+is held constant across the three analyses so that             on NCRPS for Grok-4.20-Fast under Monolithic),
+their conclusions can be read together. We do not              and the spread between the best and worst seed
+redraw the subset between analyses, and no model               within a cell never exceeds 0.035. NCRPS and
+selection is performed on it.                                  FutureX are the two noisiest metrics (σ ≈ 0.012
+                                                               on average), while Accuracy is the most stable
+D.5      Model and Inference Details                           (σ ≈ 0.008). The ordering of LEAP versus Mono-
+Table 12 reports the model identifiers and fixed               lithic reported in the tables is preserved under ev-
+inference settings used in the main cross-model                ery individual seed in 48 out of 50 cells; the two
+evaluation. The displayed model names in Table 1               exceptions are DeerFlow Accuracy (a tie at the
+are aliases for the API identifiers in this table. We          mean, with seed-level differences within ±0.01)
+did not train or fine-tune any language model. All             and DeepSeek-V3.2 Brier (LEAP behind Mono-
+base-model calls were hosted API inference calls;              lithic by 0.0066 at the mean, well within 1σ). All
+provider-side hardware and GPU hours are not visi-             remaining pairwise differences exceed 2σ. Metric
+ble to us, so the visible compute budget is reported           computation is implemented in the project evalua-
+through API token usage below. Client-side orches-             tion code described in Appendix D.
+tration, evidence processing, scoring, and posterior
+aggregation were CPU-side Python computations,                 D.6   Metric Definitions
+so the experiments used zero local GPU hours for               Let N denote the number of scored tasks. For
+model training or inference.                                   discrete tasks with K candidate options, pik is the
+
+                                                          16
+Artifact         Use in this paper           License or access terms               Compatibility and handling
+FutureX          Forecasting source tasks The FutureX-Past Hugging Face We use past forecasting questions for research
+                 and scoring rule.         dataset card lists Apache-2.0.     evaluation, remove unsupported ranking tasks,
+                                                                              and retain the source citation and scoring rule
+                                                                              (Zeng et al., 2026).
+GAIA             Information-seeking       The GAIA Hugging Face We use a text-only mirror for evaluation, keep
+                 tasks converted into dataset card is gated and states the original answers and attachments out of pub-
+                 probabilistic targets.    redistribution constraints.        lic redistribution, and treat converted records as
+                                                                              research-only derivatives under the gated access
+                                                                              condition (Mialon et al., 2024).
+BrowseComp       Browsing questions con- BrowseComp              is       re- We use sampled browsing tasks only for bench-
+                 verted into single-choice leased through OpenAI’s mark evaluation and preserve attribution to the
+                 probabilistic targets.    simple-evals           repository, original BrowseComp artifact (Wei et al., 2025).
+                                           whose license file is MIT.
+DeerFlow         External agent CLI The DeerFlow license file is We use unmodified framework traces only for re-
+                 framework used to col- MIT.                                  search evaluation and do not redistribute frame-
+                 lect completed traces.                                       work code, private user data, or credentials.
+Hermes           External agent CLI The Hermes-Agent license file We use unmodified framework traces only for re-
+                 framework used to col- is MIT.                               search evaluation and do not redistribute frame-
+                 lect completed traces.                                       work code, private user data, or credentials.
+OpenClaw         External agent CLI The OpenClaw license file is We use unmodified framework traces only for re-
+                 framework used to col- MIT.                                  search evaluation and do not redistribute frame-
+                 lect completed traces.                                       work code, private user data, or credentials.
+MiroFlow         External agent CLI The MiroFlow license file is We use unmodified framework traces only for re-
+                 framework used to col- Apache-2.0.                           search evaluation and do not redistribute frame-
+                 lect completed traces.                                       work code, private user data, or credentials.
+
+ Table 11: Artifact license and access-term summary for the benchmark sources and external agent frameworks.
+
+
+predicted probability for option k on task i, and yik                   D.7   Prompt Templates
+the ground truth indicator. The metrics used in the
+                                                                        The elicitation step uses three prompt templates:
+main text are:
+                                                                        one for the blind prior, one for the likelihood of
+                                                                        each evidence item on continuous targets, and one
+                      X                                                for the likelihood of each evidence item on discrete
+  Accuracy = N1
+                                         
+                       1 arg max pik = ci , (12)                        targets. Each template provides the task descrip-
+                                     k
+                       i
+                      X         X                                       tion, the output type and (where applicable) the
+         Brier = N1        1
+                           Ki       (pik − yik )2 ,         (13)        candidate options, and a strict JSON output schema.
+                       i        k                                       The discrete target template instructs the model to
+                                P
+                                    k pq
+                                       ik yik                           report local likelihoods for the single evidence item
+                      X
+  Spherical = N1           qP                           .   (14)
+                                   2
+                                          P        2                    only, explicitly distinguishing them from posterior
+                       i        k pik           k yik
+                                                                        probabilities of the options; the fixed calibration
+                                                                        anchors and programmatic fallbacks are described
+                                                                        in Appendix B. The continuous template instructs
+For continuous tasks,            NCRPSi        =                        the model to extract the value of the target that the
+min(1, CRPSi / max(|vi |, 1))     with     CRPSi                        evidence reports or most closely implies; its un-
+the standard continuous ranked probability score                        certainty is then assigned by the metadata map in
+computed from quantiles. The FutureX composite                          Table 7.
+score FX applies the scoring rule prescribed by
+Zeng et al. (2026) for each task (indicator for
+                                                                        D.8   ReAct-Style Agent Loop
+single-choice, F1 for multi-choice, and a squared
+distance score normalised by the past week                              The agent loop used in the first evaluation setting
+standard deviation for continuous), and averages                        alternates between a reasoning step and a tool call.
+the task scores into a value in [0, 1]. Expected                        The loop is summarised in Algorithm 1. At each
+calibration error and overconfidence are computed                       iteration, the LLM produces a reasoning text to-
+by binning forecasts on the probability assigned                        gether with a (possibly empty) list of tool calls.
+to the top class and comparing the bin’s average                        Executed tool calls produce new evidence items
+confidence to its empirical accuracy.                                   that are appended to the running evidence set E,
+
+                                                                   17
+Displayed model         API identifier used      Provider/source documentation      Public parameter disclosure     Fixed settings
+
+DeepSeek-V3.2           deepseek-v3-2-251201     DeepSeek-V3.2 model card.          Model-card metadata reports     Temp. 0; max tokens 32768.
+                                                                                    685.4B parameters.
+Gemini-3.1-Flash-Lite   gemini-3.1-flash-lite-   Google Cloud Gemini 3.1 Flash-Lite Not publicly disclosed in the   Temp. 0; max tokens 32768.
+                        preview                  documentation.                     provider documentation listed
+                                                                                    here.
+Claude-Haiku-4.5        aws/claude-haiku-4-5     Claude Haiku 4.5 announcement.     Not publicly disclosed in the   Temp. 0; max tokens 8192.
+                                                                                    provider documentation listed
+                                                                                    here.
+GPT-5.4-mini            gpt-5.4-mini             OpenAI developer model documen- Not publicly disclosed in the      Temp. 0; max tokens 16384;
+                                                 tation.                            provider documentation listed   reasoning effort none.
+                                                                                    here.
+Grok-4.20-Fast          grok-4.20-fast           xAI model documentation.           Not publicly disclosed in the   Temp. 0; max tokens 16384;
+                                                                                    provider documentation listed   provider-native search dis-
+                                                                                    here.                           abled.
+
+
+Table 12: Model identifiers, public parameter-disclosure status, and fixed inference settings. Closed-model parameter
+counts are reported as undisclosed rather than estimated from third-party sources.
+
+
+and their textual results are appended to the run-                   text.
+ning conversation. The loop terminates when the                         Source-key clustering groups items that identify
+LLM emits the stop signal [RESEARCH_COMPLETE]                        the same underlying source or report. Domain
+together with no tool calls and at least m items col-                clustering groups all items from the same website
+lected, or when the search has been saturated (no                    domain. Table 13 reports the resulting number of
+new evidence for s consecutive rounds), or when                      retained evidence items and forecast quality.
+the fixed round budget B is exhausted. The avail-
+able tools are a web search call and a page fetch                      Without clustering, calibration degrades as re-
+call sharing a single backend; after termination,                    peated reports can be counted more than once.
+gathered pages and snippets are processed into the                   Source-key clustering gives the best FX and Brier
+evidence representation expected by the elicitation                  scores, while domain clustering gives the lowest
+step, including a timestamp for each item and a                      ECE after removing more evidence.
+candidate dependency key.                                               Table 14 shows that the aggregate improvement
+                                                                     is present in each benchmark source.
+D.9     Plug-in Probability Skill
+In the second evaluation setting, LEAP is exposed
+as a downstream probability skill that consumes a                    D.11      Human Subjects and AI Assistance
+trace produced by an external agent CLI framework.                             Disclosure
+The skill receives the task tuple, the trace, and the
+framework’s final answer as input, and emits a fore-                 No external annotators, crowdworkers, or human-
+cast in the form specified by the task’s output type.                subject participants were recruited or paid for this
+Internally, the skill normalises the trace’s gathered                work. Accordingly, there were no participant in-
+material into the same evidence representation used                  structions, compensation decisions, consent forms,
+in the first setting (one record per retrieved page or               or institutional review protocols for new human-
+extracted snippet, with a timestamp and a candidate                  subject data collection. The work uses existing
+dependency key), and then runs the elicitation and                   benchmark artifacts under the conditions in Ta-
+aggregation of Section 4 unchanged. No retraining                    ble 11; any consent and collection protocols for
+or framework modification is performed; the skill is                 the original artifacts are those of the original bench-
+a pure processing step over a completed framework                    mark creators.
+trace.                                                                  The authors used AI assistants for limited re-
+                                                                     search, coding, citation-checking, and writing sup-
+D.10      Additional Sensitivity Analyses                            port, consistent with the ARR policy that such tools
+Using the diagnostic setup in Appendix D.4, we                       do not qualify for authorship and that their use must
+report evidence-grouping sensitivity and source-                     be disclosed in the responsible NLP checklist. All
+wise performance. Both comparisons hold the col-                     AI-assisted outputs used in the paper, code, and
+lected evidence fixed across methods. Prediction-                    bibliography were reviewed, edited, and verified
+time budget, latency, aggregation, and likelihood-                   by the authors, who remain responsible for the cor-
+strength results appear in Tables 4 and 5 in the main                rectness of the submission.
+
+                                                                18
+Evidence grouping                                                     Mean retained Retained            FX ↑    Brier ↓    ECE ↓
+No clustering                                                                    5.12     100.0% 0.7089 0.2299 0.1578
+Source-key clustering                                                            4.37      85.3% 0.7284 0.2057 0.0876
+Domain clustering                                                                3.72      72.6% 0.7192 0.2144 0.0798
+
+Table 13: Sensitivity to evidence grouping. Source-key clustering gives the best FX and Brier scores, while domain
+clustering gives the lowest ECE after retaining fewer evidence items.
+
+
+Source         Method          FX ↑       Brier ↓     ECE ↓
+                                                                         Official tournament page             ∆ = +0.361
+               Monolithic     0.6346      0.2843      0.2050             Semifinalist bracket                 ∆ = −0.081
+FutureX
+               LEAP          0.7280      0.2136      0.1010              Georgia semifinal result             ∆ = +0.027
+               Monolithic     0.6588      0.2580      0.1600          Takeaway. Monolithic distributes mass over four nearly
+GAIA
+               LEAP          0.7069      0.2213      0.1090           equal options. LEAP concentrates on the correct option
+                                                                      through one strong supporting item, even with a second
+               Monolithic     0.6502      0.2740      0.1780
+BrowseComp
+               LEAP          0.7289      0.1952      0.0830
+                                                                      item that pulls in the opposite direction. The two minor
+                                                                      items contribute negligibly to the posterior.
+
+Table 14: Source-wise results under the diagnostic setup              Case 3. Honest uncertainty under absent evidence.
+in Appendix D.4.                                                      Question. Identify the publication date of a piece of
+                                                                      writing (four candidate dates close in time).
+                                                                      Ground truth. A. January 2, 1975.
+D.12      Case Studies                                                Monolithic predicts B. Jan 2, 1974 with p = 0.63 (incor-
+                                                                      rect); LEAP returns the uniform distribution p = 0.25
+We supplement the quantitative analyses of Sec-                       over the four options (no commitment).
+tion 5.3 with three case studies drawn from the                       Per-evidence contributions: none retained (|R| = 0
+                                                                      after dependency clustering).
+diagnostic subset, summarised in the box below.                       Takeaway. When no usable evidence is collected, LEAP
+In all three cases, a positive ∆j indicates that the                  returns the uniform prior rather than committing to a
+item pushes the posterior toward the option LEAP                      guess, whereas Monolithic produces a confident but in-
+                                                                      correct prediction. The uniform forecast is poorly re-
+currently places on top, and a negative ∆j indicates                  solved but well calibrated; the Monolithic forecast is
+that it pulls the posterior away. We then expand one                  sharper but concentrates probability on the wrong op-
+continuous case to show the audit trace exposed                       tion. This is exactly the calibration tradeoff discussed in
+                                                                      Section 5.3.
+by LEAP: prior construction, local likelihood elic-
+itation, safeguard decisions, posterior parameters,                 Expanded audit trace. The following continu-
+and leave-one-out contributions.                                    ous forecasting case illustrates what a reviewer can
+    Case studies from the diagnostic subset                         inspect beyond the final prediction. The task asks
+                                                                    for the daily high of AAPL on January 23, 2026,
+  Case 1. Confident Monolithic error, calibrated LEAP.
+  Question. Identify a cathedral from clues: 13th-century           with ground truth 249.41 USD. Monolithic pre-
+  construction, 17th-century damage, effigies and grave             dicts 249.0 with an 80% interval of [245.5, 253.5].
+  slabs, riverbank location.                                        LEAP first constructs a data-derived prior from the
+  Ground truth. A. St. Canice’s Cathedral.
+  Monolithic B. Christ Church (p = 0.85) incorrect                  latest available seven daily highs,
+  LEAP         A. St. Canice’s (p = 0.54) correct
+  Per-evidence contributions (top 3 of 5):                                    [261.55, 261.56, 260.78, 258.64,
+     Grave slabs identification         ∆ = +0.249
+     Christ Church search               ∆ = −0.248                             254.53, 251.30, 250.74],
+     Maps summary                       ∆ = +0.190
+  Takeaway. Monolithic concentrates probability on the              giving P0 = N (250.74, 7.52222 ). This prior is not
+  wrong option; LEAP places the correct option on top with          an LLM forecast; it is the base distribution before
+  conservative confidence and exposes which evidence
+  items drove the decision.                                         evidence likelihoods are added.
+                                                                       The safeguard step rejects E12 as an elicitation
+  Case 2. Confidently correct LEAP under noisy evi-
+  dence.
+                                                                    error because
+  Question. Winner of the 2026 Rugby Europe Champi-
+  onship (Georgia, Portugal, Romania, Spain, or Other).                z = |190.00 − 250.74|/7.5222 = 8.07 > 4.
+  Ground truth. A. Georgia.
+  Monolithic B. Portugal (p = 0.33) incorrect                       This catches a semantic mismatch: an analyst tar-
+  LEAP       A. Georgia (p = 0.80) correct
+  Per-evidence contributions (top 3 of 5):
+                                                                    get price is not a direct estimate of the next daily
+                                                                    high. The remaining 17 representatives enter the
+
+                                                               19
+Algorithm 1 ReAct-style Agent Loop for evidence            Item            µi         σi Local LLM rationale
+collection                                                 E1          250.74     12.54 Previous daily high directly
+Require: Task T , tool registry T , round budget B,                                     matches the target scale; un-
+                                                                                        certainty is set at roughly
+    min-evidence threshold m, saturation thresh-                                        5% of the value.
+    old s                                                  E5          247.65     12.40 Nasdaq quote gives a recent
+Ensure: Evidence set E                                                                  AAPL opening value, infor-
+                                                                                        mative but not identical to
+ 1: E ← ∅; stale ← 0                                                                    the next daily high.
+ 2: msgs ← [B RIEF(T, B)]                                  E12         190.00     47.50 Trefis reports a 190 USD an-
+ 3: for r = 1 to B do                                                                   alyst target; the model reads
+                                                                                        it as target-scale evidence.
+ 4:      (text, calls) ← LLM(msgs, tools = T )             Other items 250.74 300–1000 Headlines, broad indices, or
+ 5:      msgs ← msgs ∪ {(text, calls)}                                                  macro context provide only
+ 6:      if [RESEARCH_COMPLETE] ∈ text and                                              weak proxies, so the local
+                                                                                        likelihood is intentionally
+    |E| ≥ m and calls = ∅ then                                                          diffuse.
+ 7:           break
+ 8:      end if                                            Table 15: Representative local likelihood outputs in the
+ 9:      if calls = ∅ then                                 expanded continuous case. Each row is produced from
+10:           stale ← stale + 1                            one isolated evidence item; the LLM does not see the
+                                                           other evidence items or the posterior.
+11:           if stale ≥ s then
+12:                break
+13:           end if                                       the remaining items are near zero. Thus the final
+14:           continue                                     forecast is accompanied by the local LLM interpre-
+15:      end if                                            tations, the deterministic posterior calculation, the
+16:      added ← 0                                         rejected outlier, and reproducible evidence-level
+17:      for c ∈ calls do                                  contributions.
+18:           (out, Ec ) ← E XECUTE(c, T )
+19:           E ← E ∪ Ec ; added ← added + |Ec |
+20:           msgs            ←         msgs     ∪
+    {T OOL R ESULT(c, out)}
+21:      end for
+22:      stale ← 0 if added > 0 else stale + 1
+23:      if stale ≥ s then
+24:           break
+25:      end if
+26: end for
+27: return E
+
+
+Gaussian update. Their total precision is
+
+   τpost = 0.017672 + 0.013069 = 0.030741,
+
+and the posterior is
+
+       P (θ | R) = N (250.157, 5.70312 ).
+
+Most posterior precision comes from the prior, E1,
+and E5, with approximate weights 57.5%, 20.7%,
+and 21.2%, respectively; all other retained items
+together contribute less than 1%.
+  The leave-one-out trace identifies how the final
+mean changes when each retained item is removed:
+E5 contributes ∆ = −0.6727, E1 contributes
+∆ = +0.1520, E8 contributes ∆ = +0.0680, and
+
+                                                      20
+

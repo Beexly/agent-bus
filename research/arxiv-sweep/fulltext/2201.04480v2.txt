@@ -1,0 +1,8457 @@
+Learning to Identify Top Elo Ratings:
+A Dueling Bandits Approach
+Xue Yan
+Yali Du
+Thanks:
+Corresponding to Yali Du $⟨$
+yali.du@kcl.ac.uk
+$⟩$.
+Binxin Ru
+Jun Wang
+Haifeng Zhang
+Xu Chen
+Abstract
+The Elo rating system is widely adopted to evaluate the skills of (chess) game and sports players. Recently it has been also integrated into machine learning algorithms in evaluating the performance of computerised AI agents. However, an accurate estimation of the Elo rating (for the top players) often requires many rounds of competitions, which can be expensive to carry out.
+In this paper, to improve the sample efficiency of the Elo evaluation (for top players), we propose an efficient online match scheduling algorithm. Specifically, we identify and match the top players through a dueling bandits framework and tailor the bandit algorithm to the gradient-based update of Elo. We show that it reduces the per-step memory and time complexity to constant, compared to the traditional likelihood maximization approaches requiring
+O
+⁡
+(
+t
+)
+O(t)
+time.
+Our algorithm has a regret guarantee of
+O
+~
+​
+(
+T
+CLOSE
+\tilde{O}(\sqrt{T}
+), sublinear in the number of competition rounds and has been extended to the multidimensional Elo ratings for handling intransitive games. We empirically demonstrate that our method achieves superior convergence speed and time efficiency on a variety of gaming tasks.
+Introduction
+In this paper, we investigate the selection of best multi-agent strategies under the Elo rating systems.
+The evaluation of the competition outcome has received lots of attention, especially in view of the successful usage of reinforcement learning in StarCraft
+(
+Vinyals et al. 2019
+;
+Han et al. 2019
+;
+Du et al. 2019
+)
+, Game of Go
+(
+Silver et al. 2017
+)
+and video games
+(
+Mnih et al. 2015
+)
+.
+The Elo rating system
+(
+Elo 1978
+)
+is a predominant and valuable algorithm for evaluating and ranking agents. In the widely adopted Bradley-Terry model
+(
+Hunter et al. 2004
+)
+for Elo, each player is assigned a numerical rating which is updated with competition outcomes via online stochastic gradient descent.
+Further, for dealing with non-transitive relations between interacting agents such as the game of
+Rock-Paper-Scissors
+,
+Balduzzi et al. 2018
+proposes multidimensional Elo (mElo), which decomposes a game into transitive and cyclic parts to handle intransitive skills and evaluates different strategies by computing Nash-averaging.
+In practical settings when a competition is expensive to conduct, updating Elo rating in a sample efficient way is highly valuable. To achieve such sample efficiency, we need a way to select the most informative pairs for evaluation.
+Two popular sampling approaches are Round-robin
+(
+Rasmussen and Trick 2008
+)
+and Elimination tournament
+(
+Groh et al. 2012
+)
+; The Round-robin
+(
+Rasmussen and Trick 2008
+)
+is widely used in sport scheduling to balance the total time, venue usage and fairness of tournaments. It would arrange each team to play against all the others in as few as possible days while satisfying some constraints such as each team
+not playing twice in the same day to promote game fairness. By contrast, the Elimination tournament
+(
+Groh et al. 2012
+)
+only allows the winners at each round to proceed to the next round, so the stronger team will have the chance to play more times. A recent approach, RG-UCB,
+Rowland et al. 2019
+introduces an adaptive sampling scheme to estimate the accurate ranking among all agents. RG-UCB considers sampling of agent match-ups as a collection of pure exploration bandit problems
+(
+Bubeck, Munos, and Stoltz 2011
+)
+and requires enough pairwise comparison for estimating each pair of strategies.
+However, these tournament matching/sampling methods suffer from two major limitations which prohibit their wide usage in the modern large scale evaluations.
+Firstly, both the Round-robin and the Elimination tournament organise competitions following a pre-designed schedule, and the Elimination tournament scheduling may need some prior knowledge on the players’ skill. Also each pair of players only compete once in both schemes so the results can be highly noisy.
+Secondly, the main idea behind the matching schemes of the RG-UCB and the Round-robin is random sampling, which fails to pay more attention to more promising players and/or pairs with higher uncertainty in competition outcome. Thus, they are less sample efficient in identifying the best players.
+In this work, we propose two sampling algorithms, named MaxIn-Elo and MaxIn-mElo, for the update of Elo and mElo rating systems respectively. Specifically, we maintain a candidate set with promising players using UCB-based (Upper Confidence Bound) dueling bandits and then select the pair with the highest uncertainty in competition outcome at each round.
+On the one hand, our algorithms are adapted to the gradient-based update of Elo rating systems, thus more memory and time efficient compared to a prior work
+Saha and Gopalan 2020
+which relies on maximum likelihood estimation (MLE). 
+One the other hand, we extend our method to update mElo (multidimensional Elo) ratings to handle intransitive games, while
+Saha and Gopalan 2020
+is based on a generalized linear model and can only fit to the transitive games.
+To the best of our knowledge, this is the first work that enables online gradient-based update for dueling bandits, and a theoretical guarantee on the cumulative regret is provided.Also compared to a previous dueling bandit method descending through randomly sampled gradients at each time step
+(
+Yue and Joachims 2009
+)
+, our method, by selecting the pairs with higher information gains
+from a set of top candidates, is more sample efficient and are guaranteed to converge at
+O
+~
+​
+(
+T
+)
+\tilde{O}(\sqrt{T})
+1
+1
+1
+O
+~
+\tilde{O}
+ignores poly-logarithmic factors
+.
+In summary, our contributions are three-fold:
+Firstly, we are the first to propose two online active sampling algorithms
+MaxIn-Elo
+and
+MaxIn-mElo
+that select maximum informative pairs with dueling bandits to update Elo and mElo ratings.
+Secondly, we give the regret analysis of our proposed algorithms and show that the algorithms converge at
+O
+~
+​
+(
+T
+)
+\tilde{O}(\sqrt{T})
+.
+Thirdly, we demonstrate empirically on synthetic and real-world games that our algorithms achieve significantly lower cumulative regret than all baselines. Notably, our methods outperform MaxInP
+(
+Saha, Koren, and Mansour 2021
+)
+which uses maximum likelihood for more accurate estimation while with lower time and memory complexity.
+Code of this project is available at
+https://github.com/yanxue7/MaxIn-Elo.git
+.
+Related Work
+Multi-agent evaluation has attracted wide attention in ranking of players
+(
+Silver et al. 2017
+;
+Lai 2015
+;
+Arneson, Hayward, and Henderson 2010
+;
+Gruslys et al. 2018
+)
+and in selecting stronger strategies in meta games
+(
+Muller et al. 2020
+;
+Czarnecki et al. 2020
+)
+.
+There are many methods used for multi-agent evaluation problem.
+The Elo rating system is widely used for two-player games such as chess and tennis. It increases (decreases) player’s rating according to player wins (loss) a competition, and updates ratings by online stochastic gradient descent (SGD), which is computationally efficient and simple to implement. While the Elo rating system cannot handle intransitive games such as rock-paper-scissors, multidimensional Elo (Melo)
+(
+Balduzzi et al. 2018
+)
+was introduced. It decomposes the win-loss matrix of an intransitive game into the transitive component and cyclic component baked in Hodge decomposition theory
+(
+Jiang et al. 2011
+)
+.
+α
+\alpha
+-rank
+(
+Omidshafiei et al. 2019
+)
+is another popular counterpart in tackling intransitive games; recent attempts improve its sample efficiency based on noisy comparisons
+(
+Du et al. 2021
+;
+Rowland et al. 2019
+;
+Omidshafiei et al. 2019
+)
+and scalability by stochastic optimization
+(
+Yang et al. 2020
+)
+. 
+Despite various evaluation algorithms discussed, how to sample agent pairs at each round is of high value to realize these algorithms in large-scale evaluation tasks.
+We consider dueling bandits for online match scheduling in the evaluation of players.
+
+The concept of dueling bandits was firstly proposed in
+(
+Yue and Joachims 2009
+)
+.
+Compared to traditional bandits algorithms which pull one arm at each round and receive the reward of this arm directly, dueling bandits pull arm-pair at each round and only get a binary comparison result.
+DBGD
+(
+Yue and Joachims 2009
+)
+models a convex optimization problem as the dueling bandits problem which aims to find the best point in a convex space, and DBGD uses a random gradient as the direction of exploration for selecting the next arm-pair.
+Yue et al. 2012
+formulates the best player identification as a dueling bandits problem with noisy comparison results and an underlying winning probability matrix, and proposes two algorithms as well as their corresponding regret bounds.
+
+These algorithms identify best arms based on the observed binary feedback however do not learn the player’s skills (ratings), which is helpful in predicting future competition outcomes.
+Szörényi et al. 2015
+regards the ranking of
+M
+M
+alternatives (e.g. human players or agents) as a dueling bandits problem. They introduce the confidence interval of rating or winning probability into the dueling bandits problem, and design algorithms to identify the close-to-optimal item or to obtain the close-to-optimal whole ranking respectively.
+Saha, Koren, and Mansour 2021
+studies the adversarial setting, in which the winning probability is non-stationary because players’ skill may change over time. And they measure arms’ abilities by estimating Borda score, however Borda score does not possess predictive power of future competition results and the algorithm of
+(
+Saha, Koren, and Mansour 2021
+)
+estimates Borda score only by simply calculating the frequency of wins.
+Heckel et al. 2019
+gives an active ranking algorithm that can solve the top-
+k
+k
+player identification problem and find the entire sequential ranking among all players.
+While existing algorithms could rely on Borda score to update the rankings or design specific sort algorithms to obtain the ranking of items, they are not suitable for the Elo rating systems that adopt stochastic gradient descent to update ratings.
+Eearlier attempt
+(
+Ding, Hsieh, and Sharpnack 2021
+)
+proposes SGD-TS for contextual bandit problem, which learns parameters in the generalized linear model through online SGD instead and employs Thompson Sampling (TS)
+(
+Thompson 1933
+;
+Agrawal and Goyal 2012
+;
+Agrawal and Goyal 2013
+)
+to encourage exploration in arm-pulling. Compared to UCB-GLM
+(
+Li, Lu, and Zhou 2017
+)
+that adopt maximum likelihood estimators, SGD-TS achieves a similar theoretical cumulative regret bound, but lower time and memory complexity.However, no prior work has studied the SGD update in dueling bandits setting.
+In this work, we will tame dueling bandits for the online match scheduling in the Elo rating system that adopts stochastic gradient descent.
+Saha and Gopalan 2020
+proposes the algorithm that selects Maximum-Informative-Pair (MaxInP) for
+K
+K
+-armed contextual dueling bandits. This algorithm utilizes the MLE
+to estimate parameter
+θ
+^
+\hat{\theta}
+and uses UCB
+(
+Auer, Cesa-Bianchi, and Fischer 2002
+)
+estimator to narrow down the set of candidate pairs from which the pair of arms with the maximum uncertainty is selected at each round. Our algorithms adopt a similar design as MaxInP
+Saha and Gopalan 2020
+in calculating the uncertainty of a pair. However, we use an online batch SGD instead of MLE to update Elo rating, which is more time and memory efficient.
+Methodology
+Background
+Suppose there are
+n
+n
+players, the Elo rating system
+(
+Elo 1978
+)
+assigns a rating
+r
+x
+,
+x
+∈
+[
+n
+]
+r_{x},x\in[n]
+to each player representing its skill.
+Let
+r
+∗
+r^{*}
+denote the true ratings of
+n
+n
+players. Our aim is to identify the best player among all
+n
+n
+players:
+x
+∗
+=
+arg
+⁡
+max
+x
+∈
+[
+n
+]
+⁡
+r
+x
+∗
+x^{*}=\arg\max_{x\in[n]}r^{*}_{x}
+(1)
+Denote
+P
+P
+as the true winning probability matrix,
+p
+x
+​
+y
+p_{xy}
+as the underlying groundtruth probability of
+x
+x
+beating
+y
+y
+. Based on the Bradley-Terry model
+(
+Hunter et al. 2004
+)
+, the predicted probablility of player
+x
+x
+winning
+y
+y
+is
+p
+^
+x
+​
+y
+=
+σ
+⁡
+(
+r
+x
+−
+r
+y
+)
+.
+\hat{p}_{xy}=\sigma(r_{x}-r_{y}).
+(2)
+σ
+⁡
+(
+x
+)
+\sigma(x)
+is a sigmoid function with
+σ
+⁡
+(
+x
+)
+=
+1
+1
++
+e
+−
+x
+\sigma(x)=\frac{1}{1+e^{-x}}
+.
+Elo ratings are updated by maximizing the likelihood of win-loss predictions which corresponds to minimizing the loss:
+ℓ
+Elo
+​
+(
+p
+x
+​
+y
+,
+p
+^
+x
+​
+y
+)
+=
+−
+p
+x
+​
+y
+​
+log
+⁡
+p
+^
+x
+​
+y
+−
+(
+1
+−
+p
+x
+​
+y
+)
+​
+log
+⁡
+(
+1
+−
+p
+^
+x
+​
+y
+)
+.
+\ell_{\text{Elo }}\left(p_{xy},\hat{p}_{xy}\right)=-p_{xy}\log\hat{p}_{xy}-\left(1-p_{xy}\right)\log\left(1-\hat{p}_{xy}\right).
+(3)
+At time
+t
+t
+player
+x
+x
+compete with player
+y
+y
+with outcome
+o
+x
+​
+y
+t
+o_{xy}^{t}
+:
+o
+x
+​
+y
+t
+=
+1
+o_{xy}^{t}=1
+if
+x
+x
+wins and
+o
+x
+​
+y
+t
+=
+0
+o_{xy}^{t}=0
+otherwise. We can use
+o
+x
+​
+y
+t
+o_{xy}^{t}
+to compute the gradient of Eq. (
+3
+) and update Elo by gradient descent:
+r
+x
+t
++
+1
+←
+r
+x
+t
+−
+η
+⋅
+∇
+r
+x
+ℓ
+Elo
+​
+(
+o
+x
+​
+y
+t
+,
+p
+^
+x
+​
+y
+t
+)
+=
+r
+x
+t
++
+η
+⋅
+(
+o
+x
+​
+y
+t
+−
+p
+^
+x
+​
+y
+t
+)
+.
+r_{x}^{t+1}\leftarrow r_{x}^{t}-\eta\cdot\nabla_{r_{x}}\ell_{\text{Elo }}\left(o_{xy}^{t},\hat{p}_{xy}^{t}\right)=r_{x}^{t}+\eta\cdot\left(o_{xy}^{t}-\hat{p}_{xy}^{t}\right).
+(4)
+Let
+T
+T
+denote the total number of rounds, at each round
+t
+∈
+[
+T
+]
+t\in[T]
+, we adopt a system that will pull a pair of players
+(
+x
+t
+,
+y
+t
+)
+∈
+[
+n
+]
+×
+[
+n
+]
+(x_{t},y_{t})\in[n]\times[n]
+and get comparison result
+o
+t
+​
+(
+x
+t
+,
+y
+t
+)
+∼
+Bern
+​
+(
+p
+x
+​
+y
+)
+.
+o_{t}(x_{t},y_{t})\sim\text{Bern}(p_{xy}).
+The cumulative regret of
+T
+T
+rounds is defined as
+R
+⁡
+(
+T
+)
+=
+∑
+t
+=
+1
+T
+[
+r
+x
+∗
+∗
+−
+1
+2
+​
+(
+r
+x
+t
+∗
++
+r
+y
+t
+∗
+)
+]
+.
+R(T)=\sum_{t=1}^{T}[r^{*}_{x^{*}}-\frac{1}{2}(r^{*}_{x_{t}}+r^{*}_{y_{t}})].
+(5)
+The definition is consistent with
+(
+Saha and Gopalan 2020
+)
+. It measures the reward difference between the best arm and the two selected arms at each round.
+MaxIn-Elo Algorithm
+We use the notations below in the followed presentations.
+∙
+\bullet
+n
+n
+: the number of players.
+∙
+\bullet
+τ
+\tau
+: the batch size.
+∙
+\bullet
+r
+r
+: a vector of
+n
+n
+players’ ratings.
+∙
+\bullet
+r
+∗
+r^{*}
+: the true ratings of
+n
+n
+players.
+∙
+\bullet
+r
+^
+t
+\hat{r}_{t}
+:  estimator by MLE with
+t
+t
+round comparisons.
+∙
+\bullet
+r
+~
+j
+\tilde{r}_{j}
+: the SGD estimator at batch
+j
+j
+.
+∙
+\bullet
+r
+¯
+=
+∑
+q
+=
+1
+j
+r
+~
+q
+\bar{r}=\sum_{q=1}^{j}\tilde{r}_{q}
+: the average of previous SGD iterations.
+∙
+\bullet
+‖
+x
+‖
+=
+x
+⊤
+​
+x
+\|x\|=\sqrt{x^{\top}x}
+: the standard
+ℓ
+2
+\ell_{2}
+norm.
+∙
+\bullet
+e
+i
+e_{i}
+: the
+i
+i
+-th unit base vector, i.e., the
+i
+i
+-dimension equals
+1
+1
+and all other components equal
+0
+0
+.
+∙
+\bullet
+V
+t
+V_{t}
+: the history matrix recording previous
+t
+t
+pulling information defined by
+V
+t
+=
+∑
+i
+=
+1
+t
+−
+1
+(
+e
+x
+i
+−
+e
+y
+i
+)
+​
+(
+e
+x
+i
+−
+e
+y
+i
+)
+⊤
+.
+V_{t}=\sum_{i=1}^{t-1}(e_{x_{i}}-e_{y_{i}})(e_{x_{i}}-e_{y_{i}})^{\top}.
+∙
+\bullet
+‖
+x
+‖
+V
+\|x\|_{V}
+: a special
+ℓ
+2
+\ell_{2}
+-norm associated with matrix
+V
+V
+defined by
+‖
+x
+‖
+V
+=
+x
+⊤
+​
+V
+​
+x
+\|x\|_{V}=\sqrt{x^{\top}Vx}
+.
+∙
+\bullet
+ℬ
+\mathcal{B}
+a neighborhood of
+r
+∗
+{r}^{*}
+with
+ℬ
+=
+{
+r
+|
+‖
+r
+−
+r
+∗
+‖
+≤
+3
+}
+\mathcal{B}=\{r|\left\|r-{r}^{*}\right\|\leq 3\}
+.
+∙
+\bullet
+𝒞
+\mathcal{C}
+: a neighborhood of
+r
+^
+τ
+\hat{r}_{\tau}
+with
+𝒞
+=
+{
+r
+|
+‖
+r
+−
+r
+^
+τ
+‖
+≤
+2
+}
+\mathcal{C}=\{r|\left\|r-\hat{r}_{\tau}\right\|\leq 2\}
+.
+∙
+\bullet
+∏
+𝒞
+(
+.
+)
+\prod_{\mathcal{C}}(.)
+: the projection operation defined by:
+∏
+𝒞
+(
+r
+)
+=
+r
+^
+τ
++
+2
+∗
+(
+r
+−
+r
+^
+τ
+)
+min
+⁡
+{
+2
+,
+‖
+r
+−
+r
+^
+τ
+‖
+}
+\displaystyle\prod_{\mathcal{C}}(r)=\hat{r}_{\tau}+\frac{2*(r-\hat{r}_{\tau})}{\min\{2,\|r-\hat{r}_{\tau}\|\}}
+(6)
+Algorithm 1
+MaxIn-Elo
+: Dueling bandits with online SGD for top player identification.
+0:
+batch size
+τ
+\tau
+, maximum number of rounds
+T
+T
+,
+N
+N
+players’ strategies, parameters
+α
+,
+γ
+\alpha,\gamma
+.
+0:
+output
+r
+r
+1:
+Randomly choose a pair to compare and record as
+x
+t
+,
+y
+t
+,
+o
+t
+x_{t},y_{t},o_{t}
+for
+t
+∈
+[
+τ
+]
+t\in[\tau]
+2:
+V
+τ
++
+1
+=
+∑
+t
+=
+1
+τ
+(
+e
+x
+t
+−
+e
+y
+t
+)
+​
+(
+e
+x
+t
+−
+e
+y
+t
+)
+T
+V_{\tau+1}=\sum_{t=1}^{\tau}(e_{x_{t}}-e_{y_{t}})(e_{x_{t}}-e_{y_{t}})^{T}
+3:
+Calculate the maximum-likelihood estimator
+r
+^
+τ
+\hat{r}_{\tau}
+by solving
+∇
+r
+∑
+t
+=
+1
+τ
+ℓ
+Elo
+(
+o
+t
+,
+p
+^
+(
+x
+t
+,
+y
+t
+)
+)
+=
+0
+\nabla_{r}\sum_{t=1}^{\tau}\ell_{\text{Elo}}\left(o_{t},\hat{p}(x_{t},y_{t})\right)=0
+4:
+Maintain convex set
+𝒞
+=
+{
+r
+:
+‖
+r
+−
+r
+^
+τ
+‖
+≤
+2
+}
+\mathcal{C}=\left\{r:\left\|r-\hat{r}_{\tau}\right\|\leq 2\right\}
+5:
+for
+t
+=
+τ
++
+1
+,
+τ
++
+2
+,
+…
+,
+T
+t=\tau+1,\tau+2,\dots,T
+do
+6:
+if
+t
+%
+​
+τ
+=
+1
+t\%\tau=1
+then
+7:
+j
+←
+⌊
+(
+t
+−
+1
+)
+/
+τ
+⌋
+j\leftarrow\lfloor(t-1)/\tau\rfloor
+and
+η
+j
+=
+1
+α
+​
+j
+\eta_{j}=\frac{1}{\alpha j}
+8:
+Calculate gradient
+∇
+r
+l
+j
+,
+τ
+​
+(
+r
+~
+j
+−
+1
+)
+\nabla_{r}l_{j,\tau}(\tilde{r}_{j-1})
+through Eq. (
+4
+)
+9:
+Update ratings
+r
+~
+j
+\tilde{r}_{j}
+through Eq. (
+8
+)
+10:
+Compute
+r
+¯
+=
+1
+j
+​
+∑
+q
+=
+1
+j
+r
+~
+q
+\bar{r}=\frac{1}{j}\sum_{q=1}^{j}\tilde{r}_{q}
+11:
+end
+if
+12:
+Define a candidate optimal set
+𝒮
+=
+{
+x
+|
+r
+¯
+x
+−
+r
+¯
+y
++
+γ
+‖
+e
+x
+−
+e
+y
+‖
+V
+t
+−
+1
+>
+0
+,
+∀
+y
+∈
+[
+n
+]
+/
+{
+x
+}
+}
+\mathcal{S}=\{x\ |\ \bar{r}_{x}-\bar{r}_{y}+\gamma\ \left\|e_{x}-e_{y}\right\|_{V_{t}^{-1}}>0,\ \forall y\in[n]/\{x\}\}
+13:
+Select a pair as:
+(
+x
+t
+,
+y
+t
+)
+=
+arg
+⁡
+max
+(
+x
+,
+y
+)
+∈
+𝒮
+⁡
+‖
+e
+x
+−
+e
+y
+‖
+V
+t
+−
+1
+(x_{t},y_{t})=\argmax_{(x,y)\in\mathcal{S}}\left\|e_{x}-e_{y}\right\|_{V_{t}^{-1}}
+.
+14:
+Let players
+(
+x
+t
+,
+y
+t
+)
+(x_{t},y_{t})
+compete and observe
+o
+t
+​
+(
+x
+t
+,
+y
+t
+)
+o_{t}(x_{t},y_{t})
+15:
+Compute
+V
+t
++
+1
+=
+V
+t
++
+(
+e
+x
+t
+−
+e
+y
+t
+)
+​
+(
+e
+x
+t
+−
+e
+y
+t
+)
+T
+V_{t+1}=V_{t}+(e_{x_{t}}-e_{y_{t}})(e_{x_{t}}-e_{y_{t}})^{T}
+16:
+end
+for
+Algorithm Overview
+The main idea of our MaxIn-Elo algorithm is to maintain a candidate set of promising items via UCB and select the most informative pairs out of the set to evaluate at each round. Firstly, the ratings are initialized by maximizing likelihood of Eq. (
+3
+) on a batch of randomly sampled pairs with batch size
+τ
+\tau
+. The solution is denoted as
+r
+^
+τ
+\hat{r}_{\tau}
+and
+r
+~
+0
+=
+r
+^
+\tilde{r}_{0}=\hat{r}
+. Then starting from round
+t
+=
+τ
++
+1
+t=\tau+1
+, we update
+r
+~
+j
+\tilde{r}_{j}
+every
+τ
+\tau
+rounds by solving the following objective function
+l
+j
+,
+τ
+​
+(
+r
+)
+=
+∑
+t
+=
+(
+j
+−
+1
+)
+​
+τ
++
+1
+j
+​
+τ
+ℓ
+Elo
+​
+(
+o
+t
+,
+p
+^
+​
+(
+x
+t
+,
+y
+t
+)
+)
+.
+\displaystyle l_{j,\tau}(r)=\sum_{t=(j-1)\tau+1}^{j\tau}\ell_{\text{Elo }}(o_{t},\hat{p}(x_{t},y_{t})).
+(7)
+The stochastic gradient update of
+r
+~
+j
+\tilde{r}_{j}
+reads
+r
+~
+j
+←
+∏
+𝒞
+(
+r
+~
+j
+−
+1
+−
+η
+j
+​
+∇
+r
+l
+j
+,
+τ
+​
+(
+r
+~
+j
+−
+1
+)
+)
+.
+\displaystyle\tilde{r}_{j}\leftarrow\prod_{\mathcal{C}}\left(\tilde{r}_{j-1}-\eta_{j}\nabla_{r}l_{j,\tau}(\tilde{r}_{j-1})\right).
+(8)
+First,
+the strong convexity of the objective function is required for fast convergence,
+and if we select a suitable
+τ
+\tau
+through Eq. (
+14
+), the aggregated objective function
+l
+j
+,
+τ
+​
+(
+r
+)
+l_{j,\tau}(r)
+is a
+α
+\alpha
+-strong convex function when
+r
+∈
+ℬ
+r\in\mathcal{B}
+.
+Second, to ensure
+r
+~
+j
+∈
+ℬ
+\tilde{r}_{j}\in\mathcal{B}
+,
+r
+~
+j
+\tilde{r}_{j}
+is projected into the convex set
+𝒞
+\mathcal{C}
+(also discussed in the proof of Lemma
+2
+).
+For each update, a batch of pairs are selected that lead to maximal information gain. The UCB score of a pair is defined by:
+h
+⁡
+(
+x
+t
+,
+y
+t
+)
+=
+r
+¯
+x
+t
+−
+r
+¯
+y
+t
++
+γ
+​
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+t
+−
+1
+,
+h(x_{t},y_{t})=\bar{r}_{x_{t}}-\bar{r}_{y_{t}}+\gamma\left\|e_{x_{t}}-e_{y_{t}}\right\|_{V_{t}^{-1}},
+(9)
+with the balance parameter
+γ
+\gamma
+. The specific
+V
+t
+−
+1
+V_{t}^{-1}
+norm
+γ
+​
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+t
+−
+1
+\gamma\left\|e_{x_{t}}-e_{y_{t}}\right\|_{V_{t}^{-1}}
+measures the uncertainty between two arms. The UCB estimator balances the exploitation and exploration through combining ratings estimation
+r
+¯
+\bar{r}
+and the uncertainty term.
+At each round
+t
+t
+, we obtain a set of optimal player candidates
+𝒮
+\mathcal{S}
+with positive UCB scores:
+𝒮
+=
+{
+x
+|
+h
+(
+x
+,
+y
+)
+>
+0
+,
+∀
+y
+∈
+[
+n
+]
+/
+{
+x
+}
+}
+.
+\mathcal{S}=\{x|h(x,y)>0,\ \forall\ y\in[n]/\{x\}\}.
+(10)
+From the candidate set
+𝒮
+\mathcal{S}
+, we then pull a pair of arms with highest uncertainty by
+(
+x
+t
+,
+y
+t
+)
+=
+arg
+⁡
+max
+(
+x
+,
+y
+)
+∈
+𝒮
+×
+𝒮
+⁡
+‖
+e
+x
+−
+e
+y
+‖
+V
+t
+−
+1
+\displaystyle(x_{t},y_{t})=\argmax_{(x,y)\ \in\mathcal{S}\times\mathcal{S}}\left\|e_{x}-e_{y}\right\|_{V_{t}^{-1}}
+(11)
+to induce sufficient exploration. A detailed algorithm of our
+MaxIn-Elo
+is shown in Algorithm
+1
+.
+Compared to
+(
+Saha and Gopalan 2020
+)
+which uses MLE at each iteration,
+MaxIn-Elo
+uses SGD to update the Elo rating
+r
+r
+as traditional Elo does. Thus, our method is more efficient in both computation and time, and simple to implement. Because the objective function
+l
+j
+,
+τ
+l_{j,\tau}
+is the aggregation of a batch with
+τ
+\tau
+steps for the
+α
+\alpha
+-strong convexity, the online SGD on this objective function is actually the mini-batch gradient descent on
+τ
+\tau
+single steps. The mini-batch update provides diversity and makes our algorithm more smooth and steady. Thus, the selection of the batch size
+τ
+\tau
+is important to achieve the fast convergence speed and smoothness during learning. While RG-UCB randomly selects a pair to evaluate, our
+MaxIn-Elo
+selects the maximum informative pair and trade-off exploration and exploitation.
+To our best knowledge, this is the first algorithm that allows stochastic gradient descent update in dueling bandits settings.
+See Table
+1
+for a comparison on time and memory.
+MaxIn-mElo Algorithm
+To enable the rating system to handle the intransitive skills, we extend the online sampling algorithm to multidimensional Elo ratings (mElo)
+(
+Balduzzi et al. 2018
+)
+.
+Baking in the Hodge decomposition theory
+(
+Jiang et al. 2011
+)
+,
+mElo proposed to decompose the antisymmetric logits matrix of win-loss probabilities into a transitive component, i.e. gradient flow of rating vector, and a cyclic component to capture the intransitive relations.
+By learning a
+2
+​
+k
+2k
+-dimensional vector
+c
+x
+c_{x}
+and a rating
+r
+x
+r_{x}
+per player, the win-loss prediction for mElo
+2k
+is defined as:
+p
+^
+x
+​
+y
+=
+σ
+⁡
+(
+r
+x
+−
+r
+y
++
+c
+x
+⊤
+⋅
+Ω
+2
+​
+k
+×
+2
+​
+k
+⋅
+c
+y
+)
+.
+\hat{p}_{xy}=\sigma\left(r_{x}-r_{y}+{c}_{x}^{\top}\cdot{\Omega}_{2k\times 2k}\cdot{c}_{y}\right).
+(12)
+where
+Ω
+2
+​
+k
+×
+2
+​
+k
+=
+∑
+i
+=
+1
+k
+(
+e
+2
+​
+i
+−
+1
+​
+e
+2
+​
+i
+⊤
+−
+e
+2
+​
+i
+​
+e
+2
+​
+i
+−
+1
+⊤
+)
+{\Omega}_{2k\times 2k}=\sum_{i=1}^{k}({e}_{2i-1}{e}_{2i}^{\top}-{e}_{2i}{e}_{2i-1}^{\top})
+.
+The UCB estimate of a pair
+(
+x
+t
+,
+y
+t
+)
+(x_{t},y_{t})
+for mElo then becomes:
+h
+⁡
+(
+x
+t
+,
+y
+t
+)
+=
+r
+¯
+x
+t
+−
+r
+¯
+y
+t
++
+c
+¯
+x
+T
+​
+Ω
+​
+c
+¯
+y
++
+γ
+​
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+t
+−
+1
+.
+h(x_{t},y_{t})=\bar{r}_{x_{t}}-\bar{r}_{y_{t}}+\bar{c}_{x}^{T}\Omega\bar{c}_{y}+\gamma\left\|e_{x_{t}}-e_{y_{t}}\right\|_{V_{t}^{-1}}.
+(13)
+Notice that compared to Elo ratings with
+k
+=
+0
+k=0
+(Eq. (
+2
+)), mElo ratings assign a feature vector per player to approximated intransitive interactions.
+We present the details for the mElo ratings and Algorithm 2 for
+MaxIn-mElo
+in Appendix.
+Table 1:
+Comparison of regret, time complexity and memory with other algorithms.
+Our MaxIn-Elo and the MaxInP achieve the lowest regret bound
+O
+~
+​
+(
+T
+)
+\tilde{O}(\sqrt{T})
+, but our MaxIn-Elo has lower time and memory complexity than the MaxInP.
+Algorithms
+Regret
+Time Complexity
+Memory
+DBGD
+O
+⁡
+(
+T
+2
+/
+3
+)
+O(T^{2/3})
+O
+⁡
+(
+T
+)
+O(T)
+O
+⁡
+(
+n
+)
+O(n)
+RG-UCB
+No
+O
+⁡
+(
+T
+)
+O(T)
+O
+⁡
+(
+n
+)
+O(n)
+Random
+No
+O
+⁡
+(
+T
+)
+O(T)
+O
+⁡
+(
+n
+)
+O(n)
+MaxInP
+O
+~
+​
+(
+T
+)
+\tilde{O}(\sqrt{T})
+O
+⁡
+(
+n
+​
+T
+2
++
+n
+2
+​
+T
+)
+O(nT^{2}+n^{2}T)
+O
+⁡
+(
+n
+​
+T
+)
+O(nT)
+MaxIn-Elo
+O
+~
+​
+(
+T
+)
+\tilde{O}(\sqrt{T})
+O
+⁡
+(
+n
+2
+​
+T
+)
+O(n^{2}T)
+O
+⁡
+(
+n
+2
+)
+O(n^{2})
+Regret analysis
+We give the cumulative regret bound of
+MaxIn-Elo
+, as for as we know, this is the first work that combines the online gradient update with dueling bandits and gives the cumulative regret of dueling bandits while being updated with SGD.
+We make a mild assumption on the link function
+σ
+\sigma
+.
+Assumption 1
+.
+Define
+c
+η
+=
+inf
+{
+‖
+r
+−
+r
+∗
+‖
+≤
+η
+}
+σ
+′
+(
+r
+x
+−
+r
+y
+)
+c_{\eta}=\inf_{\left\{\left\|r-r^{*}\right\|\leq\eta\right\}}\sigma^{\prime}\left(r_{x}-r_{y}\right)
+, where
+(
+x
+,
+y
+)
+∈
+[
+n
+]
+×
+[
+n
+]
+(x,y)\in[n]\times[n]
+, and we assume
+c
+3
+>
+0
+c_{3}>0
+.
+This assumption is similar to that in
+(
+Ding, Hsieh, and Sharpnack 2021
+)
+. Our main results rely on the following concentration events and the proofs of which are deferred to Appendix.
+Lemma 1
+.
+Suppose we sample a sequence of arm pairs
+{
+(
+x
+1
+,
+y
+1
+)
+,
+(
+x
+2
+,
+y
+2
+)
+,
+…
+,
+(
+x
+t
+,
+y
+t
+)
+}
+\{(x_{1},y_{1}),(x_{2},y_{2}),\dots,(x_{t},y_{t})\}
+through Algorithm
+1
+up to round t, and assume the selected batch size
+τ
+\tau
+satisfy that
+λ
+min
+​
+(
+V
+τ
++
+1
+)
+≥
+1
+\lambda_{\min}(V_{\tau+1})\geq 1
+, where
+λ
+min
+​
+(
+V
+τ
++
+1
+)
+\lambda_{\min}(V_{\tau+1})
+means the minimum eigenvalue of the matrix
+(
+V
+τ
++
+1
+)
+(V_{\tau+1})
+, Then
+∀
+t
+>
+0
+\forall t>0
+,
+∑
+i
+=
+τ
++
+1
+τ
++
+t
+‖
+(
+e
+x
+i
+−
+e
+y
+i
+)
+‖
+V
+i
+−
+1
+<
+2
+​
+n
+​
+t
+​
+log
+⁡
+(
+2
+​
+τ
++
+t
+n
+)
+.
+\sum_{i=\tau+1}^{\tau+t}\left\|\left(e_{x_{i}}-e_{y_{i}}\right)\right\|_{V_{i}^{-1}}<\sqrt{2nt\log\left(\frac{2\tau+t}{n}\right)}.
+Lemma
+1
+gives the bound of the sum of selected pair’s uncertainty from round
+τ
++
+1
+\tau+1
+to
+t
+t
+.
+And this lemma will be adopted to derive the cumulative regret bound.
+In the following Lemma
+2
+, we show that when the batch size
+τ
+\tau
+is chosen as
+Eq. (
+14
+), we have the concentration property of the averaged SGD estimator
+r
+¯
+\bar{r}
+.
+Lemma 2
+.
+Assume that there exists a positive constant
+λ
+f
+\lambda_{f}
+such that
+λ
+min
+​
+(
+𝔼
+⁡
+[
+(
+e
+x
+t
+−
+e
+y
+t
+)
+​
+(
+e
+x
+t
+−
+e
+y
+t
+)
+T
+]
+)
+≥
+λ
+f
+\lambda_{\min}\left(\mathbb{E}[(e_{x_{t}}-e_{y_{t}})(e_{x_{t}}-e_{y_{t}})^{T}]\right)\geq\lambda_{f}
+holds at each round
+t
+>
+τ
+t>\tau
+, where
+(
+x
+t
+,
+y
+t
+)
+(x_{t},y_{t})
+is sampled through Algorithm
+1
+. 
+Let the batch size
+τ
+\tau
+satisfies
+τ
+1
+\displaystyle\tau_{1}
+=
+2
+​
+(
+C
+1
+​
+n
++
+C
+2
+​
+2
+​
+log
+⁡
+T
+λ
+min
+​
+(
+B
+)
+)
+2
++
+16
+​
+(
+n
++
+2
+​
+log
+⁡
+T
+)
+c
+1
+2
+​
+λ
+min
+​
+(
+B
+)
+,
+\displaystyle=2\left(\frac{C_{1}\sqrt{n}+C_{2}\sqrt{2\log T}}{\lambda_{\min}(B)}\right)^{2}+\frac{16(n+2\log T)}{c_{1}^{2}\lambda_{\min}(B)},
+(14)
+τ
+2
+\displaystyle\tau_{2}
+=
+2
+​
+(
+C
+1
+​
+n
++
+C
+2
+​
+2
+​
+log
+⁡
+T
+λ
+f
+)
+2
++
+4
+​
+α
+c
+3
+​
+λ
+f
+,
+\displaystyle=2\left(\frac{C_{1}\sqrt{n}+C_{2}\sqrt{2\log T}}{\lambda_{f}}\right)^{2}+\frac{4\alpha}{c_{3}\lambda_{f}},
+τ
+\displaystyle\tau
+=
+⌈
+max
+⁡
+{
+τ
+1
+,
+τ
+2
+}
+⌉
+,
+\displaystyle=\left\lceil\max\left\{\tau_{1},\tau_{2}\right\}\right\rceil,
+where
+B
+=
+𝔼
+(
+x
+,
+y
+)
+​
+∼
+i
+​
+i
+​
+d
+​
+[
+n
+]
+×
+[
+n
+]
+​
+[
+(
+e
+x
+−
+e
+y
+)
+​
+(
+e
+x
+−
+e
+y
+)
+T
+]
+B=\mathbb{E}_{(x,y)\overset{iid}{\sim}[n]\times[n]}\left[(e_{x}-e_{y})(e_{x}-e_{y})^{T}\right]
+.
+Define
+g
+1
+​
+(
+t
+)
+g_{1}(t)
+and
+g
+2
+​
+(
+j
+)
+g_{2}(j)
+,
+g
+1
+​
+(
+t
+)
+\displaystyle g_{1}(t)
+=
+1
+2
+​
+c
+1
+​
+n
+2
+​
+log
+⁡
+(
+1
++
+2
+​
+t
+n
+)
++
+2
+​
+log
+⁡
+T
+,
+\displaystyle=\frac{1}{2c_{1}}\sqrt{\frac{n}{2}\log\left(1+\frac{2t}{n}\right)+2\log T},
+(15)
+g
+2
+​
+(
+j
+)
+\displaystyle g_{2}(j)
+=
+τ
+α
+​
+1
++
+log
+⁡
+j
+.
+\displaystyle=\frac{\tau}{\alpha}\sqrt{1+\log j}.
+(16)
+For a constant
+α
+≥
+c
+3
+\alpha\geq c_{3}
+, there exists two positive constants
+C
+1
+C_{1}
+,
+C
+2
+C_{2}
+such that if the batch size
+τ
+\tau
+is chosen as Eq. (
+14
+),
+then we have that at each round
+t
+>
+τ
+t>\tau
+corresponding to batch
+j
+=
+⌊
+t
+−
+1
+τ
+⌋
+j=\lfloor\frac{t-1}{\tau}\rfloor
+, event
+E
+1
+​
+(
+t
+)
+E_{1}(t)
+holds with probability at least
+1
+−
+5
+T
+2
+1-\frac{5}{T^{2}}
+, where
+E
+1
+​
+(
+t
+)
+=
+{
+∀
+(
+x
+,
+y
+)
+:
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+¯
+j
+−
+r
+∗
+)
+|
+≤
+g
+1
+​
+(
+j
+​
+τ
+)
+​
+‖
+e
+x
+−
+e
+y
+‖
+V
+j
+​
+τ
++
+1
+−
+1
++
+g
+2
+​
+(
+j
+)
+​
+2
+j
+}
+E_{1}(t)=\{\forall(x,y):\left|(e_{x}-e_{y})^{T}\left(\bar{r}_{j}-r^{*}\right)\right|\leq g_{1}(j\tau)\|e_{x}-e_{y}\|_{V_{j\tau+1}^{-1}}+g_{2}(j)\frac{\sqrt{2}}{\sqrt{j}}\}
+.
+The following Lemma
+3
+shows how to select a suitable balanced parameter
+γ
+\gamma
+of UCB score that ensures the best player is always in the candidate set.
+Lemma 3
+.
+Define the constant
+C
+=
+2
+​
+n
+​
+T
+​
+log
+⁡
+(
+T
++
+τ
+n
+)
+C=\sqrt{2nT\log\left(\frac{T+\tau}{n}\right)}
+. At each round
+t
+>
+τ
+t>\tau
+, let UCB balanced parameter
+γ
+=
+2
+​
+g
+1
+​
+(
+t
+)
+\gamma=2g_{1}(t)
+and assume
+Δ
+>
+g
+1
+​
+(
+T
+)
+​
+C
+\Delta>g_{1}(T)C
+, if
+α
+\alpha
+satisfies that
+α
+≥
+2
+​
+τ
+​
+1
++
+log
+⁡
+j
+(
+Δ
+−
+g
+1
+​
+(
+T
+)
+​
+C
+)
+​
+j
+\alpha\geq\frac{\sqrt{2}\tau\sqrt{1+\log j}}{(\Delta-g_{1}(T)C)\sqrt{j}}
+, then we have
+x
+∗
+∈
+𝒮
+x^{*}\in\mathcal{S}
+holds with probability at least
+1
+−
+5
+T
+2
+1-\frac{5}{T^{2}}
+, where
+j
+=
+⌊
+t
+−
+1
+τ
+⌋
+j=\lfloor\frac{t-1}{\tau}\rfloor
+,
+Δ
+\Delta
+is the difference between ratings of optimal player
+x
+∗
+x^{*}
+and sub-optimal player
+x
+′
+x^{\prime}
+. Recall
+x
+∗
+=
+arg
+⁡
+max
+x
+∈
+[
+n
+]
+⁡
+r
+x
+∗
+x^{*}=\argmax_{x\in[n]}r^{*}_{x}
+, and define
+x
+′
+=
+arg
+⁡
+max
+x
+∈
+[
+n
+]
+/
+x
+∗
+⁡
+r
+x
+∗
+x^{\prime}=\argmax_{x\in[n]/{x^{*}}}r^{*}_{x}
+,
+Δ
+=
+r
+x
+∗
+∗
+−
+r
+x
+′
+∗
+\Delta=r^{*}_{x^{*}}-r^{*}_{x^{\prime}}
+.
+Lemma
+3
+shows that if we properly select UCB balanced parameter
+γ
+\gamma
+and parameter
+α
+\alpha
+which describes objective function
+l
+j
+,
+τ
+l_{j,\tau}
+as a
+α
+\alpha
+-strongly convex, then it is promised that the best player
+x
+∗
+x^{*}
+is in candidates set
+𝒮
+\mathcal{S}
+with high probability.
+This property is helpful for the top-
+1
+1
+identification because the candidate set
+𝒮
+\mathcal{S}
+will become tighter with the time, and
+x
+∗
+x^{*}
+always in
+𝒮
+\mathcal{S}
+, thus candidate set
+𝒮
+\mathcal{S}
+only contains
+x
+∗
+x^{*}
+eventually. 
+Together we are ready to present our main results in Theorem
+1
+.
+Theorem 1
+.
+We run our Algorithm
+1
+to get a sequence of arm-pair, and let the learning rate parameter
+α
+≥
+max
+⁡
+{
+c
+3
+,
+2
+​
+τ
+​
+1
++
+log
+⁡
+j
+(
+Δ
+−
+g
+1
+​
+(
+T
+)
+​
+C
+)
+​
+j
+}
+\alpha\geq\max\{c_{3},\frac{\sqrt{2}\tau\sqrt{1+\log j}}{(\Delta-g_{1}(T)C)\sqrt{j}}\}
+with assumption that
+Δ
+>
+g
+1
+​
+(
+T
+)
+​
+C
+\Delta>g_{1}(T)C
+, the balanced parameter
+γ
+=
+2
+​
+g
+1
+​
+(
+t
+)
+\gamma=2g_{1}(t)
+, there exists two positive parameter
+C
+1
+,
+C
+2
+C_{1},C_{2}
+such that if the batch size
+τ
+\tau
+is chosen as Eq. (
+14
+),
+then we have the cumulative regret satisfies that:
+R
+⁡
+(
+T
+)
+≤
+τ
+∗
+Δ
+m
+​
+a
+​
+x
++
+(
+2
++
+τ
+)
+​
+g
+1
+​
+(
+T
+)
+​
+2
+​
+n
+​
+T
+​
+log
+⁡
+(
+2
+​
+τ
++
+T
+n
+)
++
+4
+​
+g
+2
+​
+(
+J
+)
+​
+τ
+​
+T
+,
+\begin{aligned} R(T)\leq\tau*\Delta_{max}+(2+\tau)g_{1}(T)\sqrt{2nT\log(\frac{2\tau+T}{n})}+4g_{2}(J)\sqrt{\tau T},\end{aligned}
+with probability at least
+1
+−
+10
+T
+1-\frac{10}{T}
+, where
+J
+=
+⌊
+T
+τ
+⌋
+J=\lfloor\frac{T}{\tau}\rfloor
+,
+Δ
+m
+​
+a
+​
+x
+=
+max
+i
+⁡
+r
+i
+∗
+−
+min
+i
+⁡
+r
+i
+∗
+\Delta_{max}=\max_{i}r^{*}_{i}-\min_{i}r^{*}_{i}
+,
+g
+1
+​
+(
+T
+)
+,
+g
+2
+​
+(
+J
+)
+g_{1}(T),g_{2}(J)
+is defined in Eq. (
+15
+) and
+C
+C
+is a constant defined as
+C
+=
+2
+​
+n
+​
+T
+​
+log
+⁡
+(
+T
++
+τ
+n
+)
+C=\sqrt{2nT\log\left(\frac{T+\tau}{n}\right)}
+.
+Note that
+τ
+∼
+O
+⁡
+(
+max
+⁡
+{
+n
+,
+log
+⁡
+T
+}
+)
+\tau\sim O(\max\{n,\log T\})
+(Eq. (
+14
+)),
+g
+1
+​
+(
+T
+)
+∼
+O
+​
+(
+n
+​
+log
+⁡
+T
+)
+g_{1}(T)\sim O(\sqrt{n\log T})
+,
+g
+2
+​
+(
+J
+)
+∼
+O
+​
+(
+log
+⁡
+T
+)
+g_{2}(J)\sim O(\sqrt{\log T})
+. Combining the above analysis, we have
+R
+⁡
+(
+T
+)
+∼
+O
+⁡
+(
+n
+​
+log
+⁡
+T
+​
+T
+)
+R(T)\sim O(n\log T\sqrt{T})
+(or
+O
+~
+​
+(
+T
+)
+\tilde{O}(\sqrt{T})
+.
+This regret upper bound is equivalent to that in
+(
+Saha and Gopalan 2020
+)
+which employs MLE estimators.
+However, our algorithm improves the efficiency in terms of memory and time. The memory cost is constant with respect to
+T
+T
+while MaxInP’s memory cost is linear in the time horizon
+T
+T
+.
+The time complexity of our MaxIn-Elo is
+O
+⁡
+(
+n
+2
+​
+T
+)
+O(n^{2}T)
+, while MaxInP’s time complexity is
+O
+⁡
+(
+n
+​
+T
+2
++
+n
+2
+​
+T
+)
+O(nT^{2}+n^{2}T)
+.
+See Table
+1
+for a detailed comparison.
+Detailed proofs are referred to Appendix.
+Experiments
+We consider the following two batteries of experiments to evaluate the performance of our algorithms in the scenarios of transitive and intransitive real world meta-games. Ablation studies of parameter
+γ
+\gamma
+, dimension of mElo and the batch size
+τ
+\tau
+can be found in Appendix.
+Baselines
+Random
+: The pairwise matching scheme of the classical Round-robin
+(
+Rasmussen and Trick 2008
+)
+tournament is based on random sampling. We construct a simple baseline that randomly select a pair from all
+n
+∗
+(
+n
+−
+1
+)
+/
+2
+{n*(n-1)}/{2}
+pairs with replacement. After sampling a pair, we use the Elo/mElo model to update the ratings.
+RG-UCB
+(
+Rowland et al. 2019
+)
+: This algorithm adopts a pure exploration sampling scheme, which uniformly samples a pair from the set containing pairs that need to be estimated. And the stopping condition
+C
+⁡
+(
+δ
+)
+C(\delta)
+controls the total number of comparisons of each pair, where
+δ
+\delta
+is a hyper parameter deciding the confidence level of estimated competitive results.
+DBGD
+(
+Yue and Joachims 2009
+)
+: This dueling bandits algorithm is popular in ranking tasks when only pair-wise binary feedback is available.
+It maintains one winning arm at each round, and randomly synthesizes a gradient to obtain the opponent arm in the contextual bandit setting.
+In our feature free setting, this is equivalent to randomly selecting a player as the opponent.
+α
+\alpha
+-IG
+(
+Rashid, Zhang, and Ciosek 2021
+)
+: This is an active sampling algorithm used for estimating the
+α
+\alpha
+-rank
+(
+Omidshafiei et al. 2019
+)
+. This algorithm selects a pair with largest information gain at each round. In the transitive case, the top player has an
+α
+\alpha
+-rank score equal to
+1
+1
+. Due to the high computation cost at each round ( computing
+α
+\alpha
+-rank for 80000 times in a
+4
+×
+4
+4\times 4
+game), we only compare with it in a
+4
+×
+4
+4\times 4
+transitive game: the ‘2 Good, 2Bad’ game given by
+α
+\alpha
+-IG.
+MaxInP
+(
+Saha and Gopalan 2020
+)
+: This algorithm is for the generalized linear contextual dueling bandits problem, in which arms are represented as feature vectors.
+And it uses MLE to estimate model parameters
+θ
+\theta
+relying on all historical pairwise comparisons at each round
+t
+t
+. This algorithm calculates a candidate set containing advanced arms and pulls an arm-pair with the largest uncertainty. In order to fit their model, each player is described as a one-hot vector, and the estimated parameters
+θ
+\theta
+correspond to players’ ratings in our setting.
+MaxIn-Elo
+: Our first algorithm adopts dueling bandits to adaptively sample pairs for Elo rating update in Eq. (
+2
+).
+The aim of our MaxIn-Elo is to identify the advanced players gradually, and to minimize the cumulative regret described in Eq. (
+5
+)
+simultaneously.
+MaxIn-mElo
+: Our second algorithm tames the intransitive scenarios. Different to
+MaxIn-Elo
+, there is an extra vector
+c
+c
+to capture intransitive relationship in competition outcome prediction. The dimension of
+c
+c
+is set to 8 in experiments.
+For the MaxIn-mElo algorithm, we hope to identify players with superior mElo ratings and to minimize cumulative regret on mElo ratings.
+Experiments setting
+Real world games
+We do our experiments on twelve real-games released by
+Czarnecki et al. 2020
+, most of which are implemented on the OpenSpiel framework
+(
+Lanctot et al. 2019
+)
+.
+The six games used for evaluating Elo are Triangular game, Transitive game, Elo game, and three noisy variants of Elo games.
+The first three are transitive games; the three variants of Elo game are Elo games with additive Gaussian noises.
+The six intransitive games used for evaluating mElo are Kuhn-poker, AlphaStar, tic_tac_toe, hex, Blotto and 5,3-Blotto game.
+The intransitivity of games can be revealed by sink strongly connected components (SSCCs)
+(
+Omidshafiei et al. 2019
+)
+, which
+is a set of strategies that cannot be defeated by external strategies and all internal strategies become a circle, such as Rock, Paper, Scissors.
+The statistics of these games is shown in Table 2 in Appendix.
+Metrics
+Except the cumulative regret defined in Eq. (
+5
+),
+we introduce three other metrics for Reciprocal Rank (RR), Normalized Discounted Cumulative Gain (NDCG), and Hit Raio (HR).
+RR is used for the results on generating top-1 players.
+NDCG and HR report discrete performance for top-1 performance and are thus used in top-
+k
+k
+results.
+Reciprocal Rank (RR)
+(
+Donmez, Svore, and Burges 2009
+)
+give the reciprocal of predicted ranking of the best player
+x
+∗
+x^{*}
+. Define
+R
+​
+R
+=
+1
+R
+⁡
+(
+x
+∗
+)
+,
+RR=\frac{1}{R(x^{*})},
+where
+R
+⁡
+(
+x
+)
+R(x)
+returns the ranking of player
+x
+x
+relying on currently predicted ratings
+r
+¯
+\bar{r}
+. Larger RR corresponds to better performance on the top-1 player identification.
+Hit Ratio
+​
+@
+​
+K
+\text{Hit Ratio}@K
+(
+He et al. 2015
+)
+is defined as the ratio of the predicted top-
+k
+k
+that belongs to the true top-
+k
+k
+. Since hit ratio does not consider the positions of correct predictions, we also adopts NDCG
+(
+Donmez, Svore, and Burges 2009
+)
+which assigns higher importance to results at top ranks. 
+Normalized Discounted Cumulative Gain (NDCG) is widely used in the evaluation of rankings and the NDCG@k measures the importance of predicted top-
+k
+k
+players. It is given by
+NDCG
+​
+@
+​
+K
+=
+1
+N
+K
+​
+∑
+i
+=
+1
+K
+2
+l
+⁡
+(
+d
+i
+)
+−
+1
+log
+⁡
+(
+i
++
+1
+)
+,
+\text{NDCG}@K=\frac{1}{N_{K}}\sum_{i=1}^{K}\frac{2^{l(d_{i})}-1}{\log(i+1)},
+where
+N
+k
+N_{k}
+is a normalizer to ensure that the perfect ranking would result in
+NDCG
+​
+@
+​
+K
+=
+1
+.
+\text{NDCG}@K=1.
+d
+i
+d_{i}
+denote the index of predicted i-th player, and
+l
+⁡
+(
+x
+)
+∈
+{
+0
+,
+1
+}
+l(x)\in\{0,1\}
+is the relevance level about top-k identification, we set
+l
+⁡
+(
+x
+)
+=
+1
+l(x)=1
+if player
+x
+x
+in true top-k otherwise 0.
+Parameters setting
+For Random, DBGD, and RG-UCB baseline, we perform a grid search for the initial step size
+η
+\eta
+in the range
+{
+0.01
+,
+0.05
+,
+0.1
+,
+0.5
+,
+1
+,
+5
+,
+10
+}
+\{0.01,0.05,0.1,0.5,1,5,10\}
+.
+For RG-UCB, stopping confidence
+δ
+=
+0.2
+\delta=0.2
+. For MaxInP, we tune the UCB balanced parameter
+γ
+∈
+{
+0.2
+,
+0.4
+,
+0.6
+,
+…
+,
+2.0
+}
+\gamma\in\{0.2,0.4,0.6,...,2.0\}
+.
+For
+MaxIn-Elo
+and
+MaxIn-mElo
+, we tune the initialized learning rate
+η
+∈
+{
+0.01
+,
+0.05
+,
+0.1
+,
+0.5
+,
+1
+,
+5
+,
+10
+}
+\eta\in\{0.01,0.05,0.1,0.5,1,5,10\}
+, and the learning rate at batch
+j
+j
+is set as
+η
+j
+\frac{\eta}{j}
+. And the UCB balanced parameter
+γ
+∈
+{
+0.2
+,
+0.4
+,
+0.6
+,
+…
+,
+2.0
+}
+\gamma\in\{0.2,0.4,0.6,...,2.0\}
+.
+The batch size
+τ
+\tau
+of MaxInP, MaxIn-Elo and MaxIn-mElo is set to
+0.7
+∗
+n
+0.7*n
+. When baselines ues mElo model to calculate ratings, we set the dimension of the extra vector
+c
+c
+as 8. We use the parameters that report the best performance for
+α
+\alpha
+-IG.
+We repeat experiments 5 times with different random seeds and plot the averaged performance with standard deviations.
+All experiments were run in a single x86_64 GNU/Linux machine with 256 AMD EPYC 7742 64-Core Processor and 2 A100 PCIe 40GB GPU. We use sklearn(0.24.2) to solve the MLE.
+Results
+Figure 1:
+Results on
+4
+×
+4
+4\times 4
+game (2 Good 2 Bad).
+Figure 2:
+Results of Elo on transitive games.
+Figure
+1
+,
+2
+,
+3
+show the results of top-
+1
+1
+identification on 13 games. To ensure a fair comparison between all baselines, we perform a grid search to select parameters with the best RR performance for each random seed. If the winning probability matrix can be fitted into the Elo model, then we calculate the true ratings through Eq. (
+2
+), otherwise we use the mElo ratings as the true ratings through Eq. (
+12
+).
+Evaluation of
+MaxIn-Elo
+Figure
+1
+shows the results on a
+4
+×
+4
+4\times 4
+transitive game.
+MaxIn-Elo
+has the highest convergence rate on both RR and cumulative regret metrics, and
+MaxIn-Elo
+has the lowest cumulative regret close to
+0
+0
+.
+As shown in Figure
+2
+,
+MaxIn-Elo
+significantly outperforms all other baselines on five games and achieves similar performance on Triangular game.
+Regarding the RR metric,
+MaxIn-Elo
+can converges to
+1
+1
+on four games. Even on Transitive game and Elo game + noise=
+0.1
+0.1
+, RR scores as up to
+0.6
+0.6
+and
+0.8
+0.8
+respectively, which indicates that the rank of the top player no more than
+2
+2
+. Thus we think
+MaxIn-Elo
+has the ability to effectively identify the top player . On the Elo game, Elo game + noise=
+0.01
+0.01
+, and Elo game + noise=
+0.01
+0.01
+, the cumulative regret are closed to convergence at around
+500
+500
+rounds.
+When the cumulative regret meets convergence, the candidate optimal set
+𝒮
+\mathcal{S}
+only contains the top player, and no regret increasing.
+Different from the other 5 stochastic games, Triangular game is a deterministic game with all winning probabilities are equal to
+1
+1
+or
+0
+0
+, thus it is easy to evaluate. For DBGD baseline, it maintains the current best player and randomly selects an opponent, so it could find the best player more quickly, but has a large cumulative regret because of randomly selected opponents.
+Figure 3:
+Results of mElo on intransitive games.
+Evaluation of
+MaxIn-mElo
+Figure
+3
+shows the results of baselines on six real-world intransitive games. MaxInP is based on the Elo model for it is a special generalized linear model only with rating parameter
+r
+r
+without cyclic vector parameter
+c
+c
+, but all other baselines are based on the mElo model. As the Figure
+3
+shows,
+MaxIn-mElo
+has the lowest cumulative regret and the highest RR on all six games. With regard to the RR,
+MaxIn-mElo
+can be up to
+1
+1
+on all games except for Blotto. One possible reason why
+MaxIn-mElo
+cannot be up to
+1
+1
+on Blotto may be that its size of top SSCC is very large.
+The other reason is that we use the low-rank approximation of the probability matrix’s rotation on the mElo model. Although we misidentified the top-
+1
+1
+player, we are still better than all other baselines.
+Results of Top-
+k
+k
+player identification
+Figure
+4
+gives the results of top-
+k
+k
+predictions on transitive games.
+MaxIn-Elo
+and MaxInP both have a parameter
+γ
+\gamma
+used to balance exploration and exploitation, larger
+γ
+\gamma
+can lead to a larger candidate set then lead to better top-
+k
+k
+performance. We keep other parameters fixed and run experiments with different
+γ
+∈
+{
+0.2
+,
+0.4
+,
+0.6
+,
+…
+,
+2.0
+}
+\gamma\in\{0.2,0.4,0.6,...,2.0\}
+, and we report the performance of MaxInP and
+MaxIn-Elo
+under the best
+γ
+\gamma
+.
+Figure
+4
+shows that
+MaxIn-Elo
+has the best performance of the top-
+1
+1
+identification on all games, and it achieves the comparable performance of top-
+k
+k
+identification on most games. Results of different
+γ
+\gamma
+can be found in Appendix.
+Figure 4:
+Results of Top-
+k
+k
+player identification on transitive games.
+γ
+\gamma
+in
+red
+and
+purple
+indicates that reports best performance for MaxInP and
+MaxIn-Elo
+respectively.
+Discussions
+This work studied the problem of multi-agent evaluation with Elo ratings. We have adopted an online match scheduling framework to improve the sample efficiency of the Elo rating system and its extension mElo for the intransitive settings. Both empirical and theoretical results justify that our algorithms can achieve higher sample efficiency and lower regret on most of the tasks.
+We consider two limitations of this work. Firstly, the match outcome prediction in our algorithm is based on only ratings without considering features that describe players. Future work may consider adding features into the match prediction.
+Secondly, our algorithm focuses more on identifying the best player without being tailored for identifying top-
+k
+k
+players. Future work can consider active sampling that achieves better results on both top-1 and top-
+k
+k
+cases.
+Ethical Statement
+This work proposes algorithms for online match scheduling that improve the efficiency in identifying top players in competitive games such as chess. While empirical studies in this work, which are based on AI agents, have demonstrated the superior gain of using our proposed methods, there is a caveat that our algorithms assume that the all players’ skill levels remain unchanged throughout the repeated competition rounds. This assumption likely does not hold for human players whose playing strengths will be affected by energy consumption due to frequent matches. Therefore, extra caution needs to be taken when deploying our methods to schedule real-world competitions involving human players and an interesting research extension would be to model such performance strength changes explicitly in designing the match scheduling algorithms.
+References
+Agrawal and Goyal (2012)
+Agrawal, S.; and Goyal, N. 2012.
+Analysis of thompson sampling for the multi-armed bandit problem.
+In
+Conference on learning theory
+, 39–1.
+Agrawal and Goyal (2013)
+Agrawal, S.; and Goyal, N. 2013.
+Thompson sampling for contextual bandits with linear payoffs.
+In
+International Conference on Machine Learning (ICML)
+,
+127–135.
+Arneson, Hayward, and Henderson (2010)
+Arneson, B.; Hayward, R. B.; and Henderson, P. 2010.
+Monte Carlo tree search in Hex.
+IEEE Transactions on Computational Intelligence and AI in
+Games
+, 2(4): 251–258.
+Auer, Cesa-Bianchi, and Fischer (2002)
+Auer, P.; Cesa-Bianchi, N.; and Fischer, P. 2002.
+Finite-time analysis of the multiarmed bandit problem.
+Machine learning
+, 47(2): 235–256.
+Balduzzi et al. (2018)
+Balduzzi, D.; Tuyls, K.; Perolat, J.; and Graepel, T. 2018.
+Re-evaluating evaluation.
+In
+Advances in Neural Information Processing Systems
+(NeurIPS)
+, 3268–3279.
+Bubeck, Munos, and Stoltz (2011)
+Bubeck, S.; Munos, R.; and Stoltz, G. 2011.
+Pure exploration in finitely-armed and continuous-armed bandits.
+Theoretical Computer Science
+, 412(19): 1832–1852.
+Czarnecki et al. (2020)
+Czarnecki, W. M.; Gidel, G.; Tracey, B.; Tuyls, K.; Omidshafiei, S.; Balduzzi,
+D.; and Jaderberg, M. 2020.
+Real World Games Look Like Spinning Tops.
+Advances in Neural Information Processing Systems (NeurIPS)
+,
+33.
+Ding, Hsieh, and Sharpnack (2021)
+Ding, Q.; Hsieh, C.-J.; and Sharpnack, J. 2021.
+An efficient algorithm for generalized linear bandit: Online
+stochastic gradient descent and thompson sampling.
+In
+International Conference on Artificial Intelligence and
+Statistics (AISTATS)
+, 1585–1593.
+Donmez, Svore, and Burges (2009)
+Donmez, P.; Svore, K. M.; and Burges, C. J. 2009.
+On the local optimality of lambdarank.
+In
+Proceedings of the 32nd international ACM SIGIR conference
+on Research and development in information retrieval
+, 460–467.
+Du et al. (2019)
+Du, Y.; Han, L.; Fang, M.; Dai, T.; Liu, J.; and Tao, D. 2019.
+LIIR: learning individual intrinsic reward in multi-agent
+reinforcement learning.
+In
+Proceedings of the 33rd International Conference on Neural
+Information Processing Systems (NeurIPS)
+, 4403–4414.
+Du et al. (2021)
+Du, Y.; Yan, X.; Chen, X.; Wang, J.; and Zhang, H. 2021.
+Estimating
+α
+\alpha
+-Rank from A Few Entries with Low Rank Matrix
+Completion.
+In
+International Conference on Machine Learning (ICML)
+,
+2870–2879. PMLR.
+Elo (1978)
+Elo, A. E. 1978.
+The rating of chessplayers, past and present
+.
+Arco Pub.
+Groh et al. (2012)
+Groh, C.; Moldovanu, B.; Sela, A.; and Sunde, U. 2012.
+Optimal seedings in elimination tournaments.
+Economic Theory
+, 49(1): 59–80.
+Gruslys et al. (2018)
+Gruslys, A.; Dabney, W.; Azar, M. G.; Piot, B.; Bellemare, M.; and Munos, R.
+2018.
+The Reactor: A fast and sample-efficient Actor-Critic agent for
+Reinforcement Learning.
+In
+International Conference on Learning Representations
+(ICLR)
+.
+Han et al. (2019)
+Han, L.; Sun, P.; Du, Y.; Xiong, J.; Wang, Q.; Sun, X.; Liu, H.; and Zhang, T.
+2019.
+Grid-wise control for multi-agent reinforcement learning in video
+game ai.
+In
+International Conference on Machine Learning (ICML)
+,
+2576–2585. PMLR.
+He et al. (2015)
+He, X.; Chen, T.; Kan, M.-Y.; and Chen, X. 2015.
+Trirank: Review-aware explainable recommendation by modeling aspects.
+In
+Proceedings of the 24th ACM International on Conference on
+Information and Knowledge Management (CIKM)
+, 1661–1670.
+Heckel et al. (2019)
+Heckel, R.; Shah, N. B.; Ramchandran, K.; Wainwright, M. J.; et al. 2019.
+Active ranking from pairwise comparisons and when parametric
+assumptions do not help.
+The Annals of Statistics
+, 47(6): 3099–3126.
+Hunter et al. (2004)
+Hunter, D. R.; et al. 2004.
+MM algorithms for generalized Bradley-Terry models.
+The Annals of Statistics
+, 32(1): 384–406.
+Jiang et al. (2011)
+Jiang, X.; Lim, L.-H.; Yao, Y.; and Ye, Y. 2011.
+Statistical ranking and combinatorial Hodge theory.
+Mathematical Programming
+, 127(1): 203–244.
+Lai (2015)
+Lai, M. 2015.
+Giraffe: Using deep reinforcement learning to play chess.
+arXiv preprint arXiv:1509.01549
+.
+Lanctot et al. (2019)
+Lanctot, M.; Lockhart, E.; Lespiau, J.-B.; Zambaldi, V.; Upadhyay, S.;
+Pérolat, J.; Srinivasan, S.; Timbers, F.; Tuyls, K.; Omidshafiei, S.;
+et al. 2019.
+OpenSpiel: A framework for reinforcement learning in games.
+arXiv preprint arXiv:1908.09453
+.
+Li, Lu, and Zhou (2017)
+Li, L.; Lu, Y.; and Zhou, D. 2017.
+Provably optimal algorithms for generalized linear contextual
+bandits.
+In
+International Conference on Machine Learning (ICML)
+,
+2071–2080.
+Mnih et al. (2015)
+Mnih, V.; Kavukcuoglu, K.; Silver, D.; Rusu, A. A.; Veness, J.; Bellemare,
+M. G.; Graves, A.; Riedmiller, M.; Fidjeland, A. K.; and Ostrovski, G. 2015.
+Human-level control through deep reinforcement learning.
+Nature
+, 518(7540): 529.
+Muller et al. (2020)
+Muller, P.; Omidshafiei, S.; Rowland, M.; Tuyls, K.; Perolat, J.; Liu, S.;
+Hennes, D.; Marris, L.; Lanctot, M.; Hughes, E.; et al. 2020.
+A Generalized Training Approach for Multiagent Learning.
+In
+International Conference on Learning Representations
+(ICLR)
+, 1–35.
+Omidshafiei et al. (2019)
+Omidshafiei, S.; Papadimitriou, C.; Piliouras, G.; Tuyls, K.; Rowland, M.;
+Lespiau, J.-B.; Czarnecki, W. M.; Lanctot, M.; Perolat, J.; and Munos, R.
+2019.
+α
+\alpha
+-rank: Multi-agent evaluation by evolution.
+Scientific reports
+, 9(1): 1–29.
+Rashid, Zhang, and Ciosek (2021)
+Rashid, T.; Zhang, C.; and Ciosek, K. 2021.
+Estimating
+α
+\alpha
+-Rank by Maximizing Information Gain.
+In
+Proceedings of the AAAI Conference on Artificial
+Intelligence (AAAI)
+, volume 35, 5673–5681.
+Rasmussen and Trick (2008)
+Rasmussen, R. V.; and Trick, M. A. 2008.
+Round robin scheduling–a survey.
+European Journal of Operational Research
+, 188(3): 617–636.
+Rowland et al. (2019)
+Rowland, M.; Omidshafiei, S.; Tuyls, K.; Perolat, J.; Valko, M.; Piliouras, G.;
+and Munos, R. 2019.
+Multiagent evaluation under incomplete information.
+In
+Advances in Neural Information Processing Systems
+(NeurIPS)
+, 12291–12303.
+Saha and Gopalan (2020)
+Saha, A.; and Gopalan, A. 2020.
+Regret Minimization in Stochastic Contextual Dueling Bandits.
+arXiv preprint arXiv:2002.08583
+.
+Saha, Koren, and Mansour (2021)
+Saha, A.; Koren, T.; and Mansour, Y. 2021.
+Adversarial dueling bandits.
+In
+International Conference on Machine Learning (ICML)
+,
+9235–9244.
+Silver et al. (2017)
+Silver, D.; Schrittwieser, J.; Simonyan, K.; Antonoglou, I.; Huang, A.; Guez,
+A.; Hubert, T.; Baker, L.; Lai, M.; and Bolton, A. 2017.
+Mastering the game of Go without human knowledge.
+Nature
+, 550(7676): 354.
+Szörényi et al. (2015)
+Szörényi, B.; Busa-Fekete, R.; Paul, A.; and Hüllermeier, E. 2015.
+Online rank elicitation for plackett-luce: A dueling bandits
+approach.
+In
+Proceedings of the 19th international Conference on Neural
+Information Processing systems (NeurIPS)
+.
+Thompson (1933)
+Thompson, W. R. 1933.
+On the likelihood that one unknown probability exceeds another in
+view of the evidence of two samples.
+Biometrika
+, 25(3/4): 285–294.
+Vinyals et al. (2019)
+Vinyals, O.; Babuschkin, I.; Czarnecki, W. M.; Mathieu, M.; Dudzik, A.; Chung,
+J.; Choi, D. H.; Powell, R.; Ewalds, T.; Georgiev, P.; et al. 2019.
+Grandmaster level in StarCraft II using multi-agent reinforcement
+learning.
+Nature
+, 575(7782): 350–354.
+Yang et al. (2020)
+Yang, Y.; Tutunov, R.; Sakulwongtana, P.; and Ammar, H. B. 2020.
+α
+α
+\alpha^{\alpha}
+-Rank: Practically Scaling
+α
+\alpha
+-Rank through
+Stochastic Optimisation.
+In
+Proceedings of the 19th International Conference on
+Autonomous Agents and MultiAgent Systems (AAMAS)
+, 1575–1583.
+Yue et al. (2012)
+Yue, Y.; Broder, J.; Kleinberg, R.; and Joachims, T. 2012.
+The k-armed dueling bandits problem.
+Journal of Computer and System Sciences
+, 78(5): 1538–1556.
+Yue and Joachims (2009)
+Yue, Y.; and Joachims, T. 2009.
+Interactively optimizing information retrieval systems as a dueling
+bandits problem.
+In
+Proceedings of the 26th Annual International Conference on
+Machine Learning (ICML)
+, 1201–1208.
+Appendix A
+Additional Details on Algorithms
+Additional background on multi-dimensional Elo ratings (mElo)
+The winning probability matrix
+P
+P
+can be converted into an antisymmetric matrix
+A
+=
+σ
+−
+1
+​
+(
+P
+)
+A=\sigma^{-1}(P)
+with
+A
+i
+​
+j
+=
+log
+⁡
+P
+i
+​
+j
+1
+−
+P
+i
+​
+j
+A_{ij}=\log\frac{P_{ij}}{1-P_{ij}}
+.
+From the Hodge decomposition theory
+(
+Jiang et al. 2011
+)
+, the antisymmetric matrix
+A
+A
+decomposes as
+A
+=
+g
+​
+r
+​
+a
+​
+d
+​
+(
+r
+)
++
+r
+​
+o
+​
+t
+​
+(
+A
+)
+A=grad(r)+rot(A)
+, where
+r
+​
+o
+​
+t
+​
+(
+A
+)
+i
+​
+j
+=
+1
+n
+​
+∑
+k
+=
+1
+n
+A
+i
+​
+j
++
+A
+j
+​
+k
+−
+A
+i
+​
+k
+rot(A)_{ij}=\frac{1}{n}\sum_{k=1}^{n}A_{ij}+A_{jk}-A_{ik}
+, capturing the intransitive relations,
+g
+​
+r
+​
+a
+​
+d
+​
+(
+r
+)
+=
+r
+⋅
+𝟏
+⊤
+−
+𝟏
+⋅
+r
+⊤
+grad(r)=r\cdot\bm{1}^{\top}-\bm{1}\cdot r^{\top}
+, indicating the combination gradient of divergence vector
+r
+=
+1
+n
+​
+A
+⋅
+1
+r=\frac{1}{n}A\cdot 1
+.
+According to the Schur decomposition, mElo extends the Elo model by learning an low-rank(
+2
+​
+k
+2k
+) approximation of rotation matrix
+r
+​
+o
+​
+t
+​
+(
+A
+)
+rot(A)
+, the cyclic component of
+A
+A
+.
+Consider
+A
+=
+g
+​
+r
+​
+a
+​
+d
+​
+(
+r
+)
++
+r
+​
+o
+​
+t
+​
+(
+A
+)
+≈
+g
+​
+r
+​
+a
+​
+d
+​
+(
+r
+)
++
+C
+n
+×
+2
+​
+k
+​
+Ω
+2
+​
+k
+×
+2
+​
+k
+​
+C
+n
+×
+2
+​
+k
+⊤
+,
+A=grad(r)+rot(A)\approx grad(r)+C_{n\times 2k}\Omega_{2k\times 2k}C_{n\times 2k}^{\top},
+where
+Ω
+2
+​
+k
+×
+2
+​
+k
+=
+∑
+i
+=
+1
+k
+(
+e
+2
+​
+i
+−
+1
+​
+e
+2
+​
+i
+⊤
+−
+e
+2
+​
+i
+​
+e
+2
+​
+i
+−
+1
+⊤
+)
+.
+\Omega_{2k\times 2k}=\sum_{i=1}^{k}(e_{2i-1}e_{2i}^{\top}-e_{2i}e_{2i-1}^{\top}).
+By learning a
+2
+​
+k
+2k
+-dimensional vector
+c
+x
+c_{x}
+and a rating
+r
+x
+r_{x}
+per player, the win-loss prediction for mElo
+2k
+is defined as:
+p
+^
+x
+​
+y
+=
+σ
+⁡
+(
+r
+x
+−
+r
+y
++
+c
+x
+⊤
+⋅
+Ω
+2
+​
+k
+×
+2
+​
+k
+⋅
+c
+y
+)
+.
+\hat{p}_{xy}=\sigma\left(r_{x}-r_{y}+{c}_{x}^{\top}\cdot{\Omega}_{2k\times 2k}\cdot{c}_{y}\right).
+(17)
+Notice that the Elo model uses
+k
+=
+0
+k=0
+.
+Based on the probability estimation function in Eq. (
+17
+), the update functions equivalent to Eq. (
+4
+) on mElo is:
+r
+x
+t
++
+1
+\displaystyle r_{x}^{t+1}
+=
+r
+x
+t
++
+η
+⋅
+(
+o
+x
+​
+y
+t
+−
+p
+^
+x
+​
+y
+t
+)
+,
+\displaystyle=r_{x}^{t}+\eta\cdot\left(o_{xy}^{t}-\hat{p}_{xy}^{t}\right),
+(18)
+c
+x
+t
++
+1
+​
+(
+2
+​
+i
+−
+1
+)
+\displaystyle c_{x}^{t+1}(2i-1)
+=
+c
+x
+t
+​
+(
+2
+​
+i
+−
+1
+)
++
+η
+⋅
+(
+o
+x
+​
+y
+t
+−
+p
+^
+x
+​
+y
+t
+)
+​
+c
+y
+t
+​
+(
+2
+​
+i
+)
+,
+\displaystyle=c_{x}^{t}(2i-1)+\eta\cdot\left(o^{t}_{xy}-\hat{p}_{xy}^{t}\right)c_{y}^{t}(2i),
+(19)
+c
+x
+t
++
+1
+​
+(
+2
+​
+i
+)
+\displaystyle c_{x}^{t+1}(2i)
+=
+c
+x
+t
+​
+(
+2
+​
+i
+)
+−
+η
+⋅
+(
+o
+x
+​
+y
+t
+−
+p
+^
+x
+​
+y
+t
+)
+​
+c
+y
+t
+​
+(
+2
+​
+i
+−
+1
+)
+.
+\displaystyle=c_{x}^{t}(2i)-\eta\cdot\left(o_{xy}^{t}-\hat{p}_{xy}^{t}\right)c_{y}^{t}(2i-1).
+(20)
+Comparing to the Elo ratings, mElo
+2k
+adopts a different win-loss prediction function by introducing a vector
+c
+x
+c_{x}
+, but still follows the gradient descent update.
+Algorithm for
+MaxIn-mElo
+Algorithm
+2
+gives the details of
+MaxIn-mElo
+. Our MaxIn-mElo algorithm can be obtained by modifying the loss function, gradient and UCB score function in our MaxIn-Elo algorithm. In order to solve the intransitive games, our MaxIn-mElo employs the mElo model, and considers both the transitive and cyclic components to calculate the UCB score.
+Algorithm 2
+MaxIn-mElo
+: Dueling bandits with online SGD for mElo.
+0:
+T
+,
+N
+,
+τ
+,
+α
+,
+γ
+T,N,\tau,\alpha,\gamma
+0:
+output
+θ
+\theta
+1:
+Randomly choose a pair to compare and record as
+x
+t
+,
+y
+t
+,
+o
+t
+x_{t},y_{t},o_{t}
+for
+t
+∈
+[
+τ
+]
+t\in[\tau]
+2:
+V
+τ
++
+1
+=
+∑
+t
+=
+1
+τ
+(
+e
+x
+t
+−
+e
+y
+t
+)
+​
+(
+e
+x
+t
+−
+e
+y
+t
+)
+T
+V_{\tau+1}=\sum_{t=1}^{\tau}(e_{x_{t}}-e_{y_{t}})(e_{x_{t}}-e_{y_{t}})^{T}
+3:
+Initialize
+𝒓
+^
+τ
+\hat{\bm{r}}_{\tau}
+by MLE as Line 3 in Alg.
+1
+and
+c
+c
+.
+4:
+Maintain convex set
+𝒞
+=
+{
+r
+:
+‖
+r
+−
+r
+^
+τ
+‖
+≤
+2
+}
+\mathcal{C}=\left\{r:\left\|r-\hat{r}_{\tau}\right\|\leq 2\right\}
+5:
+for
+t
+=
+τ
++
+1
+,
+τ
++
+2
+,
+…
+,
+T
+t=\tau+1,\tau+2,\dots,T
+do
+6:
+if
+t
+%
+​
+τ
+=
+1
+t\%\tau=1
+then
+7:
+j
+←
+⌊
+(
+t
+−
+1
+)
+/
+τ
+⌋
+j\leftarrow\lfloor(t-1)/\tau\rfloor
+and
+η
+j
+=
+1
+α
+​
+j
+\eta_{j}=\frac{1}{\alpha j}
+8:
+Calculate gradient
+∇
+r
+l
+j
+,
+τ
+​
+(
+r
+~
+j
+−
+1
+)
+\nabla_{r}l_{j,\tau}(\tilde{r}_{j-1})
+according to Eq. (
+4
+)
+9:
+Update gradient
+r
+~
+j
+←
+∏
+𝒞
+(
+r
+~
+j
+−
+1
+−
+η
+j
+​
+∇
+r
+l
+j
+,
+τ
+​
+(
+r
+~
+j
+−
+1
+)
+)
+\tilde{r}_{j}\leftarrow\prod_{\mathcal{C}}\left(\tilde{r}_{j-1}-\eta_{j}\nabla_{r}l_{j,\tau}(\tilde{r}_{j-1})\right)
+10:
+Compute
+r
+¯
+=
+1
+j
+​
+∑
+q
+=
+1
+j
+r
+~
+q
+\bar{r}=\frac{1}{j}\sum_{q=1}^{j}\tilde{r}_{q}
+11:
+Calculate gradient
+∇
+C
+l
+j
+,
+τ
+​
+(
+C
+~
+j
+−
+1
+)
+\nabla_{C}l_{j,\tau}(\tilde{C}_{j-1})
+12:
+Update gradient
+C
+~
+j
+←
+C
+~
+j
+−
+1
+−
+η
+j
+​
+∇
+C
+l
+j
+,
+τ
+​
+(
+C
+~
+j
+−
+1
+)
+\tilde{C}_{j}\leftarrow\tilde{C}_{j-1}-\eta_{j}\nabla_{C}l_{j,\tau}(\tilde{C}_{j-1})
+13:
+end
+if
+14:
+Define a candidate optimal set
+𝒮
+=
+{
+x
+|
+r
+¯
+x
+−
+r
+¯
+y
++
+c
+¯
+x
+T
+𝛀
+c
+¯
+y
++
+γ
+‖
+e
+x
+−
+e
+y
+‖
+V
+t
+−
+1
+>
+0
+,
+∀
+y
+∈
+[
+n
+]
+/
+{
+x
+}
+}
+\mathcal{S}=\{x\ |\ \bar{r}_{x}-\bar{r}_{y}+\bar{c}_{x}^{T}\bm{\Omega}\bar{c}_{y}+\gamma\ \left\|e_{x}-e_{y}\right\|_{V_{t}^{-1}}>0,\ \forall y\in[n]/\{x\}\}
+15:
+Select a pair
+(
+x
+t
+,
+y
+t
+)
+=
+arg
+⁡
+max
+(
+x
+,
+y
+)
+∈
+𝒮
+⁡
+‖
+e
+x
+−
+e
+y
+‖
+V
+t
+−
+1
+(x_{t},y_{t})=\argmax_{(x,y)\in\mathcal{S}}\left\|e_{x}-e_{y}\right\|_{V_{t}^{-1}}
+.
+16:
+Pull arms
+(
+x
+t
+,
+y
+t
+)
+(x_{t},y_{t})
+and observe
+o
+t
+​
+(
+x
+t
+,
+y
+t
+)
+o_{t}(x_{t},y_{t})
+17:
+Compute
+V
+t
++
+1
+=
+V
+t
++
+(
+e
+x
+t
+−
+e
+y
+t
+)
+​
+(
+e
+x
+t
+−
+e
+y
+t
+)
+T
+V_{t+1}=V_{t}+(e_{x_{t}}-e_{y_{t}})(e_{x_{t}}-e_{y_{t}})^{T}
+18:
+end
+for
+Table 2:
+Statistics of twelve real world games.
+|
+Top SSCC
+|
+|\text{Top SSCC}|
+indicates the size of the SSCC with best performance.
+Game
+# Policies
+|
+Top SSCC
+|
+|\text{Top SSCC}|
+Transitivity
+Transitive game
+100
+1
+Yes
+Triangular game
+100
+1
+Yes
+Elo game
+100
+1
+Yes
+Elo game + noise=0.01
+100
+1
+Yes
+Elo game + noise=0.05
+100
+1
+Yes
+Elo game + noise=0.1
+100
+1
+Yes
+Kuhn-poker
+64
+64
+No
+AlphaStar
+100
+1
+No
+tic
+_
+\_
+tac_toe
+100
+2
+No
+hex(board_size=3)
+100
+2
+No
+Blotto
+100
+99
+No
+5,3-Blotto
+21
+18
+No
+Figure 5:
+Additional results of different
+γ
+\gamma
+of our
+MaxIn-Elo
+under top-
+k
+k
+performance. The best top-1 curves are in dashed lines. The best top-
+k
+k
+curves are in bold.
+Figure 6:
+Results of different parameters of
+C
+C
+of
+MaxIn-mElo
+.
+Figure 7:
+Results of different batch size
+τ
+\tau
+of
+MaxIn-Elo
+on Elo game and
+MaxIn-mElo
+on Kuhn-poker.
+Appendix B
+Additional Experiments
+Table
+2
+gives the details of the games used in experiments. The sizes of the top SSCC of six transitive games are equal to 1, which indicates that there exists a top player and its winning probabilities against other players are greater than
+0.5
+0.5
+. For the intransitive games, the top SSCC size of AlphaStar is equal to 1, but there also exist cycles among players outside of the top SSCC. The top SSCC is the smallest set of players such that the winning probabilities of outside players against inside players are less than 0.5.
+Figure
+5
+shows the comparison between different
+γ
+\gamma
+of
+MaxIn-Elo
+under top-
+k
+k
+identification.
+γ
+\gamma
+trade off exploration and exploitation in selecting arm-pairs. Smaller
+γ
+\gamma
+leads to tighter candidate sets then leads to better top-1 performance, but too small
+γ
+\gamma
+may result in that the top player is excluded from the candidate set.
+On Elo game, its three variants and Triangular game,
+MaxIn-Elo
+has the best performance when
+γ
+=
+0.6
+\gamma=0.6
+. The performance of top-1 gradually drops with
+γ
+\gamma
+increasing. But it misidentifies the best player when
+γ
+=
+0.4
+\gamma=0.4
+.
+By contrast, larger
+γ
+\gamma
+leads to larger candidate set then lead to better top-
+k
+k
+performance, but too large
+γ
+\gamma
+results in much useless exploration on top players identification. In general, larger
+γ
+\gamma
+has better top-
+k
+k
+performance, but
+γ
+=
+1.2
+\gamma=1.2
+is worse than
+γ
+=
+1
+\gamma=1
+because of too large candidate set and too much exploration. On Elo game,
+MaxIn-Elo
+has best top-
+1
+1
+performance on
+γ
+=
+0.6
+\gamma=0.6
+, best top-
+k
+k
+performance on
+γ
+=
+1
+\gamma=1
+, and
+γ
+=
+0.8
+\gamma=0.8
+balances the top-1 and top-
+k
+k
+identification. On Transitive game,
+MaxIn-Elo
+has best top-
+1
+1
+and top-
+k
+k
+performance when
+γ
+=
+0.4
+\gamma=0.4
+.
+Figure
+6
+gives results
+MaxIn-mElo
+with different dimensions of
+c
+c
+.
+Overall,
+C
+=
+8
+C=8
+returns best performance. The performance of top-1 identification and cumulative of
+MaxIn-mElo
+gradually increases as the dimension
+C
+C
+increases, but the performance drops when
+C
+=
+16
+C=16
+.
+In general, larger
+C
+C
+leads to better approximation of the intransitive skills, but this also requires more samples for training.
+Figure
+7
+shows results of
+MaxIn-Elo
+on Elo game and of
+MaxIn-mElo
+on Kuhn-poker with different batch size
+τ
+\tau
+. When the batch size
+τ
+=
+1
+\tau=1
+, both
+MaxIn-Elo
+and
+MaxIn-mElo
+have bad performance on top-1 player identification and large cumulative reward, which may because of that the objective function is not strongly convex and hard to convergence under this setting. On the other hand, when selecting too large
+τ
+\tau
+, such as
+4.0
+​
+n
+,
+8.0
+​
+n
+4.0n,\ 8.0n
+, the number of updates is less than that of small
+τ
+\tau
+with the same sampling rounds. The
+MaxIn-Elo
+on the transitive Elo game gets satisfactory top-1 identification and regret performance at around
+τ
+=
+0.5
+​
+n
+​
+1.0
+​
+n
+\tau=0.5n~1.0n
+, and the
+MaxIn-Elo
+on the intransitive Kuhn-poker obtains best top identification and regret performance at around
+τ
+=
+0.7
+​
+n
+\tau=0.7n
+.
+Appendix C
+Theories and Proofs
+We provide detailed proofs below.
+Proofs of Lemmas
+Proposition 1
+(
+(
+Saha and Gopalan 2020
+)
+)
+.
+We select a batch of feature vectors
+X
+1
+,
+X
+2
+,
+…
+,
+X
+τ
+{X_{1},X_{2},\dots,X_{\tau}}
+from a distribution
+v
+v
+and
+‖
+X
+‖
+≤
+2
+\|X\|\leq 2
+. Let
+V
+τ
++
+1
+=
+∑
+t
+=
+1
+τ
+(
+X
+t
+​
+X
+t
+⊤
+)
+V_{\tau+1}=\sum_{t=1}^{\tau}(X_{t}X_{t}^{\top})
+,
+Σ
+=
+𝔼
+X
+​
+∼
+i
+​
+i
+​
+d
+​
+v
+​
+[
+X
+​
+X
+⊤
+]
+\Sigma=\mathbb{E}_{X\overset{iid}{\sim}v}[XX^{\top}]
+. There exist two positive constant
+C
+1
+,
+C
+2
+C_{1},C_{2}
+such that if the batch size
+τ
+\tau
+is appropriately selected as
+τ
+≥
+2
+​
+(
+C
+1
+​
+n
++
+C
+2
+​
+log
+⁡
+(
+1
+/
+δ
+)
+λ
+min
+​
+(
+Σ
+)
+)
+2
++
+4
+​
+C
+λ
+min
+​
+(
+Σ
+)
+\tau\geq 2\left(\frac{C_{1}\sqrt{n}+C_{2}\sqrt{\log(1/\delta)}}{\lambda_{\min}(\Sigma)}\right)^{2}+\frac{4C}{\lambda_{\min}(\Sigma)}
+, then
+λ
+min
+​
+(
+V
+τ
++
+1
+)
+≥
+C
+\lambda_{\min}(V_{\tau+1})\geq C
+holds with probability at least
+1
+−
+1
+δ
+1-\frac{1}{\delta}
+.
+The Proposition
+1
+provides guidance about the selection of batch size
+τ
+\tau
+and is a corollary of Lemma 12 in
+(
+Saha and Gopalan 2020
+)
+.
+In Algorithm
+1
+, the first batch of pairs are randomly selected for initializing the maximum likelihood estimator, the rest batches of pairs are selected with maximum uncertainty based on UCB estimation.
+The batch size
+τ
+\tau
+can be suitably to achieve low MLE error and the
+α
+\alpha
+-strongly convex condition.
+See
+1
+Proof of Lemma
+1
+.
+Our setting is a special case of generalized linear bandits(GLM)
+(
+Li, Lu, and Zhou 2017
+)
+, and we can directly get our Lemma
+1
+by substitute
+e
+x
+−
+e
+y
+e_{x}-e_{y}
+into Lemma 2 of
+(
+Li, Lu, and Zhou 2017
+)
+.
+According to
+(
+Li, Lu, and Zhou 2017
+)
+, we have
+∑
+i
+=
+τ
++
+1
+τ
++
+t
+‖
+e
+x
+i
+−
+e
+y
+i
+‖
+V
+i
+−
+1
+2
+≤
+2
+​
+log
+⁡
+det
+⁡
+V
+t
++
+1
+det
+⁡
+V
+τ
++
+1
+≤
+2
+​
+d
+​
+log
+⁡
+(
+tr
+⁡
+(
+V
+τ
++
+1
+)
++
+t
+d
+)
+−
+2
+​
+log
+⁡
+det
+⁡
+V
+τ
++
+1
+.
+\sum_{i=\tau+1}^{\tau+t}\left\|e_{x_{i}}-e_{y_{i}}\right\|_{V_{i}^{-1}}^{2}\leq 2\log\frac{\operatorname{det}V_{t+1}}{\operatorname{det}V_{\tau+1}}\leq 2d\log\left(\frac{\operatorname{tr}\left(V_{\tau+1}\right)+t}{d}\right)-2\log\operatorname{det}V_{\tau+1}.
+(21)
+The trace of
+V
+τ
++
+1
+V_{\tau+1}
+is
+tr
+​
+(
+V
+τ
++
+1
+)
+=
+∑
+i
+=
+1
+τ
+tr
+​
+(
+(
+e
+x
+i
+−
+e
+y
+i
+)
+​
+(
+e
+x
+i
+−
+e
+y
+i
+)
+⊤
+)
+=
+∑
+i
+=
+1
+τ
+‖
+e
+x
+i
+−
+e
+y
+i
+‖
+2
+=
+2
+​
+τ
+\text{tr}(V_{\tau+1})=\sum_{i=1}^{\tau}\text{tr}\left((e_{x_{i}}-e_{y_{i}})(e_{x_{i}}-e_{y_{i}})^{\top}\right)=\sum_{i=1}^{\tau}\left\|e_{x_{i}}-e_{y_{i}}\right\|^{2}=2\tau
+, and the determinant satisfies
+d
+​
+e
+​
+t
+​
+(
+V
+τ
++
+1
+)
+=
+∏
+i
+=
+1
+d
+λ
+i
+≥
+λ
+min
+d
+​
+(
+V
+τ
++
+1
+)
+≥
+1
+det(V_{\tau+1})=\prod_{i=1}^{d}\lambda_{i}\geq\lambda_{\min}^{d}\left(V_{\tau+1}\right)\geq 1
+for we assume
+λ
+min
+​
+(
+V
+τ
++
+1
+)
+≥
+1
+\lambda_{\min}(V_{\tau+1})\geq 1
+, where
+{
+λ
+i
+}
+\{\lambda_{i}\}
+are the eigenvalues of
+V
+τ
++
+1
+V_{\tau+1}
+.
+Applying the Cauchy-Schwarz inequality, we have
+∑
+i
+=
+τ
++
+1
+τ
++
+t
+‖
+(
+e
+x
+i
+−
+e
+y
+i
+)
+‖
+V
+i
+−
+1
+≤
+t
+​
+∑
+i
+=
+τ
++
+1
+t
+‖
+(
+e
+x
+i
+−
+e
+y
+i
+)
+‖
+V
+i
+−
+1
+2
+≤
+2
+​
+t
+​
+d
+​
+log
+⁡
+(
+t
++
+2
+​
+τ
+d
+)
+\sum_{i=\tau+1}^{\tau+t}\left\|(e_{x_{i}}-e_{y_{i}})\right\|_{V_{i}^{-1}}\leq\sqrt{t\sum_{i=\tau+1}^{t}\left\|(e_{x_{i}}-e_{y_{i}})\right\|_{V_{i}^{-1}}^{2}}\leq\sqrt{2td\log\left(\frac{t+2\tau}{d}\right)}
+(22)
+Thus the proof of Lemma
+1
+is complete.
+∎
+See
+2
+Proof of Lemma
+2
+.
+Relying on the Lemma 1 in
+(
+Ding, Hsieh, and Sharpnack 2021
+)
+and Proposition
+1
+, we set the batch size
+τ
+≥
+τ
+1
+\tau\geq\tau_{1}
+in Eq. (
+14
+), thus we have
+‖
+r
+^
+j
+​
+τ
+−
+r
+∗
+‖
+≤
+1
+\|\hat{r}_{j\tau}-r^{*}\|\leq 1
+with probability at least
+1
+−
+1
+T
+2
+1-\frac{1}{T^{2}}
+for any
+j
+≥
+1
+j\geq 1
+. So we have
+‖
+r
+^
+j
+​
+τ
+−
+r
+^
+τ
+‖
+≤
+2
+\|\hat{r}_{j\tau}-\hat{r}_{\tau}\|\leq 2
+with probability at least
+1
+−
+2
+T
+2
+1-\frac{2}{T^{2}}
+. In Algorithm
+1
+, we project the SGD estimation
+r
+~
+j
+\tilde{r}_{j}
+into the convex hall
+𝒞
+=
+{
+r
+:
+‖
+r
+−
+r
+^
+τ
+‖
+≤
+2
+}
+\mathcal{C}=\{r:\|r-\hat{r}_{\tau}\|\leq 2\}
+, thus we have
+r
+~
+j
+∈
+{
+r
+:
+‖
+r
+−
+r
+∗
+‖
+≤
+3
+}
+\tilde{r}_{j}\in\{r:\|r-{r}^{*}\|\leq 3\}
+with probability at least
+1
+−
+1
+T
+2
+1-\frac{1}{T^{2}}
+. And from Proposition 1, if the batch size
+τ
+≥
+τ
+2
+\tau\geq\tau_{2}
+defined in Eq. (
+14
+), then
+λ
+min
+​
+(
+∑
+t
+=
+(
+j
+−
+1
+)
+​
+τ
++
+1
+j
+​
+τ
+(
+e
+x
+t
+−
+e
+y
+t
+)
+​
+(
+e
+x
+t
+−
+e
+y
+t
+)
+⊤
+)
+≥
+α
+c
+3
+\lambda_{\min}(\sum_{t=(j-1)\tau+1}^{j\tau}(e_{x_{t}}-e_{y_{t}})(e_{x_{t}}-e_{y_{t}})^{\top})\geq\frac{\alpha}{c_{3}}
+holds with probability at least
+1
+−
+1
+T
+2
+1-\frac{1}{T^{2}}
+. Thus with probability at least
+1
+−
+1
+T
+2
+1-\frac{1}{T^{2}}
+, the objective function
+l
+j
+,
+τ
+​
+(
+r
+)
+l_{j,\tau}(r)
+in Eq. (
+7
+) is an
+α
+\alpha
+-strongly convex function when
+r
+∈
+{
+r
+:
+‖
+r
+−
+r
+∗
+‖
+≤
+3
+}
+r\in\{r:\|r-r^{*}\|\leq 3\}
+.
+Relying on the above analysis and according to Lemma 2 in
+(
+Ding, Hsieh, and Sharpnack 2021
+)
+, we have that if the batch size
+τ
+\tau
+is chosen as Eq. (
+14
+), then the convergence rate of the
+α
+\alpha
+-strongly convex objective function
+l
+j
+,
+τ
+​
+(
+r
+)
+l_{j,\tau}(r)
+satisfies that
+‖
+r
+¯
+j
+−
+r
+^
+j
+​
+τ
+‖
+≤
+τ
+α
+​
+1
++
+log
+⁡
+j
+j
+\left\|\bar{r}_{j}-\hat{r}_{j\tau}\right\|\leq\frac{\tau}{\alpha}\sqrt{\frac{1+\log j}{j}}
+(23)
+for all
+j
+≥
+1
+j\geq 1
+with probability at least
+1
+−
+3
+T
+2
+1-\frac{3}{T^{2}}
+.
+From Proposition
+1
+and
+τ
+≥
+τ
+1
+\tau\geq\tau_{1}
+in Eq. (
+14
+), we have
+λ
+m
+​
+i
+​
+n
+​
+(
+V
+τ
++
+1
+)
+≥
+4
+​
+(
+n
++
+2
+​
+log
+⁡
+T
+)
+c
+1
+2
+≥
+1
+\lambda_{min}(V_{\tau+1})\geq\frac{4(n+2\log T)}{c_{1}^{2}}\geq 1
+with probability at least
+1
+−
+1
+T
+2
+1-\frac{1}{T^{2}}
+because
+c
+1
+c_{1}
+is upper bounded by
+1
+4
+\frac{1}{4}
+. Then according to the Lemma 3 in
+(
+Li, Lu, and Zhou 2017
+)
+, we have that the event
+ℰ
+=
+{
+‖
+r
+^
+t
+−
+r
+∗
+‖
+V
+t
+≤
+1
+2
+​
+c
+1
+​
+n
+2
+​
+log
+⁡
+(
+1
++
+2
+​
+t
+n
+)
++
+2
+​
+log
+⁡
+T
+,
+t
+≥
+τ
+}
+\mathcal{E}=\{\|\hat{r}_{t}-r^{*}\|_{V_{t}}\leq\frac{1}{2c_{1}}\sqrt{\frac{n}{2}\log\left(1+\frac{2t}{n}\right)+2\log T},t\geq\tau\}
+(24)
+holds with probability at least
+1
+−
+2
+T
+2
+1-\frac{2}{T^{2}}
+.
+Combining the Eq. (
+23
+) and Eq. (
+24
+) and applying the union bound, we can get that for all
+t
+≥
+τ
+t\geq\tau
+the event
+E
+1
+​
+(
+t
+)
+E_{1}(t)
+holds with probability at least
+1
+−
+5
+T
+2
+1-\frac{5}{T^{2}}
+.
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+¯
+j
+−
+r
+∗
+)
+|
+≤
+\displaystyle|(e_{x}-e_{y})^{T}(\bar{r}_{j}-r^{*})|\leq
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+¯
+j
+−
+r
+^
+j
+​
+τ
+)
+|
++
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+^
+j
+​
+τ
+−
+r
+∗
+)
+|
+\displaystyle|(e_{x}-e_{y})^{T}(\bar{r}_{j}-\hat{r}_{j\tau})|+|(e_{x}-e_{y})^{T}(\hat{r}_{j\tau}-r^{*})|
+(25)
+≤
+(
+1
+)
+\displaystyle\stackrel{{\scriptstyle(1)}}{{\leq}}
+2
+​
+τ
+α
+​
+1
++
+log
+⁡
+j
+j
++
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+^
+j
+​
+τ
+−
+r
+∗
+)
+|
+\displaystyle\sqrt{2}\frac{\tau}{\alpha}\sqrt{\frac{1+\log j}{j}}+|(e_{x}-e_{y})^{T}(\hat{r}_{j\tau}-r^{*})|
+=
+\displaystyle=
+g
+2
+​
+(
+j
+)
+​
+2
+j
++
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+^
+j
+​
+τ
+−
+r
+∗
+)
+|
+\displaystyle g_{2}(j)\frac{\sqrt{2}}{\sqrt{j}}+|(e_{x}-e_{y})^{T}(\hat{r}_{j\tau}-r^{*})|
+≤
+(
+2
+)
+\displaystyle\stackrel{{\scriptstyle(2)}}{{\leq}}
+g
+2
+​
+(
+j
+)
+​
+2
+j
++
+‖
+r
+^
+j
+​
+τ
+−
+r
+∗
+‖
+V
+j
+​
+τ
++
+1
+​
+‖
+e
+x
+−
+e
+y
+‖
+V
+j
+​
+τ
++
+1
+−
+1
+\displaystyle g_{2}(j)\frac{\sqrt{2}}{\sqrt{j}}+\|\hat{r}_{j\tau}-r^{*}\|_{V_{j\tau+1}}\|e_{x}-e_{y}\|_{V_{j\tau+1}^{-1}}
+≤
+(
+3
+)
+\displaystyle\stackrel{{\scriptstyle(3)}}{{\leq}}
+g
+2
+​
+(
+j
+)
+​
+2
+j
++
+g
+1
+​
+(
+j
+​
+τ
+)
+​
+‖
+e
+x
+−
+e
+y
+‖
+V
+j
+​
+τ
++
+1
+−
+1
+\displaystyle g_{2}(j)\frac{\sqrt{2}}{\sqrt{j}}+g_{1}(j\tau)\|e_{x}-e_{y}\|_{V_{j\tau+1}^{-1}}
+Inequality (1) holds because the Eq. (
+23
+); inequality (2) is due to the Cauchy-Schwartz inequality, where
+V
+j
+​
+τ
++
+1
+V_{j\tau+1}
+is a positive definite matrix with probability at least
+1
+−
+1
+T
+2
+1-\frac{1}{T^{2}}
+. (3) holds from the Eq. (
+24
+).
+∎
+See
+3
+Proof of Lemma
+3
+.
+Following the proof of Lemma
+2
+, for any
+j
+≥
+1
+j\geq 1
+we have that:
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+¯
+j
+−
+r
+∗
+)
+|
+≤
+\displaystyle|(e_{x}-e_{y})^{T}(\bar{r}_{j}-r^{*})|\leq
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+¯
+j
+−
+r
+^
+j
+​
+τ
+)
+|
++
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+^
+j
+​
+τ
+−
+r
+∗
+)
+|
++
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+∗
+−
+r
+^
+t
+−
+1
+)
+|
++
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+^
+t
+−
+1
+−
+r
+∗
+)
+|
+\displaystyle|(e_{x}-e_{y})^{T}(\bar{r}_{j}-\hat{r}_{j\tau})|+|(e_{x}-e_{y})^{T}(\hat{r}_{j\tau}-r^{*})|+|(e_{x}-e_{y})^{T}(r^{*}-\hat{r}_{t-1})|+|(e_{x}-e_{y})^{T}(\hat{r}_{t-1}-r^{*})|
+(26)
+≤
+\displaystyle{\leq}
+2
+​
+τ
+α
+​
+1
++
+log
+⁡
+j
+j
++
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+^
+j
+​
+τ
+−
+r
+∗
+)
+|
++
+2
+​
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+^
+t
+−
+1
+−
+r
+∗
+)
+|
+\displaystyle\sqrt{2}\frac{\tau}{\alpha}\sqrt{\frac{1+\log j}{j}}+|(e_{x}-e_{y})^{T}(\hat{r}_{j\tau}-{r}^{*})|+2|(e_{x}-e_{y})^{T}(\hat{r}_{t-1}-r^{*})|
+≤
+(
+1
+)
+\displaystyle\stackrel{{\scriptstyle(1)}}{{\leq}}
+g
+2
+​
+(
+j
+)
+​
+2
+j
++
+‖
+r
+^
+j
+​
+τ
+−
+r
+∗
+‖
+V
+j
+​
+τ
++
+1
+​
+‖
+e
+x
+−
+e
+y
+‖
+V
+j
+​
+τ
++
+1
+−
+1
++
+‖
+r
+^
+t
+−
+r
+∗
+‖
+V
+t
+​
+‖
+e
+x
+−
+e
+y
+‖
+V
+t
+−
+1
+\displaystyle g_{2}(j)\frac{\sqrt{2}}{\sqrt{j}}+\|\hat{r}_{j\tau}-r^{*}\|_{V_{j\tau+1}}\|e_{x}-e_{y}\|_{V_{j\tau+1}^{-1}}+\|\hat{r}_{t}-r^{*}\|_{V_{t}}\|e_{x}-e_{y}\|_{V_{t}^{-1}}
+≤
+(
+2
+)
+\displaystyle\stackrel{{\scriptstyle(2)}}{{\leq}}
+g
+2
+​
+(
+j
+)
+​
+2
+j
++
+g
+1
+​
+(
+j
+​
+τ
+)
+​
+‖
+e
+x
+−
+e
+y
+‖
+V
+j
+​
+τ
++
+1
+−
+1
++
+2
+​
+g
+1
+​
+(
+t
+)
+​
+‖
+e
+x
+−
+e
+y
+‖
+V
+t
+−
+1
+\displaystyle g_{2}(j)\frac{\sqrt{2}}{\sqrt{j}}+g_{1}(j\tau)\|e_{x}-e_{y}\|_{V_{j\tau+1}^{-1}}+2g_{1}(t)\|e_{x}-e_{y}\|_{V_{t}^{-1}}
+≤
+(
+3
+)
+\displaystyle\stackrel{{\scriptstyle(3)}}{{\leq}}
+g
+2
+​
+(
+j
+)
+​
+2
+j
++
+g
+1
+​
+(
+j
+​
+τ
+)
+​
+2
+​
+n
+​
+j
+​
+τ
+​
+log
+⁡
+(
+(
+j
++
+1
+)
+​
+τ
++
+1
+n
+)
++
+2
+​
+g
+1
+​
+(
+t
+)
+​
+‖
+e
+x
+−
+e
+y
+‖
+V
+t
+−
+1
+\displaystyle g_{2}(j)\frac{\sqrt{2}}{\sqrt{j}}+g_{1}(j\tau)\sqrt{2nj\tau\log\left(\frac{(j+1)\tau+1}{n}\right)}+2g_{1}(t)\|e_{x}-e_{y}\|_{V_{t}^{-1}}
+≤
+\displaystyle{\leq}
+g
+2
+​
+(
+j
+)
+​
+2
+j
++
+g
+1
+​
+(
+T
+)
+​
+2
+​
+n
+​
+T
+​
+log
+⁡
+(
+T
++
+τ
+n
+)
++
+2
+​
+g
+1
+​
+(
+t
+)
+​
+‖
+e
+x
+−
+e
+y
+‖
+V
+t
+−
+1
+\displaystyle g_{2}(j)\frac{\sqrt{2}}{\sqrt{j}}+g_{1}(T)\sqrt{2nT\log\left(\frac{T+\tau}{n}\right)}+2g_{1}(t)\|e_{x}-e_{y}\|_{V_{t}^{-1}}
+Inequality (1) is due to the Cauchy-Schwartz inequality, where
+V
+j
+​
+τ
++
+1
+V_{j\tau+1}
+and
+V
+t
+V_{t}
+is a positive definite matrix with probability at least
+1
+−
+1
+T
+2
+1-\frac{1}{T^{2}}
+. (2) holds because the Eq. (
+24
+). (3) holds from the Lemma
+1
+.
+Define the constant
+C
+=
+2
+​
+n
+​
+T
+​
+log
+⁡
+(
+T
++
+τ
+n
+)
+C=\sqrt{2nT\log\left(\frac{T+\tau}{n}\right)}
+, the inequality
+|
+(
+e
+x
+−
+e
+y
+)
+T
+​
+(
+r
+¯
+j
+−
+r
+∗
+)
+|
+≤
+g
+2
+​
+(
+j
+)
+​
+2
+j
++
+g
+1
+​
+(
+T
+)
+​
+2
+​
+n
+​
+T
+​
+log
+⁡
+(
+T
++
+τ
+n
+)
++
+2
+​
+g
+1
+​
+(
+t
+)
+​
+‖
+e
+x
+−
+e
+y
+‖
+V
+t
+−
+1
+\left|(e_{x}-e_{y})^{T}\left(\bar{r}_{j}-r^{*}\right)\right|\leq g_{2}(j)\frac{\sqrt{2}}{\sqrt{j}}+g_{1}(T)\sqrt{2nT\log\left(\frac{T+\tau}{n}\right)}+2g_{1}(t)\|e_{x}-e_{y}\|_{V_{t}^{-1}}
+holds with high probability as above derivation.
+This is equivalent to the following:
+(
+e
+y
+−
+e
+x
+∗
+)
+​
+(
+r
+¯
+j
+−
+r
+∗
+)
+≤
+g
+2
+​
+(
+j
+)
+​
+2
+j
++
+g
+1
+​
+(
+T
+)
+​
+C
++
+2
+​
+g
+1
+​
+(
+t
+)
+​
+‖
+e
+x
+−
+e
+y
+‖
+V
+t
+−
+1
+\displaystyle(e_{y}-e_{x^{*}})(\bar{r}_{j}-r^{*})\leq g_{2}(j)\frac{\sqrt{2}}{\sqrt{j}}+g_{1}(T)C+2g_{1}(t)\|e_{x}-e_{y}\|_{V_{t}^{-1}}
+(27)
+⇒
+\displaystyle\Rightarrow
+(
+e
+x
+∗
+−
+e
+y
+)
+​
+(
+r
+¯
+j
+−
+r
+∗
+)
++
+2
+​
+g
+1
+​
+(
+t
+)
+​
+‖
+e
+x
+∗
+−
+e
+y
+‖
+V
+t
+−
+1
++
+g
+2
+​
+(
+j
+)
+​
+2
+j
++
+g
+1
+​
+(
+T
+)
+​
+C
+≥
+0
+\displaystyle(e_{x^{*}}-e_{y})(\bar{r}_{j}-r^{*})+2g_{1}(t)\|e_{x^{*}}-e_{y}\|_{V_{t}^{-1}}+g_{2}(j)\sqrt{\frac{2}{j}}+g_{1}(T)C\geq 0
+⇒
+\displaystyle\Rightarrow
+r
+¯
+j
+​
+(
+x
+∗
+)
+−
+r
+¯
+j
+​
+(
+y
+)
+−
+r
+∗
+​
+(
+x
+∗
+)
++
+r
+∗
+​
+(
+y
+)
++
+2
+​
+g
+1
+​
+(
+t
+)
+​
+‖
+e
+x
+∗
+−
+e
+y
+‖
+V
+t
+−
+1
++
+g
+2
+​
+(
+j
+)
+​
+2
+j
++
+g
+1
+​
+(
+T
+)
+​
+C
+≥
+0
+\displaystyle\bar{r}_{j}(x^{*})-\bar{r}_{j}(y)-r^{*}(x^{*})+r^{*}(y)+2g_{1}(t)\|e_{x^{*}}-e_{y}\|_{V_{t}^{-1}}+g_{2}(j)\sqrt{\frac{2}{j}}+g_{1}(T)C\geq 0
+⇒
+\displaystyle\Rightarrow
+r
+¯
+j
+​
+(
+x
+∗
+)
+−
+r
+¯
+j
+​
+(
+y
+)
++
+g
+1
+​
+(
+t
+)
+​
+‖
+e
+x
+∗
+−
+e
+y
+‖
+V
+t
+−
+1
+≥
+r
+∗
+​
+(
+x
+∗
+)
+−
+r
+∗
+​
+(
+y
+)
+−
+g
+2
+​
+(
+j
+)
+​
+2
+j
+−
+g
+1
+​
+(
+T
+)
+​
+C
+\displaystyle\bar{r}_{j}(x^{*})-\bar{r}_{j}(y)+g_{1}(t)\|e_{x^{*}}-e_{y}\|_{V_{t}^{-1}}\geq r^{*}(x^{*})-r^{*}(y)-g_{2}(j)\sqrt{\frac{2}{j}}-g_{1}(T)C
+⇒
+\displaystyle\Rightarrow
+r
+¯
+j
+​
+(
+x
+∗
+)
+−
+r
+¯
+j
+​
+(
+y
+)
++
+g
+1
+​
+(
+t
+)
+​
+‖
+e
+x
+∗
+−
+e
+y
+‖
+V
+t
+−
+1
+≥
+r
+∗
+​
+(
+x
+∗
+)
+−
+r
+∗
+​
+(
+y
+)
+−
+τ
+α
+​
+1
++
+log
+⁡
+j
+​
+2
+j
+−
+g
+1
+​
+(
+T
+)
+​
+C
+\displaystyle\bar{r}_{j}(x^{*})-\bar{r}_{j}(y)+g_{1}(t)\|e_{x^{*}}-e_{y}\|_{V_{t}^{-1}}\geq r^{*}(x^{*})-r^{*}(y)-\frac{\tau}{\alpha}\sqrt{1+\log j}\sqrt{\frac{2}{j}}-g_{1}(T)C
+⇒
+(
+1
+)
+\displaystyle\stackrel{{\scriptstyle(1)}}{{\Rightarrow}}
+h
+⁡
+(
+x
+∗
+,
+y
+)
+≥
+r
+∗
+​
+(
+x
+∗
+)
+−
+r
+∗
+​
+(
+y
+)
+−
+τ
+α
+​
+1
++
+log
+⁡
+j
+​
+2
+j
+−
+g
+1
+​
+(
+j
+)
+​
+C
+\displaystyle h(x^{*},y)\geq r^{*}(x^{*})-r^{*}(y)-\frac{\tau}{\alpha}\sqrt{1+\log j}\sqrt{\frac{2}{j}}-g_{1}(j)C
+⇒
+(
+2
+)
+\displaystyle\stackrel{{\scriptstyle(2)}}{{\Rightarrow}}
+h
+⁡
+(
+x
+∗
+,
+y
+)
+≥
+Δ
+−
+τ
+α
+​
+1
++
+log
+⁡
+j
+​
+2
+j
+−
+g
+1
+​
+(
+j
+)
+​
+C
+≥
+(
+3
+)
+0
+\displaystyle h(x^{*},y)\geq\Delta-\frac{\tau}{\alpha}\sqrt{1+\log j}\sqrt{\frac{2}{j}}-g_{1}(j)C\stackrel{{\scriptstyle(3)}}{{\geq}}0
+⇒
+\displaystyle\stackrel{{\scriptstyle}}{{\Rightarrow}}
+h
+⁡
+(
+x
+∗
+,
+y
+)
+≥
+0
+.
+\displaystyle h(x^{*},y)\geq 0.
+Inequality (1) holds for
+γ
+=
+2
+​
+g
+1
+​
+(
+t
+)
+\gamma=2g_{1}(t)
+and the definition of
+h
+⁡
+(
+x
+,
+y
+)
+h(x,y)
+in Eq. (
+9
+); (2) follows from
+Δ
+\Delta
+is the difference between optimal and sub-optimal arms, so
+∀
+y
+∈
+[
+n
+]
+/
+x
+∗
+,
+Δ
+≤
+r
+∗
+​
+(
+x
+∗
+)
+−
+r
+∗
+​
+(
+y
+)
+\forall y\in[n]/{x^{*}},\ \Delta\leq r^{*}(x^{*})-r^{*}(y)
+. (3) holds when
+α
+≥
+2
+​
+τ
+​
+1
++
+log
+⁡
+j
+(
+Δ
+−
+g
+1
+​
+(
+j
+)
+​
+C
+)
+​
+j
+\alpha\geq\frac{\sqrt{2}\tau\sqrt{1+\log j}}{(\Delta-g_{1}(j)C)\sqrt{j}}
+and
+Δ
+>
+g
+1
+​
+(
+j
+)
+​
+C
+\Delta>g_{1}(j)C
+.
+∎
+Proofs of Theorem
+1
+Proof of theorem
+1
+.
+We use
+b
+t
+b_{t}
+to denote the regret at round
+t
+t
+and recall that
+b
+t
+=
+r
+x
+∗
+∗
+−
+1
+2
+​
+(
+r
+x
+t
+∗
++
+r
+y
+t
+∗
+)
+=
+(
+e
+x
+∗
+−
+e
+x
+t
+)
+T
+​
+r
+∗
++
+(
+e
+x
+∗
+−
+e
+y
+t
+)
+T
+​
+r
+∗
+2
+,
+b_{t}=r^{*}_{x^{*}}-\frac{1}{2}(r^{*}_{x_{t}}+r^{*}_{y_{t}})=\frac{(e_{x^{*}}-e_{x_{t}})^{T}r^{*}+(e_{x^{*}}-e_{y_{t}})^{T}r^{*}}{2},
+and the index of batch is
+j
+=
+⌊
+(
+t
+−
+1
+)
+/
+τ
+⌋
+j=\lfloor(t-1)/\tau\rfloor
+.
+Then we have that when
+t
+>
+τ
+t>\tau
+:
+2
+​
+b
+t
+\displaystyle 2b_{t}
+=
+(
+e
+x
+∗
+−
+e
+x
+t
+)
+T
+​
+r
+∗
++
+(
+e
+x
+∗
+−
+e
+y
+t
+)
+T
+​
+r
+∗
+\displaystyle=\left(e_{x^{*}}-e_{x_{t}}\right)^{T}{r}^{*}+\left(e_{x^{*}}-e_{y_{t}}\right)^{T}r^{*}
+(28)
+=
+(
+e
+x
+∗
+−
+e
+x
+t
+)
+T
+​
+r
+¯
+j
++
+(
+e
+x
+∗
+−
+e
+x
+t
+)
+T
+​
+(
+r
+∗
+−
+r
+¯
+j
+)
+\displaystyle=\left(e_{x^{*}}-e_{x_{t}}\right)^{T}\bar{r}_{j}+\left(e_{x^{*}}-e_{x_{t}}\right)^{T}\left(r^{*}-\bar{r}_{j}\right)
++
+(
+e
+x
+∗
+−
+e
+y
+t
+)
+T
+​
+r
+¯
+j
++
+(
+e
+x
+∗
+−
+e
+y
+t
+)
+T
+​
+(
+r
+∗
+−
+r
+¯
+j
+)
+\displaystyle+\left(e_{x^{*}}-e_{y_{t}}\right)^{T}\bar{r}_{j}+\left(e_{x^{*}}-e_{y_{t}}\right)^{T}\left(r^{*}-\bar{r}_{j}\right)
+≤
+(
+1
+)
+γ
+​
+‖
+e
+x
+∗
+−
+e
+x
+t
+‖
+V
+t
+−
+1
++
+(
+e
+x
+∗
+−
+e
+x
+t
+)
+T
+​
+(
+r
+∗
+−
+r
+¯
+j
+)
+\displaystyle\stackrel{{\scriptstyle(1)}}{{\leq}}\gamma\left\|e_{x^{*}}-e_{x_{t}}\right\|_{V_{t}^{-1}}+\left(e_{x^{*}}-e_{x_{t}}\right)^{T}\left(r^{*}-\bar{r}_{j}\right)
++
+γ
+​
+‖
+e
+x
+∗
+−
+e
+y
+t
+‖
+V
+t
+−
+1
++
+(
+e
+x
+∗
+−
+e
+y
+t
+)
+T
+​
+(
+r
+∗
+−
+r
+¯
+j
+)
+\displaystyle+\gamma\left\|e_{x^{*}}-e_{y_{t}}\right\|_{V_{t}^{-1}}+\left(e_{x^{*}}-e_{y_{t}}\right)^{T}\left(r^{*}-\bar{r}_{j}\right)
+≤
+(
+2
+)
+γ
+​
+‖
+e
+x
+∗
+−
+e
+x
+t
+‖
+V
+t
+−
+1
++
+g
+1
+​
+(
+j
+​
+τ
+)
+​
+‖
+e
+x
+∗
+−
+e
+x
+t
+‖
+V
+j
+​
+τ
++
+1
+−
+1
++
+g
+2
+​
+(
+j
+)
+​
+2
+j
+\displaystyle\stackrel{{\scriptstyle(2)}}{{\leq}}\gamma\left\|e_{x^{*}}-e_{x_{t}}\right\|_{V_{t}^{-1}}+g_{1}(j\tau)\|e_{x^{*}}-e_{x_{t}}\|_{V_{j\tau+1}^{-1}}+g_{2}(j)\frac{2}{\sqrt{j}}
++
+γ
+​
+‖
+e
+x
+∗
+−
+e
+y
+t
+‖
+V
+t
+−
+1
++
+g
+1
+​
+(
+j
+​
+τ
+)
+​
+‖
+e
+x
+∗
+−
+e
+y
+t
+‖
+V
+j
+​
+τ
++
+1
+−
+1
++
+g
+2
+​
+(
+j
+)
+​
+2
+j
+\displaystyle+\gamma\left\|e_{x^{*}}-e_{y_{t}}\right\|_{V_{t}^{-1}}+g_{1}(j\tau)\|e_{x^{*}}-e_{y_{t}}\|_{V_{j\tau+1}^{-1}}+g_{2}(j)\frac{2}{\sqrt{j}}
+≤
+(
+3
+)
+γ
+​
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+t
+−
+1
++
+g
+1
+​
+(
+j
+​
+τ
+)
+​
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+j
+​
+τ
++
+1
+−
+1
++
+g
+2
+​
+(
+j
+)
+​
+2
+j
+\displaystyle\stackrel{{\scriptstyle(3)}}{{\leq}}\gamma\left\|e_{x_{t}}-e_{y_{t}}\right\|_{V_{t}^{-1}}+g_{1}(j\tau)\|e_{x_{t}}-e_{y_{t}}\|_{V_{j\tau+1}^{-1}}+g_{2}(j)\frac{2}{\sqrt{j}}
++
+γ
+​
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+t
+−
+1
++
+g
+1
+​
+(
+j
+​
+τ
+)
+​
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+j
+​
+τ
++
+1
+−
+1
++
+g
+2
+​
+(
+j
+)
+​
+2
+j
+\displaystyle+\gamma\left\|e_{x_{t}}-e_{y_{t}}\right\|_{V_{t}^{-1}}+g_{1}(j\tau)\|e_{x_{t}}-e_{y_{t}}\|_{V_{j\tau+1}^{-1}}+g_{2}(j)\frac{2}{\sqrt{j}}
+Inequality (1) holds for
+x
+t
+,
+y
+t
+x_{t},y_{t}
+belong to candidate set
+𝒮
+\mathcal{S}
+, inequality (2) holds with probability at least
+1
+−
+5
+T
+2
+1-\frac{5}{T^{2}}
+following from Lemma
+2
+.
+Inequality (3) holds according to Lemma
+3
+where
+we have
+x
+∗
+∈
+𝒮
+x^{*}\in\mathcal{S}
+with probability at least
+1
+−
+5
+T
+2
+1-\frac{5}{T^{2}}
+and our arm-pair selection strategy.
+By above analysis, we have Eq. (
+28
+) holds with probability at least
+1
+−
+10
+T
+2
+1-\frac{10}{T^{2}}
+at each round
+t
+t
+.
+Next, we give the results on cumulative regret bound:
+R
+⁡
+(
+T
+)
+\displaystyle R(T)
+=
+∑
+t
+=
+1
+τ
+b
+t
++
+∑
+t
+=
+τ
++
+1
+T
+b
+t
+\displaystyle=\sum_{t=1}^{\tau}b_{t}+\sum_{t=\tau+1}^{T}b_{t}
+(29)
+≤
+(
+1
+)
+τ
+∗
+Δ
+max
++
+∑
+t
+=
+τ
++
+1
+T
+b
+t
+\displaystyle\stackrel{{\scriptstyle(1)}}{{\leq}}\tau*\Delta_{\max}+\sum_{t=\tau+1}^{T}b_{t}
+≤
+(
+2
+)
+τ
+∗
+Δ
+max
++
+∑
+t
+=
+τ
++
+1
+T
+1
+2
+[
+γ
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+t
+−
+1
++
+g
+1
+(
+j
+τ
+)
+∥
+e
+x
+t
+−
+e
+y
+t
+∥
+V
+j
+​
+τ
++
+1
+−
+1
++
+g
+2
+(
+j
+)
+2
+j
+\displaystyle\stackrel{{\scriptstyle(2)}}{{\leq}}\tau*\Delta_{\max}+\sum_{t=\tau+1}^{T}\frac{1}{2}\big[\gamma\left\|e_{x_{t}}-e_{y_{t}}\right\|_{V_{t}^{-1}}+g_{1}(j\tau)\|e_{x_{t}}-e_{y_{t}}\|_{V_{j\tau+1}^{-1}}+g_{2}(j)\frac{2}{\sqrt{j}}
++
+γ
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+t
+−
+1
++
+g
+1
+(
+j
+τ
+)
+∥
+e
+x
+t
+−
+e
+y
+t
+∥
+V
+j
+​
+τ
++
+1
+−
+1
++
+g
+2
+(
+j
+)
+2
+j
+]
+\displaystyle+\gamma\left\|e_{x_{t}}-e_{y_{t}}\right\|_{V_{t}^{-1}}+g_{1}(j\tau)\|e_{x_{t}}-e_{y_{t}}\|_{V_{j\tau+1}^{-1}}+g_{2}(j)\frac{2}{\sqrt{j}}\big]
+≤
+(
+3
+)
+τ
+∗
+Δ
+max
++
+∑
+t
+=
+τ
++
+1
+T
+γ
+​
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+t
+−
+1
++
+τ
+​
+∑
+t
+=
+τ
++
+1
+T
+g
+1
+​
+(
+t
+−
+1
+)
+​
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+t
+−
+1
++
+2
+​
+g
+2
+​
+(
+j
+)
+​
+∑
+t
+=
+τ
++
+1
+T
+1
+j
+\displaystyle\stackrel{{\scriptstyle(3)}}{{\leq}}\tau*\Delta_{\max}+\sum_{t=\tau+1}^{T}\gamma\left\|e_{x_{t}}-e_{y_{t}}\right\|_{V_{t}^{-1}}+\tau\sum_{t=\tau+1}^{T}g_{1}(t-1)\|e_{x_{t}}-e_{y_{t}}\|_{V_{t}^{-1}}+2g_{2}(j)\sum_{t=\tau+1}^{T}\frac{1}{\sqrt{j}}
+≤
+(
+4
+)
+τ
+∗
+Δ
+max
++
+2
+​
+g
+1
+​
+(
+T
+)
+​
+2
+​
+n
+​
+T
+​
+log
+⁡
+(
+τ
++
+T
+n
+)
++
+τ
+​
+g
+1
+​
+(
+T
+)
+​
+2
+​
+n
+​
+T
+​
+log
+⁡
+(
+τ
++
+T
+n
+)
++
+2
+​
+g
+2
+​
+(
+J
+)
+​
+∑
+t
+=
+τ
++
+1
+T
+1
+j
+\displaystyle\stackrel{{\scriptstyle(4)}}{{\leq}}\tau*\Delta_{\max}+2g_{1}(T)\sqrt{2nT\log(\frac{\tau+T}{n})}+\tau g_{1}(T){\sqrt{2nT\log\left(\frac{\tau+T}{n}\right)}}+2g_{2}(J)\sum_{t=\tau+1}^{T}\frac{1}{\sqrt{j}}
+≤
+(
+5
+)
+τ
+∗
+Δ
+max
++
+(
+2
++
+τ
+)
+​
+g
+1
+​
+(
+T
+)
+​
+2
+​
+n
+​
+T
+​
+log
+⁡
+(
+τ
++
+T
+n
+)
++
+4
+​
+g
+2
+​
+(
+J
+)
+​
+τ
+​
+T
+\displaystyle\stackrel{{\scriptstyle(5)}}{{\leq}}\tau*\Delta_{\max}+(2+\tau)g_{1}(T)\sqrt{2nT\log(\frac{\tau+T}{n})}+4g_{2}(J)\sqrt{\tau T}
+∎
+Inequality (1) holds because
+Δ
+max
+=
+max
+i
+⁡
+r
+i
+∗
+−
+min
+i
+⁡
+r
+i
+∗
+\Delta_{\max}=\max_{i}r^{*}_{i}-\min_{i}r^{*}_{i}
+. As the Eq. (
+29
+), (2) holds with probability at least
+1
+−
+10
+T
+1-\frac{10}{T}
+by the union bound. Consider that there are
+τ
+\tau
+exploration tracks with length
+T
+T
+and we only use the nodes at
+j
+​
+τ
+j\tau
+, thus (3) holds due to
+∑
+t
+=
+τ
++
+1
+T
+g
+1
+​
+(
+j
+​
+τ
+)
+​
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+j
+​
+τ
++
+1
+−
+1
+≤
+∑
+t
+=
+τ
++
+1
+T
+g
+1
+​
+(
+t
+−
+1
+)
+​
+‖
+e
+x
+t
+−
+e
+y
+t
+‖
+V
+t
+−
+1
+\sum_{t=\tau+1}^{T}g_{1}(j\tau)\|e_{x_{t}}-e_{y_{t}}\|_{V_{j\tau+1}^{-1}}\leq\sum_{t=\tau+1}^{T}g_{1}(t-1)\|e_{x_{t}}-e_{y_{t}}\|_{V_{t}^{-1}}
+, where
+j
+=
+⌊
+t
+−
+1
+τ
+⌋
+j=\lfloor\frac{t-1}{\tau}\rfloor
+. As the analysis in the proof of Lemma
+2
+,
+λ
+m
+​
+i
+​
+n
+​
+(
+V
+τ
++
+1
+)
+≥
+1
+\lambda_{min}(V_{\tau+1})\geq 1
+holds with probability at least
+1
+−
+1
+T
+2
+1-\frac{1}{T^{2}}
+, then we have
+∑
+i
+=
+τ
++
+1
+t
+‖
+(
+e
+x
+i
+−
+e
+y
+i
+)
+‖
+V
+i
+−
+1
+≤
+2
+​
+n
+​
+t
+​
+log
+⁡
+(
+2
+​
+τ
++
+t
+n
+)
+\sum_{i=\tau+1}^{t}\left\|\left(e_{x_{i}}-e_{y_{i}}\right)\right\|_{V_{i}^{-1}}\leq\sqrt{2nt\log\left(\frac{2\tau+t}{n}\right)}
+by the Lemma
+1
+. Also because the
+MaxIn-Elo
+sets
+γ
+=
+2
+​
+g
+1
+​
+(
+t
+)
+\gamma=2g_{1}(t)
+,
+J
+=
+⌊
+T
+τ
+⌋
+J=\lfloor\frac{T}{\tau}\rfloor
+, thus (4) holds.
+(5) holds because
+∑
+t
+=
+τ
++
+1
+T
+1
+j
+≤
+2
+​
+τ
+​
+T
+\sum_{t=\tau+1}^{T}\frac{1}{\sqrt{j}}\leq 2\sqrt{\tau T}
+see Eq. (21) in the Appendix of
+(
+Ding, Hsieh, and Sharpnack 2021
+)
+.
+Thus the proof of Theorem
+1
+is completed.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

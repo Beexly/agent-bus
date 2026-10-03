@@ -1,0 +1,6021 @@
+Multiresolution Tensor Learning for Efficient
+and Interpretable Spatial Analysis
+Jung Yeon Park
+Affiliation:
+Khoury College of Computer Sciences, Northeastern University, Boston, MA, USA.
+Kenneth Theo Carr
+Affiliation:
+Khoury College of Computer Sciences, Northeastern University, Boston, MA, USA.
+Stephan Zheng
+Affiliation:
+Salesforce AI Research, Palo Alto, CA, USA. Work done while at California Institute of Technology.
+Yisong Yue
+Affiliation:
+Department of Computing and Mathematical Sciences, California Institute of Technology, Pasadena, CA, USA.
+Rose Yu
+Affiliation:
+Khoury College of Computer Sciences, Northeastern University, Boston, MA, USA.
+Affiliation:
+Computer Science and Engineering, University of California, San Diego, San Diego, CA, USA.
+Abstract
+Efficient and interpretable spatial analysis is crucial in many fields such as geology, sports, and climate science. Tensor latent factor models can describe higher-order correlations for spatial data. However, they are computationally expensive to train and are sensitive to initialization, leading to spatially incoherent, uninterpretable results. We develop a novel Multiresolution Tensor Learning (
+MRTL
+) algorithm for efficiently learning interpretable spatial patterns.
+MRTL
+initializes the latent factors from an approximate full-rank tensor model for improved interpretability and progressively learns from a coarse resolution to the fine resolution to reduce computation. We also prove the theoretical convergence and computational complexity of
+MRTL
+. When applied to two real-world datasets,
+MRTL
+demonstrates
+4
+∼
+5
+4\sim 5
+x speedup compared to a fixed resolution approach while yielding accurate and interpretable latent factors.
+Keywords:
+Tensor models, multiresolution, multigrid, latent factors, spatial analysis
+1
+Introduction
+Analyzing large-scale spatial data plays a critical role in sports, geology, and climate science. In spatial statistics, kriging or Gaussian processes are popular tools for spatial analysis
+(
+Cressie 1992
+)
+. Others have proposed various Bayesian methods such as Cox processes
+(
+Miller et al. 2014
+;
+Dieng et al. 2017
+)
+to model spatial data. However, while mathematically appealing, these methods often have difficulties scaling to high-resolution data.
+Figure 1
+:
+Latent factors: random (left) vs. good (right) initialization. Latent factors vary in interpretability depending on initialization.
+We are interested in learning high-dimensional tensor latent factor models, which have shown to be a scalable alternative for spatial analysis
+(
+Yu et al. 2018
+;
+Litvinenko et al. 2019
+)
+. High resolution spatial data often contain higher-order correlations between features and locations, and tensors can naturally encode such multi-way correlations.
+For example, in competitive basketball play, we can predict how each player’s decision to shoot is jointly influenced by their shooting style, his or her court position, and the position of the defenders by simultaneously encoding these features as a tensor. Using such representations, learning tensor latent factors can directly extract higher-order correlations.
+A challenge in such models is high computational cost. High-resolution spatial data is often discretized, leading to large high-dimensional tensors whose training scales exponentially with the number of parameters. Low-rank tensor learning
+(
+Yu et al. 2018
+;
+Kossaifi et al. 2019
+)
+reduces the dimensionality by assuming low-rank structures in the data and uses tensor decomposition to discover latent semantics; for an overview of tensor learning, see review papers
+(
+Kolda & Bader 2009
+;
+Sidiropoulos et al. 2017
+)
+. However, many tensor learning methods have been shown to be sensitive to noise
+(
+Cheng et al. 2016
+)
+and initialization
+(
+Anandkumar et al. 2014
+)
+. Other numerical techniques, including random sketching
+(
+Wang et al. 2015
+;
+Haupt et al. 2017
+)
+and parallelization,
+(
+Austin et al. 2016
+;
+Li et al. 2017a
+)
+can speed up training, but they often fail to utilize the unique properties of spatial data such as spatial auto-correlations.
+Using latent factor models also gives rise to another issue: interpretability. It is well known that a latent factor model is generally not identifiable
+(
+Allman et al. 2009
+)
+, leading to uninterpretable factors that do not offer insights to domain experts. In general, the definition of interpretability is highly application dependent
+(
+Doshi-Velez & Kim 2017
+)
+. For spatial analysis, one of the unique properties of spatial patterns is
+spatial auto-correlation
+: close objects have similar values
+(
+Moran 1950
+)
+, which we use as a criterion for interpretability. As latent factor models are sensitive to initialization, previous research
+(
+Miller et al. 2014
+;
+Yue et al. 2014
+)
+has shown that randomly initialized latent factor models can lead to spatial patterns that violate spatial auto-correlation and hence are not interpretable (see Fig.
+1
+).
+In this paper, we propose a Multiresolution Tensor Learning algorithm,
+MRTL
+, to efficiently learn accurate and interpretable patterns in spatial data.
+MRTL
+is based on two key insights. First, to obtain good initialization, we train a full-rank tensor model approximately at a low resolution and use tensor decomposition to produce latent factors. Second, we exploit spatial auto-correlation to learn models at multiple resolutions: we train starting from a coarse resolution and iteratively finegrain to the next resolution.
+We provide theoretical analysis and prove the convergence properties and computational complexity of
+MRTL
+.
+We demonstrate on two real-world datasets that this approach is significantly faster than fixed resolution methods.
+We develop several finegraining criteria to determine when to finegrain. We also consider different interpolation schemes and discuss how to finegrain in different applications. The code for our implementation is available
+1
+1
+1
+https://github.com/Rose-STL-Lab/mrtl
+.
+In summary, we:
+•
+propose a Multiresolution Tensor Learning (
+MRTL
+) optimization algorithm for large-scale spatial analysis.
+•
+prove the rate of convergence for
+MRTL
+which depends on the spectral norm of the interpolation operator. We also show the exponential computational speedup for
+MRTL
+compared with fixed resolution.
+•
+develop different criteria to determine when to transition to a finer resolution and discuss different finegraining methods.
+•
+evaluate on two real-world datasets and show
+MRTL
+learns faster than fixed-resolution learning and can produce interpretable latent factors.
+2
+Related Work.
+Spatial Analysis
+Discovering spatial patterns has significant implications in scientific fields such as human behavior modeling, neural science, and climate science. Early work in spatial statistics has contributed greatly to spatial analysis through the work in Moran’s I
+(
+Moran 1950
+)
+and Getis-Ord general G
+(
+Getis & Ord 1992
+)
+for measuring spatial auto-correlation. Geographically weighted regression
+(
+Brunsdon et al. 1998
+)
+accounts for the spatial heterogeneity with a local version of spatial regression but fails to capture higher order correlation. Kriging or Gaussian processes are popular tools for spatial analysis but they often require carefully designed variograms (also known as kernels)
+(
+Cressie 1992
+)
+. Other Bayesian hierarchical models favor spatial point processes to model spatial data
+(
+Diggle et al. 2013
+;
+Miller et al. 2014
+;
+Dieng et al. 2017
+)
+. These frameworks are conceptually elegant but often computationally intractable.
+Tensor Learning
+Latent factor models utilize correlations in the data to reduce the dimensionality of the problem, and have been used extensively in multi-task learning
+(
+Romera-Paredes et al. 2013
+)
+and recommendation systems
+(
+Lee & Seung 2001
+)
+. Tensor learning
+(
+Zhou et al. 2013
+;
+Bahadori et al. 2014
+;
+Haupt et al. 2017
+)
+uses tensor latent factor models to learn higher-order correlations in the data in a supervised fashion. In particular, tensor latent factor models aim to learn the higher-order correlations in spatial data by assuming low-dimensional representations among features and locations.
+However, high-order tensor models are non-convex by nature, suffer from the curse of dimensionality, and are notoriously hard to train
+(
+Kolda & Bader 2009
+;
+Sidiropoulos et al. 2017
+)
+.
+There are many efforts to scale up tensor computation, e.g., parallelization
+(
+Austin et al. 2016
+)
+and sketching
+(
+Wang et al. 2015
+;
+Haupt et al. 2017
+;
+Li et al. 2017b
+)
+. In this work, we propose an optimization algorithm to learn tensor models at multiple resolutions that is not only fast but can also generate interpretable factors. We focus on tensor latent factor models for their wide applicability to spatial analysis and interpretability. While deep neural networks models can be more accurate, they are computationally more expensive and are difficult to interpret.
+Multiresolution Methods
+Multiresolution methods have been applied successfully in machine learning, both in latent factor modeling
+(
+Kondor et al. 2014
+;
+Ozdemir et al. 2017
+)
+and deep learning
+(
+Reed et al. 2017
+;
+Serban et al. 2017
+)
+. For example, multiresolution matrix factorization
+(
+Kondor et al. 2014
+;
+Ding et al. 2017
+)
+and its higher order extensions
+(
+Schifanella et al. 2014
+;
+Ozdemir et al. 2017
+;
+Han & Dunson 2018
+)
+apply multi-level orthogonal operators to uncover the multiscale structure in a single matrix. In contrast, our method aims to speed up learning by exploiting the relationship among multiple tensors of different resolutions. Our approach resembles the multigrid method in numerical analysis for solving partial differential equations
+(
+Trottenberg et al. 2000
+;
+Hiptmair 1998
+)
+, where the idea is to accelerate iterative algorithms by solving a coarse problem first and then gradually finegraining the solution.
+3
+Tensor Models for Spatial Data
+We consider tensor learning in the supervised setting. We describe both models for the full-rank case and the low-rank case. An order-3 tensor is used for ease of illustration but our model covers higher order cases.
+3.1
+Full Rank Tensor Models
+Given input data consisting of both non-spatial and spatial features, we can discretize the spatial features at
+r
+=
+1
+,
+…
+,
+R
+r=1,\dots,R
+resolutions, with corresponding dimensions as
+D
+1
+,
+…
+,
+D
+R
+D_{1},\dots,D_{R}
+.
+Tensor learning parameterizes the model with a weight tensor
+𝒲
+(
+r
+)
+∈
+ℝ
+I
+×
+F
+×
+D
+r
+{\mathcal{W}}^{(r)}\in\mathbb{R}^{I\times F\times D_{r}}
+over all features, where
+I
+I
+is number of outputs and
+F
+F
+is number of non-spatial features. The input data is of the form
+𝒳
+(
+r
+)
+∈
+ℝ
+I
+×
+F
+×
+D
+r
+{\mathcal{X}}^{(r)}\in\mathbb{R}^{I\times F\times D_{r}}
+. Note that both the input features and the learning model are resolution dependent.
+𝒴
+i
+∈
+ℝ
+,
+i
+=
+1
+,
+…
+,
+I
+{\mathcal{Y}}_{i}\in\mathbb{R},i=1,\dots,I
+is the label for output
+i
+i
+.
+At resolution
+r
+r
+, the full rank tensor learning model can be written as
+𝒴
+i
+=
+a
+⁡
+(
+∑
+f
+=
+1
+F
+∑
+d
+=
+1
+D
+r
+𝒲
+i
+,
+f
+,
+d
+(
+r
+)
+​
+𝒳
+i
+,
+f
+,
+d
+(
+r
+)
++
+b
+i
+)
+​
+,
+\displaystyle{\mathcal{Y}}_{i}=a\left(\sum_{f=1}^{F}\sum_{d=1}^{D_{r}}{\mathcal{W}}_{i,f,d}^{(r)}{\mathcal{X}}^{(r)}_{i,f,d}+b_{i}\right)\text{,}
+(1)
+where
+a
+a
+is the activation function and
+b
+i
+b_{i}
+is the bias for output
+i
+i
+. The weight tensor
+𝒲
+{\mathcal{W}}
+is contracted with
+𝒳
+{\mathcal{X}}
+along the non-spatial mode
+f
+f
+and the spatial mode
+d
+d
+. In general, Eqn. (
+1
+) can be extended to multiple spatial features and spatial modes, each of which can have its own set of resolution-dependent dimensions. We use a sigmoid activation function for the classification task and the identity activation function for regression.
+3.2
+Low Rank Tensor Model
+Low rank tensor models assume a low-dimensional latent structure in
+𝒲
+{\mathcal{W}}
+which can characterize distinct patterns in the data and also alleviate model overfitting. To transform the learned tensor model to a low-rank one, we use CANDECOMP/PARAFAC (CP) decomposition
+(
+Hitchcock 1927
+)
+on
+𝒲
+{\mathcal{W}}
+, which assumes that
+𝒲
+{\mathcal{W}}
+can be represented as the sum of rank-1 tensors. Our method can easily be extended for other decompositions as well.
+Let
+K
+K
+be the CP rank of the tensor. In practice,
+K
+K
+cannot be found analytically and is often chosen to sufficiently approximate the dataset. The weight tensor
+𝒲
+(
+r
+)
+{\mathcal{W}}^{(r)}
+is factorized into multiple factor matrices as
+𝒲
+i
+,
+f
+,
+d
+(
+r
+)
+=
+∑
+k
+=
+1
+K
+A
+i
+,
+k
+​
+B
+f
+,
+k
+​
+C
+d
+,
+k
+(
+r
+)
+{\mathcal{W}}_{i,f,d}^{(r)}=\sum_{k=1}^{K}A_{i,k}B_{f,k}C^{(r)}_{d,k}
+The tensor latent factor model is
+𝒴
+i
+=
+a
+⁡
+(
+∑
+f
+=
+1
+F
+∑
+d
+=
+1
+D
+r
+∑
+k
+=
+1
+K
+A
+i
+,
+k
+​
+B
+f
+,
+k
+​
+C
+d
+,
+k
+(
+r
+)
+​
+𝒳
+i
+,
+f
+,
+d
+(
+r
+)
++
+b
+i
+)
+​
+,
+\displaystyle{\mathcal{Y}}_{i}=a\left(\sum_{f=1}^{F}\sum_{d=1}^{D_{r}}\sum_{k=1}^{K}A_{i,k}B_{f,k}C^{(r)}_{d,k}{\mathcal{X}}^{(r)}_{i,f,d}+b_{i}\right)\text{,}
+(2)
+where the columns of
+A
+,
+B
+,
+C
+r
+A,B,C^{r}
+are latent factors for each mode of
+𝒲
+{\mathcal{W}}
+and
+C
+(
+r
+)
+C^{(r)}
+is resolution dependent.
+CP decomposition reduces dimensionality by assuming that
+A
+,
+B
+,
+C
+r
+A,B,C^{r}
+are uncorrelated, i.e. the features are uncorrelated. This is a reasonable assumption depending on how the features are chosen and leads to enhanced spatial interpretability as the learned spatial latent factors can show common patterns regardless of other features.
+3.3
+Spatial Regularization
+Interpretability is in general hard to define or quantify
+(
+Doshi-Velez & Kim 2017
+;
+Ribeiro et al. 2016
+;
+Lipton 2018
+;
+Molnar 2019
+)
+. In the context of spatial analysis, we deem a latent factor as interpretable if it produces a spatially coherent pattern exhibiting spatial auto-correlation. To this end, we utilize a spatial regularization kernel
+(
+Lotte & Guan 2010
+;
+Miller et al. 2014
+;
+Yue et al. 2014
+)
+and extend this to the tensor case.
+Let
+d
+=
+1
+,
+…
+,
+D
+r
+d=1,\dots,D_{r}
+index all locations of the spatial dimension for resolution
+r
+r
+. The spatial regularization term is:
+R
+s
+=
+∑
+d
+=
+1
+D
+r
+∑
+d
+′
+=
+1
+D
+r
+K
+d
+,
+d
+′
+∥
+𝒲
+:
+,
+:
+,
+d
+−
+𝒲
+:
+,
+:
+,
+d
+′
+∥
+F
+2
+,
+R_{s}=\sum_{d=1}^{D_{r}}\sum_{d^{\prime}=1}^{D_{r}}K_{d,d^{\prime}}\|{\mathcal{W}}_{:,:,d}-{\mathcal{W}}_{:,:,d^{\prime}}\|_{F}^{2}\text{ ,}
+(3)
+where
+∥
+⋅
+∥
+F
+\|\cdot\|_{F}
+denotes the Frobenius norm and
+K
+d
+,
+d
+′
+K_{d,d^{\prime}}
+is the kernel that controls the degree of similarity between locations. We use a simple RBF kernel with hyperparameter
+σ
+\sigma
+.
+K
+d
+,
+d
+′
+=
+e
+(
+−
+∥
+l
+d
+−
+l
+d
+′
+∥
+2
+/
+σ
+)
+,
+K_{d,d^{\prime}}=e^{(-\|l_{d}-l_{d^{\prime}}\|^{2}/\sigma)}\text{ ,}
+(4)
+where
+l
+d
+l_{d}
+denotes the location of index
+d
+d
+. The distances are normalized across resolutions such that the maximum distance between two locations is
+1
+1
+. The kernels can be precomputed for each resolution. If there are multiple spatial modes, we apply spatial regularization across all different modes. We additionally use
+L
+2
+L_{2}
+regularization to encourage smaller weights. The optimization objective function is
+f
+⁡
+(
+𝒲
+)
+=
+L
+⁡
+(
+𝒲
+,
+𝒳
+,
+𝒴
+)
++
+λ
+R
+​
+R
+​
+(
+𝒲
+)
+​
+,
+f({\mathcal{W}})=L({\mathcal{W}};{\mathcal{X}},{\mathcal{Y}})+\lambda_{R}R({\mathcal{W}})\text{ ,}
+(5)
+where
+L
+L
+is a task-dependent supervised learning loss,
+R
+⁡
+(
+𝒲
+)
+R({\mathcal{W}})
+is the sum of spatial and
+L
+2
+L_{2}
+regularization, and
+λ
+R
+\lambda_{R}
+is the regularization coefficient.
+4
+Multiresolution Tensor Learning
+We now describe our algorithm
+MRTL
+, which addresses both the computation and interpretability issues. Two key concepts of
+MRTL
+are learning good initializations and utilizing multiple resolutions.
+4.1
+Initialization
+In general, due to their nonconvex nature, tensor latent factor models are sensitive to initialization and can lead to uninterpretable latent factors
+(
+Miller et al. 2014
+;
+Yue et al. 2014
+)
+. We use full-rank initialization in order to learn latent factors that correspond to known spatial patterns.
+We first train an approximate full-rank version of the tensor model at a low resolution in Eqn. (
+1
+). The weight tensor is then decomposed into latent factors and these values are used to initialize the low-rank model. The low-rank model in Eqn. (
+2
+) is then trained to the final desired accuracy. As we use approximately optimal solutions of the full-rank model as initializations for the low-rank model, our algorithm produces interpretable latent factors in a variety of different scenarios and datasets.
+Full-rank initialization requires more computation than other simpler initialization methods. However, as the full-rank model is trained only for a small number of epochs, the increase in computation time is not substantial. We also train the full-rank model only at lower resolutions, for further reduction.
+Previous research
+(
+Yue et al. 2014
+)
+showed that spatial regularization alone is not enough to learn spatially coherent factors, whereas full-rank initialization, though computationally costly, is able to fix this issue. We confirm the same holds true in our experiments (see Section
+6.4
+). Thus, full-rank initialization is critical for spatial interpretability.
+4.2
+Multiresolution
+Learning a high-dimensional tensor model is generally computationally expensive and memory inefficient. We utilize multiple resolutions for this issue. We outline the procedure of
+MRTL
+in Alg.
+1
+, where we omit the bias term in the description for clarity.
+Algorithm 1
+Multiresolution Tensor Learning:
+MRTL
+1:
+Input: initialization
+𝒲
+0
+{\mathcal{W}}_{0}
+, data
+𝒳
+,
+𝒴
+{\mathcal{X}},{\mathcal{Y}}
+.
+2:
+Output: latent factors
+ℱ
+(
+r
+)
+{\mathcal{F}}^{(r)}
+3:
+# full rank tensor model
+4:
+for
+each resolution
+r
+∈
+{
+1
+,
+…
+,
+r
+0
+}
+r\in\left\{1,\ldots,r_{0}\right\}
+do
+5:
+Initialize
+t
+←
+0
+t\leftarrow 0
+6:
+Get a mini-batch
+ℬ
+{\mathcal{B}}
+from training set
+7:
+while
+stopping criterion not true
+do
+8:
+t
+←
+t
++
+1
+t\leftarrow t+1
+9:
+𝒲
+t
++
+1
+(
+r
+)
+←
+{\mathcal{W}}^{(r)}_{t+1}\leftarrow
+Opt
+(
+𝒲
+t
+(
+r
+)
+∣
+ℬ
+)
+\left({\mathcal{W}}^{(r)}_{t}\mid{\mathcal{B}}\right)
+10:
+end
+while
+11:
+𝒲
+(
+r
++
+1
+)
+{\mathcal{W}}^{(r+1)}
+=
+Finegrain
+(
+𝒲
+(
+r
+)
+)
+\left({\mathcal{W}}^{(r)}\right)
+12:
+end
+for
+13:
+# tensor decomposition
+14:
+ℱ
+(
+r
+0
+)
+←
+{\mathcal{F}}^{(r_{0})}\leftarrow
+CP_ALS
+(
+𝒲
+(
+r
+0
+)
+)
+\left({\mathcal{W}}^{(r_{0})}\right)
+15:
+# low rank tensor model
+16:
+for
+each resolution
+r
+∈
+{
+r
+0
+,
+…
+,
+R
+}
+r\in\left\{r_{0},\ldots,R\right\}
+do
+17:
+Initialize
+t
+←
+0
+t\leftarrow 0
+18:
+Get a mini-batch
+ℬ
+{\mathcal{B}}
+from training set
+19:
+while
+stopping criterion not true
+do
+20:
+t
+←
+t
++
+1
+t\leftarrow t+1
+21:
+ℱ
+t
++
+1
+(
+r
+)
+←
+{\mathcal{F}}^{(r)}_{t+1}\leftarrow
+Opt
+(
+ℱ
+t
+(
+r
+)
+∣
+ℬ
+)
+\left({\mathcal{F}}^{(r)}_{t}\mid{\mathcal{B}}\right)
+22:
+end
+while
+23:
+for
+each spatial factor
+n
+∈
+{
+1
+,
+⋯
+,
+N
+}
+n\in\{1,\cdots,N\}
+do
+24:
+ℱ
+(
+r
++
+1
+)
+,
+n
+{\mathcal{F}}^{(r+1),n}
+=
+Finegrain
+(
+ℱ
+(
+r
+)
+,
+n
+)
+\left({\mathcal{F}}^{(r),n}\right)
+25:
+end
+for
+26:
+end
+for
+We represent the resolution
+r
+r
+with superscripts and the iterate at step
+t
+t
+with subscripts, i.e.
+𝒲
+t
+(
+r
+)
+{\mathcal{W}}^{(r)}_{t}
+is
+𝒲
+{\mathcal{W}}
+at resolution
+r
+r
+at step
+t
+t
+.
+𝒲
+0
+{\mathcal{W}}_{0}
+is the initial weight tensor at the lowest resolution.
+ℱ
+(
+r
+)
+=
+(
+A
+,
+B
+,
+C
+(
+r
+)
+)
+{\mathcal{F}}^{(r)}=(A,B,C^{(r)})
+denotes all factor matrices at resolution
+r
+r
+and we use
+n
+n
+to index the factor
+ℱ
+(
+r
+)
+,
+n
+{\mathcal{F}}^{(r),n}
+.
+For efficiency, we train both the full rank and low rank models at multiple resolutions, starting from a coarse spatial resolution and progressively increase the resolution. At each resolution
+r
+r
+, we learn
+𝒲
+(
+r
+)
+{\mathcal{W}}^{(r)}
+using the stochastic optimization algorithm of choice
+Opt
+(we used Adam
+(
+Kingma & Ba 2014
+)
+in our experiments). When the stopping criterion is met, we transform
+𝒲
+(
+r
+)
+{\mathcal{W}}^{(r)}
+to
+𝒲
+(
+r
++
+1
+)
+{\mathcal{W}}^{(r+1)}
+in a process we call finegraining (
+Finegrain
+). Due to spatial auto-correlation, the trained parameters at a lower resolution will serve as a good initialization for higher resolutions. For both models, we only finegrain the factors that corresponds to resolution dependent mode, which is the spatial mode in the context of spatial analysis. Finegraining can be done for other non-spatial modes for more computational speedup as long as there exists a multiresolution structure (e.g. video or time series data).
+Once the full rank resolution has been trained up to resolution
+r
+0
+r_{0}
+(which can be chosen to fit GPU memory or time constraints), we decompose
+𝒲
+(
+r
+)
+{\mathcal{W}}^{(r)}
+using
+CP_ALS
+, the standard alternating least squares (ALS) algorithm
+(
+Kolda & Bader 2009
+)
+for CP decomposition. Then the low-rank model is trained at resolutions
+r
+0
+,
+…
+,
+R
+r_{0},\dots,R
+to final desired accuracy, finegraining to move to the next resolution.
+When to finegrain
+There is a tradeoff between training times at different resolutions. While training for longer at lower resolutions significantly decreases computation, we do not want to overfit to the coarse, lower resolution data. On the other hand, training at higher resolutions can yield more accurate solutions using more detailed information. We investigate four different criteria to balance this tradeoff: 1) validation loss, 2) gradient norm, 3) gradient variance, and 4) gradient entropy.
+Increase in validation loss
+(
+Prechelt 1998
+;
+Yao et al. 2007
+)
+is a commonly used heuristic for early stopping. Another approach is to analyze the gradient distributions during training. For a convex function, stochastic gradient descent will converge into a noise ball near the optimal solution as the gradients approach zero. However, lower resolutions may be too coarse to learn more finegrained curvatures and the gradients will increasingly disagree near the optimal solution. We quantify the disagreement in the gradients with metrics such as norm, variance, and entropy. We use intuition from convergence analysis for gradient norm and variance
+(
+Bottou et al. 2018
+)
+, and information theory for gradient entropy
+(
+Srinivas et al. 2012
+)
+.
+Let
+𝒲
+t
+{\mathcal{W}}_{t}
+and
+ξ
+t
+\xi_{t}
+represent the weight tensor and the random variable for sampling of minibatches at step
+t
+t
+, respectively. Let
+f
+⁡
+(
+𝒲
+t
+,
+ξ
+t
+)
+:=
+f
+t
+f({\mathcal{W}}_{t};\xi_{t}):=f_{t}
+be the validation loss and
+g
+⁡
+(
+𝒲
+t
+,
+ξ
+t
+)
+:=
+g
+t
+g({\mathcal{W}}_{t};\xi_{t}):=g_{t}
+be the stochastic gradients at step
+t
+t
+. The finegraining criteria are:
+•
+Validation Loss:
+𝔼
+⁡
+[
+f
+t
++
+1
+]
+−
+𝔼
+⁡
+[
+f
+t
+]
+>
+0
+\mathbb{E}[f_{t+1}]-\mathbb{E}[f_{t}]>0
+•
+Gradient Norm:
+𝔼
+⁡
+[
+‖
+g
+t
++
+1
+‖
+2
+]
+−
+𝔼
+⁡
+[
+‖
+g
+t
+‖
+2
+]
+>
+0
+\mathbb{E}[\|g_{t+1}\|^{2}]-\mathbb{E}[\|g_{t}\|^{2}]>0
+•
+Gradient Variance:
+V
+⁡
+(
+𝔼
+⁡
+[
+g
+t
++
+1
+]
+)
+−
+V
+⁡
+(
+𝔼
+⁡
+[
+g
+t
+]
+)
+>
+0
+V(\mathbb{E}[g_{t+1}])-V(\mathbb{E}[g_{t}])>0
+•
+Gradient Entropy:
+S
+⁡
+(
+𝔼
+⁡
+[
+g
+t
++
+1
+]
+)
+−
+S
+⁡
+(
+𝔼
+⁡
+[
+g
+t
+]
+)
+>
+0
+S(\mathbb{E}[g_{t+1}])-S(\mathbb{E}[g_{t}])>0
+,
+where
+S
+(
+p
+)
+=
+∑
+i
+−
+p
+i
+ln
+(
+p
+i
+)
+S(p)=\sum_{i}-p_{i}\ln(p_{i})
+. One can also use thresholds, e.g.
+|
+f
+t
++
+1
+−
+f
+t
+|
+<
+τ
+|f_{t+1}-f_{t}|<\tau
+, but as these are dependent on the dataset, we use
+τ
+=
+0
+\tau=0
+in our experiments. One can also incorporate patience, i.e. setting the maximum number of epochs where the stopping conditions was reached.
+How to finegrain
+We discuss different interpolation schemes for different types of features. Categorical/multinomial variables, such as a player’s position on the court, are one-hot encoded or multi-hot encoded onto a discretized grid. Note that as we use higher resolutions, the sum of the input values are still equal across resolutions,
+∑
+d
+𝒳
+(
+r
+)
+:
+,
+:
+,
+d
+=
+∑
+d
+𝒳
+(
+r
++
+1
+)
+:
+,
+:
+,
+d
+\sum_{d}{\mathcal{X}}^{(r)}_{:,:,d}=\sum_{d}{\mathcal{X}}^{(r+1)}_{:,:,d}
+. As the sum of the features remains the same across resolutions and our tensor models are multilinear, nearest neighbor interpolation should be used in order to produce the same outputs.
+∑
+d
+=
+1
+D
+r
+𝒲
+:
+,
+:
+,
+d
+(
+r
+)
+𝒳
+(
+r
+)
+:
+,
+:
+,
+d
+=
+∑
+d
+=
+1
+D
+r
++
+1
+𝒲
+:
+,
+:
+,
+d
+(
+r
++
+1
+)
+𝒳
+(
+r
++
+1
+)
+:
+,
+:
+,
+d
+\displaystyle\sum_{d=1}^{D_{r}}{\mathcal{W}}_{:,:,d}^{(r)}{\mathcal{X}}^{(r)}_{:,:,d}=\sum_{d=1}^{D_{r+1}}{\mathcal{W}}_{:,:,d}^{(r+1)}{\mathcal{X}}^{(r+1)}_{:,:,d}
+as
+𝒳
+i
+,
+f
+,
+d
+(
+r
+)
+=
+0
+{\mathcal{X}}^{(r)}_{i,f,d}=0
+for cells that do not contain the value. This scheme yields the same outputs and thus the same loss values across resolutions.
+Continuous variables that represent averages over locations, such as sea surface salinity, often have similar values at each finegrained cell at higher resolutions (as the values at coarse resolutions are subsampled or averaged from values at the higher resolution).
+Then
+∑
+d
+D
+r
++
+1
+𝒳
+(
+r
++
+1
+)
+:
+,
+:
+,
+d
+≈
+2
+2
+∑
+d
+D
+r
+𝒳
+(
+r
+)
+:
+,
+:
+,
+d
+\sum_{d}^{D_{r+1}}{\mathcal{X}}^{(r+1)}_{:,:,d}\approx 2^{2}\sum_{d}^{D_{r}}{\mathcal{X}}^{(r)}_{:,:,d}
+, where the approximation comes from the type of downsampling used.
+∑
+d
+=
+1
+D
+r
+𝒲
+:
+,
+:
+,
+d
+(
+r
+)
+𝒳
+(
+r
+)
+:
+,
+:
+,
+d
+≈
+2
+2
+∑
+d
+=
+1
+D
+r
++
+1
+𝒲
+:
+,
+:
+,
+d
+(
+r
++
+1
+)
+𝒳
+(
+r
++
+1
+)
+:
+,
+:
+,
+d
+\displaystyle\sum_{d=1}^{D_{r}}{\mathcal{W}}_{:,:,d}^{(r)}{\mathcal{X}}^{(r)}_{:,:,d}\approx 2^{2}\sum_{d=1}^{D_{r+1}}{\mathcal{W}}_{:,:,d}^{(r+1)}{\mathcal{X}}^{(r+1)}_{:,:,d}
+using a linear interpolation scheme. The weights are divided by the scale factor of
+D
+r
++
+1
+D
+r
+\frac{D_{r+1}}{D_{r}}
+to keep the outputs approximately equal. We use bilinear interpolation, though any other linear interpolation can be used.
+5
+Theoretical Analysis.
+5.1
+Convergence
+We prove the convergence rate for
+MRTL
+with a single spatial mode and one-dimensional output, where the weight tensor reduces to a weight vector
+𝐰
+{\mathbf{w}}
+. We defer all proofs to Appendix
+A
+. For the loss function
+f
+f
+and a stochastic sampling variable
+ξ
+\xi
+,
+the optimization problem is:
+𝐰
+⋆
+=
+argmin
+​
+𝔼
+​
+[
+f
+⁡
+(
+𝐰
+,
+ξ
+)
+]
+{\mathbf{w}}_{\star}=\text{argmin}\ {\mathbb{E}}[f({\mathbf{w}};\xi)]
+(6)
+We consider a fixed-resolution model that follows Alg.
+1
+with
+r
+=
+{
+R
+}
+r=\{R\}
+, i.e. only the final resolution is used. For a fixed-resolution miniSGD algorithm, under common assumptions in convergence analysis:
+•
+f
+f
+is
+μ
+\mu
+- strongly convex,
+L
+L
+-smooth
+•
+(unbiased) gradient
+𝔼
+⁡
+[
+g
+⁡
+(
+𝐰
+t
+,
+ξ
+t
+)
+]
+=
+▽
+​
+f
+​
+(
+𝐰
+t
+)
+{\mathbb{E}}[g({\mathbf{w}}_{t};{\mathbf{\xi}}_{t})]=\triangledown f({\mathbf{w}}_{t})
+given
+ξ
+<
+t
+\xi_{<t}
+•
+(variance) for all the
+𝐰
+{\mathbf{w}}
+,
+𝔼
+⁡
+[
+‖
+g
+⁡
+(
+𝐰
+,
+ξ
+)
+‖
+2
+2
+]
+≤
+σ
+g
+2
++
+c
+g
+​
+‖
+▽
+​
+f
+​
+(
+𝐰
+)
+‖
+2
+2
+{\mathbb{E}}[\|g({\mathbf{w}};\xi)\|^{2}_{2}]\leq\sigma_{g}^{2}+c_{g}\|\triangledown f({\mathbf{w}})\|_{2}^{2}
+Theorem 5.1
+.
+(
+Bottou et al. 2018
+)
+If the step size
+η
+t
+≡
+η
+≤
+1
+L
+​
+c
+g
+\eta_{t}\equiv\eta\leq\frac{1}{Lc_{g}}
+, then a fixed resolution solution satisfies
+𝔼
+⁡
+[
+‖
+𝐰
+t
++
+1
+−
+𝐰
+⋆
+‖
+2
+2
+]
+≤
+\displaystyle{\mathbb{E}}[\|{\mathbf{w}}_{t+1}-{\mathbf{w}}_{\star}\|^{2}_{2}]\leq
+γ
+t
+(
+𝔼
+[
+∥
+𝐰
+0
+−
+𝐰
+⋆
+∥
+2
+2
+)
+−
+β
+]
++
+β
+,
+\displaystyle\gamma^{t}({\mathbb{E}}[\|{\mathbf{w}}_{0}-{\mathbf{w}}_{\star}\|^{2}_{2})-\beta]+\beta\text{,}
+where
+γ
+=
+1
+−
+2
+​
+η
+​
+μ
+\gamma=1-2\eta\mu
+,
+β
+=
+η
+​
+σ
+g
+2
+2
+​
+μ
+\beta=\frac{\eta\sigma_{g}^{2}}{2\mu}
+, and
+w
+⋆
+w_{\star}
+is the optimal solution.
+which gives
+O
+⁡
+(
+1
+/
+t
+)
++
+O
+⁡
+(
+η
+)
+O(1/t)+O(\eta)
+convergence.
+At resolution
+r
+r
+, we define the number of total iterations as
+t
+r
+t_{r}
+, and the weights as
+𝐰
+(
+r
+)
+{\mathbf{w}}^{(r)}
+. We let
+D
+r
+D_{r}
+denote the number of dimensions at
+r
+r
+and we assume a dyadic scaling between resolutions such that
+D
+r
++
+1
+=
+2
+​
+D
+r
+D_{r+1}=2D_{r}
+. We define finegraining using an interpolation operator
+P
+P
+such that
+𝐰
+0
+(
+r
++
+1
+)
+=
+P
+​
+𝐰
+t
+r
+(
+r
+)
+{\mathbf{w}}^{(r+1)}_{0}=P{\mathbf{w}}^{(r)}_{t_{r}}
+as in
+(
+Bramble 2019
+)
+. For the simple case of a 1D spatial grid where
+𝐰
+t
+(
+r
+)
+{\mathbf{w}}_{t}^{(r)}
+has spatial dimension
+D
+r
+D_{r}
+, P would be of a Toeplitz matrix of dimension
+2
+​
+D
+r
+×
+D
+r
+2D_{r}\times D_{r}
+. For example, for linear interpolation of
+D
+r
+=
+2
+D_{r}=2
+,
+P
+​
+𝐰
+(
+r
+)
+=
+1
+2
+​
+[
+1
+0
+2
+0
+1
+1
+0
+2
+]
+​
+[
+𝐰
+1
+(
+r
+)
+𝐰
+2
+(
+r
+)
+]
+=
+[
+𝐰
+1
+(
+r
++
+1
+)
+/
+2
+𝐰
+1
+(
+r
++
+1
+)
+𝐰
+1
+(
+r
++
+1
+)
+/
+2
++
+𝐰
+2
+(
+r
++
+1
+)
+/
+2
+𝐰
+2
+(
+r
++
+1
+)
+]
+​
+.
+\displaystyle P{\mathbf{w}}^{(r)}=\frac{1}{2}\begin{bmatrix}1&0\\
+2&0\\
+1&1\\
+0&2\\
+\end{bmatrix}\begin{bmatrix}{\mathbf{w}}_{1}^{(r)}\\
+{\mathbf{w}}_{2}^{(r)}\end{bmatrix}=\begin{bmatrix}{\mathbf{w}}_{1}^{(r+1)}/2\\
+{\mathbf{w}}_{1}^{(r+1)}\\
+{\mathbf{w}}_{1}^{(r+1)}/2+{\mathbf{w}}_{2}^{(r+1)}/2\\
+{\mathbf{w}}_{2}^{(r+1)}\end{bmatrix}\text{.}
+Any interpolation scheme can be expressed in this form.
+The convergence of multiresolution learning algorithm depends on the following property of spatial data:
+Definition 5.2
+(Spatial Smoothness)
+.
+The difference between the optimal solutions of consecutive resolutions is upper bounded by
+ϵ
+\epsilon
+‖
+𝐰
+⋆
+(
+r
++
+1
+)
+−
+P
+​
+𝐰
+⋆
+(
+r
+)
+‖
+≤
+ϵ
+​
+,
+\|{\mathbf{w}}^{(r+1)}_{\star}-P{\mathbf{w}}^{(r)}_{\star}\|\leq\epsilon\text{,}
+with
+P
+P
+being the interpolation operator.
+The following theorem proves the convergence rate of
+MRTL
+, with a constant that depends on the operator norm of the interpolation operator
+P
+P
+.
+Theorem 5.3
+.
+If the step size
+η
+t
+≡
+η
+≤
+1
+L
+​
+c
+g
+\eta_{t}\equiv\eta\leq\frac{1}{Lc_{g}}
+, then the solution of
+MRTL
+satisfies
+𝔼
+[
+∥
+𝐰
+t
+(
+r
+)
+−
+𝐰
+⋆
+∥
+2
+2
+]
+≤
+γ
+t
+∥
+P
+∥
+o
+​
+p
+2
+​
+r
+𝔼
+[
+∥
+𝐰
+0
+−
+𝐰
+⋆
+∥
+2
+2
++
+O
+(
+η
+∥
+P
+∥
+o
+​
+p
+)
+,
+\displaystyle{\mathbb{E}}[\|{\mathbf{w}}^{(r)}_{t}-{\mathbf{w}}_{\star}\|^{2}_{2}]\leq\gamma^{t}\|P\|^{2r}_{op}~{\mathbb{E}}[\|{\mathbf{w}}_{0}-{\mathbf{w}}_{\star}\|^{2}_{2}+O(\eta\|P\|_{op})\text{,}
+where
+γ
+=
+1
+−
+2
+​
+η
+​
+μ
+\gamma=1-2\eta\mu
+,
+β
+=
+η
+​
+σ
+g
+2
+2
+​
+μ
+\beta=\frac{\eta\sigma_{g}^{2}}{2\mu}
+, and
+‖
+P
+‖
+o
+​
+p
+\|P\|_{op}
+is the operator norm of the interpolation operator
+P
+P
+.
+5.2
+Computational Complexity
+To analyze computational complexity, we resort to fixed point convergence
+(
+Hale et al. 2008
+)
+and the multigrid method
+(
+Stüben 2001
+)
+. Intuitively, as most of the training iterations are spent on coarser resolutions with fewer number of parameters, multiresolution learning is more efficient than fixed-resolution training.
+Assuming that
+∇
+f
+\nabla f
+is Lipschitz continuous, we can view gradient-based optimization as a fixed-point iteration operator
+F
+F
+with a contraction constant of
+γ
+∈
+(
+0
+,
+1
+)
+\gamma\in(0,1)
+(note that
+stochastic
+gradient descent converges to a noise ball instead of a fixed point):
+𝐰
+←
+F
+(
+𝐰
+)
+,
+F
+:=
+I
+−
+η
+∇
+f
+,
+\displaystyle{\mathbf{w}}\leftarrow F({\mathbf{w}}),\hskip 10.0ptF:=I-\eta\nabla f,
+‖
+F
+⁡
+(
+𝐰
+)
+−
+F
+⁡
+(
+𝐰
+′
+)
+‖
+≤
+γ
+​
+‖
+𝐰
+−
+𝐰
+′
+‖
+\displaystyle\|F({\mathbf{w}})-F({\mathbf{w}}^{\prime})\|\leq\gamma\|{\mathbf{w}}-{\mathbf{w}}^{\prime}\|
+Let
+𝐰
+⋆
+(
+r
+)
+{\mathbf{w}}^{(r)}_{\star}
+be the optimal estimator at resolution
+r
+r
+and
+𝐰
+(
+r
+)
+{\mathbf{w}}^{(r)}
+be a solution satisfying
+‖
+𝐰
+⋆
+(
+r
+)
+−
+𝐰
+(
+r
+)
+‖
+≤
+ϵ
+/
+2
+\|{\mathbf{w}}^{(r)}_{\star}-{\mathbf{w}}^{(r)}\|\leq\epsilon/2
+. The algorithm terminates when the estimation error reaches
+C
+0
+​
+R
+(
+1
+−
+γ
+)
+2
+\frac{C_{0}R}{(1-\gamma)^{2}}
+. The following lemma describes the computational cost of the
+fixed-resolution
+algorithm.
+Lemma 5.4
+.
+Given a fixed point iteration operator
+F
+F
+with contraction constant of
+γ
+∈
+(
+0
+,
+1
+)
+\gamma\in(0,1)
+, the computational complexity of fixed-resolution training for tensor model of order
+p
+p
+and rank
+K
+K
+is
+𝒞
+=
+𝒪
+⁡
+(
+1
+|
+log
+⁡
+γ
+|
+⋅
+log
+⁡
+(
+1
+(
+1
+−
+γ
+)
+​
+ϵ
+)
+⋅
+K
+​
+p
+(
+1
+−
+γ
+)
+2
+​
+ϵ
+)
+​
+,
+\displaystyle\mathcal{C}=\mathcal{O}\left(\frac{1}{|\log\gamma|}\cdot\log\left(\frac{1}{(1-\gamma)\epsilon}\right)\cdot\frac{Kp}{(1-\gamma)^{2}\epsilon}\right)\text{,}
+(7)
+where
+ϵ
+\epsilon
+is the terminal estimation error.
+The next Theorem
+5.5
+characterizes the computational speed-up gained by
+MRTL
+compared to fixed-resolution learning, with respect to the contraction factor
+γ
+\gamma
+and the terminal estimation error
+ϵ
+\epsilon
+.
+Theorem 5.5
+.
+If the fixed point iteration operator (gradient descent) has a contraction factor of
+γ
+\gamma
+, multiresolution learning with the termination criteria of
+C
+0
+​
+r
+(
+1
+−
+γ
+)
+2
+\frac{C_{0}r}{(1-\gamma)^{2}}
+at resolution
+r
+r
+is faster than fixed-resolution learning by a factor of
+log
+⁡
+1
+(
+1
+−
+γ
+)
+​
+ϵ
+\log\frac{1}{(1-\gamma)\epsilon}
+, with the terminal estimation error
+ϵ
+\epsilon
+.
+Note that the speed-up using multiresolution learning uses a global convergence criterion
+ϵ
+\epsilon
+for each
+r
+r
+.
+6
+Experiments
+We apply
+MRTL
+to two real-world datasets: basketball tracking and climate data. More details about the datasets and pre-processing steps are provided in Appendix
+B
+.
+6.1
+Datasets
+Tensor classification: Basketball tracking
+We use a large NBA player tracking dataset from
+(
+Yue et al. 2014
+;
+Zheng et al. 2016
+)
+consisting of the coordinates of all players at 25 frames per second, for a total of approximately 6 million frames. The goal is to predict whether a given ball handler will shoot within the next second, given his position on the court and the relative positions of the defenders around him. In applying our method, we hope to obtain common shooting locations on the court and how a defender’s relative position suppresses shot probability.
+Figure 2
+:
+Left: Discretizing a continuous-valued position of a player (red) via a spatial grid. Right: sample frame with a ballhandler (red) and defenders (green). Only defenders close to the ballhandler are used.
+The basketball data contains two spatial modes: the ball handler’s position and the relative defender positions around the ball handler. We instantiate a tensor classification model in Eqn (
+1
+) as follows:
+𝒴
+i
+=
+∑
+d
+1
+=
+1
+D
+r
+1
+∑
+d
+2
+=
+1
+D
+r
+2
+σ
+⁡
+(
+𝒲
+i
+,
+d
+1
+,
+d
+2
+(
+r
+)
+​
+𝒳
+i
+,
+d
+1
+,
+d
+2
+(
+r
+)
++
+b
+i
+)
+​
+,
+\displaystyle{\mathcal{Y}}_{i}=\sum_{d^{1}=1}^{D^{1}_{r}}\sum_{d^{2}=1}^{D^{2}_{r}}\sigma({\mathcal{W}}_{i,d^{1},d^{2}}^{(r)}{\mathcal{X}}^{(r)}_{i,d^{1},d^{2}}+b_{i})\text{ ,}
+where
+i
+∈
+{
+1
+,
+…
+,
+I
+}
+i\in\{1,\dots,I\}
+is the ballhandler ID,
+d
+1
+d^{1}
+indexes the ballhandler’s position on the discretized court of dimension
+{
+D
+r
+1
+}
+\{D_{r}^{1}\}
+, and
+d
+2
+d^{2}
+indexes the relative defender positions around the ballhandler in a discretized grid of dimension
+{
+D
+r
+2
+}
+\{D_{r}^{2}\}
+. We assume that only defenders close to the ballhandler affect shooting probability and set
+D
+r
+2
+<
+D
+r
+1
+D_{r}^{2}<D_{r}^{1}
+to reduce dimensionality. As shown in Fig.
+2
+, we orient the defender positions so that the direction from the ballhandler to the basket points up.
+𝒴
+i
+∈
+{
+0
+,
+1
+}
+{\mathcal{Y}}_{i}\in\{0,1\}
+is the binary output equal to
+1
+1
+if player
+i
+i
+shoots within the next second and
+σ
+\sigma
+is the sigmoid function.
+We use nearest neighbor interpolation for finegraining and a weighted cross entropy loss (due to imbalanced classes):
+ℒ
+n
+=
+−
+β
+⁡
+[
+𝒴
+n
+⋅
+log
+⁡
+𝒴
+^
+n
++
+(
+1
+−
+𝒴
+n
+)
+⋅
+log
+⁡
+(
+1
+−
+𝒴
+^
+n
+)
+]
+​
+,
+{\mathcal{L}}_{n}=-\beta\left[{\mathcal{Y}}_{n}\cdot\log{\hat{{\mathcal{Y}}}_{n}}+(1-{\mathcal{Y}}_{n})\cdot\log{(1-\hat{{\mathcal{Y}}}_{n})}\right]\text{,}
+(8)
+where
+n
+n
+denotes the sample index and
+β
+\beta
+is the weight of the positive samples and set equal to the ratio of the negative and positive counts of labels.
+Tensor regression: Climate
+Recent research
+(
+Li et al. 2016a
+;
+Li et al. 2016b
+;
+Zeng et al. 2019
+)
+shows that oceanic variables such as sea surface salinity (SSS) and sea surface temperature (SST) are significant predictors of the variability in rainfall in land-locked locations, such as the U.S. Midwest. We aim to predict the variability in average monthly precipitation in the U.S. Midwest using SSS and SST to identify meaningful latent factors underlying the large-scale processes linking the ocean and precipitation on land (Fig.
+3
+). We use precipitation data from the PRISM group
+(
+PRISM Climate Group 2013
+)
+and SSS/SST data from the EN4 reanalysis
+(
+Good et al. 2013
+)
+.
+Figure 3
+:
+Left: precipitation over continental U.S. Right: regions considered in particular.
+Let
+𝒳
+{\mathcal{X}}
+be the historical oceanic data with spatial features SSS and SST across
+D
+r
+D_{r}
+locations, using the previous
+6
+6
+months of data. As SSS and SST share the spatial mode (the same spatial locations), we set the
+F
+2
+=
+2
+F_{2}=2
+to denote the index of these features. We also consider the lag as a non-spatial feature so that
+F
+1
+=
+6
+F_{1}=6
+. We instantiate the tensor regression model in Eqn (
+1
+) as follows:
+𝒴
+=
+∑
+f
+1
+=
+1
+F
+1
+∑
+f
+2
+=
+1
+F
+2
+∑
+d
+=
+1
+D
+r
+𝒲
+f
+1
+,
+f
+2
+,
+d
+(
+r
+)
+​
+𝒳
+f
+1
+,
+f
+2
+,
+d
+(
+r
+)
++
+b
+\displaystyle{\mathcal{Y}}=\sum_{f_{1}=1}^{F_{1}}\sum_{f_{2}=1}^{F_{2}}\sum_{d=1}^{D_{r}}{\mathcal{W}}_{f_{1},f_{2},d}^{(r)}{\mathcal{X}}^{(r)}_{f_{1},f_{2},d}+b
+The features and outputs (SSS, SST, and precipitation) are subject to long-term trends and a seasonal cycle. We use difference detrending for each timestep due to non-stationarity of the inputs, and remove seasonality in the data by standardizing each month of the year. The features are normalized using min-max normalization. We also normalize and deseasonalize the outputs, so that the model predicts standardized anomalies. We use mean square error (MSE) for the loss function and bilinear interpolation for finegraining.
+Implementation Details
+For both datasets, we discretize the spatial features and use a 60-20-20 train-validation-test set split. We use Adam
+(
+Kingma & Ba 2014
+)
+for optimization as it was empirically faster than SGD in our experiments. We use both
+L
+2
+L_{2}
+and spatial regularization as described in Section
+3
+. We selected optimal hyperparameters for all models via random search. We use a stepwise learning rate decay with stepsize of
+1
+1
+with
+γ
+=
+0.95
+\gamma=0.95
+. We perform ten trials for all experiments. All other details are provided in Appendix
+B
+.
+6.2
+Accuracy and Convergence
+We compare
+MRTL
+against a fixed-resolution model on accuracy and computation time. We exclude the computation time for
+CP_ALS
+as it was quick to compute for all experiments (
+<
+5
+<5
+seconds for the basketball dataset). The results of all trials are listed in Table
+1
+. Some results are provided in Appendix
+B
+.
+Figure 4
+:
+Basketball: F1 scores of
+MRTL
+vs. the fixed-resolution model for the full rank (left) and low rank model (right). The vertical lines indicate finegraining to the next resolution.
+Figure 5
+:
+Basketball: F1 scores different finegraining criteria for the full rank (left) and low rank (right) model
+Table 1
+:
+Runtime and prediction performance comparison of a fixed-resolution model vs
+MRTL
+for datasets
+Dataset
+Model
+Full Rank
+Low Rank
+Time [s]
+Loss
+F1
+Time [s]
+Loss
+F1
+Basketball
+Fixed
+11462
+±
+565
+\pm 565
+0.608
+±
+0.00941
+\pm 0.00941
+0.685
+±
+0.00544
+\pm 0.00544
+2205
+±
+841
+\pm 841
+0.849
+±
+0.0230
+\pm 0.0230
+0.494
+±
+0.00417
+\pm 0.00417
+MRTL
+1230
+±
+74.1
+\pm 74.1
+0.699
+±
+0.00237
+\pm 0.00237
+0.607
+±
+0.00182
+\pm 0.00182
+2009
+±
+715
+\pm 715
+0.868
+±
+0.0399
+\pm 0.0399
+0.475
+±
+0.0121
+\pm 0.0121
+Climate
+Fixed
+12.5
+±
+0.0112
+\pm 0.0112
+0.0882
+±
+0.0844
+\pm 0.0844
+-
+269
+±
+319
+\pm 319
+0.0803
+±
+0.0861
+\pm 0.0861
+-
+MRTL
+1.11
+±
+0.180
+\pm 0.180
+0.0825
+±
+0.0856
+\pm 0.0856
+-
+67.1
+±
+31.8
+\pm 31.8
+0.0409
+±
+0.00399
+\pm 0.00399
+-
+Figure 6
+:
+Climate: Some latent factors of sea surface locations after training. The red areas in the northwest Atlantic region (east of North America and Gulf of Mexico) represent areas where moisture export contributes to precipitation in the U.S. Midwest.
+Fig.
+4
+shows the F1 scores of
+MRTL
+vs a fixed resolution model for the basketball dataset (validation loss was used as the finegraining criterion for both models). For the full rank case,
+MRTL
+converges 9 times faster than the fixed resolution case (the scaling of the axes obscures convergence; nevertheless, both algorithms have converged). The fixed-resolution model is able to reach a higher F1 score for the full rank case, as it uses a higher resolution than
+MRTL
+and is able to use more finegrained information, translating to a higher quality solution. This advantage does not transfer to the low rank model.
+For the low rank model, the training times are comparable and both reach a similar F1 score. There is decrease in the F1 score going from full rank to low rank for both
+MRTL
+and the fixed resolution model due to approximation error from CP decomposition. Note that this is dependent on the choice of
+K
+K
+, specific to each dataset. Furthermore, we see a smaller increase in performance for the low rank model vs. the full rank case, indicating that the information gain from finegraining does not scale linearly with the resolution. We see a similar trend for the climate data, where
+MRTL
+converges faster than the fixed-resolution model. Overall,
+MRTL
+is approximately 4
+∼
+\sim
+5 times faster and we get a similar speedup in the climate data.
+6.3
+Finegraining Criteria
+We compare the performance of different finegraining criteria in Fig.
+5
+. Validation loss converges much faster than other criteria for the full rank model while the other finegraining criteria converge slightly faster for the low rank model. In the classification case, we observe that the full rank model spends many epochs training when we use gradient-based criteria, suggesting that they can be too strict for the full rank case. For the regression case, we see all criteria perform similarly for the full rank model, and validation loss converges faster for the low rank model. As there are differences between finegraining criteria for different datasets, one should try all of them for fastest convergence.
+6.4
+Interpretability
+We now demonstrate that
+MRTL
+can learn semantic representations along spatial dimensions. For all latent factor figures, the factors have been normalized to
+(
+−
+1
+,
+1
+)
+(-1,1)
+so that reds are positive and blues are negative.
+Figure 7
+:
+Basketball: Latent factor heatmaps of ballhandler position after training for
+k
+=
+1
+,
+3
+,
+20
+k=1,3,20
+. They represent common shooting locations such as the right/left sides of the court, the paint, or near the three point line.
+Figure 8
+:
+Basketball: Latent factor heatmaps of relative defender positions after training for
+k
+=
+1
+,
+3
+,
+20
+k=1,3,20
+. The green dot represents the ballhandler at
+(
+6
+,
+2
+)
+(6,2)
+. The latent factors show spatial patterns near the ballhandler, suggesting important positions to suppress shot probability.
+Figs.
+7
+,
+8
+visualize some latent factors for ballhandler position and relative defender positions, respectively (see Appendix for all latent factors). For the ballhandler position in Fig.
+7
+, coherent spatial patterns (can be both red or blue regions as they are simply inverses of each other) can correspond to common shooting locations. These latent factors can represent known locations such as the paint or near the three-point line on both sides of the court.
+For relative defender positions in Fig.
+8
+, we see many concentrated spatial regions near the ballhandler, indicating that such close positions suppress shot probability (as expected). Some latent factors exhibit directionality as well, suggesting that guarding one side of the ballhandler may suppress shot probability more than the other side.
+Fig.
+6
+depicts two latent factors of sea surface locations. We would expect latent factors to correspond to regions of the ocean which independently influence precipitation. The left latent factor highlights the Gulf of Mexico and northwest Atlantic ocean as influential for rainfall in the Midwest due to moisture export from these regions. This is consistent with findings from
+(
+Li et al. 2018
+;
+Li et al. 2016a
+)
+.
+Random initialization
+We also perform experiments using a randomly initialized low-rank model (without the full-rank model) in order to verify the importance of full rank initialization. Fig.
+9
+compares random initialization vs.
+MRTL
+for the ballhandler position (left two plots) and the defender positions (right two plots). We observe that even with spatial regularization, randomly initialized latent factor models can produce noisy, uninterpretable factors and thus full-rank initialization is essential for interpretability.
+Figure 9
+:
+Latent factor comparisons (
+k
+=
+3
+,
+10
+k=3,10
+) of randomly initialized low-rank model (1st and 3rd) and
+MRTL
+(2nd and 4th) for ballhandler position (left two plots) and the defender positions (right two plots). Random initialization leads to uninterpretable latent factors.
+7
+Conclusion and Future Work
+We presented a novel algorithm for tensor models for spatial analysis. Our algorithm
+MRTL
+utilizes multiple resolutions to significantly decrease training time and incorporates a full-rank initialization strategy that promotes spatially coherent and interpretable latent factors.
+MRTL
+is generalized to both the classification and regression cases. We proved the theoretical convergence of our algorithm for stochastic gradient descent and compared the computational complexity of
+MRTL
+to a single, fixed-resolution model. The experimental results on two real-world datasets support its improvements in computational efficiency and interpretability.
+Future work includes 1) developing other stopping criteria in order to enhance the computational speedup, 2) applying our algorithm to more higher-dimensional spatiotemporal data, and 3) studying the effect of varying batch sizes between resolutions as in
+(
+Wu et al. 2019
+)
+.
+Acknowledgements
+This work was supported in part by NSF grants #1850349, #1564330, and #1663704, Google Faculty Research Award and Adobe Data Science Research Award. We thank Stats Perform SportVU
+2
+2
+2
+https://www.statsperform.com/team-performance/basketball/optical-tracking/
+for the basketball tracking data. We gratefully acknowledge use of the following datasets: PRISM by the PRISM Climate Group, Oregon State University
+3
+3
+3
+http://prism.oregonstate.edu
+and EN4 by the Met Office Hadley Centre
+4
+4
+4
+https://www.metoffice.gov.uk/hadobs/en4/
+, and thank Caroline Ummenhofer of Woods Hole Oceanographic Institution for helping us obtain the data.
+References
+Allman et al. (2009)
+Allman, E. S., Matias, C., Rhodes, J. A., et al.
+Identifiability of parameters in latent structure models with many
+observed variables.
+The Annals of Statistics
+, 37(6A):3099–3132, 2009.
+Anandkumar et al. (2014)
+Anandkumar, A., Ge, R., and Janzamin, M.
+Guaranteed non-orthogonal tensor decomposition via alternating
+rank-
+1
+1
+updates.
+arXiv preprint arXiv:1402.5180
+, 2014.
+Austin et al. (2016)
+Austin, W., Ballard, G., and Kolda, T. G.
+Parallel tensor compression for large-scale scientific data.
+In
+Parallel and Distributed Processing Symposium, 2016 IEEE
+International
+, pp.  912–922. IEEE, 2016.
+Bahadori et al. (2014)
+Bahadori, M. T., Yu, Q. R., and Liu, Y.
+Fast multivariate spatio-temporal analysis via low rank tensor
+learning.
+In
+Advances in neural information processing systems
+, pp. 3491–3499, 2014.
+Bottou et al. (2018)
+Bottou, L., Curtis, F. E., and Nocedal, J.
+Optimization methods for large-scale machine learning.
+Siam Review
+, 60(2):223–311, 2018.
+Bramble (2019)
+Bramble, J. H.
+Multigrid methods
+.
+Routledge, 2019.
+Brunsdon et al. (1998)
+Brunsdon, C., Fotheringham, S., and Charlton, M.
+Geographically weighted regression.
+Journal of the Royal Statistical Society: Series D (The
+Statistician)
+, 47(3):431–443, 1998.
+Cheng et al. (2016)
+Cheng, H., Yu, Y., Zhang, X., Xing, E., and Schuurmans, D.
+Scalable and sound low-rank tensor learning.
+In
+Artificial Intelligence and Statistics
+, pp.  1114–1123,
+2016.
+Cressie (1992)
+Cressie, N.
+Statistics for spatial data.
+Terra Nova
+, 4(5):613–617, 1992.
+Dieng et al. (2017)
+Dieng, A. B., Tran, D., Ranganath, R., Paisley, J., and Blei, D.
+Variational inference via
+χ
+\chi
+upper bound minimization.
+In
+Advances in Neural Information Processing Systems
+, pp. 2732–2741, 2017.
+Diggle et al. (2013)
+Diggle, P. J., Moraga, P., Rowlingson, B., and Taylor, B. M.
+Spatial and spatio-temporal log-gaussian cox processes: extending the
+geostatistical paradigm.
+Statistical Science
+, pp.  542–563, 2013.
+Ding et al. (2017)
+Ding, Y., Kondor, R., and Eskreis-Winkler, J.
+Multiresolution kernel approximation for gaussian process regression.
+In
+Advances in Neural Information Processing Systems
+, pp. 3743–3751, 2017.
+Doshi-Velez & Kim (2017)
+Doshi-Velez, F. and Kim, B.
+Towards a rigorous science of interpretable machine learning.
+arXiv preprint arXiv:1702.08608
+, 2017.
+Getis & Ord (1992)
+Getis, A. and Ord, J. K.
+The analysis of spatial association by use of distance statistics.
+Geographical analysis
+, 24(3):189–206,
+1992.
+Good et al. (2013)
+Good, S., Martin, M., and Rayner, N.
+En4: quality controlled ocean temperature and salinity profiles and
+monthly objective analyses with uncertainty estimates.
+Journal of Geophysical Research: Oceans
+, 118:6704–6716, 2013.
+Version EN4.2.1,
+https://www.metoffice.gov.uk/hadobs/en4/download-en4-2-1.html
+, accessed
+06/23/19.
+Hale et al. (2008)
+Hale, E. T., Yin, W., and Zhang, Y.
+Fixed-point continuation for
+ℓ
+1
+\ell_{1}
+-minimization: Methodology and
+convergence.
+SIAM Journal on Optimization
+, 19(3):1107–1130, 2008.
+Han & Dunson (2018)
+Han, S. and Dunson, D. B.
+Multiresolution tensor decomposition for multiple spatial passing
+networks.
+arXiv preprint arXiv:1803.01203
+, 2018.
+Haupt et al. (2017)
+Haupt, J., Li, X., and Woodruff, D. P.
+Near optimal sketching of low-rank tensor regression.
+In
+Proceedings of the 31st International Conference on Neural
+Information Processing Systems
+, pp.  3469–3479. Curran Associates Inc.,
+2017.
+Hiptmair (1998)
+Hiptmair, R.
+Multigrid method for maxwell’s equations.
+SIAM Journal on Numerical Analysis
+, 36(1):204–225, 1998.
+Hitchcock (1927)
+Hitchcock, F. L.
+The expression of a tensor or a polyadic as a sum of products.
+Journal of Mathematics and Physics
+, 6(1-4):164–189, 1927.
+Kingma & Ba (2014)
+Kingma, D. P. and Ba, J.
+Adam: A method for stochastic optimization.
+arXiv preprint arXiv:1412.6980
+, 2014.
+Kolda & Bader (2009)
+Kolda, T. G. and Bader, B. W.
+Tensor Decompositions and Applications.
+SIAM Review
+, 51(3):455–500, 2009.
+ISSN 0036-1445.
+doi:
+10.1137/07070111X
+.
+Kondor et al. (2014)
+Kondor, R., Teneva, N., and Garg, V.
+Multiresolution matrix factorization.
+In
+Proceedings of the 31st International Conference on Machine
+Learning (ICML-14)
+, pp.  1620–1628, 2014.
+Kossaifi et al. (2019)
+Kossaifi, J., Panagakis, Y., Anandkumar, A., and Pantic, M.
+Tensorly: Tensor learning in python.
+The Journal of Machine Learning Research
+, 20(1):925–930, 2019.
+Lee & Seung (2001)
+Lee, D. D. and Seung, H. S.
+Algorithms for non-negative matrix factorization.
+In
+Advances in neural information processing systems
+, pp. 556–562, 2001.
+Li et al. (2017a)
+Li, J., Choi, J., Perros, I., Sun, J., and Vuduc, R.
+Model-driven sparse cp decomposition for higher-order tensors.
+In
+2017 IEEE international parallel and distributed processing
+symposium (IPDPS)
+, pp.  1048–1057. IEEE, 2017a.
+Li et al. (2016a)
+Li, L., Schmitt, R., Ummenhofer, C., and Karnauskas, K.
+Implications of north atlantic sea surface salinity for summer
+precipitation over the us midwest: Mechanisms and predictive value.
+Journal of Climate
+, 29:3143–3159,
+2016a.
+Li et al. (2016b)
+Li, L., Schmitt, R., Ummenhofer, C., and Karnauskas, K.
+North atlantic salinity as a predictor of sahel rainfall.
+Science Advances
+, 29:3143–3159, 2016b.
+Li et al. (2018)
+Li, L., Schmitt, R. W., and Ummenhofer, C. C.
+The role of the subtropical north atlantic water cycle in recent us
+extreme precipitation events.
+Climate dynamics
+, 50(3-4):1291–1305,
+2018.
+Li et al. (2017b)
+Li, X., Haupt, J., and Woodruff, D.
+Near optimal sketching of low-rank tensor regression.
+In
+Advances in Neural Information Processing Systems 30
+, pp. 3466–3476, 2017b.
+Lipton (2018)
+Lipton, Z. C.
+The mythos of model interpretability.
+Queue
+, 16(3):31–57, 2018.
+Litvinenko et al. (2019)
+Litvinenko, A., Keyes, D., Khoromskaia, V., Khoromskij, B. N., and Matthies,
+H. G.
+Tucker tensor analysis of matérn functions in spatial statistics.
+Computational Methods in Applied Mathematics
+, 19(1):101–122, 2019.
+Lotte & Guan (2010)
+Lotte, F. and Guan, C.
+Regularizing common spatial patterns to improve bci designs: unified
+theory and new algorithms.
+IEEE Transactions on biomedical Engineering
+, 58(2):355–362, 2010.
+Miller et al. (2014)
+Miller, A., Bornn, L., Adams, R., and Goldsberry, K.
+Factorized point process intensities: A spatial analysis of
+professional basketball.
+In
+International Conference on Machine Learning (ICML)
+, 2014.
+Molnar (2019)
+Molnar, C.
+Interpretable Machine Learning
+.
+2019.
+https://christophm.github.io/interpretable-ml-book/
+.
+Moran (1950)
+Moran, P. A.
+Notes on continuous stochastic phenomena.
+Biometrika
+, pp.  17–23, 1950.
+Nash (2000)
+Nash, S. G.
+A multigrid approach to discretized optimization problems.
+Optimization Methods and Software
+, 14(1-2):99–116, 2000.
+Ozdemir et al. (2017)
+Ozdemir, A., Iwen, M. A., and Aviyente, S.
+Multiscale analysis for higher-order tensors.
+arXiv preprint arXiv:1704.08578
+, 2017.
+Prechelt (1998)
+Prechelt, L.
+Automatic early stopping using cross validation: quantifying the
+criteria.
+Neural Networks
+, 11(4):761–767, 1998.
+PRISM Climate Group (2013)
+PRISM Climate Group.
+Gridded climate data for the contiguous usa., 2013.
+http://prism.oregonstate.edu
+, accessed 07/08/19.
+Reed et al. (2017)
+Reed, S., Oord, A., Kalchbrenner, N., Colmenarejo, S. G., Wang, Z., Chen, Y.,
+Belov, D., and Freitas, N.
+Parallel multiscale autoregressive density estimation.
+In
+International Conference on Machine Learning
+, pp. 2912–2921, 2017.
+Ribeiro et al. (2016)
+Ribeiro, M. T., Singh, S., and Guestrin, C.
+Why should i trust you?: Explaining the predictions of any
+classifier.
+pp.  1135–1144, 2016.
+Romera-Paredes et al. (2013)
+Romera-Paredes, B., Aung, H., Bianchi-Berthouze, N., and Pontil, M.
+Multilinear multitask learning.
+In
+International Conference on Machine Learning
+, pp. 1444–1452, 2013.
+Schifanella et al. (2014)
+Schifanella, C., Candan, K. S., and Sapino, M. L.
+Multiresolution tensor decompositions with mode hierarchies.
+ACM Transactions on Knowledge Discovery from Data (TKDD)
+,
+8(2):10, 2014.
+Serban et al. (2017)
+Serban, I. V., Klinger, T., Tesauro, G., Talamadupula, K., Zhou, B., Bengio,
+Y., and Courville, A. C.
+Multiresolution recurrent neural networks: An application to dialogue
+response generation.
+In
+AAAI
+, pp.  3288–3294, 2017.
+Sidiropoulos et al. (2017)
+Sidiropoulos, N. D., De Lathauwer, L., Fu, X., Huang, K., Papalexakis, E. E.,
+and Faloutsos, C.
+Tensor decomposition for signal processing and machine learning.
+IEEE Transactions on Signal Processing
+, 65(13):3551–3582, 2017.
+Srinivas et al. (2012)
+Srinivas, N., Krause, A., Kakade, S. M., and Seeger, M. W.
+Information-theoretic regret bounds for gaussian process optimization
+in the bandit setting.
+IEEE Transactions on Information Theory
+, 58(5):3250–3265, 2012.
+Stüben (2001)
+Stüben, K.
+A review of algebraic multigrid.
+In
+Partial Differential Equations
+, pp.  281–309. Elsevier,
+2001.
+Trottenberg et al. (2000)
+Trottenberg, U., Oosterlee, C. W., and Schuller, A.
+Multigrid
+.
+Elsevier, 2000.
+Wang et al. (2015)
+Wang, Y., Tung, H.-Y., Smola, A. J., and Anandkumar, A.
+Fast and guaranteed tensor decomposition via sketching.
+In
+Advances in Neural Information Processing Systems
+, pp. 991–999, 2015.
+Wu et al. (2019)
+Wu, C.-Y., Girshick, R., He, K., Feichtenhofer, C., and Krähenbühl, P.
+A multigrid method for efficiently training video models, 2019.
+Yao et al. (2007)
+Yao, Y., Rosasco, L., and Caponnetto, A.
+On early stopping in gradient descent learning.
+Constructive Approximation
+, 26(2):289–315, 2007.
+Yu et al. (2018)
+Yu, R., Li, G., and Liu, Y.
+Tensor regression meets gaussian processes.
+In
+21st International Conference on Artificial Intelligence and
+Statistics (AISTATS 2018)
+, 2018.
+Yue et al. (2014)
+Yue, Y., Lucey, P., Carr, P., Bialkowski, A., and Matthews, I.
+Learning Fine-Grained Spatial Models for Dynamic Sports Play
+Prediction.
+In
+IEEE International Conference on Data Mining (ICDM)
+, 2014.
+Zeng et al. (2019)
+Zeng, L., Schmitt, R., Li, L., Wang, Q., and Wang, D.
+Forecast of summer precipitation in the yangtze river valley based on
+south china sea springtime sea surface salinity.
+Climate Dynamics
+, 53:5495–5509, 2019.
+Zheng et al. (2016)
+Zheng, S., Yue, Y., and Hobbs, J.
+Generating long-term trajectories using deep hierarchical networks.
+In
+Advances in Neural Information Processing Systems
+, pp. 1543–1551, 2016.
+Zhou et al. (2013)
+Zhou, H., Li, L., and Zhu, H.
+Tensor regression with applications in neuroimaging data analysis.
+Journal of the American Statistical Association
+, 108(502):540–552, 2013.
+Appendix A
+Theoretical Analysis
+A.1
+Convergence Analysis
+Theorem A.1
+.
+(
+Bottou et al. 2018
+)
+If the step size
+η
+t
+≡
+η
+≤
+1
+L
+​
+c
+g
+\eta_{t}\equiv\eta\leq\frac{1}{Lc_{g}}
+, then a fixed resolution solution satisfies
+𝔼
+⁡
+[
+‖
+𝐰
+t
++
+1
+−
+𝐰
+⋆
+‖
+2
+2
+]
+≤
+γ
+t
+​
+[
+𝔼
+⁡
+[
+‖
+𝐰
+0
+−
+𝐰
+⋆
+‖
+2
+2
+]
+−
+β
+]
++
+β
+{\mathbb{E}}[\|{\mathbf{w}}_{t+1}-{\mathbf{w}}_{\star}\|^{2}_{2}]\leq\gamma^{t}[{\mathbb{E}}[\|{\mathbf{w}}_{0}-{\mathbf{w}}_{\star}\|^{2}_{2}]-\beta]+\beta
+where
+γ
+=
+1
+−
+2
+​
+η
+​
+μ
+\gamma=1-2\eta\mu
+,
+β
+=
+η
+​
+σ
+g
+2
+2
+​
+μ
+\beta=\frac{\eta\sigma_{g}^{2}}{2\mu}
+, and
+𝐰
+⋆
+{\mathbf{w}}_{\star}
+is the optimal solution.
+Proof.
+For a single step update,
+‖
+𝐰
+t
++
+1
+−
+𝐰
+⋆
+‖
+2
+2
+\displaystyle\|{\mathbf{w}}_{t+1}-{\mathbf{w}}_{\star}\|_{2}^{2}
+=
+‖
+𝐰
+t
+−
+η
+t
+​
+𝐠
+​
+(
+𝐰
+t
+,
+ξ
+t
+)
+−
+𝐰
+⋆
+‖
+2
+2
+\displaystyle=\|{\mathbf{w}}_{t}-\eta_{t}{\mathbf{g}}({\mathbf{w}}_{t};\xi_{t})-{\mathbf{w}}_{\star}\|_{2}^{2}
+=
+‖
+𝐰
+t
+−
+𝐰
+⋆
+‖
+2
+2
++
+‖
+η
+t
+​
+𝐠
+​
+(
+𝐰
+t
+,
+ξ
+t
+)
+‖
+2
+2
+−
+2
+​
+η
+t
+​
+𝐠
+​
+(
+𝐰
+t
+,
+ξ
+t
+)
+​
+(
+𝐰
+t
+−
+𝐰
+⋆
+)
+\displaystyle=\|{\mathbf{w}}_{t}-{\mathbf{w}}_{\star}\|_{2}^{2}+\|\eta_{t}{\mathbf{g}}({\mathbf{w}}_{t};\xi_{t})\|_{2}^{2}-2\eta_{t}{\mathbf{g}}({\mathbf{w}}_{t};\xi_{t})({\mathbf{w}}_{t}-{\mathbf{w}}_{\star})
+(9)
+by the law of total expectation
+𝔼
+⁡
+[
+𝐠
+⁡
+(
+𝐱
+t
+,
+ξ
+t
+)
+​
+(
+𝐰
+t
+−
+𝐰
+⋆
+)
+]
+\displaystyle{\mathbb{E}}[{\mathbf{g}}({\mathbf{x}}_{t};\xi_{t})({\mathbf{w}}_{t}-{\mathbf{w}}_{\star})]
+=
+𝔼
+⁡
+[
+𝔼
+⁡
+[
+𝐠
+⁡
+(
+𝐰
+t
+,
+ξ
+t
+)
+​
+(
+𝐰
+t
+−
+𝐰
+⋆
+)
+|
+ξ
+<
+t
+]
+]
+\displaystyle={\mathbb{E}}[{\mathbb{E}}[{\mathbf{g}}({\mathbf{w}}_{t};\xi_{t})({\mathbf{w}}_{t}-{\mathbf{w}}_{\star})|\xi_{<t}]]
+=
+𝔼
+⁡
+[
+(
+𝐰
+t
+−
+𝐰
+⋆
+)
+​
+𝔼
+​
+[
+𝐠
+⁡
+(
+𝐰
+t
+,
+ξ
+t
+)
+|
+ξ
+<
+t
+]
+]
+\displaystyle={\mathbb{E}}[({\mathbf{w}}_{t}-{\mathbf{w}}_{\star}){\mathbb{E}}[{\mathbf{g}}({\mathbf{w}}_{t};\xi_{t})|\xi_{<t}]]
+=
+𝔼
+⁡
+[
+(
+𝐰
+t
+−
+𝐰
+⋆
+)
+⊤
+​
+▽
+​
+f
+​
+(
+𝐰
+t
+)
+]
+\displaystyle={\mathbb{E}}[({\mathbf{w}}_{t}-{\mathbf{w}}_{\star})^{\top}\triangledown f({\mathbf{w}}_{t})]
+(10)
+From strong convexity,
+⟨
+▽
+​
+f
+​
+(
+𝐰
+t
+)
+−
+▽
+​
+f
+​
+(
+𝐰
+⋆
+)
+,
+𝐰
+t
+−
+𝐰
+⋆
+⟩
+=
+⟨
+▽
+​
+f
+​
+(
+𝐰
+t
+)
+,
+𝐰
+t
+−
+𝐰
+⋆
+⟩
+\displaystyle\langle\triangledown f({\mathbf{w}}_{t})-\triangledown f({\mathbf{w}}_{\star}),{\mathbf{w}}_{t}-{\mathbf{w}}_{\star}\rangle=\langle\triangledown f({\mathbf{w}}_{t}),{\mathbf{w}}_{t}-{\mathbf{w}}_{\star}\rangle
+≥
+μ
+​
+‖
+𝐰
+t
+−
+𝐰
+⋆
+‖
+2
+2
+\displaystyle\geq\mu\|{\mathbf{w}}_{t}-{\mathbf{w}}_{\star}\|_{2}^{2}
+(11)
+which implies
+𝔼
+⁡
+[
+(
+𝐰
+t
+−
+𝐰
+⋆
+)
+⊤
+​
+▽
+​
+f
+​
+(
+𝐰
+t
+)
+]
+≥
+μ
+​
+𝔼
+​
+[
+‖
+𝐰
+t
+−
+𝐰
+⋆
+‖
+2
+2
+]
+{\mathbb{E}}[({\mathbf{w}}_{t}-{\mathbf{w}}_{\star})^{\top}\triangledown f({\mathbf{w}}_{t})]\geq\mu{\mathbb{E}}[\|{\mathbf{w}}_{t}-{\mathbf{w}}_{\star}\|_{2}^{2}]
+as
+▽
+​
+f
+​
+(
+𝐰
+⋆
+)
+=
+0
+\triangledown f({\mathbf{w}}_{\star})=0
+. Putting it all together yields
+𝔼
+⁡
+[
+‖
+𝐰
+t
++
+1
+−
+𝐰
+⋆
+‖
+2
+2
+]
+≤
+(
+1
+−
+2
+​
+η
+t
+​
+μ
+)
+​
+𝔼
+​
+[
+‖
+𝐰
+t
+−
+𝐰
+⋆
+‖
+2
+2
+]
++
+(
+η
+t
+​
+σ
+g
+)
+2
+\displaystyle{\mathbb{E}}[\|{\mathbf{w}}^{t+1}-{\mathbf{w}}_{\star}\|_{2}^{2}]\leq(1-2\eta_{t}\mu){\mathbb{E}}[\|{\mathbf{w}}_{t}-{\mathbf{w}}_{\star}\|_{2}^{2}]+(\eta_{t}\sigma_{g})^{2}
+(12)
+As
+η
+t
+=
+η
+\eta_{t}=\eta
+, we complete the contraction, by setting
+β
+=
+(
+η
+​
+σ
+g
+)
+2
+(
+2
+​
+η
+​
+μ
+)
+\beta=\frac{(\eta\sigma_{g})^{2}}{(2\eta\mu)}
+𝔼
+⁡
+[
+‖
+𝐰
+t
++
+1
+−
+𝐰
+⋆
+‖
+2
+2
+]
+−
+β
+≤
+(
+1
+−
+2
+​
+η
+t
+​
+μ
+)
+​
+(
+𝔼
+⁡
+[
+‖
+𝐰
+t
+−
+𝐰
+⋆
+‖
+2
+2
+]
+−
+β
+)
+\displaystyle{\mathbb{E}}[\|{\mathbf{w}}_{t+1}-{\mathbf{w}}_{\star}\|_{2}^{2}]-\beta\leq(1-2\eta_{t}\mu)({\mathbb{E}}[\|{\mathbf{w}}_{t}-{\mathbf{w}}_{\star}\|_{2}^{2}]-\beta)
+(13)
+Repeat the iterations
+𝔼
+⁡
+[
+‖
+𝐰
+t
++
+1
+−
+𝐰
+⋆
+‖
+2
+2
+]
+−
+β
+≤
+(
+1
+−
+2
+​
+η
+​
+μ
+)
+t
+​
+(
+𝔼
+⁡
+[
+‖
+𝐰
+0
+−
+𝐰
+⋆
+‖
+2
+2
+]
+−
+β
+)
+\displaystyle{\mathbb{E}}[\|{\mathbf{w}}_{t+1}-{\mathbf{w}}_{\star}\|_{2}^{2}]-\beta\leq(1-2\eta\mu)^{t}({\mathbb{E}}[\|{\mathbf{w}}_{0}-{\mathbf{w}}_{\star}\|_{2}^{2}]-\beta)
+(14)
+Rearranging the terms, we get
+𝔼
+[
+∥
+𝐰
+t
++
+1
+−
+𝐰
+⋆
+∥
+2
+2
+]
+≤
+(
+1
+−
+2
+η
+μ
+)
+t
+𝔼
+[
+∥
+𝐰
+0
+−
+𝐰
+⋆
+]
+−
+(
+(
+1
+−
+2
+η
+μ
+)
+t
++
+1
+)
+(
+η
+​
+σ
+g
+)
+2
+(
+2
+​
+η
+​
+μ
+)
+{\mathbb{E}}[\|{\mathbf{w}}_{t+1}-{\mathbf{w}}_{\star}\|_{2}^{2}]\leq(1-2\eta\mu)^{t}{\mathbb{E}}[\|{\mathbf{w}}_{0}-{\mathbf{w}}_{\star}]-((1-2\eta\mu)^{t}+1)\frac{(\eta\sigma_{g})^{2}}{(2\eta\mu)}
+(15)
+∎
+Theorem A.2
+.
+If the step size
+η
+t
+≡
+η
+≤
+1
+L
+​
+c
+g
+\eta_{t}\equiv\eta\leq\frac{1}{Lc_{g}}
+, then
+MRTL
+solution satisfies
+𝔼
+[
+∥
+𝐰
+t
+(
+r
+)
+−
+𝐰
+⋆
+∥
+2
+2
+]
+≤
+γ
+t
+(
+∥
+P
+∥
+o
+​
+p
+2
+)
+r
+[
+𝔼
+[
+∥
+𝐰
+0
+(
+1
+)
+−
+𝐰
+(
+1
+)
+,
+⋆
+∥
+2
+2
+]
+\displaystyle{\mathbb{E}}[\|{\mathbf{w}}^{(r)}_{t}-{\mathbf{w}}^{\star}\|^{2}_{2}]\leq\gamma^{t}(\|P\|^{2}_{op})^{r}[{\mathbb{E}}[\|{\mathbf{w}}^{(1)}_{0}-{\mathbf{w}}^{(1),\star}\|^{2}_{2}]
+−
+γ
+t
+​
+‖
+P
+‖
+2
+2
+​
+β
++
+γ
+t
+2
+​
+(
+‖
+P
+‖
+o
+​
+p
+2
+​
+β
+−
+β
+)
++
+O
+⁡
+(
+1
+)
+\displaystyle\qquad-\gamma^{t}\|P\|^{2}_{2}\beta+\gamma^{t_{2}}(\|P\|^{2}_{op}\beta-\beta)+O(1)
+where
+γ
+=
+1
+−
+2
+​
+η
+​
+μ
+\gamma=1-2\eta\mu
+,
+β
+=
+η
+​
+σ
+g
+2
+2
+​
+μ
+\beta=\frac{\eta\sigma_{g}^{2}}{2\mu}
+, and
+‖
+P
+‖
+o
+​
+p
+\|P\|_{op}
+is the operator norm of the interpolation operator
+P
+P
+.
+Consider a two resolution case where
+R
+=
+2
+R=2
+and
+𝐰
+⋆
+(
+2
+)
+=
+𝐰
+⋆
+{\mathbf{w}}^{(2)}_{\star}={\mathbf{w}}_{\star}
+. Let
+t
+r
+t_{r}
+be the total number of iterations of resolution
+r
+r
+. Based on Eqn. (
+12
+), for a fixed resolution algorithm, after
+t
+1
++
+t
+2
+t_{1}+t_{2}
+number of iterations,
+𝔼
+⁡
+[
+‖
+𝐰
+t
+1
++
+t
+2
+−
+𝐰
+⋆
+‖
+2
+2
+]
+−
+β
+≤
+(
+1
+−
+2
+​
+η
+​
+μ
+)
+t
+1
++
+t
+2
+​
+(
+𝔼
+⁡
+[
+‖
+𝐰
+0
+−
+𝐰
+⋆
+‖
+2
+2
+]
+−
+β
+)
+{\mathbb{E}}[\|{\mathbf{w}}_{t_{1}+t_{2}}-{\mathbf{w}}_{\star}\|_{2}^{2}]-\beta\leq(1-2\eta\mu)^{t_{1}+t_{2}}({\mathbb{E}}[\|{\mathbf{w}}_{0}-{\mathbf{w}}^{\star}\|_{2}^{2}]-\beta)
+For multiresolution, where we train on resolution
+r
+=
+1
+r=1
+first, we have
+E
+⁡
+[
+‖
+𝐰
+t
+1
+(
+1
+)
+−
+𝐰
+⋆
+(
+1
+)
+‖
+2
+2
+]
+−
+β
+≤
+(
+1
+−
+2
+​
+η
+​
+μ
+)
+t
+1
+​
+(
+𝔼
+⁡
+[
+‖
+𝐰
+0
+(
+1
+)
+−
+𝐰
+⋆
+(
+1
+)
+‖
+2
+2
+]
+−
+β
+)
+E[\|{\mathbf{w}}^{(1)}_{t_{1}}-{\mathbf{w}}^{(1)}_{\star}\|_{2}^{2}]-\beta\leq(1-2\eta\mu)^{t_{1}}({\mathbb{E}}[\|{\mathbf{w}}^{(1)}_{0}-{\mathbf{w}}^{(1)}_{\star}\|_{2}^{2}]-\beta)
+At resolution
+r
+=
+2
+r=2
+, we have
+𝔼
+⁡
+[
+‖
+𝐰
+t
+2
+(
+2
+)
+−
+𝐰
+⋆
+‖
+2
+2
+]
+−
+β
+≤
+(
+1
+−
+2
+​
+η
+​
+μ
+)
+t
+2
+​
+(
+𝔼
+⁡
+[
+‖
+𝐰
+0
+(
+2
+)
+−
+𝐰
+⋆
+‖
+2
+2
+]
+−
+β
+)
+{\mathbb{E}}[\|{\mathbf{w}}^{(2)}_{t_{2}}-{\mathbf{w}}_{\star}\|_{2}^{2}]-\beta\leq(1-2\eta\mu)^{t_{2}}({\mathbb{E}}[\|{\mathbf{w}}_{0}^{(2)}-{\mathbf{w}}_{\star}\|_{2}^{2}]-\beta)
+(16)
+Using interpolation, we have
+𝐰
+0
+(
+2
+)
+=
+P
+​
+𝐰
+t
+1
+(
+1
+)
+{\mathbf{w}}_{0}^{(2)}=P{\mathbf{w}}_{t_{1}}^{(1)}
+. Given the spatial autocorrelation assumption, we have
+‖
+𝐰
+⋆
+(
+2
+)
+−
+P
+​
+𝐰
+⋆
+(
+1
+)
+‖
+2
+≤
+ϵ
+\|{\mathbf{w}}_{\star}^{(2)}-P{\mathbf{w}}_{\star}^{(1)}\|_{2}\leq\epsilon
+By the definition of operator norm and triangle inequality,
+𝔼
+[
+∥
+𝐰
+0
+(
+2
+)
+−
+𝐰
+⋆
+(
+2
+)
+∥
+2
+2
+≤
+𝔼
+[
+∥
+P
+𝐰
+t
+1
+(
+1
+)
+−
+𝐰
+⋆
+(
+2
+)
+∥
+2
+2
+]
+≤
+∥
+P
+∥
+o
+​
+p
+2
+𝔼
+[
+∥
+𝐰
+t
+1
+(
+1
+)
+−
+𝐰
+⋆
+(
+1
+)
+∥
+2
+2
+]
++
+ϵ
+2
+{\mathbb{E}}[\|{\mathbf{w}}_{0}^{(2)}-{\mathbf{w}}^{(2)}_{\star}\|_{2}^{2}\leq{\mathbb{E}}[\|P{\mathbf{w}}_{t_{1}}^{(1)}-{\mathbf{w}}^{(2)}_{\star}\|^{2}_{2}]\leq\|P\|_{op}^{2}{\mathbb{E}}[\|{\mathbf{w}}_{t_{1}}^{(1)}-{\mathbf{w}}^{(1)}_{\star}\|_{2}^{2}]+\epsilon^{2}
+Combined with eq. (
+16
+), we have
+𝔼
+⁡
+[
+‖
+𝐰
+t
+2
+(
+2
+)
+−
+𝐰
+⋆
+‖
+2
+2
+]
+−
+β
+≤
+\displaystyle{\mathbb{E}}[\|{\mathbf{w}}^{(2)}_{t_{2}}-{\mathbf{w}}_{\star}\|_{2}^{2}]-\beta\leq
+(
+1
+−
+2
+​
+η
+​
+μ
+)
+t
+2
+​
+(
+‖
+P
+‖
+o
+​
+p
+2
+​
+𝔼
+​
+[
+‖
+𝐰
+t
+1
+(
+1
+)
+−
+𝐰
+⋆
+(
+1
+)
+‖
+2
+2
+]
++
+ϵ
+2
+−
+β
+)
+\displaystyle(1-2\eta\mu)^{t_{2}}(\|P\|_{op}^{2}{\mathbb{E}}[\|{\mathbf{w}}_{t_{1}}^{(1)}-{\mathbf{w}}^{(1)}_{\star}\|_{2}^{2}]+\epsilon^{2}-\beta)
+(17)
+=
+\displaystyle=
+(
+1
+−
+2
+​
+η
+​
+μ
+)
+t
+1
++
+t
+2
+​
+‖
+P
+‖
+o
+​
+p
+2
+​
+(
+𝔼
+⁡
+[
+‖
+𝐰
+0
+(
+1
+)
+−
+𝐰
+⋆
+(
+1
+)
+‖
+2
+2
+]
+−
+β
+)
++
+(
+1
+−
+2
+​
+η
+​
+μ
+)
+t
+2
+​
+(
+‖
+P
+‖
+o
+​
+p
+2
+​
+β
++
+ϵ
+2
+−
+β
+)
+\displaystyle(1-2\eta\mu)^{t_{1}+t_{2}}\|P\|_{op}^{2}({\mathbb{E}}[\|{\mathbf{w}}^{(1)}_{0}-{\mathbf{w}}^{(1)}_{\star}\|_{2}^{2}]-\beta)+(1-2\eta\mu)^{t_{2}}(\|P\|_{op}^{2}\beta+\epsilon^{2}-\beta)
+(18)
+If we initialize
+𝐰
+0
+{\mathbf{w}}_{0}
+and
+𝐰
+0
+(
+1
+)
+{\mathbf{w}}^{(1)}_{0}
+such that
+‖
+𝐰
+0
+(
+1
+)
+−
+𝐰
+⋆
+(
+1
+)
+‖
+2
+2
+=
+‖
+𝐰
+0
+−
+𝐰
+⋆
+‖
+2
+2
+\|{\mathbf{w}}^{(1)}_{0}-{\mathbf{w}}^{(1)}_{\star}\|_{2}^{2}=\|{\mathbf{w}}_{0}-{\mathbf{w}}_{\star}\|_{2}^{2}
+, we have
+MRTL
+solution
+𝔼
+[
+∥
+𝐰
+t
+1
++
+t
+2
+′
+−
+𝐰
+⋆
+∥
+2
+2
+]
+−
+α
+≤
+(
+1
+−
+2
+η
+μ
+)
+t
+1
++
+t
+2
+∥
+P
+∥
+o
+​
+p
+2
+(
+𝔼
+[
+∥
+𝐰
+0
+′
+−
+𝐰
+⋆
+∥
+2
+2
+]
+−
+α
+)
+\displaystyle{\mathbb{E}}[\|{\mathbf{w}}^{{}^{\prime}}_{t_{1}+t_{2}}-{\mathbf{w}}_{\star}\|_{2}^{2}]-\alpha\leq(1-2\eta\mu)^{t_{1}+t_{2}}\|P\|_{op}^{2}({\mathbb{E}}[\|{\mathbf{w}}^{{}^{\prime}}_{0}-{\mathbf{w}}_{\star}\|_{2}^{2}]-\alpha)
+(19)
+for some
+α
+\alpha
+that completes the contraction. Repeat the resolution iterates in Eqn. (
+18
+), we reach our conclusion.
+∎
+A.2
+Computational Complexity Analysis
+In this section, we analyze the computational complexity for
+MRTL
+(Algorithm
+1
+). Assuming that
+∇
+f
+\nabla f
+is Lipschitz continuous, we can view gradient-based optimization as a fixed-point iteration operator
+F
+F
+with a contraction constant of
+γ
+∈
+(
+0
+,
+1
+)
+\gamma\in(0,1)
+(note that
+stochastic
+gradient descent converges to a noise ball instead of a fixed point).
+𝐰
+←
+F
+(
+𝐰
+)
+,
+F
+:=
+I
+−
+η
+∇
+f
+,
+∥
+F
+(
+𝐰
+)
+−
+F
+(
+𝐰
+′
+)
+∥
+≤
+γ
+∥
+𝐰
+−
+𝐰
+′
+∥
+.
+\displaystyle{\mathbf{w}}\leftarrow F({\mathbf{w}}),\hskip 10.0ptF:=I-\eta\nabla f,\|F({\mathbf{w}})-F({\mathbf{w}}^{\prime})\|\leq\gamma\|{\mathbf{w}}-{\mathbf{w}}^{\prime}\|.
+Let
+𝐰
+⋆
+(
+r
+)
+{\mathbf{w}}^{(r)}_{\star}
+be the optimal estimator at resolution
+r
+r
+. Suppose for each resolution
+r
+r
+, we use the following finegrain criterion:
+‖
+𝐰
+t
+(
+r
+)
+−
+𝐰
+t
+−
+1
+(
+r
+)
+‖
+≤
+C
+0
+​
+D
+r
+γ
+⁡
+(
+1
+−
+γ
+)
+.
+\displaystyle\|{\mathbf{w}}_{t}^{(r)}-{\mathbf{w}}_{t-1}^{(r)}\|\leq\frac{C_{0}D_{r}}{\gamma(1-\gamma)}.
+(20)
+where
+t
+r
+t_{r}
+is the number of iterations taken at level
+r
+r
+. The algorithm terminates when the estimation error reaches
+C
+0
+​
+R
+(
+1
+−
+γ
+)
+2
+\frac{C_{0}R}{(1-\gamma)^{2}}
+.
+The following main theorem characterizes the speed-up gained by multiresolution learning
+MRTL
+w.r.t. the contraction factor
+γ
+\gamma
+and the terminal estimation error
+ϵ
+\epsilon
+.
+Theorem A.3
+.
+Suppose the fixed point iteration operator (gradient descent) for the optimization algorithm has a contraction factor (Lipschitz constant) of
+γ
+\gamma
+, the multiresolution learning procedure is faster than that of the fixed resolution algorithm by a factor of
+log
+⁡
+1
+(
+1
+−
+γ
+)
+​
+ϵ
+\log\frac{1}{(1-\gamma)\epsilon}
+, with
+ϵ
+\epsilon
+as the terminal estimation error.
+We prove several useful Lemmas before proving the main Theorem
+A.3
+.
+The following lemma analyzes the computational cost of the
+fixed-resolution
+algorithm.
+Lemma A.4
+.
+Given a fixed point iteration operator with a contraction factor
+γ
+\gamma
+, the computational complexity of a fixed-resolution training for a
+p
+p
+-order tensor with rank
+K
+K
+is
+𝒞
+=
+𝒪
+⁡
+(
+1
+|
+log
+⁡
+γ
+|
+⋅
+log
+⁡
+(
+1
+(
+1
+−
+γ
+)
+​
+ϵ
+)
+⋅
+K
+​
+p
+(
+1
+−
+γ
+)
+2
+​
+ϵ
+)
+.
+\displaystyle\mathcal{C}=\mathcal{O}\left(\frac{1}{|\log\gamma|}\cdot\log\left(\frac{1}{(1-\gamma)\epsilon}\right)\cdot\frac{Kp}{(1-\gamma)^{2}\epsilon}\right).
+(21)
+Proof.
+At a high level, we can prove this by choosing a small enough resolution
+r
+r
+such that the approximation error is bounded with a fixed number of iterations. Let
+𝐰
+⋆
+(
+r
+)
+{\mathbf{w}}_{\star}^{(r)}
+be the optimal estimate at resolution
+r
+r
+and
+𝐰
+t
+{\mathbf{w}}_{t}
+be the estimate at step
+t
+t
+. Then
+‖
+𝐰
+⋆
+−
+𝐰
+t
+‖
+≤
+‖
+𝐰
+⋆
+−
+𝐰
+⋆
+(
+r
+)
+‖
++
+‖
+𝐰
+⋆
+(
+r
+)
+−
+𝐰
+t
+‖
+≤
+ϵ
+.
+\|{\mathbf{w}}_{\star}-{\mathbf{w}}_{t}\|\leq\|{\mathbf{w}}_{\star}-{\mathbf{w}}^{(r)}_{\star}\|+\|{\mathbf{w}}^{(r)}_{\star}-{\mathbf{w}}_{t}\|\leq\epsilon.
+(22)
+We pick a fixed resolution
+r
+r
+small enough such that
+‖
+𝐰
+⋆
+−
+𝐰
+⋆
+(
+r
+)
+‖
+≤
+ϵ
+2
+,
+\displaystyle\|{\mathbf{w}}_{\star}-{\mathbf{w}}_{\star}^{(r)}\|\leq\frac{\epsilon}{2},
+(23)
+then using the termination criteria
+‖
+𝐰
+⋆
+−
+𝐰
+⋆
+(
+r
+)
+‖
+≤
+C
+0
+​
+R
+(
+1
+−
+γ
+)
+2
+\|{\mathbf{w}}_{\star}-{\mathbf{w}}^{(r)}_{\star}\|\leq\frac{C_{0}R}{(1-\gamma)^{2}}
+gives
+D
+r
+=
+Ω
+⁡
+(
+(
+1
+−
+γ
+)
+2
+​
+ϵ
+)
+D_{r}=\Omega((1-\gamma)^{2}\epsilon)
+where
+D
+r
+D_{r}
+is the discretization size at resolution
+r
+r
+. Initialize
+𝐰
+0
+=
+0
+{\mathbf{w}}_{0}=0
+and apply
+F
+F
+to
+𝐰
+{\mathbf{w}}
+for
+t
+t
+times such that
+γ
+t
+2
+​
+(
+1
+−
+γ
+)
+​
+‖
+F
+⁡
+(
+𝐰
+0
+)
+‖
+≤
+ϵ
+2
+.
+\displaystyle\frac{\gamma^{t}}{2(1-\gamma)}\|F({\mathbf{w}}_{0})\|\leq\frac{\epsilon}{2}.
+(24)
+As
+𝐰
+0
+=
+0
+{\mathbf{w}}_{0}=0
+,
+‖
+F
+⁡
+(
+𝐰
+0
+)
+‖
+≤
+2
+​
+C
+\|F({\mathbf{w}}_{0})\|\leq 2C
+, we obtain that
+t
+≤
+1
+|
+log
+⁡
+γ
+|
+⋅
+log
+⁡
+(
+2
+​
+C
+(
+1
+−
+γ
+)
+​
+ϵ
+)
+,
+\displaystyle t\leq\frac{1}{|\log\gamma|}\cdot\log\left(\frac{2C}{(1-\gamma)\epsilon}\right),
+(25)
+Note that for an order
+p
+p
+tensor with rank
+K
+K
+, the computational complexity of every iteration in
+MRTL
+is
+𝒪
+⁡
+(
+K
+​
+p
+/
+D
+r
+)
+\mathcal{O}(Kp/D_{r})
+with
+D
+r
+D_{r}
+as the discretization size. Hence, the computational complexity of the fixed resolution training is
+𝒞
+\displaystyle\mathcal{C}
+=
+𝒪
+⁡
+(
+1
+|
+log
+⁡
+γ
+|
+⋅
+log
+⁡
+(
+1
+(
+1
+−
+γ
+)
+​
+ϵ
+)
+⋅
+K
+​
+p
+D
+r
+)
+\displaystyle=\mathcal{O}\left(\frac{1}{|\log\gamma|}\cdot\log\left(\frac{1}{(1-\gamma)\epsilon}\right)\cdot\frac{Kp}{D_{r}}\right)
+=
+𝒪
+⁡
+(
+1
+|
+log
+⁡
+γ
+|
+⋅
+log
+⁡
+(
+1
+(
+1
+−
+γ
+)
+​
+ϵ
+)
+⋅
+K
+​
+p
+(
+1
+−
+γ
+)
+2
+​
+ϵ
+)
+.
+∎
+\displaystyle=\mathcal{O}\left(\frac{1}{|\log\gamma|}\cdot\log\left(\frac{1}{(1-\gamma)\epsilon}\right)\cdot\frac{Kp}{(1-\gamma)^{2}\epsilon}\right).\qed
+Given a spatial discretization
+r
+r
+, we can construct an operator
+F
+r
+F_{r}
+that learns discretized tensor weights. The next lemma relates the estimation error with resolution. The following lemma relates the estimation error with resolution:
+Lemma A.5
+.
+(
+Nash 2000
+)
+For each resolution level
+r
+=
+1
+,
+⋯
+,
+R
+r=1,\cdots,R
+, there exists a constant
+C
+1
+C_{1}
+and
+C
+2
+C_{2}
+, such that the fixed point iteration with discretization size
+D
+r
+D_{r}
+has an estimation error:
+‖
+F
+⁡
+(
+𝐰
+)
+−
+F
+(
+r
+)
+​
+(
+𝐰
+)
+‖
+≤
+(
+C
+1
++
+γ
+​
+C
+2
+​
+‖
+𝐰
+‖
+)
+​
+D
+r
+\displaystyle\|F({\mathbf{w}})-F^{(r)}({\mathbf{w}})\|\leq(C_{1}+\gamma C_{2}\|{\mathbf{w}}\|)D_{r}
+(26)
+Proof.
+See
+(
+Nash 2000
+)
+for details.
+We have obtained the discretization error for the fixed point operation at any resolution. Next we analyze the number of iterations
+t
+r
+t_{r}
+needed at each resolution
+r
+r
+before finegraining.
+Lemma A.6
+.
+For every resolution
+r
+=
+1
+,
+…
+,
+R
+r=1,\dots,R
+, there exists a constant
+C
+′
+C^{\prime}
+such that the number of iterations
+t
+r
+t_{r}
+before finegraining satisfies:
+t
+r
+≤
+C
+′
+/
+log
+⁡
+|
+γ
+|
+\displaystyle t_{r}\leq C^{\prime}/\log|\gamma|
+(27)
+Proof.
+According to the fixed point iteration definition, we have for each resolution
+r
+r
+:
+∥
+F
+r
+(
+𝐰
+t
+r
+)
+−
+𝐰
+t
+r
+(
+r
+)
+)
+∥
+\displaystyle\|F_{r}({\mathbf{w}}_{t_{r}})-{\mathbf{w}}_{t_{r}}^{(r)})\|
+≤
+\displaystyle\leq
+γ
+t
+r
+−
+1
+​
+‖
+F
+r
+​
+(
+𝐰
+0
+(
+r
+)
+)
+−
+𝐰
+0
+(
+r
+)
+‖
+\displaystyle\gamma^{t_{r}-1}\|F_{r}({\mathbf{w}}^{(r)}_{0})-{\mathbf{w}}^{(r)}_{0}\|
+(28)
+≤
+\displaystyle\leq
+γ
+t
+r
+−
+1
+​
+C
+0
+​
+D
+r
+1
+−
+γ
+\displaystyle\gamma^{t_{r}-1}\frac{C_{0}D_{r}}{1-\gamma}
+(29)
+≤
+\displaystyle\leq
+C
+′
+​
+γ
+t
+r
+−
+1
+\displaystyle C^{\prime}\gamma^{t_{r}-1}
+(30)
+using the definition of the finegrain criterion. ∎
+By combining Lemmas
+A.6
+and the computational cost per iteration, we can compute the total computational cost for our
+MRTL
+algorithm, which is proportional to the total number of iterations for all resolutions:
+𝒞
+MRTL
+\displaystyle\mathcal{C}_{\texttt{MRTL}{}}
+=
+𝒪
+⁡
+(
+1
+|
+log
+⁡
+γ
+|
+​
+[
+(
+D
+r
+/
+K
+​
+p
+)
+−
+1
++
+(
+2
+​
+D
+r
+/
+K
+​
+p
+)
+−
+1
++
+(
+4
+​
+D
+r
+/
+K
+​
+p
+)
+−
+1
++
+⋯
+]
+)
+\displaystyle=\mathcal{O}\left(\frac{1}{|\log\gamma|}\left[(D_{r}/Kp)^{-1}+(2D_{r}/Kp)^{-1}+(4D_{r}/Kp)^{-1}+\cdots\right]\right)
+=
+𝒪
+⁡
+(
+1
+|
+log
+⁡
+γ
+|
+​
+(
+K
+​
+p
+D
+r
+)
+​
+[
+1
++
+1
+2
++
+1
+4
++
+⋯
+]
+)
+\displaystyle=\mathcal{O}\left(\frac{1}{|\log\gamma|}\left(\frac{Kp}{D_{r}}\right)\left[1+\frac{1}{2}+\frac{1}{4}+\cdots\right]\right)
+=
+𝒪
+​
+(
+1
+|
+log
+⁡
+γ
+|
+​
+(
+K
+​
+p
+D
+r
+)
+​
+[
+1
+−
+(
+1
+2
+)
+n
+1
+−
+1
+2
+]
+)
+\displaystyle=\mathcal{O}\left(\frac{1}{|\log\gamma|}\left(\frac{Kp}{D_{r}}\right)\left[\frac{1-(\frac{1}{2})^{n}}{1-\frac{1}{2}}\right]\right)
+=
+𝒪
+​
+(
+1
+|
+log
+⁡
+γ
+|
+​
+(
+K
+​
+p
+(
+1
+−
+γ
+)
+2
+​
+ϵ
+)
+)
+,
+\displaystyle=\mathcal{O}\left(\frac{1}{|\log\gamma|}\left(\frac{Kp}{(1-\gamma)^{2}\epsilon}\right)\right),
+(31)
+where the last step uses the termination criterion in (
+20
+). Comparing with the complexity analysis for the fixed resolution algorithm in Lemma
+A.4
+, we complete the proof.
+∎
+Appendix B
+Experiment Details
+Basketball
+We list implementation details for the basketball dataset. We focus only on half-court possessions, where all players have crossed into the half court as in
+(
+Yue et al. 2014
+)
+. The ball must also be inside the court and be within a 4 foot radius of the ballhandler. We discard any passing/turnover events and do not consider frames with free throws.
+For the ball handler location
+{
+D
+r
+1
+}
+\{D_{r}^{1}\}
+, we discretize the half-court into resolutions
+4
+×
+5
+,
+8
+×
+10
+,
+20
+×
+25
+,
+40
+×
+50
+4\times 5,8\times 10,20\times 25,40\times 50
+. For the relative defender locations, at the full resolution, we choose a
+12
+×
+12
+12\times 12
+grid around the ball handler where the ball handler is located at
+(
+6
+,
+2
+)
+(6,2)
+(more space in front of the ball handler than behind him/her). We also consider a smaller grid around the ball handler for the defender locations, assuming that defenders that are far away from the ball handler do not influence shooting probability. We use
+6
+×
+6
+,
+12
+×
+12
+6\times 6,12\times 12
+for defender positions.
+Let us denote the pair of resolutions as
+(
+D
+r
+1
+,
+D
+r
+2
+)
+(D_{r}^{1},D_{r}^{2})
+. We train the full-rank model at resolutions
+(
+4
+×
+5
+,
+6
+×
+6
+)
+,
+(
+8
+×
+10
+,
+6
+×
+6
+)
+,
+(
+8
+×
+10
+,
+12
+×
+12
+)
+(4\times 5,6\times 6),(8\times 10,6\times 6),(8\times 10,12\times 12)
+and the low-rank model at resolutions
+(
+8
+×
+10
+,
+12
+×
+12
+)
+,
+(
+20
+×
+25
+,
+12
+×
+12
+)
+,
+(
+40
+×
+50
+,
+12
+×
+12
+)
+(8\times 10,12\times 12),(20\times 25,12\times 12),(40\times 50,12\times 12)
+.
+There is a notable class imbalance in labels (88% of data points have zero labels) so we use weighted cross entropy loss using the inverse of class counts as weights. For the low-rank model, we use tensor rank
+K
+=
+20
+K=20
+. The performance trend of
+MRTL
+is similar across a variety of tensor ranks.
+K
+K
+should be chosen appropriately to the desired level of approximation.
+Climate
+We describe the data sources used for climate. The precipitation data comes from the PRISM group
+(
+PRISM Climate Group 2013
+)
+, which provides estimates monthly estimates at 1/24º spatial resolution across the continental U.S from 1895 to 2018. For oceanic data we use the EN4 reanalysis product
+(
+Good et al. 2013
+)
+, which provides monthly estimates for ocean salinity and temperature at 1º spatial resolution across the globe from 1900 to the present (see Fig.
+3
+). We constrain our spatial analysis to the range [-180ºW, 0ºW] and [-20ºS, 60ºN], which encapsulates the area around North America and a large portion of South America.
+The ocean data is non-stationary, with the variance of the data increasing over time. This is likely due to improvement in observational measurements of ocean temperature and salinity over time, which reduce the amount of interpolation needed to generate an estimate for a given month. After detrending and deseasonalizing, we split the train, validation, and test sets using random consecutive sequences so that their samples come from a similar distribution.
+We train the full-rank model at resolutions
+4
+×
+9
+4\times 9
+and
+8
+×
+18
+8\times 18
+and the low-rank model at resolutions
+8
+×
+18
+8\times 18
+,
+12
+×
+27
+12\times 27
+,
+24
+×
+54
+24\times 54
+,
+40
+×
+90
+40\times 90
+,
+60
+×
+135
+60\times 135
+, and
+80
+×
+180
+80\times 180
+. For finegraining criteria, we use a patience factor of 4, i.e. training was terminated when a finegraining criterion was reached a total of 4 times. Both validation loss and gradient statistics were relatively noisy during training (possibly due to a small number of samples), leading to early termination without the patience factor.
+During finegraining, the weights were upsampled to the higher resolution using bilinear interpolation and then scaled by the ratio of the number of inputs for the higher resolution to the number of inputs for the lower resolution (as described in Section
+4
+) to preserve the magnitude of the prediction.
+Details
+We trained the basketball dataset on 4 RTX 2080 Ti GPUs, while the climate dataset experiments were performed on a separate workstation with 1 RTX 2080 Ti GPU. The computation times of the fixed-resolution and
+MRTL
+model were compared on the same setup for all experiments.
+B.1
+Hyperparameters
+Hyperparameter
+Basketball
+Climate
+Batch size
+32
+−
+1024
+32-1024
+8
+−
+128
+8-128
+Full-rank learning rate
+η
+\eta
+10
+−
+3
+−
+10
+−
+1
+10^{-3}-10^{-1}
+10
+−
+4
+−
+10
+−
+1
+10^{-4}-10^{-1}
+Full-rank regularization
+λ
+\lambda
+10
+−
+5
+−
+10
+0
+10^{-5}-10^{0}
+10
+−
+4
+−
+10
+−
+1
+10^{-4}-10^{-1}
+Low-rank learning rate
+η
+\eta
+10
+−
+5
+−
+10
+−
+1
+10^{-5}-10^{-1}
+10
+−
+4
+−
+10
+−
+1
+10^{-4}-10^{-1}
+Low-rank regularization
+λ
+\lambda
+10
+−
+5
+−
+10
+0
+10^{-5}-10^{0}
+10
+−
+4
+−
+10
+−
+1
+10^{-4}-10^{-1}
+Spatial regularization
+σ
+\sigma
+0.03
+−
+0.2
+0.03-0.2
+0.03
+−
+0.2
+0.03-0.2
+Learning rate decay
+γ
+\gamma
+0.7
+−
+0.95
+0.7-0.95
+0.7
+−
+0.95
+0.7-0.95
+Table 2
+:
+Search range for
+Opt
+hyperparameters
+Table
+2
+show the search ranges of all hyperparameters considered. We performed separate random searches over this search space for
+MRTL
+, fixed-resolution model, and the randomly initialized low-rank model. We also separate the learning rate
+η
+\eta
+and regularization coefficient
+λ
+\lambda
+between the full-rank and low-rank models.
+B.2
+Accuracy and Convergence
+Figure 10
+:
+Basketball: Loss curves of
+MRTL
+vs. the fixed-resolution model for the full rank (left) and low rank model (right). The vertical lines indicate finegraining to the next resolution.
+Fig.
+10
+shows the loss curves of
+MRTL
+vs. the fixed resolution model for the full rank and low rank case. They show a similar convergence trend, where the fixed-resolution model is much slower than
+MRTL
+.
+B.3
+Finegraining Criteria
+Table
+3
+lists the results for the different finegraining criteria. In the classification case, we see that validation loss reaches much faster convergence than other gradient-based criteria in the full-rank case, while the gradient-based criteria are faster for the low-rank model. All criteria can reach similar F1 scores. For the regression case, all stopping criteria converge to a similar loss in roughly the same amount of time for the full-rank model. For the low-rank model, validation loss appears to converge more quickly and to a lower loss value.
+Table 3
+:
+Runtime and prediction performance comparison of different finegraining criteria
+Dataset
+Model
+Full-Rank
+Low-Rank
+Time [s]
+Loss
+F1
+Time [s]
+Loss
+F1
+Basketball
+Validation loss
+1230
+±
+74.1
+\pm 74.1
+0.699
+±
+0.00237
+\pm 0.00237
+0.607
+±
+0.00182
+\pm 0.00182
+2009
+±
+715
+\pm 715
+0.868
+±
+0.0399
+\pm 0.0399
+0.475
+±
+0.0121
+\pm 0.0121
+Gradient norm
+7029
+±
+759
+\pm 759
+0.703
+±
+0.00216
+\pm 0.00216
+0.610
+±
+0.00149
+\pm 0.00149
+912
+±
+281
+\pm 281
+0.883
+±
+0.00664
+\pm 0.00664
+0.476
+±
+0.00270
+\pm 0.00270
+Gradient variance
+7918
+±
+1949
+\pm 1949
+0.701
+±
+0.00333
+\pm 0.00333
+0.609
+±
+0.00315
+\pm 0.00315
+933
+±
+240
+\pm 240
+0.883
+±
+0.00493
+\pm 0.00493
+0.476
+±
+0.00197
+\pm 0.00197
+Gradient entropy
+8715
+±
+957
+\pm 957
+0.697
+±
+0.00551
+\pm 0.00551
+0.597
+±
+0.00737
+\pm 0.00737
+939
+±
+259
+\pm 259
+0.886
+±
+0.00248
+\pm 0.00248
+0.475
+±
+0.00182
+\pm 0.00182
+Climate
+Validation loss
+1.04
+±
+0.115
+\pm 0.115
+0.0448
+±
+0.0108
+\pm 0.0108
+-
+37.4
+±
+28.7
+\pm 28.7
+0.0284
+±
+0.00171
+\pm 0.00171
+-
+Gradient norm
+1.11
+±
+0.0413
+\pm 0.0413
+0.0506
+±
+0.00853
+\pm 0.00853
+-
+59.1
+±
+16.9
+\pm 16.9
+0.0301
+±
+0.00131
+\pm 0.00131
+-
+Gradient variance
+1.14
+±
+0.0596
+\pm 0.0596
+0.0458
+±
+0.00597
+\pm 0.00597
+-
+62.9
+±
+14.4
+\pm 14.4
+0.0305
+±
+0.00283
+\pm 0.00283
+-
+Gradient entropy
+0.984
+±
+0.0848
+\pm 0.0848
+0.0490
+±
+0.0144
+\pm 0.0144
+-
+48.4
+±
+21.1
+\pm 21.1
+0.0331
+±
+0.00949
+\pm 0.00949
+-
+B.4
+Random initialization
+Fig.
+11
+shows all latent factors after training
+MRTL
+vs a randomly initialized low-rank model for ballhandler position. We can see clearly that full-rank initialization produces spatially coherent factors while random initialization can produce some uninterpretable factors (e.g. the latent factors for
+k
+=
+3
+,
+4
+,
+5
+,
+7
+,
+19
+,
+20
+k=3,4,5,7,19,20
+are not semantically meaningful). Fig.
+12
+shows latent factors for the defender position spatial mode, and we can draw similar conclusions about random initialization.
+Figure 11
+:
+Basketball: Latent factors of ball handler position after training
+MRTL
+(left) and a low-rank model using random initialization (right). The factors have been normalized to (-1,1) so that reds are positive and blues are negative. The latent factors are numbered left to right, top to bottom.
+Figure 12
+:
+Basketball: Latent factors of relative defender positions after training
+MRTL
+(left) and a low-rank model using random initialization (right). The factors have been normalized to (-1,1) so that reds are positive and blues are negative. The green dot represents the ballhandler at (6, 2). The latent factors are numbered left to right, top to bottom.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

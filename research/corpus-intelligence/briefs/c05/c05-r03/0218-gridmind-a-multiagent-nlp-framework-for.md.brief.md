@@ -1,0 +1,15 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0218-gridmind-a-multiagent-nlp-framework-for.md
+## What it is (1-2 sentences)
+A Telemetry Sports vendor paper (2025) describing GridMind, a multi-agent NLP system that unifies structured NFL play-by-play, semi-structured NGS/RFID tracking, and unstructured text/audio/video behind natural-language querying. Verdict in file: ADAPT as an architecture reference for GSE's conversational data layer — not as a system (58% accuracy, proprietary metrics).
+## Key metrics/methods (formulas where given, else "not specified")
+No equations (systems paper). Agent graph with message-passing: (1) Prompt Augmentation Agent, (2) Query Interpretation Agent (T5-class + sentence embeddings, few-shot → NL to MongoDB/SQL), (3) Data Retrieval Agents (structured / semi-structured NGS+CV / unstructured embedding search), (4) Synthesis Agent. Techniques: RAG, Sentence-BERT + OpenAI embeddings, Whisper speech-to-text, Pinecone vector DB, Chain-of-Thought query decomposition, dialogue memory. Anti-hallucination rule: ground numeric claims in structured data models.
+## Data sources named
+Telemetry Sports internal stack: NFL play-by-play/game logs (MongoDB/SQL); NGS/RFID tracking JSON (velocity, acceleration, field coverage); internal computer-vision acquisition system; scouting reports, game commentary, podcasts, social media. Evaluation: 10-person closed alpha, binary good/bad ratings. No public data/code released. Proprietary metrics: Passing Composite, QB Accuracy, QB Decision Making, QB IQ, tWAR.
+## Findings (numbers and facts, not vibes)
+Retrieval accuracy: 58% good/bad in closed alpha (n=10). Latency: 17.5s mean sequential; 20s+ outliers on complex queries. Worked examples (illustrative, not evaluated): Mahomes vs Purdy season yards 2,454 vs 2,208 with 12 TDs each; Anthony Richardson tWAR 0.10 (39th of 48 QBs); Ravens run blocking 19th/32; Vikings pass coverage 17th, rush defense 28th. Admitted failures: terminology mismatch ("OB-LB" confused users), metadata dependence, compute overhead. No baselines vs competing systems, no ablation of agent contributions.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- QB-BEHAVIOR: proprietary QB metrics named (QB Accuracy, QB Decision Making, QB IQ, Passing Composite, tWAR) — Telemetry-internal, non-reproducible, vendor-locked; treat as competitive-intel on how vendors package QB evaluation, not as metrics to adopt.
+- OTHER: conversational-analyst architecture (ask in words → retrieve → explain in words) maps onto GSE's engine DB + nflverse + research corpus; complements the [0216] wordalisation paper (NL understanding vs NL generation).
+- TRUST-SIGNAL: paper's §4.1 rule — ground every numeric claim in an executed query — is directly adoptable as an anti-hallucination guardrail.
+## Engine-actionable? (yes/no + one-line what)
+Yes — adopt the agent-decomposition + RAG + NL-to-SQL design as the reference architecture for a GSE conversational analyst over GSE-owned data (engine picks DB, nflverse, NGS, research corpus), with an 85%+ accuracy gate before any fan-facing use.

@@ -1,0 +1,844 @@
+                                          Few-Shot Precise Event Spotting via Unified Multi-Entity Graph and Distillation
+                                                        Zhaoyu Liu1 , Kan Jiang1 , Murong Ma1 , Zhe Hou2 , Yun Lin3 , Jin Song Dong1
+                                                           1
+                                                            National University of Singapore 2 Griffith University 3 Shanghai Jiao Tong University
+                                                                     {liuzy, jiangkan}@nus.edu.sg, murongma@u.nus.edu
+                                                            z.hou@griffith.edu.au, lin yun@sjtu.edu.cn, dcsdjs@nus.edu.sg
+
+
+
+
+                                                                    Abstract                                 Video Clip
+arXiv:2511.14186v1 [cs.CV] 18 Nov 2025
+
+
+
+
+                                           Precise event spotting (PES) aims to recognize fine-grained       ...                                                                      ...
+                                           events at exact moments and has become a key component
+                                           of sports analytics. This task is particularly challenging due
+                                           to rapid succession, motion blur, and subtle visual differ-       Ball contacts the racket
+                                                                                                                                                             Unified Multi-Entity Graph
+                                           ences. Consequently, most existing methods rely on domain-
+                                           specific, end-to-end training with large labeled datasets and                                    Pose estimator                    human pose
+                                           often struggle in few-shot conditions due to their depen-                                        Ball tracker
+                                                                                                                                            Court detector            ball
+                                           dence on pixel- or pose-based inputs alone. However, ob-                                         ...
+                                                                                                                                                              court corners
+                                           taining large labeled datasets is practically hard. We pro-
+                                           pose a Unified Multi-Entity Graph Network (UMEG-Net) for
+                                           few-shot PES. UMEG-Net integrates human skeletons and             Event type: Near-court player deuce serve towards T in-bound
+                                           sport-specific object keypoints into a unified graph and fea-
+                                           tures an efficient spatio-temporal extraction module based       Figure 1: Precise event spotting in sports videos, with event
+                                           on advanced GCN and multi-scale temporal shift. To further       timestamps highlighted in red. Each scene can be repre-
+                                           enhance performance, we employ multimodal distillation to        sented by a unified graph including human poses and sport-
+                                           transfer knowledge from keypoint-based graphs to visual rep-     related entity keypoints (e.g., ball, court corners).
+                                           resentations. Our approach achieves robust performance with
+                                           limited labeled data and significantly outperforms baseline
+                                           models in few-shot settings, providing a scalable and effec-
+                                           tive solution for few-shot PES. Code is publicly available at    ing costs and significantly limits their scalability to new do-
+                                           https://github.com/LZYAndy/UMEG-Net.                             mains (Xu et al. 2025).
+                                                                                                               These limitations underscore the significance of few-shot
+                                                                Introduction                                learning for PES, an area that remains under-explored in ex-
+                                         Precise Event Spotting (PES) is a trending problem that            isting research. Traditional few-shot methods, such as con-
+                                         aims to identify events and their class from long, untrimmed       trastive (Chen et al. 2020) and meta-learning (Wanyan et al.
+                                         videos, particularly in sports (Hong et al. 2022; Xarles et al.    2025) approaches, typically excel at coarse-grained, action-
+                                         2024; Xu et al. 2025). The main objective is to accurately         level recognition but do not directly address the frame-level
+                                         detect sequences of fine-grained, rapidly occurring sports         accuracy required by PES. Recent advancements in human
+                                         events, such as a hitting event in racket sports, within a         pose estimation (Sun et al. 2019) and sports object track-
+                                         tight tolerance window (1-2 frames). This capability is es-        ing (Huang et al. 2019; Jiang et al. 2020, 2023; Chen and
+                                         sential for sports analytics applications such as match fore-      Wang 2023; Jiang et al. 2024) have facilitated transform-
+                                         casting (Wang et al. 2022; Liu and Su 2025), strategic             ing raw RGB videos into compact, keypoint-based repre-
+                                         and tactical analysis (Dong et al. 2023; Liu et al. 2023,          sentations suitable for few-shot scenarios. Although numer-
+                                         2024a,b,c, 2025b), and player performance evaluation (De-          ous studies leverage human pose data for action recogni-
+                                         croos et al. 2019; Pappalardo et al. 2019). Most existing          tion (Duan et al. 2022; Zhou et al. 2024; Liu et al. 2025a),
+                                         PES methods are trained end-to-end using raw RGB im-               these methods usually neglect critical contextual cues from
+                                         ages as input (Hong et al. 2022; Xarles et al. 2024; Liu           objects (e.g., the ball) and the environment (e.g., the court),
+                                         et al. 2025c). One main challenge with these approaches is         resulting in substantial information loss and compromised
+                                         that they rely on large-scale datasets with dense, frame-level     event detection performance. Some works have attempted to
+                                         annotations (Shao et al. 2020; Xu et al. 2022; Wang et al.         include additional context (Ibh et al. 2023; Li et al. 2024),
+                                         2023b; Liu et al. 2025c), which leads to substantial label-        yet they predominantly focus on coarse-grained recognition
+                                                                                                            tasks and thus lack the fine-grained temporal precision es-
+                                         Copyright © 2026, Association for the Advancement of Artificial    sential for PES, making direct comparisons difficult. Addi-
+                                         Intelligence (www.aaai.org). All rights reserved.                  tionally, keypoint-based approaches depend on accurate de-
+tections, which are often unreliable in fast-moving sports                             Related Work
+due to motion blur and occlusion. Thus, relying solely on
+                                                                 Precise Event Spotting
+keypoints is suboptimal for robust PES.
+    To address these limitations, we propose a graph-based       Precise event spotting in sports video analysis, initially in-
+method for precise event spotting that flexibly incorporates     troduced by (Einfalt et al. 2019) for athletics (long and triple
+human skeletons and object-level keypoints (e.g, ball posi-      jumps), involves identifying exact timestamps of specific ac-
+tions and court corners). We first use pose estimation and       tions within strict frame-level tolerances. Subsequently, the
+object detection to extract keypoints from all relevant en-      SoccerNet dataset (Giancola et al. 2018) expanded this re-
+tities. These keypoints are integrated into a unified multi-     search by providing extensive soccer video annotations for
+entity graph (see Figure 1), capturing interactions among        temporal action localization. Recent advances (Hong et al.
+multiple players, objects, and contextual landmarks, thus        2022; Xarles et al. 2024) have broadened the applicability of
+overcoming the limitations of standard skeleton-only rep-        PES across various sports. E2E-Spot (Hong et al. 2022), em-
+resentations. To efficiently encode spatial-temporal relation-   ploying a CNN backbone with Gated Shift Modules (Sud-
+ships, we introduce the Unified Multi-Entity Graph Network       hakaran, Escalera, and Lanz 2020) and GRUs (Dey and
+(UMEG-Net), a novel graph-based module explicitly de-            Salem 2017) for temporal modeling, performed effectively
+signed for few-shot PES. UMEG-Net employs an advanced            in tennis and figure skating scenarios but struggled with
+Graph Convolutional Network (GCN) backbone for spatial           the complex temporal dynamics of SoccerNet V2 (Cioppa
+modeling, replacing traditional temporal convolutions with a     et al. 2024). Addressing these limitations, T-DEED (Xar-
+parameter-free multi-scale temporal shift mechanism. This        les et al. 2024) improved temporal precision for fast-paced
+temporal shift operation effectively captures temporal dy-       sports, achieving state-of-the-art accuracy on Figure Skating
+namics without introducing extra parameters, ensuring com-       and Fine Diving benchmarks. More recently, Liu et. al. in-
+putational efficiency and robust few-shot performance. Fur-      troduced a large-scale dataset spanning multiple sports and
+thermore, to mitigate inaccuracies from keypoint detection,      their proposed F3 ED further improved PES performance
+we utilize multimodal knowledge distillation, transferring       through efficient visual encoding and contextual sequence
+learned features from the graph-based teacher model to an        refinement (Liu et al. 2025c). Despite these advances, PES
+RGB-based student network (denoted as UMEG-Net distill ).        methods often suffer from limited supervision due to the
+By leveraging abundant unlabeled videos from the target          high cost of fine-grained annotation. Our method addresses
+domain, the student network learns complementary visual          these limitations, demonstrating superior event spotting ac-
+representations, enhancing robustness and generalization in      curacy, particularly in few-shot scenarios.
+few-shot PES scenarios.
+    UMEG-Net improves few-shot PES across diverse sports         Skeleton-Based Action Understanding
+domains. We validate its effectiveness on five sports video      Skeleton-based human pose representations have been ex-
+datasets with fine-grained event types and precise times-        tensively utilized in sports analytics due to their efficiency,
+tamps: F3 Set (Liu et al. 2025c), ShuttleSet (Wang et al.        reduced complexity, and robustness in fine-grained action
+2023b), FineGym (Shao et al. 2020), Figure Skating (Hong         recognition, especially under few-shot conditions. Recent
+et al. 2021), and SoccerNet Ball Action Spotting (Cioppa         methods leveraging skeleton data have demonstrated ef-
+et al. 2024). Under few-shot conditions, UMEG-Net consis-        fectiveness on single-athlete sports datasets, such as gym-
+tently outperforms baseline methods, improving F1 scores         nastics (FineGym), achieving strong performance through
+by 1.3% to 5.5% and edit scores by 1.3% to 16.4%.. Ad-           dedicated skeleton-based frameworks (Duan et al. 2022;
+ditionally, incorporating multimodal distillation, our visual-   Liu et al. 2025a). Hong et al. (Hong et al. 2021) fur-
+based student model UMEG-Netdistill achieves an additional       ther highlighted the potential of pose features by distill-
+average gain of 5.8% in F1 score and 6.7% in edit score,         ing pose knowledge into RGB-based networks, illustrating
+highlighting the robustness gained from complementary            how pose alignment can enhance recognition accuracy, yet
+RGB features. The key contributions are as follows:              they still focus primarily on single-athlete scenarios and
+ • We introduce and investigate the few-shot precise event       remain reliant on accurate pose detection. In team sports
+   spotting (PES) task, targeting frame-level event recogni-     such as volleyball and basketball, skeleton-based methods
+   tion with limited labeled data.                               have explored group activity recognition through model-
+                                                                 ing multi-person interactions (Perez, Liu, and Kot 2022;
+ • We designed a unified multi-entity graph that incorpo-
+                                                                 Zhou et al. 2022). Recent studies have additionally inte-
+   rates human skeletons, objects (e.g., ball), and contextual
+                                                                 grated non-human entities, such as the shuttlecock trajectory
+   landmarks (e.g., court corners) to represent sports events.
+                                                                 and court locations in badminton (Liu and Wang 2022; Ibh
+ • We propose UMEG-Net, a new graph-based framework              et al. 2023), to enrich contextual information. Liu et al. (Li
+   for few PES. It combines spatial graph convolution with       et al. 2024) improved upon these efforts by constructing
+   a parameter-free multi-scale temporal shift mechanism,        panoramic graphs that integrate multiple players and objects
+   and enhances robustness through multimodal distillation.      but overlooked critical spatial relationships involving court
+ • We conduct extensive experiments and ablation stud-           locations. Furthermore, these approaches typically address
+   ies across five sports datasets, demonstrating that           action recognition tasks without considering precise tempo-
+   UMEG-Net achieves state-of-the-art performance in both        ral localization in PES. Additionally, our graph-based mod-
+   few-shot and fully supervised settings.                       ule efficiently supports precise temporal spotting and few-
+shot learning. By further incorporating distillation from raw        captures both intra-entity structures and cross-entity interac-
+RGB inputs, our framework remains robust against inaccu-             tions. It contains four components:
+racies in pose and object detection, significantly outperform-
+ing previous approaches under strict temporal localization                       Et = Etintra ∪ Etp–b ∪ Etp–c ∪ Etc–c ,
+constraints and limited data settings.
+                                                                     where Etintra encodes skeletal connections within each player
+                                                                     (intra-person edges follow standard human-joint topology);
+                    Proposed Method                                  Etc–c connects 4 court corners as a rectangle to model the
+This section presents our method in detail, starting with the        field boundary; Etp–b connects human joints to the ball object
+problem statement and then presenting the modules.                   (for racket sports the wrist joints connect to the ball, while
+                                                                     for soccer the ankle and shoulder joints connect to the ball to
+Problem Statement                                                    approximate lower- and upper-body ball control); Etp–c links
+                                                                     human foot joints to court corners (positional context). All
+We define the few-shot PES task as follows: Given the in-            edges are undirected. See full connection rules in our code.
+put video clip X ∈ RT ×H×W ×3 consisting of T frames                    Our proposed Unified Multi-Entity Graph flexibly inte-
+of RGB image size H × W with channel size of 3, our                  grates multiple players with objects and environmental cues.
+goal is to detect a sequence of M event-timestamp pairs              Compared to conventional skeleton-only graphs that ignore
+((E1 , t1 ), . . . , (EM , tM )). Here, Ei denotes the event type    objects and context (resulting in loss of critical event infor-
+with C possible classes, and ti is the corresponding times-          mation), our unified graph provides a richer and more holis-
+tamp for i ∈ {1, . . . , M }. We consider a target dataset D         tic representation of the scene. By explicitly including these
+composed of |D| video clips, each containing a certain num-          elements as nodes and edges, UMEG-Net can represent fine-
+ber of events. Let Dlabel ⊂ D denote the subset of D that            grained event cues that would otherwise be overlooked.
+contains labels, and let Dunlabel ⊂ D be the unlabeled subset,
+such that D = Dlabel ∪ Dunlabel . The number of clips in each        Graph-based Spatio-Temporal Encoding Given a se-
+subset is |D(un)label |. We specifically address the few-shot        quence of unified multi-entity graphs G = {Gt }Tt=1 ∈
+scenario, where the number of labeled samples k = |Dlabel |          RT ×|V|×2 over a video clip of T frames, we extract discrim-
+is small, referred to as the “k-clip” setting.                       inative features via a specially designed spatio-temporal en-
+                                                                     coder, named UMEG Block, tailored for precise event spot-
+Our Proposed Framework                                               ting under few-shot conditions. The UMEG Block consists
+                                                                     of a spatial graph convolution network that operates on the
+To tackle the problem described above, we propose                    unified graph topology, combined with a novel, parameter-
+UMEG-Net, a unified multi-entity graph network explic-               free temporal multi-scale shift module that enables effi-
+itly designed for few-shot PES. The overall architecture is          cient and effective temporal feature extraction. In the follow-
+depicted in Figure 2. A unified panoramic graph is first             ing, we describe the spatial GCN module and the temporal
+constructed by integrating keypoints representing human              multi-scale shift mechanism.
+skeletons and sport-related entities (e.g., ball, court). This          (1) Spatial GCN. This spatial GCN layer updates node
+graph is then processed by a series of UMEG Blocks, each             features by aggregating information from their neighbors in
+combining advanced spatial graph convolutional networks              the graph. In matrix form, the output of one GCN layer is:
+(GCNs) with a parameter-free multi-scale temporal shift
+mechanism for efficient spatio-temporal feature extraction.                        H(ℓ+1) = ReLU(A(ℓ) H(ℓ) W (ℓ) ),               (1)
+Finally, the feature maps are forwarded to the event localizer
+and classifier for precise event spotting. To further enhance        where A(ℓ) ∈ R|V|×|V| is the adjacency matrix employed
+model robustness and generalization, we introduce a mul-             for spatial aggregation, H(ℓ) ∈ R|V|×T ×d symbolizes the
+timodal distillation approach, transferring knowledge from           hidden representation, and W (ℓ) ∈ Rd×d is the weight ma-
+the graph-based model to an RGB-based student network                trix utilized for feature projection. Here, |V|, T , and d denote
+through weak-supervision even on large amounts of unla-              the number of nodes, frames, and hidden feature dimension,
+beled videos.                                                        respectively. ReLU(·) is the ReLU activation function, and
+                                                                     the superscript ℓ indicates the layer number.
+Unified Multi-Entity Graph Construction Given a
+                                                                        Unlike traditional GCNs in skeleton-based action recog-
+sports video, we first convert each frame into a structured
+                                                                     nition (Duan et al. 2022; Zhou et al. 2024; Liu et al. 2025a)
+graph of interacting entities. Specifically, for each frame
+                                                                     that process each individual independently, our approach
+t, we define a graph Gt = (Vt , Et ), where Vt is the set
+                                                                     performs graph convolutions over the entire multi-entity
+of nodes that includes all detected human joints and key-
+                                                                     graph. This allows for joint modeling of both human–human
+points of sports-related entities and Et is the set of edges.
+                                                                     and human–entity interactions, capturing intra- and inter-
+V including all detected human joints and keypoints of
+                                                                     entity relationships simultaneously. Therefore, it can exploit
+sports-related entities, denoted Vt = {Vpt , Vbt , Vct }, where
+                                                                     richer contextual cues essential for precise event spotting.
+Vpt = {Pit |i = 1, ..., N } is the set of N persons each Pit =          (2) Temporal Multi-Scale Shift. To model temporal
+   t             t
+(ji,1 , . . . , ji,K  ) represented by joints K, Vbt are ball key-   correlations, most skeleton-based action recognition mod-
+                    t
+points and Vc are court keypoints. The number of nodes is            els (Yan, Xiong, and Lin 2018; Shi et al. 2020; Chen et al.
+denoted as |Vt | = N ∗ K + |Vbt | + |Vct |. The edge set Et          2021; Duan et al. 2022; Zhou et al. 2024; Liu et al. 2025a)
+   Unified Multi-Entity Graph
+                                       UMEG-Net
+                    human poses                                                                                                                                           Temporal
+                                                                                             UMEG Block ... UMEG Block
+
+
+
+
+                                                                                                                                                                                                                          Event Classifier
+                                                                                                                                                                                                 Event Localizer
+                                       Spatial GCN              UMEG Block
+             ball                                                                                                                                                          Block
+    court corners
+
+                                          Temporal Multi-Scale Shift Module                      Spatial GCN & Concatenation                                              Avg Pool
+
+
+
+
+                                                                                                                                                                                                                                             ...
+                                                     truncate
+                                                                                                                                                                          Bi-direct
+                                                                                                                                                                             GRU
+
+
+
+
+                                                                                                  Spatial GCN
+
+
+
+
+                                                                                                                                          BN + ReLU
+                                                                                                                            C
+
+
+
+                                          pad zero
+
+   Pose          Ball       Court
+ Estimator     Tracking    Detection
+
+                                        Video Encoder (Distillation)
+
+                                                                                                                                                                                       L2 Loss
+                                                        ...
+
+
+                                                                        3D ConvNet
+
+
+
+
+                                                                                                                            Transformer
+                                                                                                                Pos Embed
+
+
+
+
+                                                                                                                                                      Upsample
+                                                                                                                                                      Temporal
+                                                                                                                                                                      Temporal
+                                                                                     196                                                                               Block
+
+
+             Video Clip
+
+Figure 2: The framework of our proposed method, including UMEG-Net and multimodal distillation. Each frame is converted
+to a unified multi-entity graph and processed by stacked UMEG Blocks to produce features for precise event spotting. A
+transformer-based RGB student is trained via knowledge distillation from the frozen graph-based teacher.
+
+
+apply multi-scale temporal convolution modules after each                                                                   contexts by
+spatial GCN to capture frame-to-frame dynamics. How-                                                                                                                   (ℓ)                                                     (ℓ,∆)
+ever, in few-shot settings, such modules increase the num-                                                                                                        Ut         =        ∆∈{1,2,4}
+                                                                                                                                                                                                         F1 (Zt                              ),     (5)
+ber of trainable parameters, making training more difficult                                                                 where F1 is a linear projection to down-scale the channel
+and prone to overfitting. To address this, we draw inspira-                                                                 size to R|V|×⌊d/|∆|⌋ . The output is
+tion from TSM (Lin, Gan, and Han 2019) and introduce
+                                                                                                                                                                  (ℓ+1)                                            (ℓ))                       (ℓ)
+a Temporal Multi-Scale Shift Module that efficiently cap-                                                                                                        Ht          = F2 (ReLU(Ut                                ) + Ht ,                  (6)
+tures temporal dynamics by shifting feature vectors along                                                                   where F2 is a linear projection to scale the channel size to
+the temporal axis at multiple scales, without adding addi-                                                                                  (ℓ)
+                                    (ℓ)                                                                                     R|V|×d , and Ht is added via a residual connection. This
+tional trainable parameters. Let Ht ∈ R|V|×d be the input                                                                   multi-scale temporal shift mechanism preserves frame-level
+features at frame t and layer ℓ. We split channels into static,                                                             resolution, expands the temporal receptive field across short,
+forward-shift, and backward-shift parts with fraction α (we                                                                 mid, and long ranges (via ∆ ∈ {1, 2, 4}), and introduces no
+use α = 1/8)                                                                                                                additional trainable parameters.
+              (ℓ)    (ℓ)         (ℓ)       (ℓ) 
+            Ht = Ht,static ∥ Ht,fwd ∥ Ht,bwd ,             (2)                                                              Multimodal Knowledge Distillation While the graph-
+                                                                                                                            based model excels at leveraging structured keypoint infor-
+             (ℓ)                                                  (ℓ)                      (ℓ)
+where Ht,static ∈ R|V|×(1−2α)d , and Ht,fwd , Ht,bwd ∈                                                                      mation, its performance can degrade if the pose or object
+R|V|×αd . ∥ is the notation for (channel-wise) concatenation.                                                               detections are unreliable (e.g. due to motion blur or occlu-
+For temporal offsets ∆ ∈ {1, 2, 4}, define the bidirectional                                                                sions). To enhance robustness, we propose a multimodal dis-
+shift operator                                                                                                              tillation framework where knowledge is transferred from the
+                                                                                                                            graph domain to the raw visual domain. We introduce a stu-
+       (ℓ,∆)     (ℓ)           (ℓ)         (ℓ)     
+                                                                                                                            dent network that operates directly on the RGB video frames
+    H̃t      = Ht,static ∥ Ht−∆,fwd ∥ Ht+∆,bwd ,          (3)
+                                                                                                                            and learn it under the guidance of the trained graph-based
+with boundary handling by zero padding. Each shifted                                                                        teacher (our UMEG-Net).
+stream is then passed to the spatial GCN to update the node                                                                     Let the frozen graph-based teacher encoder ϵtch map the
+embeddings with temporal context                                                                                            unified graph sequence G = {Gt }Tt=1 to per-frame em-
+     (ℓ,∆)                             (ℓ,∆)                                                                                beddings Ftch = ϵtch (G) ∈ RT ×d . The RGB student en-
+  Zt           = ReLU(A(ℓ) H̃t                 W (ℓ) ),
+                                        ∆ ∈ {1, 2, 4},                                                                      coder ϵstu maps the video X ∈ RT ×H×W ×3 to Fstu =
+                                                      (4)                                                                   ϵstu (X) ∈ RT ×d . ϵstu consists of a visual feature extractor
+where A is the adjacency matrix, W is the weight for spa-                                                                   followed by a bidirectional GRU to capture long-term de-
+                (ℓ,∆)
+tial GCN, and Zt      ∈ R|V|×d . We then fuse multi-scale                                                                   pendencies and project the extracted features into the same
+dimensional space d as the teacher encoder. On all unlabeled      Evaluation Metrics
+clips Dunlabel , we minimize a feature-matching L2 loss           Following Liu et al. (Liu et al. 2025c), we evaluate our
+                           T                                      method using two metrics that assess temporal precision and
+                        1  X   (t)    (t) 2                       classification accuracy: Edit score and mean F1 with tem-
+              Lfeat =         Ftch − Fstu 2 ,              (7)
+                        T t=1                                     poral tolerance. (1) Edit Score (Lea et al. 2017) measures
+                                                                  the structural similarity between predicted and ground-truth
+The teacher encoder, initialized from the pretrained weights      event sequences using Levenshtein distance, accounting for
+in the previous stage, remains frozen during distillation,        missing, redundant, and misordered predictions. It is suit-
+while the student networks are trainable. A few-shot adap-        able for tasks requiring accurate event ordering and com-
+tion is adopted to fine-tune the event localizer and classifier   pleteness. (2) Mean F1 Score with Temporal Tolerance eval-
+on Dlabel . At inference time, the student alone performs PES     uates both event classification and localization accuracy. A
+directly from RGB, inheriting robustness from the teacher’s       prediction is correct if it matches the event class and occurs
+structured graph supervision.                                     within a temporal window of δ frames around the ground-
+                                                                  truth timestamp. We report the average F1 across all event
+Implementation Details                                            types, denoted as F1evt . Unless otherwise specified, we use a
+In UMEG-Net, we employ the unit GCN from (Zhou et al.             strict tolerance of δ = 1 frame; for SoccerNet-BAS, we fol-
+2024) as the spatial GCN layer for its strong performance         low prior work (Cioppa et al. 2024) and use δ = 1 second.
+and efficiency. The multi-scale temporal shift module ap-
+plies shifts of ∆ ∈ {1, 2, 4} frames. For distillation,           Baselines
+we use VideoMAEv2 (Wang et al. 2023a), an advanced                We compare our approach with SOTA PES methods that op-
+transformer-based visual encoder, as the backbone for fea-        erate on RGB inputs and support end-to-end training, includ-
+ture extraction (smaller variants also show consistent gains).    ing E2E-Spot (Hong et al. 2022) and T-DEED (Xarles et al.
+Event localization and classification are performed by lin-       2024), each evaluated with RegNet-Y (Radosavovic et al.
+ear layers that output event probabilities and event types,       2020) 200MF and 800MF backbones, as well as F3 ED (Liu
+respectively. The training protocol processes 96-frame se-        et al. 2025c). Furthermore, we construct skeleton-based
+quences with a stride of 2. RGB frames are resized to 224         PES variants of these baselines by replacing their visual
+pixels in height, then randomly cropped to 224 × 224 to pre-      encoders with existing skeleton-based GCN architectures.
+serve essential visual information. Standard data augmenta-       These variants take 2D human poses as input and employ
+tion (cropping, color jittering) enhances data diversity and      F3 ED’s head module for event spotting. Specifically, we
+model robustness during training but is omitted in testing.       adopt graph-based models including MSG3D (Liu et al.
+Models are optimized with AdamW (initial learning rate            2020), AAGCN (Shi et al. 2020), CTRGCN (Chen et al.
+0.001 for UMEG-Net, 0.0001 for VideoMAEv2 in distilla-            2021), STGCN++ (Duan et al. 2022), BlockGCN (Zhou
+tion), using three linear warm-up steps followed by cosine        et al. 2024), and ProtoGCN (Liu et al. 2025a). Per-frame rep-
+annealing. Training is conducted on an RTX 4090 GPU. Fur-         resentations are computed by aggregating individual skele-
+ther implementation details are provided in the Appendix.         ton features via averaging across all detected persons.
+
+                                                                  Few-Shot Setting
+                Experimental Results
+                                                                  We define the few-shot scenario as training with a limited
+This section presents evaluation details and ablation studies.    number of annotated clips (k-clip), following (Hong et al.
+                                                                  2021). In F3 Set-Tennis and ShuttleSet, each clip represents
+Datasets                                                          a rally spanning several seconds and comprising a sequence
+To evaluate the effectiveness of our method, we con-              of shots. In FineGym-BB and Figure Skating, each clip cor-
+duct experiments on several PES datasets, including racket        responds to a routine with a series of technical and artistic
+sports F3 Set-Tennis (Liu et al. 2025c) and ShuttleSet (Wang      movements. In SoccerNet-BAS, each clip captures a phase
+et al. 2023b), individual sports FineGym (Shao et al. 2020)       of play featuring actions such as pass, drive, and shoot.
+and Figure Skating (Hong et al. 2021), and team sports               Unlike the traditional k-shot approach, which segments
+SoccerNet-BAS (Cioppa et al. 2024). Detailed descriptions         videos into independent samples containing single events
+of these datasets are provided in the supplementary material.     with backgrounds (Yang et al. 2020; Nag, Zhu, and Xi-
+   We extract 2D poses using off-the-shelf pose estima-           ang 2021), our k-clip strategy offers a more practical and
+tors. For 2D pose estimation, we use HRNet (Sun et al.            domain-adapted setting. First, due to the large number of
+2019) to detect athletes’ poses through top-down estima-          event types in sports, many of which are rare, sampling k in-
+tion. For sports-specific object detection and tracking, we       stances per type is often impractical; annotating a small set
+fine-tune the pretrained YOLOv8 (Jocher, Chaurasia, and           of clips per sport domain is more efficient and scalable. Sec-
+Qiu 2023) model on corresponding public datasets from             ond, sports actions are typically brief (1–2 frames) and occur
+Roboflow (Dwyer et al. 2025) to detect and track target           rapidly in succession, thus isolated events lack essential tem-
+players and sports balls in F3Set-Tennis, ShuttleSet, and         poral context. Third, consecutive events frequently exhibit
+SoccerNet-BAS. For two racket sports datasets, we also em-        strong dependencies (Hong et al. 2022; Liu et al. 2025c);
+ploy deployed models for court detection to identify the four     therefore, training on k-clips rather than k-shots enables the
+corners. Please refer to Appendix for more details.               model to better capture long-term event relationships.
+Table 1: Experimental results and ablation studies for fine-grained sports event detection across five datasets using 100-clip
+training data are reported with evaluation metrics F1evt and edit score. “Params (M)” refers to the number of model parame-
+ters. Top-performing results are bolded, while the best within each method category are underlined. Our method UMEG-Net
+outperforms all the assessed state-of-the-art (SOTA) methods.
+
+                                         F3 Set-Tennis    ShuttleSet    FineGym-BB     Figure Skating   SoccerNet-BAS
+                                                                                                                          Params (M)
+                                         F1evt   Edit    F1evt   Edit   F1evt   Edit   F1evt     Edit   F1evt      Edit
+ (a) SOTA PES methods
+ E2E-Spot 200MF (Hong et al. 2022)        2.6    11.1    35.6    50.3   40.1    50.8   29.9     34.8    15.3      35.4        4.5
+ E2E-Spot 800MF (Hong et al. 2022)        3.1    13.3    42.7    54.6   44.7    53.1   35.9     42.7    22.1      43.1       12.6
+ T-DEED 200MF (Xarles et al. 2024)        1.0     4.2    33.8    41.7   44.1    48.4   36.6     33.5     4.7       8.8       16.4
+ T-DEED 800MF (Xarles et al. 2024)        1.5     6.4    30.7    38.6   43.6    48.3   37.9     40.6     6.7      14.3       46.2
+ F3 ED (Liu et al. 2025c)                 3.9    15.3    44.1    55.1   43.8    52.1   36.1     34.4    22.7      34.5       4.7
+ (b) Skeleton-based PES variants
+ MSG3D (Liu et al. 2020)                  5.2    15.4    39.7    56.3   45.8    50.1   18.1     32.8    22.3      39.5        4.6
+ AAGCN (Shi et al. 2020)                  4.9    15.4    44.7    55.6   42.8    47.8   24.8     40.0    22.1      43.1        5.4
+ CTRGCN (Chen et al. 2021)                5.5    16.9    40.3    55.1   46.6    50.7   28.2     44.4    22.3      42.4        3.1
+ STGCN++ (Duan et al. 2022)               6.4    18.0    45.0    57.7   44.6    50.0   29.5     46.8    17.4      42.7        3.0
+ ProtoGCN (Liu et al. 2025a)              6.6    18.1    46.8    58.3   41.4    51.1   25.3     43.7    17.8      41.0        5.6
+ BlockGCN (Zhou et al. 2024)              6.9    18.3    47.1    59.4   44.5    49.1   29.8     48.2    19.9      43.3        2.5
+ (c) Our approach
+ UMEG-Net                                 9.4    31.7    49.2    64.0   49.2    54.4   39.2     49.6    27.0      44.8       2.2
+ UMEG-Net distill                        12.5    40.7    59.1    69.0   58.4    61.2   45.9     56.2    27.1      50.8       67.8
+ Ablation studies
+ (d) pose ∗ N                             5.6    23.9    47.4    61.5   49.2    54.4   39.2     49.6    20.7      39.6         –
+     pose ∗ N + court                     6.6    26.1    46.7    61.5      –       –      –        –       –         –         –
+     pose ∗ N + ball                      8.6    30.2    48.1    62.5      –       –      –        –    27.0      44.8         –
+     pose ∗ N + ball + court              9.4    31.7    49.2    64.0      –       –      –        –       –         –         –
+ (e) ∆ ∈ {1}                              8.8    30.4    46.5    61.2   39.0    50.3   26.2     36.8    21.1      38.9         –
+     ∆ ∈ {1, 2}                           9.6    33.2    47.4    61.6   42.9    49.8   32.1     45.3    23.1      40.1         –
+     ∆ ∈ {1, 2, 4}                        9.4    31.7    49.2    64.0   49.2    54.4   39.2     49.6    27.0      44.8         –
+ (f) Self-supervise (Chen et al. 2020)    3.0    29.1    50.2    62.4   54.5    56.8   34.6     41.3    26.0      42.9         –
+     UMEG-Net distill                    12.5    40.7    59.1    69.0   58.4    61.2   45.9     56.2    27.1      50.8         –
+ (g) E2E-Spot (full supervision)         44.6    71.1    71.2    76.1   72.9    73.0   58.0     63.9    46.2      72.9         –
+     UMEG-Net (full supervision)         47.5    71.2    71.4    76.1   59.8    64.8   61.8     71.8    36.1      55.7         –
+
+
+
+Result Analysis with Few-Shot Supervision                               based variants in Table 1(b), especially on datasets contain-
+                                                                        ing fine-grained events such as F3 Set-Tennis and Shuttle-
+We evaluate performance in the few-shot setting across all              Set. For instance, it outperforms the best-performing vari-
+datasets. For a fair comparison, all methods are trained on             ant BlockGCN by +2.5% F1evt and +13.4% Edit on F3 Set-
+the same k-clip samples, with five random splits per dataset,           Tennis, and +2.1% F1evt and +4.6% Edit on ShuttleSet. This
+and the results are averaged. We test k ∈ {15, 25, 50, 100}             advantage stems from UMEG-Net’s incorporation of object
+across SOTA PES methods, skeleton-based PES variants,                   and environmental cues, as well as its compact architecture,
+and our methods. Table 1 presents the results for the 100-clip          with the fewest parameters (2.2M) among all baselines.
+setting. From the table, we observe that UMEG-Net consis-
+tently achieves strong performance across all datasets.                    (3) Multimodal distillation. UMEG-Net distill further en-
+   (1) Comparison with SOTA PES methods. UMEG-Net                       hances performance and robustness as shown in Table 1(c).
+achieves substantial improvements over these methods as                 Compared to UMEG-Net, it improves on average 5.8% in
+shown in Table 1(a). Specifically, it improves F1evt by 1.3%            F1evt and 6.7% in Edit score. These improvements demon-
+to 5.5% and Edit score by 1.3% to 16.4% over the best-                  strate the effectiveness of multimodal distillation in captur-
+performing PES baselines across five datasets, respectively.            ing complementary visual representations from RGB inputs.
+Despite strong performance on large-scale labeled data,                    (4) Various k-clip settings. Figure 3 illustrates per-
+these PES methods generally struggle in few-shot settings,              formance trends for representative PES baselines and our
+highlighting the limitation of relying solely on RGB inputs.            proposed models across various k-clip samples. The fig-
+   (2) Compare with skeleton-based PES variants.                        ure clearly indicates that UMEG-Net consistently outper-
+UMEG-Net shows noticeable advantages over skeleton-                     forms existing methods under all supervision levels, and
+   Figure 3: F1evt and Edit scores under few-shot (k-clip) training. Percentages indicate the fraction of the full training set.
+
+
+UMEG-Netdistill provided further improvement. These re-              trastive learning approach show notable improvement com-
+sults confirm the robustness and effectiveness of our ap-            pared to visual-based method trained only on labeled data,
+proach across diverse few-shot scenarios.                            our UMEG-Net distill substantially outperforms it.
+
+Ablation Studies                                                     Full Supervision Performance We also compare our
+                                                                     UMEG-Net with existing RGB-based PES methods (E2E-
+We conduct ablation studies to evaluate the effectiveness of         Spot) under full supervision, where all of labeled clips in
+our proposed framework in few-shot settings, primarily fo-           the training set are available. As shown in Table 1(g), our
+cusing on the 100-clip setup unless otherwise specified.             model is competitive even in the high-data regime. It shows
+Effect of Graph Entities To assess the impact of different           better performance in 3 out of 5 datasets. This shows that
+entity types, we analyze graph structures incorporating var-         UMEG-Net is not limited to few-shot regimes.
+ious object configurations, as shown in Table 1(d). Specifi-
+cally, “pose × N ”, “ball”, and “court” represent N × K hu-                                 Conclusion
+man joint keypoints, a single keypoint for the ball, and four        In this paper, we introduced the task of few-shot Precise
+keypoints for court corners, respectively. The results indicate      Event Spotting (PES), addressing the critical challenge of
+that incorporating ball or court information improves perfor-        frame-accurate event detection in sports videos with limited
+mance over using pose keypoints alone, while combining all           labeled data. To tackle this, we proposed a unified multi-
+entity types yields the best performance.                            entity graph representation that flexibly integrates human
+Temporal Module Configuration We examine the choice                  skeletons, sport-specific object keypoints, and contextual
+of ∆ in UMEG-Net to see how it affects overall perfor-               landmarks, enabling richer modeling of complex interac-
+mance. We evaluate the effectiveness of different scales in          tions within diverse sports scenes. Leveraging this represen-
+temporal module by shifting ∆ ∈ {1}, ∆ ∈ {1, 2}, and                 tation, we developed UMEG-Net, a lightweight yet power-
+compare with our default setting of ∆ ∈ {1, 2, 4}. As pre-           ful graph-based architecture utilizing spatial graph convolu-
+sented in Table 1(e), the performance drops with less tempo-         tions combined with a parameter-free multi-scale temporal
+ral shift scales. However, further increasing the scales does        shift mechanism, enhanced further by multimodal knowl-
+not necessarily increase the performance.                            edge distillation. Extensive experiments across five fine-
+                                                                     grained sports event datasets demonstrated that our approach
+Self-Supervise vs. UMEG-Net distill To validate the effec-           significantly outperforms existing methods in few-shot sce-
+tiveness of our multimodal distillation from UMEG-Net to             narios. These results confirm the effectiveness of structured
+visual encoders, we compare it with a visual-based self-             graph representations and multimodal learning strategies in
+supervise alternative approach, where the visual models              addressing annotation scarcity and generalization challenges
+is pretrained on unlabeled domain data using contrastive             in precise event spotting. Future work can extend our ap-
+learning (Chen et al. 2020) and fine-tuned on k-clip la-             proach to handle events with weak or non-entity cues, im-
+beled samples. As shown in Table 1(f), although the con-             proving robustness beyond entity-driven scenarios.
+                  Acknowledgments                                Hong, J.; Fisher, M.; Gharbi, M.; and Fatahalian, K. 2021.
+This research is supported by the National Research Foun-        Video pose distillation for few-shot, fine-grained sports ac-
+dation Singapore under its AI Singapore Programme (Award         tion recognition. In ICCV.
+Number: AISG3-RP-2022-030). Any opinions, findings,              Hong, J.; Zhang, H.; Gharbi, M.; Fisher, M.; and Fatahalian,
+and conclusions expressed in this material are those of the      K. 2022. Spotting temporally precise, fine-grained events in
+author(s) and do not reflect the views of funding bodies.        video. In ECCV, 33–51. Springer.
+                                                                 Huang, Y.-C.; Liao, I.-N.; Chen, C.-H.; İk, T.-U.; and Peng,
+                       References                                W.-C. 2019. TrackNet: a deep learning network for tracking
+Chen, T.; Kornblith, S.; Norouzi, M.; and Hinton, G. 2020. A     high-speed and tiny objects in sports applications. In 16th
+Simple Framework for Contrastive Learning of Visual Rep-         IEEE International Conference on Advanced Video and Sig-
+resentations. arXiv:2002.05709.                                  nal Based Surveillance (AVSS), 1–8. IEEE.
+Chen, Y.; Zhang, Z.; Yuan, C.; Li, B.; Deng, Y.; and Hu,         Ibh, M.; Grasshof, S.; Witzner, D.; and Madeleine, P. 2023.
+W. 2021. Channel-wise topology refinement graph convolu-         TemPose: a new skeleton-based transformer model designed
+tion for skeleton-based action recognition. In Proceedings of    for fine-grained motion recognition in badminton. In Pro-
+the IEEE/CVF international conference on computer vision,        ceedings of the IEEE/CVF Conference on Computer Vision
+13359–13368.                                                     and Pattern Recognition, 5199–5208.
+Chen, Y.-J.; and Wang, Y.-S. 2023. Tracknetv3: Enhanc-           Jiang, K.; Izadi, M.; Liu, Z.; and Dong, J. S. 2020. Deep
+ing shuttlecock tracking with augmentations and trajectory       Learning Application in Broadcast Tennis Video Annota-
+rectification. In Proceedings of the 5th ACM International       tion. In 2020 25th International Conference on Engineering
+Conference on Multimedia in Asia, 1–7.                           of Complex Computer Systems (ICECCS), 53–62. IEEE.
+Cioppa, A.; Giancola, S.; Somers, V.; and et al. 2024. Soc-      Jiang, K.; Li, J.; Liu, Z.; and Dong, C. 2023. Court Detection
+cerNet 2024 Challenges Results. arXiv:2409.10587.                Using Masked Perspective Fields Network. In 2023 IEEE
+                                                                 28th Pacific Rim International Symposium on Dependable
+Decroos, T.; Bransen, L.; Van Haaren, J.; and Davis, J. 2019.
+                                                                 Computing (PRDC), 342–345. IEEE.
+Actions speak louder than goals: Valuing player actions in
+soccer. In Proceedings of the 25th ACM SIGKDD interna-           Jiang, K.; Liu, Z.; Wu, Q.; Ma, M.; and Dong, J. S.
+tional conference on knowledge discovery & data mining,          2024. Tracking Small and Fast Moving Ball in Broadcast
+1851–1861.                                                       Videos Using Transfer Learning and the Enhanced Interac-
+                                                                 tive Multi-motion Model. In International Sports Analytics
+Dey, R.; and Salem, F. M. 2017. Gate-variants of gated re-
+                                                                 Conference and Exhibition, 81–96. Springer.
+current unit (GRU) neural networks. In 2017 IEEE 60th
+international midwest symposium on circuits and systems          Jocher, G.; Chaurasia, A.; and Qiu, J. 2023. Ultralytics
+(MWSCAS), 1597–1600. IEEE.                                       YOLOv8.
+Dong, J. S.; Jiang, K.; Liu, Z.; Dong, C.; Hou, Z.; Hundal,      Kay, W.; Carreira, J.; Simonyan, K.; Zhang, B.; Hillier, C.;
+R. S.; Guo, J.; and Lin, Y. 2023. Sports analytics using prob-   Vijayanarasimhan, S.; Viola, F.; Green, T.; Back, T.; Natsev,
+abilistic model checking and deep learning. In 2023 27th         P.; et al. 2017. The kinetics human action video dataset.
+International Conference on Engineering of Complex Com-          arXiv preprint arXiv:1705.06950.
+puter Systems (ICECCS), 7–11. IEEE.                              Lea, C.; Flynn, M. D.; Vidal, R.; Reiter, A.; and Hager, G. D.
+Duan, H.; Wang, J.; Chen, K.; and Lin, D. 2022. Pyskl:           2017. Temporal convolutional networks for action segmen-
+Towards good practices for skeleton action recognition. In       tation and detection. In The IEEE Conference on Computer
+Proceedings of the 30th ACM International Conference on          Vision and Pattern Recognition, 156–165.
+Multimedia, 7351–7354.                                           Li, Z.; Chang, X.; Li, Y.; and Su, J. 2024. Skeleton-based
+Dwyer, B.; Nelson, J.; Hansen, T.; et al. 2025. Roboflow         group activity recognition via spatial-temporal panoramic
+(Version 1.0) [Software]. Computer vision.                       graph. In European Conference on Computer Vision, 252–
+Einfalt, M.; Dampeyrou, C.; Zecha, D.; and Lienhart, R.          269. Springer.
+2019. Frame-level event detection in athletics videos with       Lin, J.; Gan, C.; and Han, S. 2019. Tsm: Temporal shift
+pose-based convolutional sequence networks. In Proceed-          module for efficient video understanding. In The IEEE/CVF
+ings Proceedings of the 2nd International Workshop on Mul-       international conference on computer vision, 7083–7093.
+timedia Content Analysis in Sports, 42–50.                       Liu, H.; Liu, Y.; Ren, M.; Wang, H.; Wang, Y.; and Sun, Z.
+Giancola, S.; Amine, M.; Dghaily, T.; and Ghanem, B. 2018.       2025a. Revealing key details to see differences: A novel pro-
+Soccernet: A scalable dataset for action spotting in soccer      totypical perspective for skeleton-based action recognition.
+videos. In Proceedings of the IEEE conference on computer        In Proceedings of the Computer Vision and Pattern Recog-
+vision and pattern recognition workshops, 1711–1721.             nition Conference, 29248–29257.
+Girdhar, R.; Gkioxari, G.; Torresani, L.; Paluri, M.; and        Liu, P.; and Wang, J.-H. 2022. MonoTrack: Shuttle trajec-
+Tran, D. 2018. Detect-and-track: Efficient pose estimation in    tory reconstruction from monocular badminton video. In
+videos. In Proceedings of the IEEE conference on computer        Proceedings of the IEEE/CVF Conference on Computer Vi-
+vision and pattern recognition, 350–359.                         sion and Pattern Recognition, 3513–3522.
+Liu, Z.; Dong, C.; Chen, J. W.; Jiang, A. M. J.; Chen, G.;       convolutional networks. IEEE Transactions on Image Pro-
+Shaikh, A. F.; Dong, T. Y.; Wang, C.; Jiang, K.; and Dong,       cessing, 29: 9532–9545.
+J. S. 2025b. Analyzing the Formation Strategy in Tennis          Sudhakaran, S.; Escalera, S.; and Lanz, O. 2020. Gate-shift
+Doubles Game. SN Computer Science, 6(2): 100.                    networks for video action recognition. In Proceedings of
+Liu, Z.; Dong, C.; Wang, C.; Dong, T. Y.; and Jiang, K.          the IEEE/CVF conference on computer vision and pattern
+2024a. Exploring team strategy dynamics in tennis doubles        recognition, 1102–1111.
+matches. In International Sports Analytics Conference and        Sun, K.; Xiao, B.; Liu, D.; and Wang, J. 2019. Deep high-
+Exhibition, 104–115. Springer.                                   resolution representation learning for human pose estima-
+Liu, Z.; Durrani, M.; Xuan, L. Y.; Simon, J.-F.; and Deon,       tion. In Proceedings of the IEEE/CVF conference on com-
+T. Y. F. 2024b. Strategy Analysis in NFL Using Probabilis-       puter vision and pattern recognition, 5693–5703.
+tic Reasoning. In International Sports Analytics Conference      Wang, L.; Huang, B.; Zhao, Z.; Tong, Z.; He, Y.; Wang, Y.;
+and Exhibition, 116–128. Springer.                               Wang, Y.; and Qiao, Y. 2023a. Videomae v2: Scaling video
+Liu, Z.; Jiang, K.; Hou, Z.; Lin, Y.; and Dong, J. S. 2023.      masked autoencoders with dual masking. In Proceedings of
+Insight analysis for tennis strategy and tactics. In 2023 IEEE   the IEEE/CVF conference on computer vision and pattern
+International Conference on Data Mining (ICDM), 1175–            recognition, 14549–14560.
+1180. IEEE.                                                      Wang, W.-Y.; Huang, Y.-C.; Ik, T.-U.; and Peng, W.-C.
+Liu, Z.; Jiang, K.; Ma, M.; Hou, Z.; Lin, Y.; and Dong,          2023b. ShuttleSet: A Human-Annotated Stroke-Level Sin-
+J. S. 2025c. F3 Set: Towards Analyzing Fast, Frequent,           gles Dataset for Badminton Tactical Analysis. In Proceed-
+and Fine-grained Events from Videos. arXiv preprint              ings of the 29th ACM SIGKDD Conference on Knowledge
+arXiv:2504.08222.                                                Discovery and Data Mining, 5126–5136.
+Liu, Z.; Ma, M.; Jiang, K.; Hou, Z.; Shi, L.; and Dong, J. S.    Wang, W.-Y.; Shuai, H.-H.; Chang, K.-S.; and Peng, W.-C.
+2024c. Pcsp# denotational semantics with an application          2022. Shuttlenet: Position-aware fusion of rally progress and
+in sports analytics. In The Application of Formal Methods:       player styles for stroke forecasting in badminton. In AAAI,
+Essays Dedicated to Jim Woodcock on the Occasion of His          volume 36, 4219–4227.
+Retirement, 71–102. Springer.                                    Wanyan, Y.; Yang, X.; Dong, W.; and Xu, C. 2025. A
+Liu, Z.; and Su, S. 2025. Analyzing Basketball Lineups           Comprehensive Review of Few-shot Action Recognition.
+with MDP Using NBA Statistics and Player Tracking. In            arXiv:2407.14744.
+Sports Analytics: Second International Conference, ISACE         Xarles, A.; Escalera, S.; Moeslund, T. B.; and Clapés, A.
+2025, Shanghai, China, September 26–27, 2025, Proceed-           2024. T-deed: Temporal-discriminability enhancer encoder-
+ings, 142. Springer Nature.                                      decoder for precise event spotting in sports videos. In Pro-
+Liu, Z.; Zhang, H.; Chen, Z.; Wang, Z.; and Ouyang, W.           ceedings of the IEEE/CVF Conference on Computer Vision
+2020. Disentangling and unifying graph convolutions for          and Pattern Recognition, 3410–3419.
+skeleton-based action recognition. In CVPR, 143–152.             Xu, H.; Baniya, A. A.; Well, S.; Bouadjenek, M. R.; Daze-
+Nag, S.; Zhu, X.; and Xiang, T. 2021. Few-shot temporal          ley, R.; and Aryal, S. 2025. Action Spotting and Precise
+action localization with query adaptive transformer. arXiv       Event Detection in Sports: Datasets, Methods, and Chal-
+preprint arXiv:2110.10552.                                       lenges. arXiv:2505.03991.
+Pappalardo, L.; Cintia, P.; Ferragina, P.; Massucco, E.; Pe-     Xu, J.; Rao, Y.; Yu, X.; Chen, G.; Zhou, J.; and Lu, J. 2022.
+dreschi, D.; and Giannotti, F. 2019. PlayeRank: data-driven      Finediving: A fine-grained dataset for procedure-aware ac-
+performance evaluation and player ranking in soccer via a        tion quality assessment. In The IEEE/CVF Conference on
+machine learning approach. ACM Transactions on Intelli-          Computer Vision and Pattern Recognition, 2949–2958.
+gent Systems and Technology (TIST), 10(5): 1–27.                 Yan, S.; Xiong, Y.; and Lin, D. 2018. Spatial temporal graph
+Perez, M.; Liu, J.; and Kot, A. C. 2022. Skeleton-based rela-    convolutional networks for skeleton-based action recogni-
+tional reasoning for group activity analysis. Pattern Recog-     tion. In Proceedings of the AAAI conference on artificial
+nition, 122: 108360.                                             intelligence, volume 32.
+Radosavovic, I.; Kosaraju, R. P.; Girshick, R.; He, K.; and      Yang, P.; Hu, V. T.; Mettes, P.; and Snoek, C. G. 2020. Lo-
+Dollár, P. 2020. Designing network design spaces. In Pro-       calizing the common action among a few videos. In ECCV
+ceedings of the IEEE/CVF conference on computer vision           2020: 16th European Conference, Glasgow, UK, August 23–
+and pattern recognition, 10428–10436.                            28, 2020, Proceedings, Part VII 16, 505–521. Springer.
+Roboflow. 2024. SoccerNET. https://universe.roboflow.            Zhou, H.; Kadav, A.; Shamsian, A.; Geng, S.; Lai, F.; Zhao,
+com/socccer-net/soccernet-uoejr. Visited on 2025-08-05.          L.; Liu, T.; Kapadia, M.; and Graf, H. P. 2022. Composer:
+Shao, D.; Zhao, Y.; Dai, B.; and Lin, D. 2020. Finegym:          Compositional reasoning of group activity in videos with
+A hierarchical video dataset for fine-grained action under-      keypoint-only modality. In European Conference on Com-
+standing. In The IEEE/CVF conference on computer vision          puter Vision, 249–266. Springer.
+and pattern recognition, 2616–2625.                              Zhou, Y.; Yan, X.; Cheng, Z.-Q.; Yan, Y.; Dai, Q.; and Hua,
+Shi, L.; Zhang, Y.; Cheng, J.; and Lu, H. 2020. Skeleton-        X.-S. 2024. Blockgcn: Redefine topology awareness for
+based action recognition with multi-stream adaptive graph        skeleton-based action recognition. In CVPR, 2049–2058.
+                     Appendix                                      of racket-ball contact and its corresponding event type. We
+                                                                   focus on all 8 sub-classes and 1,108 event types. Detailed
+               Implementation Details                              statistics are shown in Table2.
+Architecture For RGB feature extraction, we employ
+                                                                      For this dataset, we extract keypoint information compris-
+VideoMAEv2 (Wang et al. 2023a) as the backbone, cho-
+                                                                   ing players’ 2D poses, ball positions, and court corners. The
+sen for its superior classification performance. The encoder
+                                                                   near-side player is identified using a detect-and-track algo-
+is pretrained on Kinetics-710 (Kay et al. 2017) and sub-
+                                                                   rithm (Girdhar et al. 2018), selecting the trajectory closest
+sequently finetuned on the target sports datasets. Video-
+                                                                   to the bottom of the video frame. To distinguish the far-
+MAEv2 divides long video clips into slices and processes
+                                                                   side player from line judges, we apply YOLOv8 (Jocher,
+each slice independently, with a default slice length of 16
+                                                                   Chaurasia, and Qiu 2023) to detect individuals above the
+frames. However, in precise event spotting (PES), frame-
+                                                                   net and assign as the far-side player the lowest detected per-
+level granularity is essential due to the short duration of
+                                                                   son within three meters of the court boundary. Both players’
+sports events. Therefore, we set the slice length to 2 frames.
+                                                                   2D poses and bounding boxes are estimated with YOLOv8.
+Each slice, shaped H × W × 2 (H = 224, W = 224),
+                                                                   To account for camera motion, we detect court lines using
+is first passed through a 3D convolutional layer, resulting
+                                                                   the method of Jiang et al. (Jiang et al. 2023) and compute a
+in 16 × 16 feature patches per slice. Each patch encodes
+                                                                   homography to map the image plane to the court’s ground
+the spatial features of its corresponding region. The se-
+                                                                   plane. Assuming the player’s feet are on the ground, we lo-
+quence of patches is then concatenated and processed by
+                                                                   calize each player by projecting the bottom center of their
+a transformer-based network, which models relationships
+                                                                   bounding box onto the court. Ball positions in each frame
+among spatial regions within the slice. The temporal features
+                                                                   are detected via (Jiang et al. 2024).
+of the video are further modeled using the spatial features
+from all slices. After spatial modeling, we obtain features of
+shape T /2×196×d′′ , which are temporally upsampled by a           ShuttleSet is a publicly available badminton singles
+factor of 2 to T × 196 × d′′ . These features are subsequently     dataset featuring stroke-level annotations (Wang et al.
+fed into a temporal block to capture long-term dependencies        2023b). It comprises 104 sets, 3,685 rallies, and 36,492
+and are used by the event localizer and classifier to predict      strokes across 44 matches played between 2018 and 2021 by
+frame-wise events.                                                 27 top-ranking men’s and women’s singles players. While
+                                                                   originally intended for tactical analysis, the dataset also pro-
+Training For UMEG-Net, we conduct dense, per-frame                 vides detailed stroke types, precise stroke timestamps, and
+classification to detect event types and precise timestamps.       corresponding videos, making it suitable for the PES task.
+Due to severe class imbalance—event frames account for             For our study, we construct the ShuttleSet dataset, which in-
+less than 3% of the data—the loss for foreground classes is        cludes 3,685 clips (rallies), with an average clip length of
+increased fivefold to mitigate this disparity. The models are      10.9 seconds and 10.5 shots per rally. Each shot is annotated
+optimized using AdamW with a cosine annealing learning             with the exact racket–shuttle contact frame and its event type
+rate schedule, and training is performed on an RTX 4090            (36 categories). Detailed statistics are shown in Table3.
+GPU. UMEG-Net is trained end-to-end on the limited la-
+                                                                      We extract keypoint information in ShuttleSet similar to
+beled data for 50 epochs (30 epochs for ShuttleSet due to its
+                                                                   F3 Set-Tennis, including players’ 2D poses, shuttlecock po-
+smaller size), with an initial learning rate of 0.001 and three
+                                                                   sitions, and court corners. Court corners are detected using
+linear warm-up steps before cosine decay. Model selection
+                                                                   the approach described in (Liu and Wang 2022), and shut-
+is based on the best validation performance.
+                                                                   tlecock tracking is performed with TrackNetV3 (Chen and
+   For the multimodal distillation stage, the trained
+                                                                   Wang 2023). For player tracking, we use YOLOv8 (Jocher,
+UMEG-Net serves as the teacher to “distill” knowledge to
+                                                                   Chaurasia, and Qiu 2023) for human detection, filtering out
+the video encoder using a large set of unlabeled clips un-
+                                                                   any detected players whose feet are not within the court, and
+der weak supervision. UMEG-Netdistill is trained on both la-
+                                                                   distinguish near and far players based on their distance to
+beled and unlabeled data for 50 epochs (30 for ShuttleSet)
+                                                                   the camera. The 2D poses of detected players are estimated
+with an initial learning rate of 0.0001. Following distillation,
+                                                                   using a pre-trained HRNet (Sun et al. 2019).
+the video encoder parameters are frozen, and only the tem-
+poral block, event localizer, and classifier are finetuned on
+the labeled data to adapt to the PES task. This finetuning is      FineGym is a gymnastics dataset designed for fine-
+conducted for 10 epochs with a learning rate of 0.001.             grained action understanding (Shao et al. 2020). The orig-
+                                                                   inal annotations specify the start and end times of each ac-
+                     Dataset Details                               tion, which we treat as discrete events (e.g., “balance beam
+                                                                   dismount start” and “balance beam dismount end”) in line
+This section provides additional information on the datasets
+                                                                   with (Hong et al. 2022). Our study focuses on the balance
+used in our experiments, as well as details on the extraction
+                                                                   beam subset, referred to as FineGym-BB, which consists of
+of relevant keypoints.
+                                                                   1,112 routines from 142 matches, with an average clip du-
+F3 Set-Tennis is a large-scale PES dataset proposed by Liu         ration of 92 seconds and 24.8 events per clip. Event distri-
+et. al. (Liu et al. 2025c). It consists of 11,584 clips from       butions are detailed in Table 4. For FineGym-BB, we ex-
+114 professional tennis matches, with each clip containing         tract 2D human poses of the single gymnastic athlete in each
+1 to 34 shots. Each shot is annotated with the exact frame         video clip using (Sun et al. 2019).
+Table 2: Distribution of elements across sub-classes in the            Table 3: Distribution of event types in ShuttleSet.
+F3 Set-Tennis.
+                                                                       Event type                                 Count
+Sub-Class     Element              Count     Proportion (%)
+                                                                       far-end player back-court-drive               169
+              near                21,467         50.1%                 far-end player clear                          905
+sc1
+              far                 21,362         49.9%                 far-end player cross-court-net-shot           479
+                                                                       far-end player defensive-return-drive          99
+              deuce               14,474         33.8%
+                                                                       far-end player defensive-return-lob            82
+sc2           ad                  16,310         38.1%
+                                                                       far-end player drive                          233
+              middle              12,045         28.1%
+                                                                       far-end player driven-flight                   18
+              forehand            27,802         64.9%                 far-end player drop                           711
+sc3
+              backhand            15,027         35.1%                 far-end player lob                          1,710
+              serve               11,584         27.0%                 far-end player long-service                   159
+sc4           return               8,216         19.2%                 far-end player net-shot                     2,157
+              stroke              23,029         53.8%                 far-end player passive-drop                   455
+                                                                       far-end player push                         1,014
+              T                    4,428         10.3%                 far-end player return-net                   1,180
+              Body                 2,241          5.2%                 far-end player rush                           190
+              Wide                 4,915         11.5%                 far-end player short-service                  946
+              cross-court         11,933         27.9%                 far-end player smash                          937
+sc5
+              down the line        3,521          8.2%                 far-end player wrist-smash                    586
+              down the middle     11,040         25.8%                 near-end player back-court-drive              153
+              inside-in              608          1.4%                 near-end player clear                         925
+              inside-out           4,143          9.7%                 near-end player cross-court-net-shot          467
+              ground stroke       38,287         89.4%                 near-end player defensive-return-drive        173
+              slice                3,358         7.8%                  near-end player defensive-return-lob          102
+              volley                 497          1.2%                 near-end player drive                         251
+sc6                                                                    near-end player driven-flight                  19
+              lob                    334         0.8%
+              drop                   236          0.5%                 near-end player drop                          681
+              smash                  117          0.3%                 near-end player lob                         1,860
+                                                                       near-end player long-service                  201
+              approach               964          2.3%                 near-end player net-shot                    2,091
+sc7
+              non-approach        41,865         97.7%                 near-end player passive-drop                  434
+              in-bound            31,245         73.0%                 near-end player push                          990
+              winner               3,734          8.7%                 near-end player return-net                  1,277
+sc8                                                                    near-end player rush                          133
+              forced error         2,808          6.5%
+              unforced error       5,042         11.8%                 near-end player short-service                 978
+                                                                       near-end player smash                         773
+                                                                       near-end player wrist-smash                   534
+Figure Skating includes 11 videos covering 371 short                   Total                                     24,072
+program performances. Following (Hong et al. 2022), the
+dataset defines 20 event types corresponding to the take-off
+and landing frames of 10 jump and flying spin classes (e.g.,      address this, we segment the videos to retain only segments
+“axel take-off,” “flip landing”). Each program lasts 170.7        containing ball action events.
+seconds on average, containing approximately 10 events per           For the resulting SoccerNet BAS clips, we extract 2D hu-
+performance. Event distributions are detailed in Table 5.         man poses and soccer ball positions. Soccer ball detection is
+Similarly, we only extract 2D human poses of the single fig-      performed using a YOLOv8 model pre-trained on an anno-
+ure skating athlete in each video clip using (Sun et al. 2019).   tated Roboflow dataset (Roboflow 2024), while human 2D
+                                                                  poses are estimated in a top-down manner using HRNet (Sun
+SoccerNet Ball Action Spotting (BAS) focuses on identi-           et al. 2019).
+fying both the timing and type of ball-related actions across
+12 classes (Cioppa et al. 2024), with each action anno-                             Baseline Methods
+tated by a single timestamp. The classes include Pass, Drive,     This section provides additional implementation details for
+Header, High Pass, Out, Cross, Throw In, Shot, Ball Player        the baseline methods discussed in Experimental Results.
+Block, Player Successful Tackle, Free Kick, and Goal.
+The original dataset consists of seven untrimmed broadcast        E2E-Spot (Hong et al. 2021) E2E-Spot is an end-to-end
+videos of full English Football League matches, which con-        deep learning framework for temporally precise spotting of
+tain many irrelevant scenes beyond key ball action events. To     fine-grained events in video, defined as predicting the ex-
+Table 4: Distribution of event types in FineGym-BB.       act frame (within 1–2 frames tolerance) when an event oc-
+                                                          curs. It integrates a per-frame CNN (e.g. RegNet-Y (Ra-
+        Event type                     Count              dosavovic et al. 2020) with GSM (Sudhakaran, Escalera, and
+                                                          Lanz 2020)) to efficiently process hundreds of consecutive
+        BB-dismounts start             1,112              frames and a lightweight bidirectional GRU (Dey and Salem
+        BB-dismounts end               1,112              2017) to model long-term temporal context. Unlike prior
+        BB-flight-handspring start     2,714              two-stage methods (feature extraction followed by separate
+        BB-flight-handspring end       2,714              head training), E2E-Spot jointly learns spatial–temporal rep-
+        BB-flight-salto start          4,123              resentations directly from raw pixels under end-to-end su-
+        BB-flight-salto end            4,123              pervision, enabling both fine-grained motion sensitivity and
+        BB-leap-jump-hop start         4,602              global temporal reasoning.
+        BB-leap-jump-hop end           4,602
+        BB-turns start                 1,265              TDEED (Xarles et al. 2024) is a PES model that im-
+        BB-turns end                   1,265              proves upon baseline methods (i.e., E2E-Spot) by explicitly
+        Total                         27,632              enhancing frame-level discriminability and preserving high
+                                                          temporal resolution across multiple scales. The architecture
+                                                          integrates a feature extractor (e.g., RegNet-Y with local tem-
+Table 5: Distribution of event types in Figure Skating.   poral modules) to produce per-frame tokens, followed by
+                                                          a temporal encoder-decoder that downsamples and then re-
+           Event type                Count                stores the original temporal resolution via skip-connections.
+                                                          Within this module, Scalable-Granularity Perception (SGP)
+           axel takeoff                371
+                                                          layers, and in particular the SGP-Mixer variants, boost to-
+           axel landing                371
+                                                          ken discriminability by reducing similarity among adja-
+           flip takeoff                184
+                                                          cent frames. The combined architecture allows T-DEED to
+           flip landing                184
+                                                          model both local and global temporal context while retain-
+           flying-camel takeoff        216
+                                                          ing precision.
+           flying-camel landing        216
+           flying-sit takeoff          151                F3 ED (Liu et al. 2025c) is an end-to-end deep learning
+           flying-sit landing          151                framework devised to detect and timestamp sequences of
+           flying-upright takeoff        6                fast, frequent, fine-grained (F3 ) events, particularly suited
+           flying-upright landing        6                to sports domains such as tennis, where events are brief,
+           loop takeoff                 94                rapidly occurring, and highly detailed. The model begins
+           loop landing                 94                by encoding consecutive video frames with a visual back-
+           lutz takeoff                248                bone, yielding dense per-frame features. A contextual re-
+           lutz landing                248                finement module then processes this sequence, producing
+           salchow takeoff              61                precise temporal predictions for event sequences while pre-
+           salchow landing              61                serving positional accuracy at the frame level.
+           toe-loop takeoff            504
+           toe-loop landing            504                MSG3D (Liu et al. 2020) extends STGCN (Yan, Xiong,
+           Total                     3,670                and Lin 2018) by introducing multi-scale graph convolu-
+                                                          tions, enabling hierarchical feature extraction across dif-
+                                                          ferent joint neighborhoods. It learns both local and global
+Table 6: Distribution of event types in Figure Skating.   skeletal dependencies by applying multiple graph convolu-
+                                                          tions at varying scales. MSG3D enhances pose-based action
+         Event type                   Count               recognition by capturing complex motion structures across
+         Pass                          4,955              multiple granularities.
+         Drive                         4,274              AAGCN (Shi et al. 2020) incorporates adaptive adjacency
+         Head                            707              learning to dynamically refine graph connections based on
+         High Pass                       756              input features. Unlike STGCN, which uses a predefined
+         Out                             550              skeleton topology, AAGCN learns data-driven spatial de-
+         Cross                           260              pendencies, allowing more flexible representation of human
+         Throw In                        359              motion. This improves robustness to variations in pose esti-
+         Shot                            168              mation noise and enhances action recognition performance.
+         Ball Player Block               222
+         Player Successful Tackle         74              CTRGCN (Chen et al. 2021) introduces channel-wise
+         Free Kick                        19              topology refinement by modeling multi-channel dependen-
+         Goal                             13              cies within the graph structure. Instead of treating each
+         Total                       12,357               joint’s features independently, CTRGCN applies cross-
+                                                          channel interactions to capture co-occurring motion pat-
+terns. This improves feature expressiveness and enables bet-
+ter generalization in skeleton-based action detection.
+STGCN++ (Duan et al. 2022) is an optimized version of
+STGCN that enhances efficiency and representation capac-
+ity. It refines spatial-temporal graph convolutions by intro-
+ducing lightweight architectural modifications, improving
+performance while maintaining a compact parameter size.
+STGCN++ is chosen as our primary skeleton-based feature
+extractor due to its efficiency and strong baseline perfor-
+mance.
+BlockGCN (Zhou et al. 2024) addresses two key limi-
+tations of standard GCNs in skeleton-based action recog-
+nition: (1) the decay of bone connectivity information
+when adjacency matrices are jointly optimized with network
+weights, and (2) the inefficiency in multi-relational model-
+ing using ensemble or attention-based convolutions. To mit-
+igate topology forgetting, BlockGCN incorporates a static
+topological encoding based on graph distances (e.g. short-
+est path distances between joint pairs) and a dynamic topo-
+logical encoding via persistent homology analysis to capture
+action-specific skeletal dynamics. Additionally, it introduces
+BlockGCN, a refined graph convolution module that parti-
+tions feature channels into groups and applies spatial aggre-
+gation and projection within each group via block-diagonal
+weight matrices.
+ProtoGCN (Liu et al. 2025a) introduces a novel GCN-
+based approach for skeleton-based action recognition that
+explicitly enhances the model’s capacity to distinguish ac-
+tions with subtly different joint dynamics. At its core is
+the Prototype Reconstruction Network (PRN), which learns
+a set of motion prototypes encoding prototypical joint-
+relationship patterns. Input skeleton representations are re-
+constructed as a weighted combination of these prototypes,
+thereby emphasizing fine-grained motion cues relevant for
+differentiating similar actions. ProtoGCN further incorpo-
+rates a Motion Topology Enhancement (MTE) module that
+refines the graph representation via self-attention across
+joints and pairwise comparisons, enhancing feature rich-
+ness. A class-specific contrastive learning objective encour-
+ages separation between prototype responses across action
+classes, reinforcing discriminative representation learning.
+

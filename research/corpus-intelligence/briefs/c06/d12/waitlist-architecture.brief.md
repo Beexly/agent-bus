@@ -1,0 +1,18 @@
+# gse/waitlist-architecture.md
+## What it is (1-2 sentences)
+As-built architecture of the shipped no-claim founding-waitlist (PR2, merged to `main` as PR #57, commit `6084550c`): a local-only `/waitlist` funnel with zod-validated client form, consent hard-gate, anti-bot honeypot, and a local-file lead store — nothing deploys, sends, publishes, or makes a performance claim.
+## Key metrics/methods (formulas where given, else "not specified")
+not specified — no formulas or statistical methods. Methods captured: defense-in-depth no-claim enforcement (4 layers: authoring vocabulary, CI compliance-scanner with `block` severity, positive-claim check via `hasNoPerformanceClaim`, `BACKTEST_TRUTH` code drift-guarded against `backtest-transparency.md` doc with the page surfacing "does not beat naive"); anti-bot via honeypot + too-fast `renderedAt` timing with silent drop; per-file write lock for in-process concurrency; P2002 race handling in the DB-store logic.
+## Data sources named
+None external. Internal artifacts: `.gse-local/` (gitignored local-file lead store), `apps/web/lib/gse/waitlist-copy.ts` (single source of no-claim copy + `BACKTEST_TRUTH`/`BACKTEST_TRANSPARENCY`), `apps/web/lib/gse/content-drafts.ts` (canonical no-claim social/brief drafts: CI-scanned, 50 posts + 10 brief topics), `scripts/gse-waitlist-list.mjs` (local read-only lead review).
+## Findings (numbers and facts, not vibes)
+- Prod DB is LIVE: `/api/performance` returns real data — 397 settled picks (per the 2026-06-30 update note).
+- 10 modules named with exact paths: `apps/web/app/waitlist/page.tsx` (server page, `robots: noindex`, not linked from nav), `apps/web/components/gsn/waitlist-form.tsx` (consent gate, honeypot + `renderedAt`, a11y: aria-invalid/describedby/required, error-summary role=alert with focus-on-error, aria-busy), `apps/web/app/api/waitlist/route.ts` (`runtime=nodejs`, `dynamic=force-dynamic`, no send/external), `waitlist-copy.ts`, `waitlist-validation.ts` (zod, `validateWaitlistLead`, `runNoClaimGuard`, `hasNoPerformanceClaim`), `waitlist-store.ts` (dedupe, per-file write lock, `selectWaitlistStore` as PR3 switch point), `waitlist-store-db.ts` (PR3 durable-store logic against injected Prisma-compatible `WaitlistLeadDelegate`; tested with a fake; no schema/migration — owner-gated), `content-drafts.ts`, `apps/web/lib/analytics/events.ts`, `scripts/gse-waitlist-list.mjs`.
+- `hasNoPerformanceClaim` rejects numeric win/ROI/accuracy/edge/profit claims, "guarantee", "risk-free" — even literal "guarantee" banned at authoring level.
+- 3 PR3 hooks owner-gated: durable storage on `WAITLIST_STORAGE=db` (see `pr3-durable-storage-plan.md`, `pr3-migration-runbook.md`); analytics provider dispatch guarded on a key; public deploy (remove `noindex` + nav, see `release-gate-plan.md`).
+- No Stripe/pricing/sportsbook/affiliate/picks/performance claims anywhere on the page.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, OTHER)
+- "Does not beat naive" backtest honesty + drift-guarded backtest truth = TRUST-SIGNAL (brand-level honest-confidence posture; matches the 2026-09-28 public/private doctrine that the site shows only projections/rankings with honest confidence).
+- No-claim compliance scanner (block-severity CI gate on assembled rendered page) — OTHER (compliance infra; a pattern reusable for any public claim surface, e.g. pick transparency pages).
+## Engine-actionable? (yes/no + one-line what)
+No — web funnel infrastructure doc; no football model content. Actionable only for brand/trust: the backtest-truth and no-claim scanner patterns feed the public-facing honest-confidence doctrine.

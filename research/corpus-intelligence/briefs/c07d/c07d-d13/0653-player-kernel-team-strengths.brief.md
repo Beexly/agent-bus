@@ -1,0 +1,30 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0653-player-kernel-team-strengths.md
+## What it is (1-2 sentences)
+arXiv:1609.01176v1 (Maystre, Kristof, González Ferrer & Grossglauser 2016): predicts national-team soccer matches by relating matches through shared *players* via a "player kernel" in a Gaussian-process classification framework — team strength = sum of player skills, sharing knowledge from abundant club matches into sparse national-team fixtures. Verdict in file: ADAPT — transfers to NFL's high-roster-turnover reality (early season, backup-QB starts, preseason borrow strength from other games sharing personnel).
+## Key metrics/methods (formulas where given, else "not specified")
+- Zermelo/Bradley–Terry/Elo as GP classification: P(u≻v) = 1/(1+exp[−(s_u−s_v)]) = 1/(1+exp(−s^T x)) (Eq. 1), s ~ N(0,σ²I) → f(x) = s^T x is a GP with k(x,x′) = σ²x^Tx′.
+- Draws via Rao–Kupper: P(u≻v) = 1/(1+exp[f(x)−α]), P(draw) = (e^{2α}−1)P(u≻v)P(v≻u).
+- Player kernel: lineup vector z ∈ R^P with z_p = +1 (winner's lineup), −1 (loser's), 0 else; k(z,z′) = σ²z^Tz′. Positive when same players win both matches; negative when players win one, lose the other; zero for disjoint lineups. Dual/match-space view avoids estimating per-player skills in the P > N regime.
+- Metric: average log loss = −(1/T)Σ_i [1{y_i=W}log p_i^W + 1{y_i=D}log p_i^D + 1{y_i=L}log p_i^L].
+- Inference: GPy, Laplace/EP-style GP classification; 1 min (2008 data) → 17 min (2016 data).
+- Assumptions: team strength = linear sum of player skills; lineup known pre-match; club and national-team matches comparable conditional on players; no aging/time decay (flagged as future work).
+## Data sources named
+Matches from 2006-07-01: (a) national-team official + friendlies, (b) top European club competitions (~15× more club than national-team matches). Euro 2008: N=4,390 training matches, P=7,875 players, T=31 test; Euro 2012: N=15,594, P=21,735, T=31; Euro 2016: N=24,887, P=33,157, T=51. Lineups: starting XIs announced pre-match (+ home indicator). Baselines: Elo-rating Rao–Kupper (eloratings.net), average of 3 bookmakers' odds, uniform random. No author repo; GPy (sheffieldml.github.io/GPy).
+## Findings (numbers and facts, not vibes)
+- Euro 2008 (log loss, lower better): PlayerKern 0.969 vs Elo 0.910 vs Odds 0.979 vs Random 1.099.
+- Euro 2012: PlayerKern 0.939 vs Elo 1.003 vs Odds 0.953 vs Random 1.099.
+- Euro 2016: PlayerKern 1.067 vs Elo 1.102 vs Odds 1.020 vs Random 1.099.
+- PlayerKern competitive with bookmaker odds in 2008/2012; worse in 2016 (a less predictable tournament overall). More CONSISTENT than Elo across tournaments (Elo 0.910 → 1.003 → 1.102 swings wildly) — the uncertainty quantification pays off.
+- Kernel heatmap: national-team matches show non-zero covariance with club matches of all competitions — the transfer channel is real.
+- P > N in all three tournaments (e.g., 33,157 players vs 24,887 matches in 2016) — handled via the dual match-space view; scaling to ~50k NFL games × ~10k players needs sparse GP approximations.
+- File's NFL implementation spec: z_p = snap share (signed by outcome: +share for winner, −share for loser); use cases (a) early-season ratings borrowing from prior-season games via retained personnel (cold-start fix), (b) backup-QB spots relating to that QB's other starts incl. preseason/college, (c) coaching-change teams relating through retained players, not franchise label. Add the missing time decay: k_time(d,d′) = exp(−|d−d′|/τ) × player kernel. Output full predictive distributions → pick-confidence and Kelly sizing. Effort: medium.
+- File's reproducible test: 2015–2022 NFL train, 2023–2024 rolling test; Test 1 (cold-start, weeks 1–4): gate = player-kernel GP beats current team rating by ≥0.02 mean ATS log-loss in weeks 1–4; Test 2 (backup-QB starts): gate = ≥0.03 log-loss improvement on that subset. Acceptance if either test passes (personnel-aware overlay role even if it doesn't replace the base rating).
+- File's improvement experiment: learn the kernel — deep kernel with player embeddings (from RisingBALLER-style pre-training in ledger 0650) fed into RBF over mean-pooled lineup embeddings; test whether learned scheme-fit similarities beat identity-overlap kernel on the backup-QB subset.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- QB-BEHAVIOR (backup-QB program): the backup-QB use case is the single cleanest NFL port — games with a backup QB relate to *that QB's* other starts (preseason, college, prior teams) instead of the team's rating, giving a personnel-aware overlay exactly where team-level ratings break; the file's ≥0.03 log-loss gate on backup-QB subsets defines the adoption test for this program.
+- SCHEME (scheme-fit vs identity): the deep-kernel improvement experiment (learned player embeddings, scheme fit not just identity overlap) serves the scheme-modeling lane — if lineup-similarity through scheme-fit embeddings beats identity overlap, it evidences that coaching scheme, not just personnel identity, drives covariance between games.
+- COACHING (coaching-change spots): relating a coaching-change team through retained players rather than franchise label is a ready-made coaching-transition adjustment — serves the coaching-tendencies program by separating personnel continuity from scheme/system change.
+- OL (roster-unit continuity): the snap-share kernel formulation ports naturally to unit-level kernels (OL continuity as covariance between games sharing the same five linemen) — a unit-continuity overlay for OL-quality modeling distinct from individual player grades.
+- OTHER (cold-start / calibration): the early-season cold-start use case (September borrowing strength from prior-season games via retained personnel) is the concrete alternative to regressing-to-mean — serves the calibration program with a defined ≥0.02 log-loss acceptance gate in weeks 1–4.
+## Engine-actionable? (yes/no + one-line what)
+yes — build snap-share player kernel GP as a personnel-aware overlay; adopt for weeks 1–4 cold-start and backup-QB spots if it beats team ratings by ≥0.02/≥0.03 log-loss on those subsets.

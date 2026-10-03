@@ -1,0 +1,25 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0233-betting-the-system-using-lineups-to.md
+## What it is (1-2 sentences)
+An empirical study (Peters & Pacheco, 2023; full-text read) testing whether individual player lineups beat team-level aggregates for predicting soccer final scores on 680 EPL matches (2020–2022), plus a £1 flat-stake simulated betting system against bookmaker odds. The ledger's verdict is ADAPT — adopt the 4-part evaluation protocol (fitness + standings/table reconstruction + top-4/relegation + flat betting sim) as GSE's model scorecard template, and the finding that aggregates beat lineups as a prior against over-granular features; the soccer models themselves don't transfer.
+## Key metrics/methods (formulas where given, else "not specified")
+- Not specified — the paper states no equations; it is empirical/descriptive. Two independent regression models per match (home goals scored, away goals scored), combined into a scoreline.
+- Feature sets: Players (encoded player names: 1 home / −1 away / 0 neither); Lineup Stats (52 features: per-position-group season-to-date averages for the starting XI — 13 defender, 14 midfielder, 13 attacker stats + 12 opponent stats [5 GK + 7 defender]); Team Stats (same 52 features but squad-averaged, ignoring lineups).
+- 18 models: 3 heuristics (Home Win = always 1:0; Tradition = 1:0 to higher-table team; Recency = repeat each team's last scoreline) + 3 feature sets × 5 ML techniques (Linear Regression, KNN, Decision Tree Regression, Random Forest Regression, Support Vector Regression).
+- Evaluation: (i) fitness: MAE, RMSE, R²; (ii) real-world: Kendall τ rank correlation of reconstructed standings, top-4 accuracy, relegation (bottom-3) accuracy; (iii) betting sim: £1 bet per predicted exact scoreline per test match, winnings = stake × odds, starting pot £0.
+- Feature importance via chi-squared test on lineup-stats features.
+## Data sources named
+Fixtures: fixturedownload.com. Player statistics scraped from FBRef.com (full stat list at github.com/georgejpeters/Feature-list-and-legend). Odds: oddsportal.com. 680 EPL matches, seasons 2020–2022, chronological; last 100 matches = test set. No model code link stated.
+## Findings (numbers and facts, not vibes)
+- Home goals (Table 1): best = Lineup Stats SVR (MAE 0.89, RMSE 1.16, R² 0.17); Team Stats KNN best MAE 0.86. Heuristics: Home Win MAE 1.12/RMSE 1.42/R² −0.23; Tradition 1.0/1.46/−0.30; Recency 1.41/1.83/−1.06. Players LR degenerate (MAE "≪1", R² −1.97 — encoding failure).
+- Away goals (Table 2): best = Team Stats SVR (MAE 0.87, RMSE 1.14, R² 0.20); Lineup Stats SVR (0.90/1.17/0.16).
+- Feature importance (χ², Table 3): goalkeeper stats rank #1 and #2 for both models — away keeper clean sheets 420.0, away keeper goals against 80.5 (home model); home keeper clean sheets 405.0, home keeper goals against 96.5 (away model). Attacker goals conspicuously absent; goal-creating actions (attackers/midfielders) rank 3–5.
+- Standings: Kendall τ — Players 0.232 (best), Team Stats 0.053, Lineup Stats −0.021. Top-4: all ML models 50%. Relegation: Lineup Stats 100%, Team Stats 100%, Players 67%.
+- Betting (Table 6, £ profit over 100 £1 bets): Team Stats KNN +£42.5 (42% ROI, best); Lineup Stats DTR +£18.9; Team Stats DTR +£18.8; Lineup Stats KNN +£14.6; Home Win −£7.0; best-fitness model (Lineup Stats SVR) lost −£30.9. Players models all deeply negative (−£37 to −£90).
+- Paper's own headline tension: fitness-best ≠ betting-best. No significance tests on betting profits (100 bets, exact-score market, high variance; 18 models, no multiple-comparison correction). No de-vigged odds baseline. In-file caveat: possible lookahead leakage if FBRef season aggregates were scraped once rather than strictly pre-match.
+## Intelligence connections (tag each finding: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- "Granularity doesn't help" prior: require a Team-Stats-vs-Lineup-Stats bake-off before investing in NFL lineup-scratch features — OTHER (feature-engineering doctrine)
+- Defensive-unit aggregates (pressure rate, defensive EPA) may dominate GSE's totals models the way keeper stats dominated here — SCHEME (defense-side feature importance; INFERENCE that the direction transfers to NFL)
+- Fitness-best ≠ betting-best: model selection must include betting/tier components, not just MAE/R² — TRUST-SIGNAL (which signals predict actual money-making vs vanity fitness)
+- 4-part scorecard as GSE's standard evaluation harness, with CLV added as a 5th component — OTHER (evaluation infrastructure)
+## Engine-actionable? (yes/no + one-line what)
+Yes — adopt the 4-part scorecard (fitness + standings/table rank correlation + tier accuracy + flat-stake betting sim, plus CLV as a 5th component) as GSE's standard model-evaluation template over existing backtests, and run the Team-Stats-vs-Lineup-Stats bake-off on NFL totals before building lineup-level features (adopt the scorecard only if it surfaces at least one model-ranking disagreement beyond MAE/RMSE).

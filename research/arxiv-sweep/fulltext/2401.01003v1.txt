@@ -1,0 +1,645 @@
+Rink-Agnostic Hockey Rink Registration
+Jia Cheng Shang
+Affiliation:
+University of Waterloo
+Affiliation:
+Waterloo, Ontario, Canada
+Email:
+jcshang@uwaterloo.ca
+Yuhao Chen
+Affiliation:
+University of Waterloo
+Affiliation:
+Waterloo, Ontario, Canada
+Email:
+yuhao.chen1@uwaterloo.ca
+Mohammad Javad Shafiee
+Affiliation:
+University of Waterloo
+Affiliation:
+Waterloo, Ontario, Canada
+Email:
+mjshafiee@uwaterloo.ca
+David A. Clausi
+Affiliation:
+University of Waterloo
+Affiliation:
+Waterloo, Ontario, Canada
+Email:
+dclausi@uwaterloo.ca
+Abstract
+Hockey rink registration is a useful tool for aiding and automating sports analysis. When combined with player tracking, it can provide location information of players on the rink by estimating a homography matrix that can warp broadcast video frames onto an overhead template of the rink, or vice versa. However, most existing techniques require accurate ground truth information, which can take many hours to annotate, and only work on the trained rink types. In this paper, we propose a generalized rink registration pipeline that, once trained, can be applied to both seen and unseen rink types with only an overhead rink template and the video frame as inputs.
+Our pipeline uses domain adaptation techniques, semi-supervised learning, and synthetic data during training to achieve this ability and overcome the lack of non-NHL training data.
+The proposed method is evaluated on both NHL (source) and non-NHL (target) rink data and the results demonstrate that our approach can generalize to non-NHL rinks, while maintaining competitive performance on NHL rinks.
+1
+Introduction
+Rink registration plays a crucial role in automatic hockey game analysis. Rink registration is the process of mapping video frame pixels onto an overhead view of the rink template in order to determine the locations of everything on the ice. This location information of players is necessary for many types of further hockey analysis, such as interactions between players and determining better scoring opportunities. An example of how rink registration works can be seen in Figure
+1
+.
+Most existing rink registration systems focus on NHL rinks, which have a strict standardization system
+Weiner_2009
+shi2022self
+jiang2020optimizing
+nie2021robust
+. This means that each rink is the same size, with the same positions for rink features such as faceoff circles, blue lines, and goal lines. However, non-NHL rinks also exist. For example, many European rinks follow the International Ice Hockey Federation (IIHF)/Olympic hockey rink format, which is wider than the NHL standard
+IIHF
+. This standardization is not as strict, resulting in varying rink sizes and feature location changes in different rinks. For example, some arenas in Finland have sizes that fall between IIHF and NHL sizes
+Formánek
+. Also, minor leagues and recreational rinks may not follow standards as strictly, resulting in more differences. Examples of different rinks can be seen in Figure
+2
+.
+In these situations, rink registration systems trained on NHL data do not perform well, often resulting in incorrect warps in our tests. They would need new ground truth homography data on these new rinks in order to function correctly, which is a costly and time-consuming task. Furthermore, different rink setups and sizes would need different trained models. Thus, existing models lack generalizability for rink setups, and this is difficult to resolve without a large quantity of data from a variety of rinks.
+We propose a novel pipeline with three main modules (models) to resolve the aforementioned issues. The first model performs semantic segmentation on the input image to produce a segmentation map. The following two models estimate and refine a homography estimation based on the segmentation map and the corresponding rink template. To address the lack of data for non-NHL rinks, we implement domain adaptation techniques, use improved augmentations, and use synthetic data to simulate different possible rinks.
+To the best of our knowledge, this pipeline is the first system designed for sports rink registration that is able to work on a variety of rink types, making it rink-agnostic. It is able to estimate homography for multiple rink types with competitive accuracy, despite only having labelled data for a single rink type.
+2
+Related Works
+2.1
+Homography Estimation
+Homography estimation is an aspect of image processing where one plane is warped onto another plane. Traditional homography estimation techniques involve identifying feature pairs from image pairs using methods such as SIFT
+lowe2004distinctive
+and ORB
+rublee2011orb
+, before being used in systems such as RANSAC and Direct Linear Transform (DLT) to calculate the homography matrix
+fischler1981random
+hartley2003multiple
+.
+DeTone
+et al.
+detone2016deep
+were one of the first to estimate homography via deep learning, estimating the location of four corners of one image in the image space of the other. These sets of point estimates can then be converted into homography via DLT
+detone2016deep
+, as matching 4 (x,y) pairs is enough to solve the 8 unknowns in the homography matrix.
+Figure 1
+:
+Example of warping a video frame onto the overhead rink template (and vice versa) using homography.
+Figure 2
+:
+Examples of different rinks. On top of the differences between rink shape and feature positioning, there are also differences in color, advertising frequency, and how face-off circles were filled. Face-off circle differences are highlighted using dashed boxes
+Zhou and Li
+zhou2019stn
+described how directly estimating homography parameters via deep learning was difficult due to the different scaling and distributions needed for each parameter. They normalized homography matrix parameters so that they have relatively similar distributions, making them more suitable for the loss functions used by deep learning models
+zhou2019stn
+.
+Since then, other models have been built for homography estimation, and these include various models specialized for sports field registration
+homayounfar2017sports
+,
+chen2019sports
+,
+sha2020end
+,
+nie2021robust
+,
+chu2022sports
+,
+jiang2020optimizing
+.
+Our pipeline adopts the approaches from Jiang
+et al.
+jiang2020optimizing
+and Shi
+et al.
+shi2022self
+, where an estimate and refinement approach is taken for homography estimation, and self-supervised learning and synthetic data are used to improve the training process. It uses the 4-point approach popularized by
+detone2016deep
+.
+2.2
+Semantic Segmentation
+Semantic segmentation involves classifying each pixel in an image into several provided categories. With the advent of deep learning, many models were developed to do this for fields such as autonomous driving and remote sensing.
+Long
+et al.
+long2015fully
+popularized the use of fully convolutional networks for the purpose of semantic segmentation. Ronneberger
+et al.
+ronneberger2015u
+designed the U-net model which builds upon the fully convolutional network by setting up a dedicated encoder and decoder structure with skip connections to improve the upscaling process.
+The DeepLab series of models further build upon the U-net structure by adding various techniques such as Atrous Spatial Pyramid Pooling (ASPP) and image level pooling, to improve long range and global context information acquisition
+chen2017deeplab
+chen2017rethinking
+chen2018encoder
+. Various vision transformer based approaches were also used for semantic segmentation, such as Segformer
+xie2021segformer
+, taking advantage of the improvements transformers provided to the field of image processing.
+2.3
+Domain Adaptation for Semantic Segmentation
+Unsupervised domain adaptation (UDA) involves trying to bridge the domain gap caused by differences between the labelled training data (source domain) and unseen test data (target domain). UDA tries to mitigate this issue by training on both labelled source data and some unlabelled target data and using techniques to improve the model’s performance in the target domain. Techniques such as maximum mean distances
+long2015learning
+, adversarial learning
+ganin2016domain
+, and self-training
+tranheden2021dacs
+have been used for deep learning in order to improve the model’s ability to bridge the domain gap.
+Self-training methods in particular seem to perform well for UDA in the field of semantic segmentation, with several recent works using it
+hoyer2022daformer
+hoyer2022hrda
+. DAformer by Hoyer et al. use a teacher-student approach for self-training, where a teacher model is gradually updated using the exponential mean average of the student weights and is used to produce pseudo-labels of the target data for the student to train on
+hoyer2022daformer
+. Masked Image Consistency (MIC) is another work that uses a similar approach that can be added on top of existing domain adaptation methods
+hoyer2023mic
+. It involves masking the target images fed into the student model in order to train it to learn contextual relations between different components in the target image. The loss is then computed between the predicted heatmap and a pseudo-label generated by the teacher model, which has access to the entire image.
+We take inspiration from this field to improve performance on the target domain of non-NHL rinks, especially during the segmentation stage of the pipeline.
+2.4
+Semantic Segmentation and Homography
+Some models have used homography to improve the results of semantic segmentation, especially in cases where the resulting segmentation is expected to follow a structure that is known beforehand. Examples can include organ semantic segmentation in biology, where the organ components have a roughly known structure, and this prior can be used to provide a better segmentation.
+Lee
+et al.
+lee2019image
+develop an Image-and-Spatial Transformer Network (ISTN), which consists of two components: an image transformer network (ITN) that generates a representation of two input images, and a spatial transformer network (STN) that is trained to find the affine transform needed to align the resulting feature representations together
+jaderberg2015spatial
+. Sinclair
+et al.
+build upon this work in their Atlas-ISTN by setting the ITN to be a semantic segmentation network, and using the result of that in a STN to warp an “atlas” template to a proper orientation
+sinclair2022atlas
+.
+Our pipeline uses a similar approach of performing segmentation before estimating a warp matrix. However, the main goal is estimating the matrix used to warp the template, rather than getting the warped segmentation itself. Furthermore, we require a homography matrix rather than an affine matrix in order to map one plane onto another. We only have ground truth training data for a single source domain, and use UDA techniques to improve results on other rink types.
+Other sports registration systems have used segmentation to extract feature information before further analysis
+homayounfar2017sports
+zhang2021high
+. However, none of them do so for the purpose of performing rink-agnostic homography.
+3
+Methodology
+We propose an end-to-end system for rink-agnostic homography estimation. It takes in video frames and the overhead template of the rink as input, and outputs the homography needed to warp the template onto the frame. Our pipeline consists of 3 components:
+1.
+A semantic segmentation model takes in the input video frame and outputs a semantic segmentation map.
+2.
+An initial homography estimator takes the segmentation map and the overhead rink template as input and outputs the homography needed to align the two together. This homography is then used to warp the overhead template and produce a warped template estimate.
+3.
+Finally, a refinement model takes the segmentation map and warped templates as input and produces a refinement homography to adjust the warped template estimate to be closer to the proper orientation seen in the segmentation map. This process can be iterated to further improve the homography.
+The overall pipeline and how the three components interact with each other can be seen in Figure
+3
+. However, we still have a lack of labelled training data for non-NHL rinks. To solve this issue, we use domain adaptation, augmentations, and synthetic data to train each component separately. This helps make the system more rink agnostic and helps overcome the lack of data for other domains.
+The segmentation module is trained via domain adaptation techniques on both labelled NHL and unlabelled non-NHL data. Augmentations such as logo augmentation are also added, to simulate differences in appearance between rinks and further improve generalizability. The other two modules are trained in a semi-supervised manner using synthetic data, in order to generalize them to different rink types.
+Figure 3
+:
+Pipeline of the process during test time, showing the 3 major components. The inputs to the pipeline are the video frame fed to the segmentation model and the overhead template fed to the initial estimator. The iteration of the refinement model has been omitted for clarity.
+3.1
+Semantic Segmentation Module
+The semantic segmentation module is designed to identify the various rink features in broadcast video frames, regardless of the type of rink used. Different rinks such as NHL and Olympic rinks can have different structures, and there usually isn’t a scaling or direct linear transformation that can warp the rinks to be the same form. These rinks are seen in Figure
+4
+. However, although the various features such as faceoff circles and blue lines may differ in size and positioning, they will still exist in all major rinks. This allows them to be used as classes for semantic segmentation regardless of which rink the image was taken from.
+Figure 4
+:
+The line and segmentation overhead templates used for NHL (left) and Olympic (right) rinks. Note that in reality, both rinks are the same lengthwise, and the Olympic rinks are wider than the NHL rinks. They were both scaled to fit the same template space for this analysis.
+In order to improve the model’s ability to generalize on all rinks, we used heavy augmentation as well as domain adaptation techniques. On top of general augmentations such as Gaussian noise, color augmentation, shifts, tilts and zooms, we added copy-paste augmentation and logo augmentation.
+3.1.1
+Augmentations
+Copy-paste augmentation is based on the work of Ghiasi
+et al.
+ghiasi2021simple
+. However, their copy-paste system involved pasting instances from one image onto the other in order to improve the instance segmentation of items in different scenarios. In our case, we copy-paste players from other images in order to simulate the natural occlusion of rink features. This is used to improve the model’s ability to segment rink features even when they are occluded.
+Logo augmentation is designed to simulate the random advertising and text that may appear on different rinks. Randomized text, rectangles, and circle fillings are added in areas with space that may have logos in some rinks. This is done to teach the network to ignore the effects of such advertising. Examples can be seen in Fig.
+5
+.
+Figure 5
+:
+Examples of logo augmentation, which sometimes added text, rectangles, and circle fillings in order to augment the existing dataset further.
+3.1.2
+Domain Adaptation
+We also use domain adaptation in order to improve the model’s performance on Olympic rinks, where we do not have any ground truth segmentation training data. In particular, we adopt some methods described in MIC
+hoyer2023mic
+, to improve the model’s ability to learn the context between different components in the target domain. This would allow us to use unlabelled non-NHL data during our training.
+We primarily add the exponential moving average (EMA) teacher-student and input masking behavior to our pipeline, as described in
+hoyer2023mic
+. The EMA teacher-student approach has been shown to improve results for semi-supervised training
+tarvainen2017mean
+hoyer2022daformer
+, and in domain adaptation self-training. In this case, the target domain of non-NHL rinks is unlabelled and pseudo-labels generated by the teacher are used instead. So during training, we have a student model that learns via loss functions, and a teacher model who’s weights are altered over time based on the EMA of the student’s weights over time. When training on the unlabelled target domain, the teacher has access to the unmasked image, and produces a pseudo-label.
+The student, however, only has access to the masked input and produces a segmentation mask which is compared against the pseudo-label with a segmentation loss. This loss is weighted by the confidence weighting of the pseudo-label (as pseudo-labels may not be precise), and used to update the student model. The teacher’s weights are then updated in turn via the EMA equation, as seen in equation
+1
+, where
+t
+denotes timestep,
+Φ
+\Phi
+denotes teacher weights,
+Θ
+\Theta
+denotes student weights, and
+α
+\alpha
+is a smoothing factor
+tarvainen2017mean
+. The usage of MIC is seen in Figure
+6
+.
+Φ
+t
++
+1
+←
+α
+​
+Φ
+t
++
+(
+1
+−
+α
+)
+​
+Θ
+t
+\Phi_{t+1}\leftarrow\alpha\Phi_{t}+(1-\alpha)\Theta_{t}
+(1)
+Figure 6
+:
+Pipeline of MIC method from
+hoyer2023mic
+. It promotes the model to learn contextual clues as it needs to identify the hidden areas based on information from other non-hidden areas. The dashed rectangles highlight some areas that the model needs to correct.
+We used a DeepLabV3+ model
+chen2018encoder
+from the Segmentation Models PyTorch library
+Iakubovskii:2019
+as the segmentation model in this case. We also used focal loss for the segmentation loss
+lin2017focal
+, and AdamW optimizer.
+3.2
+Homography Estimator Module
+The homography estimator module consists of a Resnet18-based regressor that estimates the normalized homography matrix, in a similar manner as
+zhou2019stn
+. During the inference time, it takes the segmentation map output of the first module alongside an overhead template of the rink as input. It then produces an estimate of the homography needed to warp the overhead template to be aligned with the segmentation map (which makes it also aligned with the actual input frame if the segmentation map is accurate).
+However, during training, we use synthetic data because we only had labelled training data for NHL rinks. In order to generalize well on all rink setups and sizes, we use synthetic rink generation to simulate different rink setups. This is done by altering various distances in the overhead template, such as the distance between faceoff circles and the goal line, or the distance between blue lines and the center line. Examples of these can be seen in Fig.
+7
+. 200 synthetic rinks were generated for training.
+During data generation, we choose from common pre-defined rinks such as NHL or Olympic rinks, or create our own randomly generated rink to serve as the initial overhead rink template. This would thus improve its accuracy on a wide variety of rinks, as the model would be trained on a wide variety of templates.
+Figure 7
+:
+Examples of randomly generated rinks. The feature types and rough positions were kept constant, while the sizes, scales, and more precise positioning was varied each time. Some differences include goal crease shape, wider rinks having more space between faceoff circles and edges, and the blue lines and goal lines being in shifted locations.
+The next step in data generation involves acquiring a homography to warp the overhead rink to create a warped template. To do this, we use a ground truth homography matrix from the NHL dataset, and augment it with slight perturbations, zooms, and flips. The resulting warped template simulates what a segmentation mask input would look like, and is used as the synthetic data. This process can be seen in Fig.
+8
+. We use ground truth homographies from the NHL training set to represent the range of homographies that correspond to broadcast video. The augmentations applied to the homography matrix help cover this expected range. It also covers potential differences in homography ranges that may occur when we use different templates, as the rink sizes can differ in those cases.
+Figure 8
+:
+Data generation and training process of the homography estimation module. The overhead template and warped template are used as input, and the resulting homography and warped output template are compared with the ground truth. Note the normalization and unnormalization of the homography is omitted in this image for clarity.
+During training, the overhead rink template and warped template are fed as input to the initial homography estimator, which estimates the normalized homography. This homography is then used to warp the overhead template to produce a warped template output. This is done using grid-sampling, which preserves the gradient flow and allows the loss to be propagated back to the estimator model. The normalized homography estimate is compared with the ground truth homography via smoothed l1-loss, while the warped template output is compared with the original warped template via L1 loss. This process can be seen in Fig.
+8
+.
+Note that the model only outputs a homography, so it cannot directly produce a copy of the warped template that was given as input. Thus, it needs to learn the homography required to warp the overhead template to the warped template input. During test time, we take the homography estimate and use it for the next module in the pipeline.
+3.3
+Refinement Module
+The final module in the pipeline is the refinement model. During test time, its input consists of the segmentation mask from the first module alongside a warped template using the homography estimate from the second module. During training however, we once again leverage the use of synthetic data and semi-supervised learning to improve the model’s performance on multiple rink types.
+For training data generation, we follow a similar scheme as Shi
+et al
+shi2022self
+, where we take an existing ground truth homography and image, and augment them before feeding them into the model for training. This augmentation step involves selecting 4 random points in a rectangle on the image and perturbing them by a small amount. The previous and new positions of these points can then be used to produce a homography matrix, which is used to warp the image. The warped image and original image are then sent to the model during training, and it tries to calculate the homography needed to perform this warping process. In our case however, rather than using the video frame directly, our image consists of the overhead template warped by an existing ground truth homography. This homography is augmented before use, and is used to represent examples of rink orientations as viewed by the camera. This process is visualized in Fig.
+9
+.
+Figure 9
+:
+Data generation for refinement. The blue rectangle represents an example initial four corners, and the yellow rectangle represent the possible perturbations for this example. The shift in homography can be seen on the right, with green being the original rink position and red being the perturbed version.
+The refinement model is a Resnet18-based regressor, and uses the four-point approach to estimate homography, where it estimates the locations of 4 points from one image in the image space of the other. These sets of points can then be converted into a refinement homography via DLT
+hartley2003multiple
+, and will represent the warp needed to align the two input images. An example of pre-refinement inputs and a resulting refinement can be seen in Fig.
+10
+.
+Figure 10
+:
+Example of refinement. The left side shows the two input images overlaid on each other, and the right side shows the alignment that can occur after the refinement matrix is calculated.
+During test time, the refinement process can be iterated to further improve the homography refinement. The refinement homography can be combined with the initial estimate to produce a better estimate. This estimate is then used to warp the overhead template to produce a better warped template, which is fed back as input alongside the segmentation map. The refinement model performs this warp estimation process repeatedly, improving the alignment each time. In practice however, the alignment is only improved for the first few times, as small misalignments may not be aligned properly. Thus, we restrict the iteration at test time to 3 iterations, as we found not much improvement beyond that. This process is visualized in Fig.
+11
+.
+Figure 11
+:
+Refinement iteration during testing. The resulting refinement matrix can be combined with the initial homography estimate to create a better warped template, which is fed into the refinement model again.
+4
+Results and Discussion
+We first present experimental results for each component in the pipeline, and then describe the results for the overall pipeline.
+4.1
+Segmentation Module
+The segmentation module was trained to predict 11 different classes of pixels from input images, including general areas such as background and defense zones to more specific features such as center line and goals.
+The copy-paste and logo augmentation did not affect the overall results on the source domain overall by much, as seen in Table
+1
+. Qualitatively however, they were able to improve the model’s ability to identify parts occluded by players. Some features such as face-off spots can be occluded completely by players for example. Therefore, these augmentations help the model to learn to segment such features even when they are occluded by people, as the model would be trained on more examples of such cases.
+Table 1:
+Overall average Intersection over Union (IOU) results from the validation set of NHL games. Although the augmentation and domain adaptation (DA) improvements did not affect the overall numbers much, they produce qualitative improvements on the target dataset results.
+Model
+Overall IOU
+NHL-Only Model
+78.3%
+Model with Augmentations
+78.6%
+Model with Augmentations and DA
+78.5%
+We perform a sanity check by comparing an NHL-only trained model with the domain adaptation trained model, to ensure the accuracy did not drop on a validation set of NHL rinks. This can be seen in Table
+1
+.
+Results on NHL rinks can be seen in Table
+2
+. Accuracy for these segmentations are measured via intersection over union (IOU), a common metric for this type of task. For the source domain validation set, we can see how the results are good for classes that cover areas, but have more errors in classes that represent lines or spots. This is partially because lines and spots are more likely to be obscured by players or the boards at the bottom of the rink, and any small deviation in prediction can cause a large IOU drop.
+Table 2:
+Intersection over Union (IOU) results per class for segmentation models trained on source domain vs both domain. These results are the validation results from a set of held-out data on other NHL rinks and matches (source domain).
+Class
+Single-Domain
+Domain Adaptation
+Background
+97.1%
+97.0%
+Behind Goal
+87.0%
+86.2%
+Blue lines
+45.4%
+51.3%
+Center Face-off Circle
+95.2%
+95.0%
+Center Line
+62.3%
+60.6%
+Outer Face-off Circles
+94.4%
+94.4%
+Outer Face-off Spots
+61.6%
+61.0%
+Goal Creases
+81.8%
+81.5%
+Neutral Zone
+94.9%
+94.4%
+Inner Face-off Spots
+46.8%
+47.2%
+Defense Zones
+94.8%
+94.9%
+Overall Average
+78.3%
+78.5%
+The semantic segmentation module was also tested on various unlabelled target domain data, such as Olympic/European rinks. Although no labels, and thus no quantitative results, are available, qualitative analysis can still be done, where the predicted segmentation map is compared with the original image, to see if the components line up.
+Examples of this can be seen in Fig.
+12
+, using results on the Olympic and European validation set, which has different Olympic-style rinks not seen by either model during training. The results of the model trained with domain adaptation and our copy-paste and logo augmentations were noticeably better. In particular, cases of major misclassified regions and missing regions that were present in the predictions from the base segmentation model were fixed in the domain adaptation trained model. Thus, the domain adaptation model resulted in better results on the target domain of non-NHL rinks, when compared with the NHL-only trained model. This shows that even with heavy augmentation, the changes between NHL and non-NHL rinks can still be quite large, resulting in a domain gap that needs to be bridged in another way.
+(a)
+Input Image 1
+(b)
+Input Image 2
+(c)
+Base Segmentation
+(d)
+Base Segmentation
+(e)
+Improved Segmentation
+(f)
+Improved Segmentation
+Figure 12
+:
+Examples of Olympic style rink images and corresponding predicted segmentation maps from a NHL-only model (c,d) and an improved model with logo augmentation and DA (e,f). Domain adaptation and logo augmentation have improved the generalization capabilities of the model, allowing it to segment this new rink better than the no DA model.
+4.2
+Homography Estimator Module
+The homography estimation module is designed to roughly estimate the homography needed to warp the rink template onto an input image (or vice versa, as warping in the reverse direction just requires inverting the homography matrix). In order to compare homography results for homography estimation, we use IOU
+part
+, where only the portion of the rink template that would have been in the image is considered. We use IOU
+part
+because the ground truth data collected was primarily done with just the visible portion in mind, and thus the ground truth for IOU
+whole
+may not have been accurate. The image is warped using both the predicted homography and the ground truth homography, and the resulting intersection and union are calculated.
+As with the semantic segmentation model, we compared a model trained solely on the source domain NHL rink with another model trained on multiple rink types and randomly generated rinks. This helps determine the viability of a rink-agnostic homography estimator. The source-domain trained initial estimator model performed 1.6% better than the multi-rink trained model on the NHL validation dataset, as seen in Table
+3
+.
+However, the multi-rink trained model is still competitive and has the added benefit of working for multiple types of rinks, whereas the NHL-only model results were often off. The refinement module, later on, is used to improve the accuracy of the warps.
+Table 3:
+Average Intersection over Union (IOU) results using ground truth homographies from the validation set of NHL games. Different stages in the pipelines are compared, such as Initial Estimator Model (IEM), Refinement Model (RM), and Iterative Refinement (IR). The multi-rink model with iterative refinement achieves similar accuracy as the NHL-Only pipeline on our data. However, it has the added benefit of working on non-NHL rinks as well.
+Pipeline
+IOU
+part
+NHL-Only Baseline IEM
+96.0%
+Rink-Agnostic IEM
+94.4%
+NHL-Only Baseline IEM + RM + IR
+shi2022self
+96.9%
+Rink-Agnostic IEM + RM
+96.7%
+Rink-Agnostic IEM + RM + IR
+96.9%
+4.3
+Refinement Module
+The refinement model is the last component of the pipeline. It is designed to determine small homography differences between the segmentation mask output of the first model and the warped template created using the homography estimate of the second model. The refinement model must accurately calculate the homography needed to align the two inputs, and is trained on multiple fixed rinks and randomly generated rinks.
+The refinement process results on the synthetic data used in validation have an accuracy of approximately 98% IOU
+part
+.
+4.4
+Overall Pipeline
+The results of the overall pipeline were analyzed to determine how well this system works on both NHL and non-NHL data. We use a model based on
+shi2022self
+as the baseline, which was replicated because the source code, original model, and data were unavailable to the public. Using the source domain NHL validation set, it was found that the results of our pipeline are roughly on par with that of the baseline, as seen in Table
+3
+.
+The visual results for this approach on the NHL validation data can be seen in Fig.
+13
+. As seen in the images, the pipeline can warp the template to be closely aligned to the markings on the rink.
+Figure 13
+:
+Example results on NHL validation data. Green is ground truth, light blue is initial homography estimate, and dark blue is the final homography after refinement.
+Adding iteration to refinement improves the accuracy by a small amount as the refinement module can make further adjustments to the estimated homography after applying the previous refinement to the estimate. We compared single round refinement vs iterative refinement and saw the overall results on the NHL data improved by a small amount with iteration, as seen in Table
+4
+. Further adding iterations to refinement beyond 3 iterations did not increase the result by a meaningful amount.
+Table 4:
+Average Intersection over Union (IOU) results using ground truth homographies from the validation set of NHL games. The first and second iterations of the refinement module have the largest effect, while later iterations do not have much effect. We stop at 3 iterations as results do not change much after.
+Pipeline With Different Refinement Iterations
+IOU
+part
+No Refinement
+94.4%
+Refinement with 1 Iteration
+96.7%
+Refinement with 2 Iteration
+96.9%
+Refinement with 3 Iteration
+96.9%
+On Olympic data, the resulting warps are usually close, but there are sometimes qualitative issues where the alignment is off. One potential cause for this involves problems during the segmentation stage, where the segmentation maps aren’t fully accurate. Sometimes, regions such as face-off circles or the bottom edge of the rink may not be segmented accurately and can be off from their true location, as seen in Fig.
+14
+.
+Figure 14
+:
+Examples of segmentation on Olympic rinks. The left two show cases where the segmentation is cleaner, whereas the right two shows some more obvious defects. These include missing spots or over/underflowing edges (marked in red boxes).
+Overall results on 2 types of non-NHL rinks (Olympic 2014 and Berlin Mercedes-Benz Arena rink) can be seen in Table
+5
+. Here we see that the NHL-only model results aren’t as good, even after scaling is provided to make the template closer to the NHL template. The rink-agnostic model is more robust to arena template changes as it performs better than the baseline with these non-NHL rinks. It is more robust to rink appearance differences as well, since the performance of the NHL-model dropped dramatically on the Berlin arena, whereas the rink-agnostic model is not affected much.
+Table 5:
+Average IOU
+part
+results on a couple of non-NHL rinks. The rink-agnostic model outperforms the NHL-only baseline, especially in the Berlin arena where there are more differences in rink appearance.
+Pipeline
+Berlin Arena
+Olympic 2014 Arena
+NHL-only Baseline
+87.7%
+96.2%
+Rink-Agnostic Model
+96.5%
+97.3%
+Examples of the refinement model predictions can be seen in Fig.
+15
+. The left side shows some examples of good rink registration, while the right side shows examples of misalignments. The top row also has the segmentation overlaid on top, highlighting the slight issues with the segmentation mentioned before.
+Figure 15
+:
+Example results on Olympic validation data. Light blue is initial homography estimate, dark blue is the final homography after refinement, and green indicates ground truth. These cases show that although the alignment can be quite close usually, sometimes the alignment can still be off even after refinement for the Olympic rinks, likely due to the difficulty in segmenting these rinks.
+5
+Conclusion
+In this paper, we presented a novel approach to sports rink registration, by using a 3 part pipeline that is generalized to work on multiple rink types, despite only having labelled data for NHL rinks. The models are able to learn how to process different rink types and overcome a lack of labelled training data. This is done by using domain adaptation and augmentation techniques in the segmentation module, along with synthetic data and self-supervised methods in the homography and refinement modules. By doing this, we do not need additional labelled training data for other rink types, thus greatly saving annotation time and effort. This also produces a single model capable of working on multiple rink types.
+Results show that the current pipeline is competitive with results obtained by supervised NHL trained models, while also having the ability to estimate homography for non-NHL rink types as well, demonstrating great potential. Some improvements in segmentation and handling of segmentation inaccuracies can be made to further improve the robustness and accuracy of the pipeline.
+6
+Acknowledgment
+This work was supported by Stathletes through the Mitacs Accelerate Program and the Natural Sciences and Engineering Research Council of Canada (NSERC).
+References
+(1)
+E. Weiner, “Not every 200 foot by 85 foot nhl rink is the same.”
+https://www.nhl.com/news/not-every-200-foot-by-85-foot-nhl-rink-is-the-same/c-501626
+, Oct 2009.
+(2)
+F. Shi, P. Marchwica, J. C. G. Higuera, M. Jamieson, M. Javan, and P. Siva, “Self-supervised shape alignment for sports field registration,” in
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision
+, pp. 287–296, 2022.
+(3)
+W. Jiang, J. C. G. Higuera, B. Angles, W. Sun, M. Javan, and K. M. Yi, “Optimizing through learned errors for accurate sports field registration,” in
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision
+, pp. 201–210, 2020.
+(4)
+X. Nie, S. Chen, and R. Hamid, “A robust and efficient framework for sports-field registration,” in
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision
+, pp. 1936–1944, 2021.
+(5)
+“International ice hockey federation ice rink guide.”
+https://www.iihf.com/en/static/5890/iihf-ice-rink-guide
+.
+(6)
+M. Formánek, “Nokia arena, tampere.”
+https://www.eurohockey.com/arena/2154-nokia-arena-tampere.html
+.
+(7)
+D. G. Lowe, “Distinctive image features from scale-invariant keypoints,”
+International journal of computer vision
+, vol. 60, no. 2, pp. 91–110, 2004.
+(8)
+E. Rublee, V. Rabaud, K. Konolige, and G. Bradski, “Orb: An efficient alternative to sift or surf,” in
+2011 International conference on computer vision
+, pp. 2564–2571, Ieee, 2011.
+(9)
+M. A. Fischler and R. C. Bolles, “Random sample consensus: a paradigm for model fitting with applications to image analysis and automated cartography,”
+Communications of the ACM
+, vol. 24, no. 6, pp. 381–395, 1981.
+(10)
+R. Hartley and A. Zisserman,
+Multiple view geometry in computer vision
+.
+Cambridge university press, 2003.
+(11)
+D. DeTone, T. Malisiewicz, and A. Rabinovich, “Deep image homography estimation,”
+arXiv preprint arXiv:1606.03798
+, 2016.
+(12)
+Q. Zhou and X. Li, “Stn-homography: Direct estimation of homography parameters for image pairs,”
+Applied Sciences
+, vol. 9, no. 23, p. 5187, 2019.
+(13)
+N. Homayounfar, S. Fidler, and R. Urtasun, “Sports field localization via deep structured models,” in
+Proceedings of the IEEE Conference on Computer Vision and Pattern Recognition
+, pp. 5212–5220, 2017.
+(14)
+J. Chen and J. J. Little, “Sports camera calibration via synthetic data,” in
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition workshops
+, pp. 0–0, 2019.
+(15)
+L. Sha, J. Hobbs, P. Felsen, X. Wei, P. Lucey, and S. Ganguly, “End-to-end camera calibration for broadcast videos,” in
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pp. 13627–13636, 2020.
+(16)
+Y.-J. Chu, J.-W. Su, K.-W. Hsiao, C.-Y. Lien, S.-H. Fan, M.-C. Hu, R.-R. Lee, C.-Y. Yao, and H.-K. Chu, “Sports field registration via keypoints-aware label condition,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pp. 3523–3530, 2022.
+(17)
+J. Long, E. Shelhamer, and T. Darrell, “Fully convolutional networks for semantic segmentation,” in
+Proceedings of the IEEE conference on computer vision and pattern recognition
+, pp. 3431–3440, 2015.
+(18)
+O. Ronneberger, P. Fischer, and T. Brox, “U-net: Convolutional networks for biomedical image segmentation,” in
+Medical Image Computing and Computer-Assisted Intervention–MICCAI 2015: 18th International Conference, Munich, Germany, October 5-9, 2015, Proceedings, Part III 18
+, pp. 234–241, Springer, 2015.
+(19)
+L.-C. Chen, G. Papandreou, I. Kokkinos, K. Murphy, and A. L. Yuille, “Deeplab: Semantic image segmentation with deep convolutional nets, atrous convolution, and fully connected crfs,”
+IEEE transactions on pattern analysis and machine intelligence
+, vol. 40, no. 4, pp. 834–848, 2017.
+(20)
+L.-C. Chen, G. Papandreou, F. Schroff, and H. Adam, “Rethinking atrous convolution for semantic image segmentation,”
+arXiv preprint arXiv:1706.05587
+, 2017.
+(21)
+L.-C. Chen, Y. Zhu, G. Papandreou, F. Schroff, and H. Adam, “Encoder-decoder with atrous separable convolution for semantic image segmentation,” in
+Proceedings of the European conference on computer vision (ECCV)
+, pp. 801–818, 2018.
+(22)
+E. Xie, W. Wang, Z. Yu, A. Anandkumar, J. M. Alvarez, and P. Luo, “Segformer: Simple and efficient design for semantic segmentation with transformers,”
+Advances in Neural Information Processing Systems
+, vol. 34, pp. 12077–12090, 2021.
+(23)
+M. Long, Y. Cao, J. Wang, and M. Jordan, “Learning transferable features with deep adaptation networks,” in
+International conference on machine learning
+, pp. 97–105, PMLR, 2015.
+(24)
+Y. Ganin, E. Ustinova, H. Ajakan, P. Germain, H. Larochelle, F. Laviolette, M. Marchand, and V. Lempitsky, “Domain-adversarial training of neural networks,”
+The journal of machine learning research
+, vol. 17, no. 1, pp. 2096–2030, 2016.
+(25)
+W. Tranheden, V. Olsson, J. Pinto, and L. Svensson, “Dacs: Domain adaptation via cross-domain mixed sampling,” in
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision
+, pp. 1379–1389, 2021.
+(26)
+L. Hoyer, D. Dai, and L. Van Gool, “Daformer: Improving network architectures and training strategies for domain-adaptive semantic segmentation,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pp. 9924–9935, 2022.
+(27)
+L. Hoyer, D. Dai, and L. Van Gool, “Hrda: Context-aware high-resolution domain-adaptive semantic segmentation,” in
+Computer Vision–ECCV 2022: 17th European Conference, Tel Aviv, Israel, October 23–27, 2022, Proceedings, Part XXX
+, pp. 372–391, Springer, 2022.
+(28)
+L. Hoyer, D. Dai, H. Wang, and L. Van Gool, “Mic: Masked image consistency for context-enhanced domain adaptation,” in
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pp. 11721–11732, 2023.
+(29)
+M. C. Lee, O. Oktay, A. Schuh, M. Schaap, and B. Glocker, “Image-and-spatial transformer networks for structure-guided image registration,” in
+Medical Image Computing and Computer Assisted Intervention–MICCAI 2019: 22nd International Conference, Shenzhen, China, October 13–17, 2019, Proceedings, Part II 22
+, pp. 337–345, Springer, 2019.
+(30)
+M. Jaderberg, K. Simonyan, A. Zisserman,
+et al.
+, “Spatial transformer networks,”
+Advances in neural information processing systems
+, vol. 28, 2015.
+(31)
+M. Sinclair, A. Schuh, K. Hahn, K. Petersen, Y. Bai, J. Batten, M. Schaap, and B. Glocker, “Atlas-istn: joint segmentation, registration and atlas construction with image-and-spatial transformer networks,”
+Medical Image Analysis
+, vol. 78, p. 102383, 2022.
+(32)
+N. Zhang and E. Izquierdo, “A high accuracy camera calibration method for sport videos,” in
+2021 International Conference on Visual Communications and Image Processing (VCIP)
+, pp. 1–5, IEEE, 2021.
+(33)
+G. Ghiasi, Y. Cui, A. Srinivas, R. Qian, T.-Y. Lin, E. D. Cubuk, Q. V. Le, and B. Zoph, “Simple copy-paste is a strong data augmentation method for instance segmentation,” in
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pp. 2918–2928, 2021.
+(34)
+A. Tarvainen and H. Valpola, “Mean teachers are better role models: Weight-averaged consistency targets improve semi-supervised deep learning results,”
+Advances in neural information processing systems
+, vol. 30, 2017.
+(35)
+P. Iakubovskii, “Segmentation models pytorch.”
+https://github.com/qubvel/segmentation_models.pytorch
+, 2019.
+(36)
+T.-Y. Lin, P. Goyal, R. Girshick, K. He, and P. Dollár, “Focal loss for dense object detection,” in
+Proceedings of the IEEE international conference on computer vision
+, pp. 2980–2988, 2017.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

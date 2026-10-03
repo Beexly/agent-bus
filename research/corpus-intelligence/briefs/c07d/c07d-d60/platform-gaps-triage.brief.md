@@ -1,0 +1,26 @@
+# strategy/platform-gaps-triage.md
+## What it is (1-2 sentences)
+A 2026-06-03 triage of a 25-gap platform audit (from Copilot) filtered through the honesty + no-autonomous-money + responsible-play doctrine into three buckets: ON-BRAND build items (bankroll/Kelly, responsible gaming, consensus, accountability, props modeling, etc.), founder/legal-gated items (mobile app, live re-scoring, A/B infra, geo-fencing, B2B API, tiers, creator program), and rejected items (sportsbook checkout/deeplinks, NFTs, merch). A build-prioritization artifact, not research.
+## Key metrics/methods (formulas where given, else "not specified")
+not specified (implementation identifiers only):
+- `bankroll.ts` — conservative Kelly sizing, "not a bet rec," hard caps + over-exposure flag (gap 6/10, SHIPPED)
+- `responsible-gaming.ts` — self-exclusion block, loss cool-down, session/milestone nudges (gap 8, SHIPPED)
+- `consensus.ts` + `consensus-view.ts` — consensus/divergence surface (gap 23, SHIPPED core)
+- `LossAutopsy`/`CockpitDecision` — exist internally; public `/accountability` proposed
+- Cerebras/TTS scoped for audio layer (gap 17, content-gated, no auto-publish)
+- `PropPick` engine extension proposed (gap 18)
+## Data sources named
+None named; related files referenced: `design-monetization-growth.md`, `gaming-and-engagement-expansion.md`.
+## Findings (numbers and facts, not vibes)
+- Source audit: "25 critical gaps" from Copilot, 2026-06-03, judged to be written for a tout / sportsbook-affiliate product.
+- SHIPPED (on-brand): gap 6/10 bankroll + Kelly sizing; gap 8 responsible-gaming enforcement; gap 23 "Galaxy vs the Market" / contrarian / consensus.
+- Build-next list (12 items): 9 user performance analytics (accuracy by sport, ROI by type, calibration by confidence, vs-close — pure analytics over settled picks, engine has calibration primitives); 14/21 public accountability, model changelog, loss autopsies, pick retraction, pre-mortem (LossAutopsy/CockpitDecision exist internally; expose public /accountability); 24 dark mode; 16 offline PWA (service worker + manifest); 17 audio layer (TTS pick briefings, podcast; Cerebras/TTS scoped; no auto-publish); 18 props modeling (extend engine PropPick; pure model work, on-thesis); 25 "how we compare" benchmarks (ONLY with verifiable numbers, no overclaim; pairs with proof-of-record); 13 email digest (owned channel, honest digest, NOT "you'll miss games" urgency); 3 personalization (sport/type/confidence filters; preference-driven feed, no "are they chasing losses" dark profiling).
+- Founder/legal-gated (7 items): 1 native mobile app (Expo — weeks of work + strategic platform bet); 2 live/in-game re-scoring (WebSocket live odds — needs paid live-odds feed cost + infra; re-score logic buildable on engine, live feed is the gate); 12 A/B testing infra (PostHog — founder picks tool/budget); 19 jurisdictional geo-fencing / state RG messaging (legal-gated; needed IF real-money); 20 B2B / data-licensing API (a sales motion, not a build); 22 institutional/syndicate tier; 11 creator program (revenue-share, affiliate codes — founder-gated on the affiliate model).
+- REJECTED: 5 "Place this at DraftKings" buttons / embedded sportsbook checkout / bet-slip deeplinks / "make betting frictionless" (turns product into a tout funnel; most allowed is an honest affiliate disclosure link, clearly labeled, no urgency, founder-gated, Phase-3); 15 NFTs / "prove pick ownership on-chain" (crypto, off-brand; legit version is Merkle proof-of-record); 15 merch (harmless, not a priority). Audit framing rejected throughout ("mobile is where bets happen," "70% won't bet because not frictionless," syndicate penetration) as a betting-volume goal vs. GSE's provable-accuracy + trust goal.
+- Reframe line (verbatim): "the platform we build is the honest, introspective, transparent one (accountability, calibration, responsible play, proof-of-record), NOT the frictionless-betting one."
+## Intelligence connections
+- **TRUST-SIGNAL**: The build-next items 9 (user performance analytics: accuracy by sport, ROI by type, calibration by confidence, vs-close), 14/21 (public accountability, loss autopsies, pick retraction, pre-mortem), and 25 (verifiable-only benchmarks) are the concrete trust-surface checklist the engine's settled-pick pipeline must feed — calibration-by-confidence and vs-close are calibration/sizing program inputs once settled picks exist. Serves the trust-target intake and calibration/sizing programs.
+- **OTHER**: Bankroll.ts's conservative Kelly with hard caps + over-exposure flag and responsible-gaming.ts's self-exclusion/loss cool-down are the sizing guardrails — UNCERTAIN: formulas and cap values are not in this file, so treat "conservative Kelly" as a label pending the actual code. Serves the calibration/sizing program as guardrail design reference.
+- **OTHER**: The hard reject of sportsbook checkout/deeplinks and the "no autonomous money" doctrine is a product boundary the engine must respect — the engine never emits bet-execution actions, only intelligence.
+## Engine-actionable? (yes/no + one-line what)
+no — prioritization artifact with no formulas or data; the calibration-by-confidence and vs-close items are future inputs once settled picks exist.

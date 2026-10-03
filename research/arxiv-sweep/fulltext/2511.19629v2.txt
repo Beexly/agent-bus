@@ -1,0 +1,2450 @@
+SkillSight: Efficient First-Person Skill Assessment with Gaze
+Chi Hsuan Wu
+Kumar Ashutosh
+Kristen Grauman
+Affiliation:
+UT Austin
+Abstract
+Egocentric perception on smart glasses could transform how we learn new skills in the physical world, but automatic skill assessment
+remains a fundamental technical challenge.
+We introduce SkillSight for power-efficient skill assessment from first-person data.
+Central to our approach is the hypothesis that skill level is evident not only in how a person performs an activity (video), but also in how they direct their attention when doing so (gaze).
+Our two-stage framework first learns to jointly model gaze and egocentric video when predicting skill level, then distills a gaze-only student model. At inference, the student model requires only gaze input, drastically reducing power consumption by eliminating continuous video processing. Experiments on three datasets spanning cooking, music, and sports establish, for the first time, the valuable role of gaze in skill understanding across diverse real-world settings. Our SkillSight teacher model achieves state-of-the-art performance, while our gaze-only student variant maintains high accuracy using 73
+×
+\times
+less power than competing methods. These results pave the way for in-the-wild AI-supported skill learning.
+1
+1
+footnotetext:
+Project page:
+https://vision.cs.utexas.edu/projects/skillsight/
+1
+Introduction
+Figure 1
+:
+Skill assessment with gaze.
+Experts and novices exhibit distinct attention behaviors, influencing both how they move their head and eyes and what they see,
+as illustrated here with clips from an expert (top) and novice (bottom) basketball layup from
+Grauman et al. 2024
+. The proposed method explores the associations between gaze, action, and expertise to achieve accurate and power-efficient skill assessment, using either ego-video and gaze, or gaze alone.
+The blue ray indicates gaze direction and depth, while shading shows camera motion over past frames.
+Note: leftmost third-person timelapses
+and commentary text
+are for illustration only.
+Egocentric perception is poised to transform AI assistants on smart glasses which, by seeing through the eyes of a user, could provide in-the-moment contextually relevant information and recommendations. Of particular interest are assistants to support learning new skills
+in various domains such as exercise, sports, cooking, and music
+Huh et al. 2025
+;
+Doughty et al. 2019
+;
+Feng et al. 2025
+;
+Panchal et al. 2024
+;
+Xu et al. 2024b
+;
+Ashutosh et al. 2025
+;
+Grauman et al. 2024
+;
+Huang et al. 2024
+;
+Wang et al. 2023
+.
+Skill assessment
+—the task of quantifying the degree of skill exhibited in a given execution—plays a crucial role:
+it would enable timely support
+Panchal et al. 2024
+, tracking of personal progress
+Drey et al. 2020
+, and identifying areas for improvement
+Yi et al. 2025
+. Across these capabilities and more, skill assessment has the potential to personalize learning and enhance user performance in real-world tasks. Meanwhile, the portability of wearable glasses opens up seamless in-the-wild capture even for dynamic physical activities that go well beyond lab environments—e.g., the soccer pitch, the dance floor, or basketball court.
+However, prior research on skill assessment
+primarily relies on third-person visual perspectives of a subject’s body poses
+Zhang et al. 2023
+;
+Ashutosh et al. 2025
+;
+Parmar and Morris 2019
+;
+Burgess et al. 2025
+;
+Pan et al. 2025
+, assuming prior setup of camera(s) in each target environment. Only limited work considers skill assessment from an egocentric perspective
+Huang et al. 2024
+;
+Grauman et al. 2024
+;
+Doughty et al. 2019
+;
+Bertasius et al. 2017
+, and there the low visibility of the camera-wearer’s full body remains a critical challenge outside of table-top settings.
+Furthermore, the high power consumption of continuous video recording is an obstacle for vision-based methods—at odds with application needs for real-time, interactive skill learning.
+Among the sensing modalities on smart glasses, we hypothesize that
+gaze
+is uniquely informative for assessing skill. Gaze complements vision:
+together, they reveal not only what the user is attending to, but also their intention
+Li et al. 2021
+;
+Zheng et al. 2022
+. This synergy exposes fine-grained execution details that cameras alone cannot capture.
+In cognitive science, it is well known that people often fixate on objects they intend to manipulate or evaluate
+Gidlöf et al. 2013
+, while in domains as broad as
+sports
+Lee and An 2023
+, surgery
+Galuret et al. 2023
+, and music
+Karolus et al. 2023
+, experts display distinctive gaze patterns that enable them to execute complex motor actions more skillfully.
+For example, volleyball experts fixate earlier on the ball’s contact point with their arms compared to novices
+Lee and An 2023
+, while skilled soccer players allocate more gaze to their surroundings while handling the ball
+psy 2022
+, and the final steady fixation of the
+quiet eye
+is a signature not only of skilled athletes
+Vickers 1996
+but also skilled surgeons
+Vine et al. 2011
+;
+Causer et al. 2014
+, drivers
+Vickers and Lew 2016
+, and musicians
+Drai-Zerbib and Baccino 2012
+.
+Could incorporating gaze into AI skill assessment provide such access to the cognitive and motor processes underlying an individual’s actions, allowing more accurate estimates?
+To this end, we introduce SkillSight, a two-stage multimodal learning framework for first-person data.
+First, we train a teacher model SkillSight-T that integrates egocentric video and gaze to capture skill-related features. SkillSight-T generalizes across in-the-wild scenes by modeling interactions between gaze and action, encoding object fixations and transitions from gaze-cropped images, and modeling the dynamic gaze patterns. In the second stage, we train a student model SkillSight-S that relies
+only
+on gaze as input
+and keeps the camera off during inference—significantly reducing power consumption, while also increasing user privacy.
+To connect action, skill, and gaze, we train SkillSight-S via knowledge distillation, transferring visual information from SkillSight-T into gaze. Gaze signals encode spatial and temporal patterns of attention (e.g., fixations, saccades) that correlate closely with visual cues in egocentric video, enabling SkillSight-S to infer skill-related features without
+RGB
+input.
+We evaluate our method on three datasets (Ego-Exo4D
+Grauman et al. 2024
+, Multisense Badminton
+Seong et al. 2024
+, Expert-Novice Soccer
+Akamatsu et al. 2021
+) spanning cooking, music, and various sports. SkillSight-T outperforms previous video-based methods by 5%
+(10% relative)
+.
+SkillSight-S, which relies solely on gaze, performs competitively while consuming
+14
+×
+14\times
+to
+73
+×
+73\times
+less power, and outperforming existing methods aimed at efficiency.
+Beyond performance, we provide quantitative and qualitative analyses revealing when and how gaze reflects skill. Together, these results highlight gaze as a powerful cue for scalable skill assessment.
+Overall, we pioneer skill assessment using gaze signals across diverse domains and dynamic in-the-wild scenarios involving significant subject motion across a scene (e.g., climbing a boulder or dribbling to the basket for a layup). We are also the first to explore power-efficient, privacy-preserving egocentric skill assessment, paving the way for practical deployment on resource-constrained smart glasses. Moreover, our analysis reveals how model predictions align with
+and even enhance
+established psychological theories, offering new quantitative, data-driven insights into complex gaze–skill relationships.
+2
+Related Work
+Egocentric video and gaze.
+Gaze complements egocentric video by revealing attention and intention. Prior work predicts gaze from the ego view to model decision-making
+Lai et al. 2024
+;
+Li et al. 2013
+;
+Lai et al. 2022
+;
+Huang et al. 2018
+and leverages gaze for tasks such as action recognition
+Li et al. 2021
+;
+Zhang et al. 2017
+, motion anticipation
+Zheng et al. 2022
+;
+Anvari et al. 2025
+;
+Özdel et al. 2024
+, privacy filtering
+Steil et al. 2019
+, attended-object detection
+Mazzamuto* et al. 2024
+;
+Damen et al. 2014
+, intention understanding
+Konrad et al. 2024
+, error detection
+Mazzamuto et al. 2025
+, and learning sports play
+Su et al. 2017
+. However, all such work focuses on aligning gaze with actions rather than assessing performance quality. Skill assessment demands recognizing subtle behavioral differences, beyond simply identifying actions. We instead explore how discriminative gaze trajectories reveal expertise across diverse domains, establishing gaze as a reliable and scalable cue for skill.
+Relation of gaze and skills in cognitive science.
+Existing psychology studies investigate the relationship between gaze patterns and everyday tasks
+Land et al. 1999
+, decision-making
+Gidlöf et al. 2013
+, goal-directed behavior
+Hayhoe and Matthis 2018
+, task difficulty
+CHEN et al. 2021
+, and anticipation of future procedural steps
+Sullivan et al. 2021
+. As discussed above, cognitive science research links gaze patterns to proficiency: in medicine, gaze helps assess
+diagnostic and surgery skills
+Brunyé et al. 2019
+;
+Melnyk et al. 2021
+;
+Galuret et al. 2023
+; in sports, expert athletes demonstrate distinct gaze strategies
+Lee and An 2023
+;
+Jeong et al. 2022
+. We take inspiration from their findings. Further, building on this foundation, our work enables large-scale, data-driven learning of gaze-skill relations in diverse in-the-wild settings, uncovering subtle patterns beyond controlled psychology studies.
+Skill assessment.
+Prior work on skill assessment focuses on third-person pose analysis in fitness
+Parmar et al. 2022
+, skating
+Xu et al. 2019
+, and diving
+Xu et al. 2022
+. In contrast, first-person perspectives captured by wearables offer cues for real-time feedback in hand-centric tasks
+Parmar et al. 2021a
+;
+Wang et al. 2020
+;
+Huang et al. 2024
+;
+Doughty et al. 2019
+;
+Xiao et al. 2025
+;
+Zhou et al. 2025
+or sports
+Bertasius et al. 2017
+;
+Grauman et al. 2024
+. Recent work further incorporates text
+Gedamu et al. 2024
+;
+Zhang et al. 2024
+;
+Majeedi et al. 2024
+;
+Xu et al. 2024a
+, audio
+Xu et al. 2025
+;
+Wang et al. 2025
+;
+Zeng and Zheng 2024
+, human skeletons
+Dong et al. 2024
+;
+Lei et al. 2023
+;
+Elkholy et al. 2019
+, PPG
+Braun et al. 2025
+, and IMU
+Akamatsu et al. 2021
+;
+Khan et al. 2020
+.
+To our knowledge,
+Huang et al. 2024
+is the only vision work estimating skill
+with
+gaze, and it is shown only on static tasks (cooking and lab work) where the subject remains stationary. Our approach instead extends gaze-based skill assessment to dynamic activities, shows broad applicability across settings, and introduces technical novelty to explicitly capture the gaze-action interplay.
+Figure 2
+:
+Left: Overview of SkillSight-Teacher.
+We incorporate three components that encode action and gaze correlation, attended object sequence, and gaze trajectory for skill assessment. These features are fused by the fusion layer for prediction.
+Right: Overview of distillation method.
+SkillSight-Student learns to distill knowledge from the teacher feature
+[
+e
+v
+,
+e
+c
+,
+e
+g
+]
+[e_{v},e_{c},e_{g}]
+using the distillation token
+t
+d
+​
+i
+​
+s
+t_{dis}
+. As guidance for evaluating skill in context, the student model performs subtask recognition with the action recognition token
+t
+a
+​
+c
+​
+t
+t_{act}
+.
+Efficient methods for wearable devices.
+Power efficiency is critical in wearable devices. Prior work addresses it through adaptive power management
+Sunder et al. 2025
+, distributed computation
+Wang et al. 2024
+, selectively sampling clips
+Korbar et al. 2019
+;
+Buch et al. 2025
+, and lightweight model architectures
+Feichtenhofer 2020
+;
+Liao et al. 2023
+. More relevant to our work, another direction reduces reliance on power-hungry video by using lighter modalities: audio can suggest when to process video frames
+Gao et al. 2020
+;
+Paruchuri et al. 2025
+;
+Majumder et al. 2023
+, and IMU with sparse video frames is sufficient for action recognition
+Tan et al. 2023
+. Nevertheless, all these prior methods still depend on periodic visual input, requiring frequent camera toggling or low frame rate operation, which undermines both hardware simplicity and power efficiency due to startup latency
+Meta Platforms, Inc. 2025
+and transient power spikes when switching on the camera
+Balde et al. 2022
+;
+Lee et al. 2025
+.
+In contrast, we distill visual supervision during training but use only gaze at inference, removing the need for camera input and substantially lowering sensing and model power, as we will quantify in results.
+3
+Method
+We formally define the problem statement (Sec.
+3.1
+), then introduce our model (Sec.
+3.2
+and
+3.3
+) and describe data and implementation details (Sec.
+3.4
+).
+3.1
+Problem statement
+Consider a dataset
+ℰ
+=
+{
+(
+V
+,
+G
+,
+S
+)
+}
+\mathcal{E}=\{(V,G,S)\}
+, where each
+V
+i
+=
+{
+v
+i
+t
+}
+t
+=
+1
+T
+V_{i}=\{v_{i}^{t}\}_{t=1}^{T}
+is the egocentric video demonstration with its frames
+v
+i
+t
+v_{i}^{t}
+,
+G
+i
+=
+{
+g
+i
+t
+}
+t
+=
+1
+T
+G_{i}=\{g_{i}^{t}\}_{t=1}^{T}
+is the gaze pattern, and
+S
+i
+S_{i}
+is the skill-level of the demonstrator. Although skill is inherently complex, recent studies and datasets have introduced rigorous objective means to quantify skill
+Grauman et al. 2024
+;
+Seong et al. 2024
+;
+Akamatsu et al. 2021
+,
+formalizing
+this research direction.
+Consistent with current hardware, we suppose that the device records the glasses’ rotation and translation, as well as the 3D gaze vector of each eye, from which we derive
+g
+i
+t
+g_{i}^{t}
+, which includes the 3D fixation points, the 3D gaze direction relative to the center of two eyes, the 2D coordinate of the gaze projection on the egoview video
+g
+2
+​
+d
+∈
+R
+2
+g_{2d}\in R^{2}
+, the depth of the gaze, and the translation and quaternion rotation of the glass.
+Current devices efficiently estimate gaze with eye cameras, IR, EOG, and/or IMU
+; we detail data resources
+Grauman et al. 2024
+;
+Seong et al. 2024
+;
+Akamatsu et al. 2021
+in Sec.
+3.4
+and quantify power load in Sec.
+4
+.
+The goal of this work is to classify
+1
+1
+1
+Similarly, one could formulate the task as regression to a real-valued score
+Tang et al. 2020
+;
+Xu et al. 2022
+;
+Wang et al. 2025
+. We target discrete classes to account for the granularity of expertise differences discernible by human judges
+Bianchi and Liotta 2025
+;
+Funke et al. 2019
+;
+Akamatsu et al. 2021
+;
+Parmar et al. 2021b
+and to align with multiple existing annotated datasets
+Grauman et al. 2024
+;
+Seong et al. 2024
+;
+Pan et al. 2025
+.
+the skill level
+S
+i
+S_{i}
+using modalities from the smart glasses. We consider two setups: (1)
+Video+Gaze
+: we leverage both video and gaze during training and inference. Formally, we aim to learn a function
+ℱ
+v
+​
+(
+V
+,
+G
+)
+→
+S
+\mathcal{F}_{v}(V,G)\rightarrow S
+, and call this variant of our method SkillSight-T(eacher) (2)
+Gaze-only
+: Continuous camera recording is power consuming and impractical for long-duration use. To reduce the reliance on camera, we use both video and gaze during training but rely only on gaze during inference. Specifically, we aim to learn
+ℱ
+g
+​
+(
+G
+)
+→
+S
+\mathcal{F}_{g}(G)\rightarrow S
+, and call this variant of our method SkillSight-S(tudent).
+Figure 3
+:
+What does an expert vs. novice tend to see more of?
+In these distributions, each patch crops the egocentric frame based on the subject’s gaze coordinates. Our representation surfaces interesting patterns, like (left two boxes) how
+novice pianists fixate on their hands more often than experts do (77% vs. 45%, as quantified with hand detection), or (right two boxes) how bouldering experts exhibit greater gaze depth (1.4 m vs. 1.1 m) as they analyze moves further up the wall, resulting in smaller rocks in the crops. These patterns emerging from in-the-wild video are consistent with and even deepen prior findings from psychology
+Cara 2023
+.
+3.2
+Teacher model: Skill from action and attention
+First we train a classifier that takes both egocentric video (
+what the subject is doing
+) and gaze (
+how they are attending to their surroundings
+) for skill level classification.
+To ensure robust generalization across dynamic and static scenarios, SkillSight-T integrates gaze and visual signals through three components: modeling (1) the interaction between the subject’s actions and gaze regions by applying the gaze attention to the visual encoder; (2) the sequence of subject’s attended objects by encoding the gaze-cropped images; and (3) the dynamics of the subject’s gaze over time. Fig.
+2
+shows the overview, and each part is described next.
+Action and gaze interaction
+We leverage
+g
+2
+​
+d
+t
+g_{2d}^{t}
+to identify the gaze-attended region in
+v
+t
+v^{t}
+, and incorporate gaze information into the visual encoder
+f
+V
+f_{V}
+(e.g. TimeSformer
+Bertasius et al. 2021
+). By knowing where the subject is looking, the model learns skill assessment by capturing the correlations between visual focus and actions. Specifically, we introduce a gaze-induced attention map
+A
+g
+=
+{
+A
+g
+t
+}
+t
+=
+1
+T
+A_{g}=\{A_{g}^{t}\}_{t=1}^{T}
+into the first spatial encoder
+f
+V
+,
+0
+f_{V,0}
+of
+f
+V
+f_{V}
+. Let
+X
+=
+{
+X
+t
+}
+t
+=
+1
+T
+X=\{X^{t}\}_{t=1}^{T}
+be the input of
+f
+V
+,
+0
+f_{V,0}
+. For each timestep
+t
+t
+,
+f
+V
+,
+0
+f_{V,0}
+spatially divides
+X
+t
+X^{t}
+into
+p
+2
+p^{2}
+patches with size
+L
+×
+L
+L\times L
+and computes an attention map
+A
+v
+t
+∈
+R
+p
+×
+p
+A_{v}^{t}\in R^{p\times p}
+. Next, we apply a Gaussian kernel centered at patch
+c
+t
+=
+⌊
+g
+2
+​
+d
+t
+/
+L
+⌋
+c^{t}=\lfloor g_{2d}^{t}/L\rfloor
+and construct
+A
+g
+t
+A_{g}^{t}
+with:
+A
+g
+t
+​
+[
+m
+,
+n
+]
+=
+exp
+⁡
+(
+−
+d
+c
+t
+​
+(
+m
+,
+n
+)
+2
+​
+σ
+2
+)
+/
+∑
+m
+′
+,
+n
+′
+exp
+⁡
+(
+−
+d
+c
+t
+​
+(
+m
+′
+,
+n
+′
+)
+2
+​
+σ
+2
+)
+,
+A_{g}^{t}[m,n]=\exp\!\left(-\tfrac{d_{c}^{t}(m,n)}{2\sigma^{2}}\right)/\sum\limits_{m^{\prime},n^{\prime}}\exp\!\left(-\tfrac{d_{c}^{t}(m^{\prime},n^{\prime})}{2\sigma^{2}}\right),
+(1)
+with
+d
+c
+t
+​
+(
+m
+,
+n
+)
+=
+‖
+(
+m
+,
+n
+)
+−
+c
+t
+‖
+2
+d_{c}^{t}(m,n)=||(m,n)-c^{t}||^{2}
+. The modified attention map is
+A
+m
+t
+=
+σ
+⁡
+(
+A
+v
+t
++
+λ
+c
+​
+A
+g
+t
+)
+,
+A_{m}^{t}=\sigma(A_{v}^{t}+\lambda_{c}A_{g}^{t}),
+(2)
+where
+σ
+\sigma
+is the softmax operation and
+λ
+c
+\lambda_{c}
+is a learnable parameter for each scenario
+c
+c
+, e.g., basketball, soccer. Finally, we obtain the embedding
+e
+v
+=
+f
+V
+​
+(
+V
+,
+g
+2
+​
+d
+)
+.
+e_{v}=f_{V}(V,g_{2d}).
+(3)
+Unlike prior gaze-based action recognition methods
+Li et al. 2021
+;
+Huang et al. 2020
+;
+Min and Corso 2021
+, which pool gaze information at late-stage features, our method emphasizes gaze in the earliest spatial encoder, allowing the model to semantically highlight gaze regions.
+Attended object sequence
+We represent the subject’s attended objects by spatially cropping
+v
+t
+v^{t}
+with
+g
+2
+​
+d
+t
+g^{t}_{2d}
+. We observe that the distribution of attended objects for novices and experts differs significantly between tasks (see Fig.
+3
+). For instance, novice pianists fixate on their hands more often than expert pianists, who dwell more on the sheet music. This observation motivates leveraging the sequence of gazed-upon objects to reflect skill.
+While the sequence of attended objects is meaningful for skill assessment, we do not treat gaze-cropped image sequences
+V
+c
+=
+{
+v
+c
+t
+}
+t
+=
+1
+T
+V_{c}=\{v_{c}^{t}\}_{t=1}^{T}
+as video
+Huang et al. 2024
+since the crops are taken from varying regions and lack spatial alignment across frames. Instead, we first compute semantic embeddings for
+v
+c
+t
+v_{c}^{t}
+using a pretrained image encoder
+f
+I
+f_{I}
+, and a subsequent temporal encoder
+f
+T
+f_{T}
+models the sequence-level relationships, yielding the gaze-crop encoding:
+e
+c
+=
+f
+T
+​
+(
+[
+f
+I
+​
+(
+v
+c
+1
+)
+,
+…
+​
+f
+I
+​
+(
+v
+c
+T
+)
+]
+)
+.
+e_{c}=f_{T}([f_{I}(v_{c}^{1}),...f_{I}(v_{c}^{T})]).
+(4)
+Gaze dynamics
+While 2D gaze and ego-view video
+Huang et al. 2024
+;
+Li et al. 2021
+;
+Huang et al. 2020
+;
+Min and Corso 2021
+highlight what a subject is looking at, they do not explicitly reflect the gaze dynamics such as the fixation frequency, the saccade speed, and the change of gaze location in the 3D environment—which all show significant differences across subjects with different skill levels
+Jeong et al. 2022
+;
+Lee and An 2023
+. To that end,
+G
+i
+G_{i}
+contains rich 3D information about the trajectory of the subject, the gaze direction, and the gaze depth. We encode
+G
+i
+G_{i}
+using a transformer-based encoder
+f
+g
+f_{g}
+. To avoid bias in the gaze signals such as where the subject is facing, we normalize by calculating the gaze signals relative to the signals in the first frame. See Supp. for details and analysis. Formally, this yields our third component to encode the gaze dynamics:
+e
+g
+=
+f
+g
+​
+(
+G
+)
+.
+e_{g}=f_{g}(G).
+(5)
+We concatenate the features from the three components and pass the combined feature to the fusion layer
+f
+m
+f_{m}
+for prediction. Specifically, we construct SkillSight-T as
+S
+^
+=
+ℱ
+v
+​
+(
+V
+,
+G
+)
+=
+f
+m
+​
+(
+[
+e
+v
+,
+e
+c
+,
+e
+g
+]
+)
+,
+\hat{S}=\mathcal{F}_{v}(V,G)=f_{m}([e_{v},e_{c},e_{g}]),
+(6)
+and use standard cross-entropy loss
+L
+C
+​
+E
+L_{CE}
+for training.
+Our modules reason about where and why the user is looking by explicitly modeling the spatial and semantic interaction between gaze and visual, capturing skill-related patterns more effectively than simply inputting raw gaze (see Supp.).
+3.3
+Student model: Distillation with gaze
+Having defined the variant of our model that processes both gaze and video, next we generalize our approach to accommodate gaze alone—reducing power use and increasing privacy—without losing action-specific cues in video.
+To this end, we propose SkillSight-S, a lightweight method that relies solely on gaze for skill assessment. With only gaze signals required at inference, the egocentric camera remains deactivated. As already discussed, cognitive science establishes a strong correlation between gaze behavior and skill level
+Perra et al. 2021
+;
+Jeong et al. 2022
+;
+Lee and An 2023
+;
+CHEN et al. 2021
+. Furthermore, eye-tracking cameras consume far less power
+Schärer et al. 2025
+;
+Palermo et al. 2025
+than typical RGB cameras and mitigate privacy concerns since they only capture the user’s eyes rather than the full environment. These properties make gaze a natural choice for power-efficient skill assessment.
+But to what extent can video cues (what the user sees) be embedded
+into
+the gaze signal? Intuitively, people exhibit
+consistent gaze patterns when observing certain objects or performing specific actions, making it natural to distill visual information into gaze. This correlation is amplified in the skill assessment setting, where the subject’s actions are aligned with the goal of the skilled activity (e.g., cooking a dish, shooting a free throw), take place in skill-conducive environments (e.g., a kitchen, gym), and involve interactions with specific skill-relevant objects (e.g., pot and whisk, basketball and hoop). These properties make our problem amenable to knowledge distillation.
+SkillSight-S consists of a transformer-based encoder,
+f
+s
+f_{s}
+that takes
+G
+G
+as input. We train
+f
+s
+f_{s}
+using knowledge distillation from the teacher
+ℱ
+v
+\mathcal{F}_{v}
+described in Sec.
+3.2
+. We employ a distillation token,
+t
+d
+​
+i
+​
+s
+t_{dis}
+Touvron et al. 2021
+, to align the student features with those of the teacher. We also introduce an action recognition token,
+t
+a
+​
+c
+​
+t
+t_{act}
+, to classify the subject’s subtask, e.g. dribbling, and penalty kick, based on
+G
+G
+. This multi-branch architecture improves skill assessment by associating skilled gaze patterns with the subject’s action. Specifically,
+e
+^
+s
+,
+S
+^
+,
+a
+^
+=
+f
+s
+​
+(
+[
+t
+c
+​
+l
+​
+s
+,
+t
+d
+​
+i
+​
+s
+,
+t
+a
+​
+c
+​
+t
+,
+G
+]
+)
+\hat{e}_{s},\hat{S},\hat{a}=f_{s}([t_{cls},t_{dis},t_{act},G])
+(7)
+where
+a
+^
+\hat{a}
+predicts the subtask label,
+S
+^
+\hat{S}
+predicts the skill level, and
+e
+^
+s
+\hat{e}_{s}
+is for distillation learning. The training objective of action classification is standard cross-entropy loss
+L
+a
+​
+c
+​
+t
+L_{act}
+. The distillation loss is computed as:
+L
+d
+​
+i
+​
+s
+=
+‖
+f
+p
+​
+(
+e
+^
+s
+)
+−
+f
+t
+​
+(
+[
+e
+v
+,
+e
+c
+,
+e
+g
+]
+)
+‖
+1
+L_{dis}=||f_{p}(\hat{e}_{s})-f_{t}([e_{v},e_{c},e_{g}])||_{1}
+(8)
+where
+f
+p
+f_{p}
+is a projection layer that aligns the features of
+ℱ
+g
+\mathcal{F}_{g}
+and
+ℱ
+v
+\mathcal{F}_{v}
+, a common practice in knowledge distillation
+Romero et al. 2015
+;
+Wang et al. 2019
+. We add another projection layer
+f
+t
+f_{t}
+to mitigate the impact of modality-specific teacher signals that the student cannot effectively capture. We set the loss weights
+λ
+d
+​
+i
+​
+s
+\lambda_{dis}
+and
+λ
+a
+​
+c
+​
+t
+\lambda_{act}
+with validation data and train the student model with:
+L
+s
+​
+t
+​
+u
+​
+d
+​
+e
+​
+n
+​
+t
+=
+L
+C
+​
+E
++
+λ
+d
+​
+i
+​
+s
+​
+L
+d
+​
+i
+​
+s
++
+λ
+a
+​
+c
+​
+t
+​
+L
+a
+​
+c
+​
+t
+.
+L_{student}=L_{CE}+\lambda_{dis}L_{dis}+\lambda_{act}L_{act}.
+(9)
+Method
+Modalities
+Power (mW)
+EgoExo4D
+Grauman et al. 2024
+MSB
+Seong et al. 2024
+Overall
+Soccer
+Basketball
+Bouldering
+Music
+Dance
+Cooking
+Badminton
+Majority vote
+—
+—
+32.3
+74.4
+35.7
+0.0
+44.0
+43.3
+50.9
+41.1
+E2GoMotion
+Plizzari et al. 2022
+V
+329.3
+34.9
+55.8
+49.0
+3.0
+16.7
+50.4
+50.9
+43.5
+Skillformer
+Bianchi and Liotta 2025
+V
+697.5
+42.4
+74.4
+42.0
+27.0
+47.2
+43.3
+58.5
+44.0
+TimeSformer
+Bertasius et al. 2021
+V
+697.5
+45.5
+76.7
+53.2
+28.0
+36.1
+44.8
+56.6
+50.5
+EgoExoLearn
+Huang et al. 2024
+V+G
+141.4
+42.3
+74.4
+46.9
+25.2
+44.4
+43.3
+50.9
+31.7
+Beholder
+Li et al. 2021
+V+G
+132.4
+34.1
+72.1
+42.7
+21.4
+50.0
+26.8
+24.5
+30.6
+SkillSight-T
+V+G
+943
+50.1
+81.4
+55.2
+28.9
+50.0
+56.7
+58.5
+53.1
+X3D-XS
+Feichtenhofer 2020
+V
+88
+34.2
+72.1
+45.5
+24.5
+38.9
+26.8
+17.0
+42.7
+EgoDistill
+Tan et al. 2023
+V+I
+16.5
+42.6
+74.4
+35.0
+38.4
+50.0
+43.3
+43.4
+43.4
+EgoTrigger
+Paruchuri et al. 2025
+V+A
+9.9
+34.1
+65.1
+37.8
+22.6
+41.7
+26.8
+5.7
+no audio
+Gaze-only
+G
+9.5
+37.0
+76.7
+25.2
+31.5
+44.4
+40.2
+39.6
+42.3
+SkillSight-S
+G
+9.5
+44.4
+79.1
+42.0
+34.6
+52.8
+44.1
+47.2
+47.0
+Table 1
+:
+Results on the Ego-Exo4D
+Grauman et al. 2024
+(left) and Multi-Sense Badminton (MSB)
+Seong et al. 2024
+(right) benchmarks.
+Top section:
+SkillSight-T outperforms all prior methods across all scenarios in terms of accuracy (%).
+Bottom section:
+SkillSight-S surpasses all power-efficient methods in overall accuracy (44.4%) as well as 5 of the 7 individual scenarios. Even when compared to the more expensive, power-consuming baselines (top section), SkillSight-S still ranks second in overall accuracy, while using
+14
+×
+\times
+to 73
+×
+\times
+less power (mW). Bold face indicates best accuracy and underline indicates second-best.
+(V:Visual, G:Gaze, I:IMU, A:Audio).
+Expert–Novice Soccer
+Akamatsu et al. 2021
+Method
+Modalities
+Overall
+Majority vote
+—
+50.0
+Gaze-only
+G
+66.0
+Motion-only
+M
+71.2
+SkillSight-S
+G
+72.6
+Motion+Gaze
+M+G
+73.3
+Table 2
+:
+Results on Expert-Novice Soccer
+Akamatsu et al. 2021
+.
+Since the Expert-Novice Soccer does not include video, we use transformer baselines with
+body
+motion (M) and eye-tracking gaze (G).
+SkillSight-S outperforms both the gaze-only and motion-only baselines, showing the effectiveness of our distillation technique.
+3.4
+Data and implementation details
+Method and training details
+Following the Ego-Exo4D benchmark
+Grauman et al. 2024
+, we segment long videos into 10 equally spaced clips and average segment-level predictions for classification.
+Note that we use untrimmed videos without making strong assumptions about where the skilled portions of the sequence occur.
+To better model skill-relevant dynamics, we configure both the teacher and student models to process 16-frame clips at 2 FPS, balancing temporal coverage with computational efficiency. We use TimeSformer
+Bertasius et al. 2021
+pretrained on EgoVLPv2
+Pramanick et al. 2023
+as
+f
+V
+f_{V}
+, achieving state-of-the-art egocentric video understanding, and Dinov2
+Oquab et al. 2023
+as
+f
+I
+f_{I}
+for its strong spatial representation. Both
+f
+s
+f_{s}
+and
+f
+g
+f_{g}
+are 4-layer transformer encoders with a 768-dimensional hidden size, and
+f
+m
+f_{m}
+is a 3-layer MLP. SkillSight-T is trained for 15 epochs using SGD (learning rate
+5
+×
+10
+−
+3
+5\times 10^{-3}
+, batch size 8), and SkillSight-S for 10 epochs using AdamW (learning rate
+1
+×
+10
+−
+4
+1\times 10^{-4}
+, batch size 32). All models are trained on 8 NVIDIA Quadro RTX 6000 GPUs. SkillSight-S processes a single sample in 1.6 ms on average using a single GPU.
+Data sources and statistics
+We evaluate our method on three datasets. (1)
+Ego-Exo4D
+Grauman et al. 2024
+consists of 5,048 videos recorded by 740 participants.
+We use all the scenarios provided with the demonstrator proficiency estimation benchmark: soccer, basketball, rock climbing, dance, music, and cooking. Following
+Braun et al. 2025
+, we use 10% from the official training set for validation, and the held-out official validation set for testing. Each subject is annotated with one of four skill levels: novice, early expert, intermediate expert, and late expert. (2)
+Multi-Sense Badminton
+(MSB)
+Seong et al. 2024
+encompasses 7,763 badminton forehand and backhand swing data from 25 players. The skill levels are annotated into beginner, intermediate, and expert. We follow the official cross-validation split. (3)
+Expert-Novice Soccer
+Akamatsu et al. 2021
+contains 288 recordings from 8 subjects performing 9 different soccer movements such as kicks, dribbling, and juggling. Subjects are labeled as expert and novice. We follow the official cross-validation.
+These datasets were chosen because they each have gaze, camera pose, and ground truth skill labels provided by expert annotators (e.g., domain-specific coaches and teachers).
+Ego-Exo4D and Expert-Novice Soccer include 3D gaze, while MSB provides 2D gaze. Expert-Novice Soccer does not contain video; therefore, we train its teacher model using
+body
+motion
+Akamatsu et al. 2021
+and gaze. For all datasets, no subject overlaps between the train-test splits.
+4
+Experiment
+Figure 4
+:
+Qualitative results.
+Both SkillSight-T and SkillSight-S better predict skill level than prior work. Experts and novices show distinct gaze patterns consistent with Ego-Exo4D
+Grauman et al. 2024
+expert commentaries, shown for reference but not used by any model. The last example (bottom right) shows a failure case, highlighting the challenge of assessing skill from subtle movements. Blue rays show gaze direction and depth, and
+frustrum/ray
+shading indicates recent glasses motion. Ground-truth labels range from 1 (novice) to 4 (late expert).
+Figure 5
+:
+Power–accuracy tradeoff
+. SkillSight-T outperforms all baselines, while SkillSight-S achieves the second-best accuracy and consumes the least energy.
+We first describe baselines, followed by results and qualitative examples. Finally, we analyze power efficiency and our performance across different scenarios.
+Baselines
+We compare to video action
+/skill
+recognition methods
+Bertasius et al. 2021
+;
+Feichtenhofer 2020
+;
+Bianchi and Liotta 2025
+, methods using diverse modalities from glasses
+Tan et al. 2023
+;
+Paruchuri et al. 2025
+;
+Plizzari et al. 2022
+, and ego methods using gaze
+Huang et al. 2024
+;
+Li et al. 2021
+:
+•
+TimeSformer
+Bertasius et al. 2021
+,
+X3D-XS
+Feichtenhofer 2020
+,
+Skillformer
+Bianchi and Liotta 2025
+: The first two are standard video-classification models. X3D-XS is an efficient architecture suitable for deployment on smart glasses, while TimeSformer represents the Ego-Exo4D baseline for proficiency estimation
+Grauman et al. 2024
+. Skillformer builds on TimeSformer, fine-tuned via LoRA
+Hu et al. 2022
+.
+•
+EgoDistill
+Tan et al. 2023
+,
+EgoTrigger
+Paruchuri et al. 2025
+: EgoDistill is a power-efficient approach that processes a single RGB frame together with the corresponding sequence of IMU readings from the glasses for action recognition. EgoTrigger, similar to
+Gao et al. 2020
+, reduces power consumption by leveraging audio cues to decide whether to process the visual stream.
+•
+E2GoMotion
+Plizzari et al. 2022
+: The method leverages event-camera data for action recognition. Since no skill dataset contains event-camera recordings, we provide full-frame-rate optical flow to their model as a proxy, identical to the upper bound reported in their study.
+•
+EgoExoLearn
+Huang et al. 2024
+,
+Beholder
+Li et al. 2021
+: EgoExoLearn crops ego-view video around gaze points and uses I3D
+Carreira and Zisserman 2017
+for skill classification, while Beholder performs gaze-weighted pooling of visual features for action recognition.
+•
+Gaze-only
+: This method only takes gaze as input and shares the same architecture with SkillSight-S. We use cross-entropy loss for training without distillation.
+Of all the baselines, only Skillformer
+Bianchi and Liotta 2025
+and EgoExoLearn
+Huang et al. 2024
+are
+specifically
+for skill assessment, and only EgoExoLearn utilizes gaze. Other models
+Bertasius et al. 2021
+;
+Feichtenhofer 2020
+;
+Tan et al. 2023
+;
+Paruchuri et al. 2025
+;
+Plizzari et al. 2022
+;
+Li et al. 2021
+originally target action recognition; to broaden the pool of baselines, we adapt them for skill assessment by adjusting the output dimension and training on the same datasets.
+X3D-XS
+Feichtenhofer 2020
+, EgoDistill
+Tan et al. 2023
+, and EgoTrigger
+Paruchuri et al. 2025
+are power-efficient methods leveraging less computation or lightweight modalities.
+We evaluate using standard accuracy metrics and estimated power consumption.
+Results
+Table
+1
+reports results on Ego-Exo4D
+Grauman et al. 2024
+and Multisense Badminton
+Seong et al. 2024
+. SkillSight-T outperforms all baselines across seven scenarios in both datasets, achieving an average relative gain of 10% over the strongest baseline. Remarkably, SkillSight-S, which uses only gaze as input, outperforms not only all the power-efficient baselines (bottom), but also the majority of the power-hungry baselines—despite using 14
+×
+\times
+to 73
+×
+\times
+less power (details below). It also achieves the best performance among power-efficient baselines in five of seven individual scenarios.
+Notably, SkillSight-T is superior in both static scenes, i.e. cooking and music, and dynamic sports, i.e. soccer, basketball, dance, rock climbing, dancing, and badminton. We attribute the robust prediction to our designs for incorporating gaze with vision, allowing the model to learn from the attended objects, the actions, and the gaze transition.
+We show that SkillSight-T outperforms a naive end-to-end model by
+8
+%
+8\%
+as well as more
+ablations
+in Supp.
+Despite having the lowest power consumption, SkillSight-S outperforms other power-efficient baselines
+(Tab.
+1
+, bottom)
+. We see a significant improvement compared to the Gaze-only baseline. This shows that SkillSight-S effectively learns the knowledge of SkillSight-T through our distillation technique. Models that rely only on first-person visual input, e.g., X3D-XS
+Feichtenhofer 2020
+, fail to learn consistent skill patterns across scenarios. EgoDistill
+Tan et al. 2023
+and EgoTrigger
+Paruchuri et al. 2025
+use a single frame together with head rotation or audio to represent the subject’s action; however, these modalities struggle to reveal subtle differences in actions for rating skill. On the other hand, gaze directly captures how subjects actively shift attention to complete tasks. This highlights gaze as a compact, highly informative signal for low-power skill assessment.
+We present qualitative results in Fig.
+4
+. We see that across different scenarios, experts and novices demonstrate different gaze patterns. For instance, when dribbling in soccer (first row), the novice looks down on the ball while the expert looks away from the ball to check the surroundings. When expert dancers perform a spin (middle left), they fixate their eyes early to the front to avoid dizziness. These patterns show important cues that our methods leverage to access skills robustly, showing the benefit of explicitly modeling multiple aspects of gaze and skill together. By contrast, TimeSformer
+Bertasius et al. 2021
+and Skillformer
+Bianchi and Liotta 2025
+—neither of which uses gaze—struggle when subjects exhibit few motion cues. For example, an ego-view clip alone may not reveal that a performer shifts gaze from sheet music to their hands (bottom left), offering limited cues for skill assessment. EgoExoLearn
+Huang et al. 2024
+and Beholder
+Li et al. 2021
+restrict processing to visual regions around gaze. While this approach is effective when gaze remains on the hands, it discards valuable contextual information when gaze shifts away from the body. For example, in bouldering (middle right), they may focus on the wall. Prior approaches that limit attention to the gaze region therefore overlook cues critical for assessing skill. Finally, we show a failure case where gaze does not reflect skill when the subject is slicing vegetables (bottom right), showcasing the limitation of gaze when subtle hand movements are required.
+Table
+2
+reports results on Expert-Novice Soccer
+Akamatsu et al. 2021
+. They
+highlight the effectiveness of our distillation framework. SkillSight-S, using only smart-glasses signals, surpasses both Gaze-only and Motion-only baselines,
+the latter of which requires subjects to wear body-mounted IMUs.
+Across all datasets, our method enhances gaze-based models and achieves competitive, power-efficient performance suitable for skill assessment on smart glasses.
+Efficiency analysis.
+Accurately measuring power consumption for wearable device applications is crucial.
+Using well-established measurements
+Grauman et al. 2024
+, the total energy consumption can be divided into three components:
+sensor triggering energy (
+γ
+\gamma
+), compute energy (
+α
+\alpha
+), and memory transfer energy (
+β
+\beta
+).
+See Supp. for full explanation.
+We employ weighting parameters based on real-world estimates of the power consumption.
+Specifically,
+α
+=
+4.6
+​
+pJ
+/
+MAC
+\alpha=4.6~\mathrm{pJ}/\mathrm{MAC}
+Desislavov et al. 2023
+,
+β
+=
+80
+​
+pJ
+/
+byte
+\beta=80~\mathrm{pJ}/\mathrm{byte}
+Horowitz 2014
+,
+γ
+rgb
+=
+35
+​
+mW
+\gamma_{\mathrm{rgb}}=35~\mathrm{mW}
+,
+γ
+IMU
+=
+1.2
+​
+mW
+\gamma_{\mathrm{IMU}}=1.2~\mathrm{mW}
+,
+γ
+audio
+=
+0.3
+​
+mW
+\gamma_{\mathrm{audio}}=0.3~\mathrm{mW}
+Palermo et al. 2025
+,
+and
+γ
+eye
+=
+7.8
+​
+mW
+\gamma_{\mathrm{eye}}=7.8~\mathrm{mW}
+Schärer et al. 2025
+.
+All values are taken from hardware designed for smart glasses.
+The overall energy consumption rate of a model is:
+P
+=
+α
+​
+N
+T
++
+β
+​
+B
+T
++
+∑
+m
+γ
+m
+​
+δ
+m
+,
+P=\frac{\alpha N}{T}+\frac{\beta B}{T}+\sum_{m}\gamma_{m}\delta_{m},
+(10)
+where
+N
+N
+is the number of MACs in the model forward pass,
+B
+B
+is the number of bytes required for read/write operations,
+m
+m
+indexes the modalities used by the model,
+δ
+m
+=
+1
+\delta_{m}=1
+when the model uses modality
+m
+m
+, and
+0
+0
+otherwise.
+T
+T
+is the time interval between successive inferences.
+Figure
+5
+shows that SkillSight-S achieves the best overall trade-off between power consumption and accuracy. It outperforms all power-efficient baselines while reducing the power consumption of the best baseline, i.e. EgoDistill
+Tan et al. 2023
+, by 43
+%
+\%
+. Moreover, SkillSight-S demonstrates competitive performance compared to video-based methods, which are power intensive
+regardless of the architecture
+due to the energy cost of sensing and visual feature encoding. Compared to TimeSformer
+Bertasius et al. 2021
+, SkillSight-S achieves over
+73
+×
+73\times
+lower energy cost
+with only a
+1.1
+%
+1.1\%
+drop in accuracy. Our approach provides an efficient foundation for real-time assistance or skill assessment.
+Figure 6
+:
+Gaze pattern analysis.
+SkillSight-S reveals distinct gaze patterns between model-predicted experts and novices.
+Psychology insight from SkillSight.
+Figures
+6
+and
+3
+show gaze behavior insights from SkillSight-S. In basketball layups, model-predicted experts consistently look up toward the rim, while novices look down at the ball (top). In bouldering, our predicted experts show longer movement-related fixations (e.g., grasp or foot placement) (bottom left), consistent with sports science
+Vansteenkiste et al. 2018
+. Beyond that, experts switch more often between movement-related and exploratory fixations when ascending (bottom middle). Figure
+3
+shows that novice pianists focus more on the hands, aligning with psychology findings
+Cara 2023
+, while SkillSight further shows more frequent gaze transitions between the sheet and hands (Fig.
+6
+, bottom right). SkillSight not only aligns with established psychological findings, it also facilitates finer exploration of expert-novice gaze strategies.
+5
+Conclusion
+We investigate how gaze behavior reflects skill level across dynamic and static scenarios. Our methods integrate gaze with egocentric visuals to assess skill by modeling attention during task execution. Moreover, our distillation framework enables a lightweight model using only gaze, achieving competitive accuracy while using significantly less power. Our work lays the foundation for future AI-driven instructional and assistive systems on smart glasses.
+References
+psy (2022)
+Visual strategies of young soccer players during a passing test – a pilot study.
+Journal of Eye Movement Research
+, 15(1), 2022.
+Akamatsu et al. (2021)
+Yusuke Akamatsu, Keisuke Maeda, Takahiro Ogawa, and Miki Haseyama.
+Classification of expert-novice level using eye tracking and motion data via conditional multimodal variational autoencoder.
+In
+ICASSP 2021-2021 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)
+, pages 1360–1364. IEEE, 2021.
+Anvari et al. (2025)
+Taravat Anvari, Markus Lappe, and Marc H E de Lussanet.
+Where does gaze lead? integrating gaze and motion for enhanced 3d pose estimation.
+In
+2025 IEEE Conference on Virtual Reality and 3D User Interfaces Abstracts and Workshops (VRW)
+, pages 76–83, 2025.
+Ashutosh et al. (2025)
+Kumar Ashutosh, Tushar Nagarajan, Georgios Pavlakos, Kris Kitani, and Kristen Grauman.
+Expertaf: Expert actionable feedback from video.
+In
+Proceedings of the Computer Vision and Pattern Recognition Conference
+, pages 13582–13594, 2025.
+Balde et al. (2022)
+Alpha Yaya Balde, Emmanuel Bergeret, Denis Cajal, and Jean-Pierre Toumazet.
+Low power environmental image sensors for remote photogrammetry.
+Sensors
+, 22(19):7617, 2022.
+Bertasius et al. (2017)
+Gedas Bertasius, Hyun Soo Park, Stella X Yu, and Jianbo Shi.
+Am i a baller? basketball performance assessment from first-person videos.
+In
+Proceedings of the IEEE international conference on computer vision
+, pages 2177–2185, 2017.
+Bertasius et al. (2021)
+Gedas Bertasius, Heng Wang, and Lorenzo Torresani.
+Is space-time attention all you need for video understanding?
+In
+Icml
+, page 4, 2021.
+Bianchi and Liotta (2025)
+Edoardo Bianchi and Antonio Liotta.
+Skillformer: Unified multi-view video understanding for proficiency estimation, 2025.
+Braun et al. (2025)
+Björn Braun, Rayan Armani, Manuel Meier, Max Moebus, and Christian Holz.
+egoppg: Heart rate estimation from eye-tracking cameras in egocentric systems to benefit downstream vision tasks.
+arXiv preprint arXiv:2502.20879
+, 2025.
+Brunyé et al. (2019)
+Tad T Brunyé, Trafton Drew, Donald L Weaver, and Joann G Elmore.
+A review of eye tracking for understanding and improving diagnostic interpretation.
+Cognitive research: principles and implications
+, 4(1):7, 2019.
+Buch et al. (2025)
+Shyamal Buch, Arsha Nagrani, Anurag Arnab, and Cordelia Schmid.
+Flexible frame selection for efficient video reasoning.
+In
+Proceedings of the Computer Vision and Pattern Recognition Conference
+, pages 29071–29082, 2025.
+Burgess et al. (2025)
+James Burgess, Xiaohan Wang, Yuhui Zhang, Anita Rau, Alejandro Lozano, Lisa Dunlap, Trevor Darrell, and Serena Yeung-Levy.
+Video action differencing.
+arXiv preprint arXiv:2503.07860
+, 2025.
+Cara (2023)
+Michel A. Cara.
+The effect of practice and musical structure on pianists’ eye-hand span and visual monitoring.
+Journal of Eye Movement Research
+, 16(2):1–18, 2023.
+Carreira and Zisserman (2017)
+Joao Carreira and Andrew Zisserman.
+Quo vadis, action recognition? a new model and the kinetics dataset.
+In
+proceedings of the IEEE Conference on Computer Vision and Pattern Recognition
+, pages 6299–6308, 2017.
+Causer et al. (2014)
+Joe Causer, Adam Harvey, Richard Snelgrove, Gary Arsenault, and Oshin Vartanian.
+Quiet eye training improves surgical performance: A randomized controlled study.
+Frontiers in Psychology
+, 5:821, 2014.
+CHEN et al. (2021)
+Longfei CHEN, Yuichi NAKAMURA, Kazuaki KONDO, Dima DAMEN, and Walterio MAYOL-CUEVAS.
+Integration of experts’ and beginners’ machine operation experiences to obtain a detailed task model.
+IEICE TRANSACTIONS on Information
+, E104-D(1):152–161, 2021.
+Damen et al. (2014)
+Dima Damen, Teesid Leelasawassuk, Osian Haines, Andrew Calway, and Walterio W Mayol-Cuevas.
+You-do, i-learn: Discovering task relevant objects and their modes of interaction from multi-user egocentric video.
+In
+BMVC
+, page 3, 2014.
+Desislavov et al. (2023)
+Radosvet Desislavov, Fernando Martínez-Plumed, and José Hernández-Orallo.
+Trends in ai inference energy consumption: Beyond the performance-vs-parameter laws of deep learning.
+Sustainable Computing: Informatics and Systems
+, 38:100857, 2023.
+Dong et al. (2024)
+Linfeng Dong, Wei Wang, Yu Qiao, and Xiao Sun.
+Lucidaction: A hierarchical and multi-model dataset for comprehensive action quality assessment.
+Advances in Neural Information Processing Systems
+, 37:96468–96482, 2024.
+Doughty et al. (2019)
+Hazel Doughty, Walterio Mayol-Cuevas, and Dima Damen.
+The pros and cons: Rank-aware temporal attention for skill determination in long videos.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 7862–7871, 2019.
+Drai-Zerbib and Baccino (2012)
+Veronique Drai-Zerbib and Emmanuel Baccino.
+The influence of expertise in music reading on the detection of temporal violations.
+Visual Cognition
+, 20(3):267–282, 2012.
+Drey et al. (2020)
+Tobias Drey, Pascal Jansen, Fabian Fischbach, Julian Frommel, and Enrico Rukzio.
+Towards progress assessment for adaptive hints in educational virtual reality games.
+In
+Extended Abstracts of the 2020 CHI Conference on Human Factors in Computing Systems
+, page 1–9, New York, NY, USA, 2020. Association for Computing Machinery.
+Elkholy et al. (2019)
+Amr Elkholy, Mohamed E Hussein, Walid Gomaa, Dima Damen, and Emmanuel Saba.
+Efficient and robust skeleton-based quality assessment and abnormality detection in human action performance.
+IEEE journal of biomedical and health informatics
+, 24(1):280–291, 2019.
+Feichtenhofer (2020)
+Christoph Feichtenhofer.
+X3d: Expanding architectures for efficient video recognition.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 203–213, 2020.
+Feng et al. (2025)
+Shijia Feng, Michael Wray, and Walterio Mayol-Cuevas.
+Evostruggle: A dataset capturing the evolution of struggle across activities and skill levels.
+arXiv preprint arXiv:2510.01362
+, 2025.
+Funke et al. (2019)
+Isabel Funke, Sören Torge Mees, Jürgen Weitz, and Stefanie Speidel.
+Video-based surgical skill assessment using 3d convolutional neural networks.
+International Journal of Computer Assisted Radiology and Surgery
+, 14(7):1217–1225, 2019.
+Galuret et al. (2023)
+Soline Galuret, Nicolas Vallée, Alexandre Tronchot, Herve Thomazeau, Pierre Jannin, and Arnaud Huaulmé.
+Gaze behavior is related to objective technical skills assessment during virtual reality simulator-based surgical training: a proof of concept.
+International Journal of Computer Assisted Radiology and Surgery
+, 18(9):1697–1705, 2023.
+Gao et al. (2020)
+Ruohan Gao, Tae-Hyun Oh, Kristen Grauman, and Lorenzo Torresani.
+Listen to look: Action recognition by previewing audio.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 10457–10467, 2020.
+Gedamu et al. (2024)
+Kumie Gedamu, Yanli Ji, Yang Yang, Jie Shao, and Heng Tao Shen.
+Visual-semantic alignment temporal parsing for action quality assessment.
+IEEE Transactions on Circuits and Systems for Video Technology
+, 2024.
+Gidlöf et al. (2013)
+Kerstin Gidlöf, Annika Wallin, Richard Dewhurst, and Kenneth Holmqvist.
+Using eye tracking to trace a cognitive process: Gaze behaviour during decision making in a natural environment.
+Journal of eye movement research
+, 6(1), 2013.
+Grauman et al. (2024)
+Kristen Grauman, Andrew Westbury, Lorenzo Torresani, Kris Kitani, Jitendra Malik, Triantafyllos Afouras, Kumar Ashutosh, Vijay Baiyya, Siddhant Bansal, Bikram Boote, et al.
+Ego-exo4d: Understanding skilled human activity from first-and third-person perspectives.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 19383–19400, 2024.
+Hayhoe and Matthis (2018)
+Mary M Hayhoe and Jonathan Samir Matthis.
+Control of gaze in natural environments: effects of rewards and costs, uncertainty and memory in target selection.
+Interface focus
+, 8(4):20180009, 2018.
+Horowitz (2014)
+Mark Horowitz.
+1.1 computing’s energy problem (and what we can do about it).
+In
+2014 IEEE International Solid-State Circuits Conference Digest of Technical Papers (ISSCC)
+, pages 10–14, 2014.
+Hu et al. (2022)
+Edward J Hu, Yelong Shen, Phillip Wallis, Zeyuan Allen-Zhu, Yuanzhi Li, Shean Wang, Lu Wang, Weizhu Chen, et al.
+Lora: Low-rank adaptation of large language models.
+ICLR
+, 1(2):3, 2022.
+Huang et al. (2018)
+Yifei Huang, Minjie Cai, Zhenqiang Li, and Yoichi Sato.
+Predicting gaze in egocentric video by learning task-dependent attention transition.
+In
+Proceedings of the European conference on computer vision (ECCV)
+, pages 754–769, 2018.
+Huang et al. (2020)
+Yifei Huang, Minjie Cai, Zhenqiang Li, Feng Lu, and Yoichi Sato.
+Mutual context network for jointly estimating egocentric gaze and action.
+IEEE Transactions on Image Processing
+, 29:7795–7806, 2020.
+Huang et al. (2024)
+Yifei Huang, Guo Chen, Jilan Xu, Mingfang Zhang, Lijin Yang, Baoqi Pei, Hongjie Zhang, Lu Dong, Yali Wang, Limin Wang, et al.
+Egoexolearn: A dataset for bridging asynchronous ego-and exo-centric view of procedural activities in real world.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 22072–22086, 2024.
+Huh et al. (2025)
+Mina Huh, Zihui Xue, Ujjaini Das, Kumar Ashutosh, Kristen Grauman, and Amy Pavel.
+Vid2coach: Transforming how-to videos into task assistants.
+arXiv preprint arXiv:2506.00717
+, 2025.
+Jeong et al. (2022)
+Inhyeok Jeong, Kento Nakagawa, Rieko Osu, and Kazuyuki Kanosue.
+Difference in gaze control ability between low and high skill players of a real-time strategy game in esports.
+PloS one
+, 17(3):e0265526, 2022.
+Karolus et al. (2023)
+Jakob Karolus, Johannes Sylupp, Albrecht Schmidt, and Paweł W Woźniak.
+Eyepiano: leveraging gaze for reflective piano learning.
+In
+Proceedings of the 2023 ACM Designing Interactive Systems Conference
+, pages 1209–1223, 2023.
+Khan et al. (2020)
+Aftab Khan, Sebastian Mellor, Rachel King, Balazs Janko, William Harwin, R Simon Sherratt, Ian Craddock, and Thomas Plötz.
+Generalized and efficient skill assessment from imu data with applications in gymnastics and medical training.
+ACM Transactions on Computing for Healthcare
+, 2(1):1–21, 2020.
+Konrad et al. (2024)
+Robert Konrad, Nitish Padmanaban, J Gabriel Buckmaster, Kevin C Boyle, and Gordon Wetzstein.
+Gazegpt: Augmenting human capabilities using gaze-contingent contextual ai for smart eyewear.
+arXiv preprint arXiv:2401.17217
+, 2024.
+Korbar et al. (2019)
+Bruno Korbar, Du Tran, and Lorenzo Torresani.
+Scsampler: Sampling salient clips from video for efficient action recognition.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 6232–6242, 2019.
+Lai et al. (2022)
+Bolin Lai, Miao Liu, Fiona Ryan, and James M Rehg.
+In the eye of transformer: Global-local correlation for egocentric gaze estimation.
+arXiv preprint arXiv:2208.04464
+, 2022.
+Lai et al. (2024)
+Bolin Lai, Fiona Ryan, Wenqi Jia, Miao Liu, and James M Rehg.
+Listen to look into the future: Audio-visual egocentric gaze anticipation.
+In
+European Conference on Computer Vision
+, pages 192–210. Springer, 2024.
+Land et al. (1999)
+Michael Land, Neil Mennie, and Jennifer Rusted.
+The roles of vision and eye movements in the control of activities of daily living.
+Perception
+, 28(11):1311–1328, 1999.
+Lee et al. (2025)
+Chae Young Lee, Maxwell Fite, Tejus Rao, Sara Achour, Zerina Kapetanovic, et al.
+Hypercam: Low-power onboard computer vision for iot cameras.
+arXiv preprint arXiv:2501.10547
+, 2025.
+Lee and An (2023)
+Seungmin Lee and Jongseong An.
+Gaze control and motor performance in motor expertise studies: Focused review of field application research on perceptual skill training.
+International Journal of Applied Sports Sciences
+, 35(1), 2023.
+Lei et al. (2023)
+Qing Lei, Huiying Li, Hongbo Zhang, Jixiang Du, and Shangce Gao.
+Multi-skeleton structures graph convolutional network for action quality assessment in long videos.
+Applied Intelligence
+, 53(19):21692–21705, 2023.
+Li et al. (2013)
+Yin Li, Alireza Fathi, and James M Rehg.
+Learning to predict gaze in egocentric video.
+In
+Proceedings of the IEEE international conference on computer vision
+, pages 3216–3223, 2013.
+Li et al. (2021)
+Yin Li, Miao Liu, and James M Rehg.
+In the eye of the beholder: Gaze and actions in first person video.
+IEEE transactions on pattern analysis and machine intelligence
+, 45(6):6731–6747, 2021.
+Liao et al. (2023)
+Junhua Liao, Haihan Duan, Kanghui Feng, Wanbing Zhao, Yanbing Yang, and Liangyin Chen.
+A light weight model for active speaker detection.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 22932–22941, 2023.
+Majeedi et al. (2024)
+Abrar Majeedi, Viswanatha Reddy Gajjala, Satya Sai Srinath GNVV Namburi, and Yin Li.
+Rica^2: Rubric-informed, calibrated assessment of actions.
+In
+Proceedings of the European Conference on Computer Vision (ECCV)
+, 2024.
+Majumder et al. (2023)
+Sagnik Majumder, Hao Jiang, Pierre Moulon, Ethan Henderson, Paul Calamia, Kristen Grauman, and Vamsi Krishna Ithapu.
+Chat2map: Efficient scene mapping from multi-ego conversations.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 10554–10564, 2023.
+Mazzamuto* et al. (2024)
+Michele Mazzamuto*, Francesco Ragusa*, Antonino Furnari*, and Giovanni Maria Farinella*.
+Learning to detect attended objects in cultural sites with gaze signals and weak object supervision.
+ACM Journal on Computing and Cultural Heritage
+, 17(3):1–21, 2024.
+Mazzamuto et al. (2025)
+Michele Mazzamuto, Antonino Furnari, Yoichi Sato, and Giovanni Maria Farinella.
+Gazing into missteps: Leveraging eye-gaze for unsupervised mistake detection in egocentric videos of skilled human activities.
+In
+Proceedings of the Computer Vision and Pattern Recognition Conference
+, pages 8310–8320, 2025.
+Melnyk et al. (2021)
+Rachel Melnyk, Timothy Campbell, Tyler Holler, Katherine Cameron, Patrick Saba, Michael W Witthaus, Jean Joseph, and Ahmed Ghazi.
+See like an expert: Gaze-augmented training enhances skill acquisition in a virtual reality robotic suturing task.
+Journal of Endourology
+, 35(3):376–382, 2021.
+Meta Platforms, Inc. (2025)
+Meta Platforms, Inc.
+Project aria glasses user manual.
+https://facebookresearch.github.io/projectaria_tools/docs/ARK/glasses_manual/glasses_user_manual
+, 2025.
+Accessed: 2025-10-06.
+Min and Corso (2021)
+Kyle Min and Jason J Corso.
+Integrating human gaze into attention for egocentric activity recognition.
+In
+Proceedings of the IEEE/CVF Winter Conference on Applications of Computer Vision
+, pages 1069–1078, 2021.
+Oquab et al. (2023)
+Maxime Oquab, Timothée Darcet, Théo Moutakanni, Huy Vo, Marc Szafraniec, Vasil Khalidov, Pierre Fernandez, Daniel Haziza, Francisco Massa, Alaaeldin El-Nouby, et al.
+Dinov2: Learning robust visual features without supervision.
+arXiv preprint arXiv:2304.07193
+, 2023.
+Özdel et al. (2024)
+Süleyman Özdel, Yao Rong, Berat Mert Albaba, Yen-Ling Kuo, Xi Wang, and Enkelejda Kasneci.
+Gaze-guided graph neural network for action anticipation conditioned on intention.
+In
+Proceedings of the 2024 Symposium on Eye Tracking Research and Applications
+, pages 1–9, 2024.
+Palermo et al. (2025)
+Francesca Palermo, Luca Casciano, Lokmane Demagh, Aurelio Teliti, Niccolò Antonello, Giacomo Gervasoni, Hazem Hesham Yousef Shalby, Marco Brando Paracchini, Simone Mentasti, Hao Quan, et al.
+Advancements in context recognition for edge devices and smart eyewear: Sensors and applications.
+IEEE Access
+, 2025.
+Pan et al. (2025)
+Yulu Pan, Ce Zhang, and Gedas Bertasius.
+Basket: A large-scale video dataset for fine-grained skill estimation.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, 2025.
+Panchal et al. (2024)
+Sunny Panchal, Apratim Bhattacharyya, Guillaume Berger, Antoine Mercier, Cornelius Böhm, Florian Dietrichkeit, Reza Pourreza, Xuanlin Li, Pulkit Madan, Mingu Lee, et al.
+What to say and when to say it: Live fitness coaching as a testbed for situated interaction.
+Advances in Neural Information Processing Systems
+, 37:75853–75882, 2024.
+Parmar and Morris (2019)
+Paritosh Parmar and Brendan Tran Morris.
+What and how well you performed? a multitask learning approach to action quality assessment.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 304–313, 2019.
+Parmar et al. (2021a)
+Paritosh Parmar, Jaiden Reddy, and Brendan Morris.
+Piano skills assessment.
+In
+2021 IEEE 23rd international workshop on multimedia signal processing (MMSP)
+, pages 1–5. IEEE, 2021a.
+Parmar et al. (2021b)
+Paritosh Parmar, Jaiden Reddy, and Brendan Morris.
+Piano skills assessment.
+In
+2021 IEEE 23rd international workshop on multimedia signal processing (MMSP)
+, pages 1–5. IEEE, 2021b.
+Parmar et al. (2022)
+Paritosh Parmar, Amol Gharat, and Helge Rhodin.
+Domain knowledge-informed self-supervised representations for workout form assessment.
+In
+European Conference on Computer Vision
+, pages 105–123. Springer, 2022.
+Paruchuri et al. (2025)
+Akshay Paruchuri, Sinan Hersek, Lavisha Aggarwal, Qiao Yang, Xin Liu, Achin Kulshrestha, Andrea Colaco, Henry Fuchs, and Ishan Chatterjee.
+Egotrigger: Toward audio-driven image capture for human memory enhancement in all-day energy-efficient smart glasses.
+arXiv preprint arXiv:2508.01915
+, 2025.
+Perra et al. (2021)
+Joris Perra, Bénédicte Poulin-Charronnat, Thierry Baccino, and Véronique Drai-Zerbib.
+Review on eye-hand span in sight-reading of music.
+Journal of eye movement research
+, 14(4):10–16910, 2021.
+Plizzari et al. (2022)
+Chiara Plizzari, Mirco Planamente, Gabriele Goletto, Marco Cannici, Emanuele Gusso, Matteo Matteucci, and Barbara Caputo.
+E2 (go) motion: Motion augmented event stream for egocentric action recognition.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 19935–19947, 2022.
+Pramanick et al. (2023)
+Shraman Pramanick, Yale Song, Sayan Nag, Kevin Qinghong Lin, Hardik Shah, Mike Zheng Shou, Rama Chellappa, and Pengchuan Zhang.
+Egovlpv2: Egocentric video-language pre-training with fusion in the backbone.
+arXiv preprint arXiv:2307.05463
+, 2023.
+Romero et al. (2015)
+Adriana Romero, Nicolas Ballas, Samira Ebrahimi Kahou, Antoine Chassang, Carlo Gatta, and Yoshua Bengio.
+Fitnets: Hints for thin deep nets, 2015.
+Schärer et al. (2025)
+Nicolas Schärer, Federico Villani, Aishwarya Melatur, Steven Peter, Tommaso Polonelli, and Michele Magno.
+Electrasight: Fully onboard eye tracking for smart glasses with hybrid eog (heog).
+IEEE Internet of Things Journal
+, 2025.
+Seong et al. (2024)
+Minwoo Seong, Gwangbin Kim, Dohyeon Yeo, Yumin Kang, Heesan Yang, Joseph DelPreto, Wojciech Matusik, Daniela Rus, and SeungJun Kim.
+Multisensebadminton: Wearable sensor–based biomechanical dataset for evaluation of badminton performance.
+Scientific Data
+, 11(1):343, 2024.
+Steil et al. (2019)
+Julian Steil, Marion Koelle, Wilko Heuten, Susanne Boll, and Andreas Bulling.
+Privaceye: privacy-preserving head-mounted eye tracking using egocentric scene image and eye movement features.
+In
+Proceedings of the 11th ACM symposium on eye tracking research & applications
+, pages 1–10, 2019.
+Su et al. (2017)
+Shan Su, Jung Pyo Hong, Jianbo Shi, and Hyun Soo Park.
+Predicting behaviors of basketball players from first person videos.
+In
+Proceedings of the IEEE conference on computer vision and pattern recognition
+, pages 1501–1510, 2017.
+Sullivan et al. (2021)
+Brian Sullivan, Casimir JH Ludwig, Dima Damen, Walterio Mayol-Cuevas, and Iain D Gilchrist.
+Look-ahead fixations during visuomotor behavior: Evidence from assembling a camping tent.
+Journal of vision
+, 21(3):13–13, 2021.
+Sunder et al. (2025)
+R Sunder, Umesh Kumar Lilhore, Anjani Kumar Rai, Ehab Ghith, Mehdi Tlija, Sarita Simaiya, and Afraz Hussain Majeed.
+Smartapm framework for adaptive power management in wearable devices using deep reinforcement learning.
+Scientific Reports
+, 15(1):6911, 2025.
+Tan et al. (2023)
+Shuhan Tan, Tushar Nagarajan, and Kristen Grauman.
+Egodistill: Egocentric head motion distillation for efficient video understanding.
+Advances in Neural Information Processing Systems
+, 36:33485–33498, 2023.
+Tang et al. (2020)
+Yansong Tang, Zanlin Ni, Jiahuan Zhou, Danyang Zhang, Jiwen Lu, Ying Wu, and Jie Zhou.
+Uncertainty-aware score distribution learning for action quality assessment.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 9839–9848, 2020.
+Touvron et al. (2021)
+Hugo Touvron, Matthieu Cord, Matthijs Douze, Francisco Massa, Alexandre Sablayrolles, and Hervé Jégou.
+Training data-efficient image transformers & distillation through attention.
+In
+International conference on machine learning
+, pages 10347–10357. PMLR, 2021.
+Vansteenkiste et al. (2018)
+P Vansteenkiste, L Zeuwts, FJA Deconinck, and M Lenoir.
+Exploring new heights: Visual behaviour of novice, intermediate, and experienced climbers.
+In
+CONGRESS BOOK
+, page 116, 2018.
+Vickers (1996)
+Joan N. Vickers.
+Visual control when aiming at a far target.
+Journal of Experimental Psychology: Human Perception and Performance
+, 22(2):342–354, 1996.
+Vickers and Lew (2016)
+Joan N. Vickers and D. J. Lew.
+Quiet eye duration predicts expertise in a simulated driving task.
+Cognitive Processing
+, 17(3):311–319, 2016.
+Vine et al. (2011)
+Samuel J. Vine, R. J. Chaytor, J. S. McGrath, and R. S. W. Masters.
+Gaze training improves laparoscopic surgical performance.
+Surgical Endoscopy
+, 25(12):3731–3739, 2011.
+Wang et al. (2024)
+Chaowei Wang, Ziye Wang, Weiwei Guan, Wenjie Wang, Lexi Xu, Lihua Li, Sai Huang, and Weidong Wang.
+Trustworthy health monitoring based on distributed wearable electronics with edge intelligence.
+IEEE Transactions on Consumer Electronics
+, 70(1):2333–2341, 2024.
+Wang et al. (2025)
+Fengshun Wang, Qiurui Wang, and Dan Chen.
+From beats to scores: A multi-modal framework for comprehensive figure skating assessment.
+In
+Proceedings of the Computer Vision and Pattern Recognition Conference
+, pages 5905–5914, 2025.
+Wang et al. (2019)
+Tao Wang, Li Yuan, Xiaopeng Zhang, and Jiashi Feng.
+Distilling object detectors with fine-grained feature imitation.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 4933–4942, 2019.
+Wang et al. (2020)
+Tianyu Wang, Yijie Wang, and Mian Li.
+Towards accurate and interpretable surgical skill assessment: A video-based method incorporating recognized surgical gestures and skill levels.
+In
+International Conference on Medical Image Computing and Computer-Assisted Intervention
+, pages 668–678. Springer, 2020.
+Wang et al. (2023)
+Xin Wang, Taein Kwon, Mahdi Rad, Bowen Pan, Ishani Chakraborty, Sean Andrist, Dan Bohus, Ashley Feniello, Bugra Tekin, Felipe Vieira Frujeri, et al.
+Holoassist: an egocentric human interaction dataset for interactive ai assistants in the real world.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 20270–20281, 2023.
+Xiao et al. (2025)
+Junbin Xiao, Nanxin Huang, Hao Qiu, Zhulin Tao, Xun Yang, Richang Hong, Meng Wang, and Angela Yao.
+Egoblind: Towards egocentric visual assistance for the blind people.
+arXiv preprint arXiv:2503.08221
+, 2025.
+Xu et al. (2019)
+Chengming Xu, Yanwei Fu, Bing Zhang, Zitian Chen, Yu-Gang Jiang, and Xiangyang Xue.
+Learning to score figure skating sport videos.
+IEEE transactions on circuits and systems for video technology
+, 30(12):4578–4590, 2019.
+Xu et al. (2024a)
+Huangbiao Xu, Xiao Ke, Yuezhou Li, Rui Xu, Huanqi Wu, Xiaofeng Lin, and Wenzhong Guo.
+Vision-language action knowledge learning for semantic-aware action quality assessment.
+In
+European Conference on Computer Vision
+, pages 423–440. Springer, 2024a.
+Xu et al. (2025)
+Huangbiao Xu, Xiao Ke, Huanqi Wu, Rui Xu, Yuezhou Li, and Wenzhong Guo.
+Language-guided audio-visual learning for long-term sports assessment.
+In
+Proceedings of the Computer Vision and Pattern Recognition Conference
+, pages 23967–23977, 2025.
+Xu et al. (2022)
+Jinglin Xu, Yongming Rao, Xumin Yu, Guangyi Chen, Jie Zhou, and Jiwen Lu.
+Finediving: A fine-grained dataset for procedure-aware action quality assessment.
+In
+CVPR
+, pages 2949–2958, 2022.
+Xu et al. (2024b)
+Jinglin Xu, Sibo Yin, Guohao Zhao, Zishuo Wang, and Yuxin Peng.
+Fineparser: A fine-grained spatio-temporal action parser for human-centric action quality assessment.
+In
+Proceedings of the IEEE/CVF Conference on computer vision and pattern recognition
+, pages 14628–14637, 2024b.
+Yi et al. (2025)
+Han Yi, Yulu Pan, Feihong He, Xinyu Liu, Benjamin Zhang, Oluwatumininu Oguntola, and Gedas Bertasius.
+Exact: A video-language benchmark for expert action analysis.
+arXiv preprint arXiv:2506.06277
+, 2025.
+Zeng and Zheng (2024)
+Ling-An Zeng and Wei-Shi Zheng.
+Multimodal action quality assessment.
+IEEE Transactions on Image Processing
+, 33:1600–1613, 2024.
+Zhang et al. (2017)
+Mengmi Zhang, Keng Teck Ma, Joo Hwee Lim, Qi Zhao, and Jiashi Feng.
+Deep future gaze: Gaze anticipation on egocentric videos using adversarial networks.
+In
+Proceedings of the IEEE conference on computer vision and pattern recognition
+, pages 4372–4381, 2017.
+Zhang et al. (2023)
+Shiyi Zhang, Wenxun Dai, Sujia Wang, Xiangwei Shen, Jiwen Lu, Jie Zhou, and Yansong Tang.
+Logo: A long-form video dataset for group action quality assessment.
+In
+Proceedings of the IEEE/CVF conference on computer vision and pattern recognition
+, pages 2405–2414, 2023.
+Zhang et al. (2024)
+Shiyi Zhang, Sule Bai, Guangyi Chen, Lei Chen, Jiwen Lu, Junle Wang, and Yansong Tang.
+Narrative action evaluation with prompt-guided multimodal interaction.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 18430–18439, 2024.
+Zheng et al. (2022)
+Yang Zheng, Yanchao Yang, Kaichun Mo, Jiaman Li, Tao Yu, Yebin Liu, C Karen Liu, and Leonidas J Guibas.
+Gimo: Gaze-informed human motion prediction in context.
+In
+European Conference on Computer Vision
+, pages 676–694. Springer, 2022.
+Zhou et al. (2025)
+Sheng Zhou, Junbin Xiao, Qingyun Li, Yicong Li, Xun Yang, Dan Guo, Meng Wang, Tat-Seng Chua, and Angela Yao.
+Egotextvqa: Towards egocentric scene-text aware video question answering.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, pages 3363–3373, 2025.
+Supplementary Material
+Appendix A
+Supplementary video
+We provide a supplementary video that shows an overview of the paper. It also shows qualitative video examples with ego video and gaze patterns.
+Appendix B
+Ablations
+SkillSight-T.
+In Sec.
+3.2
+, we present the three components of SkillSight-T: a visual encoder with gaze attention, a cropped image encoder, and a trajectory encoder. We perform an ablation study on these designs using EgoExo4D
+Grauman et al. 2024
+. As shown in Table
+3
+, each component contributes a clear gain in accuracy, indicating that these designs are essential for capturing the interaction between ego visual input and gaze in skill assessment.
+SkillSight-S.
+In Sec.
+3.3
+, we introduce the distillation strategy used for training SkillSight-S. We evaluate the influence of each loss through an ablation study, with results summarized in Table
+4
+. The results demonstrate that both the distillation loss and the action recognition loss contribute positively to the performance of SkillSight-S. This highlights the importance of linking gaze patterns with specific actions for effective skill assessment, and video cues for skill assessment can be effectively embedded into the gaze signal.
+TimeSformer
+Crop Encoder
+Traj. Encoder
+Acc (%)
+✗
+✗
+✓
+37.0
+✗
+✓
+✗
+40.6
+✗
+✓
+✓
+44.9
+w/o gaze att.
+✗
+✗
+45.5
+w/o gaze att.
+✗
+✓
+46.4
+w/o gaze att.
+✓
+✗
+47.6
+w/o gaze att.
+✓
+✓
+47.9
+w gaze att.
+✗
+✗
+47.2
+w gaze att.
+✗
+✓
+47.5
+w gaze att.
+✓
+✗
+48.6
+w gaze att.
+✓
+✓
+50.1
+Table 3:
+Ablation study of SkillSight-T.
+We conduct ablation study of the three components in SkillSight-T. A check indicates inclusion.
+Method
+Acc (%)
+Gaze-Only
+37.0
+SkillSight-S
+44.4
+w/o distillation
+40.0
+w/o action recognition
+40.7
+Table 4:
+Ablation study of training SkillSight-S.
+We compare the performance of SkillSight-S when training under different loss configurations.
+Appendix C
+Gaze normalization process
+In Sec.
+3.1
+, we describe the gaze modalities derived from the three-dimensional gaze vector of each eye. We also provide details on how each modality is normalized to remove bias in the recordings.
+•
+3D fixation points.
+For each frame, we calculate the intersection of the left and right gaze rays in the world coordinate. Centered by the segment mean and rotated horizontally so the first direction gaze point has y equal to zero.
+•
+3D gaze direction.
+For each frame, this is a unit vector representing the gaze direction expressed in the cpf coordinate as defined by the subject’s perspective
+Meta Platforms, Inc. 2025
+.
+•
+2D gaze point projection.
+We project the 3D gaze to the 2D ego camera view, value in the range zero to one.
+•
+Gaze depth.
+Distance between the head and the intersection point of the left and right gaze rays.
+•
+Glass rotation.
+For the first frame, adjust the yaw to face forward while keeping pitch and roll. For other frames, compute relative rotation. Convert the rotation representation from pitch, yaw, roll to quaternion.
+•
+Glass translation.
+Center the translation and define the first horizontal movement as the positive x direction.
+Appendix D
+Power consumption calculation details
+In Sec.
+4
+, we demonstrate the power efficiency analysis. Following the energy computation in
+Grauman et al. 2024
+, the overall energy consumption rate consists of the following:
+•
+Compute operations (MACs).
+We estimate computational cost by using the PyTorch FLOP counter to measure the total FLOPs in a forward pass, and then convert this value to MACs using the approximation that one MAC equals two FLOPs.
+•
+Memory transfer (bytes).
+We quantify GPU memory movement with the PyTorch memory profiler, which records all operations in the forward pass along with their memory usage. The total memory transfer is the sum of the memory costs of all logged operations.
+•
+Sensor capture.
+For each sensing modality, we measure the period during which it is active by counting the number of samples that include that modality. We require at least one second of data, since energy consumption cannot be defined for a single instantaneous reading.
+Appendix E
+Behavior-level interpretation of gaze
+In Figure
+6
+, we present the distinct gaze patterns uncovered from the proficiency groups predicted by SkillSight-S. Figure
+7
+further illustrates additional gaze behavior insights captured by SkillSight-S. In rock climbing, the variance of 3D gaze points is notably larger for the predicted late expert than for the novice, a result of frequent gaze shifts to gather information from the wall. In soccer, predicted late experts tend to fixate on farther depths, reflecting their attention to broader surroundings and potential targets. In cooking, predicted experienced chefs exhibit a more diverse 3D gaze points while monitoring food. Finally, in music, the model-predicted late experts switch more flexibly between the sheet music and the instrument, resulting in longer saccade distances. These findings enable deeper investigation of how gaze patterns vary across skill levels, allowing a more data-driven understanding of expertise.
+Figure 7
+:
+Distinct gaze pattern analysis.
+We present more distinct gaze patterns that SkillSight-S reveals between subjects at different skill levels.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

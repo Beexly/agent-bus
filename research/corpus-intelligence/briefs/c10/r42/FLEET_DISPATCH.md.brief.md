@@ -1,0 +1,18 @@
+# data/FLEET_DISPATCH.md
+## What it is (1-2 sentences)
+Grok's single-read orchestration doc for the multi-agent builder fleet (Grok-Orch + Hermes + free fleet + Claude): wave order across eight card decks (81 cards), data-class routing rules (PUBLIC/INTERNAL/CROWN), the green-lane merge rule, the FLEET_STATUS ledger format, and stop conditions.
+## Key metrics/methods (formulas where given, else "not specified")
+Not specified — procedural/operational document, no formulas. Snapshot state at writing (2026-08-22, branch `claude/grok-stats-analysis-i8muyp`): kernel contract landed (PR #554); kernel slots EMPTY — Wave K1 in flight; PRs #555, #556, #557 open. Seven decks: CARDS_SCANNERS (SC1–SC10), CARDS_CLOSING_LINE (CL1–CL9), CARDS_INCENTIVE_CALENDAR (IC1–IC9), CARDS_SHARE_CORE_WIRING (SC1–SC10), CARDS_EDGE_VALIDATE (EV1–EV17), CARDS_LAUNCH_QA (LQ1–LQ18), CARDS_PROOF_LADDER (PL1–PL8).
+## Data sources named
+None (operational doc). Key live-bug finding: `settlePendingPicks()` (free-settlement.ts L281-334) matches finals by team-pair + calendar-day only — same-day doubleheaders (common in Aug/Sept MLB) silently grade against `candidates[0]`; PL1 is a confirmed live bug with zero test coverage, dispatched first ahead of all other waves.
+## Findings (numbers and facts, not vibes)
+- Wave order: K1 finish → grading fixes (PL1 confirmed live doubleheader bug FIRST) → edge-validate CLI → scanners → share-core wiring → calendar → forecaster → launch QA; trust lane (LQ) runs CONCURRENTLY from day 1; all PUBLIC cards front-loaded to the free fleet. (OTHER)
+- Routing: PUBLIC → any free endpoint (stealth included), single-card text only; INTERNAL → Grok/Hermes no-training endpoints only; CROWN → Grok/Hermes paid/contractual endpoints, outputs never committed or surfaced. Cross-family verification mandatory: verifier ≠ author model family. (TRUST-SIGNAL)
+- Green-lane merge: squash-merge without waiting when deterministic Verify green + cross-verify computed + diff touches only named files + no forbidden zone + data-class routing respected. Waits for Claude: anything p-side, contract-shape changes, clearance/rights, merges of #555/#556/#557, barrel integration commit, GR grading cards. Waits for Garrett: spend decisions, storage decisions, product stances, launch-gate ladder / PRICING_PHASE flips. (TRUST-SIGNAL)
+- Forbidden zones: prisma schema, event-odds-ingest writes, secrets, vercel.json, src/index.ts barrel, frozen kernel files, consume-only modules named per deck; no contract edits, no MODEL_VERSION changes, no priced:true, no openHoldout(, no Math.random. (OTHER)
+- Stop conditions: no scraping/new sources beyond checkClearance() (scores24.live = permission_required, score24.com = vendor_candidate, siriusxm-activator = excluded); no CC-BY-SA data into p (nflverse CC-BY-4.0 attribution must propagate into derived reports); no CROWN to free endpoints; never weaken a guard to get green (red gate = FINDING, ledger verbatim); free-path/backfill canonical settlement observed in prod ⇒ stop settlement scale-up, escalate to Claude + Garrett. (TRUST-SIGNAL)
+- FLEET_STATUS.md ledger: `| ts (UTC) | worker | deck·card | artifact | verify | xverify | PR | merged | notes |` — machine-appended, one line per event. (OTHER)
+## Intelligence connections (tag each finding: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+Tagged inline above; data-governance/TRUST-SIGNAL is the dominant thread (routing, stop conditions, licensing), rest OTHER.
+## Engine-actionable? (yes/no + one-line what)
+no — Fleet orchestration procedure (agent dispatch, merge gates, licensing stop conditions), not engine intelligence; the licensing/CC-BY-SA boundaries and fail-closed guard discipline are already landed doctrine elsewhere.

@@ -1,0 +1,2189 @@
+Gaussian Process Priors for Dynamic Paired Comparison Modelling
+Martin Ingram*
+University of Melbourne
+Australia
+email:
+ingramm@student.unimelb.edu.au
+Abstract
+Dynamic paired comparison models, such as Elo and Glicko, are frequently used for sports prediction and ranking players or teams. We present an alternative dynamic paired comparison model which uses a Gaussian Process (GP) as a prior for the time dynamics rather than the Markovian dynamics usually assumed. In addition, we show that the GP model can easily incorporate covariates. We derive an efficient approximate Bayesian inference procedure based on the Laplace Approximation and sparse linear algebra. We select hyperparameters by maximising their marginal likelihood using Bayesian Optimisation, comparing the results against random search. Finally, we fit and evaluate the model on the 2018 season of ATP tennis matches, where it performs competitively, outperforming Elo and Glicko on log loss, particularly when surface covariates are included.
+keywords
+Applied probability, Stochastic processes, Forecasting, OR in Sports
+*: Corresponding author
+1
+Introduction
+1.1
+Background and motivation
+As the name suggests, paired comparison models aim to predict the outcome of a comparison of two items. Although they are used for other purposes, such as in marketing research (for an overview, see for example
+Bradley (1984)
+), the focus of this paper is on the prediction of sporting outcomes. Here, the items being compared are players, and the outcome of the comparison depends on how much greater one player’s skill is compared to the other’s.
+Perhaps the most widely used paired comparison model is the “Bradley-Terry” model
+Bradley & Terry (1952)
+. In this model, the likelihood can be written as:
+P
+⁡
+(
+y=1
+|
+θ
+i
+,
+θ
+j
+)
+=
+1
+1
++
+e
+θ
+j
+−
+θ
+i
+=
+logit
+−
+1
+​
+(
+θ
+i
+−
+θ
+j
+)
+\displaystyle P(\textrm{y=1}|\theta_{i},\theta_{j})=\frac{1}{1+e^{\theta_{j}-\theta_{i}}}=\textrm{logit}^{-1}(\theta_{i}-\theta_{j})
+(1)
+Here,
+θ
+i
+\theta_{i}
+and
+θ
+j
+\theta_{j}
+are latent abilities of player
+i
+i
+and
+j
+j
+, which are assumed to be scalar, and
+y
+=
+1
+y=1
+is the indicator that player
+i
+i
+won the comparison, or match (a loss has
+y
+=
+0
+y=0
+). Extensions to the Bradley-Terry model exist to model other outcomes such as draws
+Rao & Kupper (1967)
+, but we will consider only the win/loss case in this paper.
+In sports, players’ abilities are likely vary over time. In tennis, a player may decline in performance due to an injury, or improve due to better training; in team sports, teams may improve their tactics, or gain and lose players to injury over time. Rather than keeping the latent abilities
+θ
+\theta
+fixed,
+dynamic
+paired comparison models allow them to vary over time. Here we consider two: the popular Elo model
+Elo (1978)
+, and an approximate Bayesian model known as Glicko
+Glickman (1999)
+.
+Elo was originally developed by Arpad Elo for ranking chess players. Its likelihood is a rescaled version of the Bradley-Terry likelihood:
+P
+⁡
+(
+y=1
+|
+θ
+i
+,
+θ
+j
+)
+=
+1
+1
++
+10
+(
+θ
+j
+−
+θ
+i
+)
+/
+400
+\displaystyle P(\textrm{y=1}|\theta_{i},\theta_{j})=\frac{1}{1+10^{(\theta_{j}-\theta_{i})/400}}
+(2)
+Elo is an algorithm rather than a full probabilistic model. Players start with a rating
+θ
+0
+=
+1500
+\theta_{0}=1500
+. After each match, ratings are updated according to a simple formula:
+θ
+i
+′
+=
+θ
+i
++
+k
+×
+(
+y
+−
+P
+⁡
+(
+y
+|
+θ
+i
+,
+θ
+j
+)
+)
+\displaystyle\theta_{i}^{\prime}=\theta_{i}+k\times(y-P(y|\theta_{i},\theta_{j}))
+(3)
+More surprising results will produce larger updates, with the maximum update given by
+k
+k
+. This update size
+k
+k
+can be chosen using, for example, by maximising the likelihood using Equation
+2
+.
+Elo is a popular model in many sports. In tennis, a slight variation proposed by the website FiveThirtyEight
+Morris & Bialik (2015)
+, which uses Elo as a component in has been shown to perform strongly, outperforming ten other published models for tennis prediction in a recent review
+Kovalchik (2016)
+. Elo models have also been shown to be accurate at predicting other sports, such as association football
+Lasek et al. (2013)
+.
+While Elo is an algorithm rather than a probabilistic model, the Glicko model is derived as an approximation to a Bayesian dynamic paired comparison model. In this model, players are given an initial prior described by a univariate normal distribution. Glicko breaks time into periods, during which skills are assumed to be constant. Over time, these skills change according to a Markovian random walk, the next period a small normal jump away from the current period. The likelihood employed is the same as in Elo (Equation
+2
+). By approximating the likelihoods as one-dimensional Gaussians, the Glicko model is able to use Kalman filter equations to recursively update player skills. For certain assumptions, Glicko recovers Elo as a special case
+Glickman (1999)
+, and may be preferable if uncertainty information is of interest.
+Elo and Glicko are popular and accurate models of player skill over time, but they have a number of shortcomings which we aim to address in this paper. Firstly, Elo and Glicko both assume that given the most recent rating, updates are conditionally independent of all previous ratings. However, it may be that teams or players follow trends, and a downward correction in the previous period could make a second decline more likely, for example. Secondly, Glicko and Elo have no obvious way to incorporate covariates which may help prediction. For instance, in tennis, players’ skills are known to vary by playing surface, with some players performing better on one surface, such as clay, versus others (see for example
+McHale & Morton (2011)
+). While ad-hoc modifications can be made, such as fitting Elo models to each surface separately and then using a weighted sum to predict, a fully model-based approach would be preferable.
+In this paper, we present a way to use a Gaussian Process models (GPs)
+Rasmussen (2004)
+for paired comparison modelling. Through the use of different kernel functions, the GP allows the exploration of different latent dynamics which are not necessarily Markovian. In addition, the GP formulation allows covariates to be incorporated naturally. We derive an approximate inference scheme based on the Laplace approximation and sparse linear algebra which, while more computationally intensive than Elo and Glicko, is still able to fit models to thousands of matches in a matter of seconds. We evaluate the model on the 2018 season of ATP tennis matches and show that it has lower log loss than Elo and Glicko, particularly when incorporating surface covariates. We believe that the model could be an interesting alternative to Elo and Glicko for dynamic paired comparison modelling.
+1.2
+Other related work
+In addition to Elo and Glicko, there are some other related papers we would like to mention. This is not the first work that applies GPs to paired comparison modelling. In
+Chu & Ghahramani (2005)
+, the authors present a framework to use GPs for preference learning. Although their context is different to that presented here (relating for example to housing choices, rather than picking a winner in a sporting contest), this problem is related to the paired comparison problem we consider here. Another related work is “The Player Kernel”
+Maystre et al. (2016)
+, in which the authors use a GP together with a novel kernel function to predict outcomes in association football.
+Our contributions in this paper are to explore the use the GP as a dynamic rather than a static paired comparison model, as well as using sparse linear algebra to accelerate model fit.
+2
+Methods
+2.1
+Gaussian Process Prior
+Notation
+To distinguish vectors from scalars more easily and to be more consistent with the notation commonly used in the GP literature, we switch from the Greek letter
+θ
+\theta
+to the Roman letter
+f
+f
+for denoting player skill. Vectors will be denoted in lower-case bold face (e.g.
+f
+), matrices in upper-case bold face (e.g.
+K
+), and scalars in lower-case regular face (e.g.
+f
+i
+​
+j
+f_{ij}
+). Multivariate normal distributions with mean
+𝝁
+\boldsymbol{\mu}
+and covariance matrix
+𝚺
+\boldsymbol{\Sigma}
+on a random vector
+𝐱
+\mathbf{x}
+are denoted as
+𝒩
+⁡
+(
+𝐱
+|
+𝝁
+,
+𝚺
+)
+\mathcal{N}(\mathbf{x}|\boldsymbol{\mu},\boldsymbol{\Sigma})
+, and univariate normal distributions with mean
+μ
+\mu
+and variance
+σ
+2
+\sigma^{2}
+are written as
+𝒩
+⁡
+(
+x
+|
+μ
+,
+σ
+2
+)
+\mathcal{N}(x|\mu,\sigma^{2})
+.
+To understand the Gaussian Process prior, we first discuss the Glicko model. In Glicko, the prior on each player’s skill follows a random walk over time. Collecting player
+i
+i
+’s skills into the vector
+𝐟
+𝐢
+\mathbf{f_{i}}
+, the Glicko prior is:
+P
+⁡
+(
+𝐟
+𝐢
+)
+=
+𝒩
+⁡
+(
+f
+i
+,
+1
+|
+μ
+0
+,
+σ
+0
+2
+)
+​
+∏
+t
+=
+2
+n
+p
+𝒩
+⁡
+(
+f
+i
+,
+t
+|
+f
+i
+,
+t
+−
+1
+,
+η
+2
+)
+\displaystyle P(\mathbf{f_{i}})=\mathcal{N}(f_{i,1}|\mu_{0},\sigma_{0}^{2})\prod_{t=2}^{n_{p}}\mathcal{N}(f_{i,t}|f_{i,t-1},\eta^{2})
+(4)
+Here, the first term represents the prior distribution for the first period, and the second encodes the random walk dynamics, with the time index
+t
+t
+running from 2 until
+n
+p
+n_{p}
+, the total number of periods. Each player’s prior is independent, leading to the following joint prior:
+P
+⁡
+(
+𝐟
+)
+=
+∏
+i
+=
+1
+n
+p
+P
+⁡
+(
+𝐟
+𝐢
+)
+\displaystyle P(\mathbf{f})=\prod_{i=1}^{n_{p}}P(\mathbf{f_{i}})
+(5)
+where
+n
+p
+n_{p}
+is the number of players, and
+𝐟
+=
+(
+𝐟
+𝟏
+𝐓
+,
+…
+,
+𝐟
+𝐧
+𝐩
+𝐓
+)
+T
+\mathbf{f}=(\mathbf{f^{T}_{1}},...,\mathbf{f^{T}_{n_{p}}})^{T}
+is the concatenation of all player vectors
+𝐟
+𝐢
+\mathbf{f_{i}}
+.
+In the Gaussian Process model, we also assume that each player’s prior is independent. However, instead of the random walk prior, we place the following prior on
+𝐟
+𝐢
+\mathbf{f_{i}}
+:
+P
+⁡
+(
+𝐟
+𝐢
+)
+=
+𝒩
+⁡
+(
+𝐟
+𝐢
+|
+𝟎
+,
+𝐊
+𝐢
+)
+\displaystyle P(\mathbf{f_{i}})=\mathcal{N}(\mathbf{f_{i}}|\mathbf{0},\mathbf{K_{i}})
+(6)
+In other words, we place a multivariate normal prior on the skill vector
+𝐟
+𝐢
+\mathbf{f_{i}}
+with mean
+𝟎
+\mathbf{0}
+and covariance matrix
+𝐊
+𝐢
+\mathbf{K_{i}}
+. The entries of this covariance matrix are obtained by evaluating a kernel function
+k
+⁡
+(
+t
+,
+t
+′
+)
+k(t,t^{\prime})
+for each pair of time points. For example, the entry
+j
+,
+k
+j,k
+is given by:
+[
+𝐊
+𝐢
+]
+j
+​
+k
+=
+k
+⁡
+(
+t
+j
+,
+t
+k
+)
+\displaystyle[\mathbf{K_{i}}]_{jk}=k(t_{j},t_{k})
+(7)
+One popular kernel function is the radial basis function kernel (RBF):
+k
+⁡
+(
+t
+,
+t
+′
+)
+=
+α
+2
+​
+exp
+​
+(
+−
+(
+t
+−
+t
+′
+)
+2
+2
+​
+ρ
+2
+)
+\displaystyle k(t,t^{\prime})=\alpha^{2}\textrm{exp}\left(-\frac{(t-t^{\prime})^{2}}{2\rho^{2}}\right)
+(8)
+Here,
+α
+2
+\alpha^{2}
+governs the overall variance of the function and
+ρ
+\rho
+determines how quickly the covariance between different points decays with time: a large value of
+ρ
+\rho
+will result in the covariance falling off slowly leading to even distant points being positively correlated, whereas a small value will lead to
+k
+⁡
+(
+t
+,
+t
+′
+)
+k(t,t^{\prime})
+dropping to near zero even for small
+(
+t
+−
+t
+′
+)
+(t-t^{\prime})
+, resulting in points being almost independent.
+Several points are worth noting. Firstly, while the Glicko prior in Equation
+4
+divides time into periods, this is not required for the GP prior. Instead,
+𝐟
+𝐢
+\mathbf{f_{i}}
+has
+n
+i
+n_{i}
+elements, with
+n
+i
+n_{i}
+being the number of matches played by player
+i
+i
+, and
+𝐊
+𝐢
+\mathbf{K_{i}}
+is calculated using the kernel function evaluated using the time difference in days between matches.
+1
+1
+1
+In practice, we divide the time difference by 300 to put them on a smaller scale.
+Secondly, the kernel function can easily be extended to accept vectorial inputs. For example, the RBF kernel with so-called automatic relevance determination (ARD) can be written as follows:
+k
+(
+𝐱
+,
+𝐱
+′
+|
+α
+,
+𝝆
+)
+=
+α
+2
+exp
+(
+−
+∑
+k
+=
+1
+n
+c
+(
+x
+k
+−
+x
+k
+′
+)
+2
+2
+​
+ρ
+k
+2
+)
+\displaystyle k(\mathbf{x},\mathbf{x^{\prime}}|\alpha,\boldsymbol{\rho})=\alpha^{2}\ \textrm{exp}\left(-\sum_{k=1}^{n_{c}}\frac{(x_{k}-x^{\prime}_{k})^{2}}{2\rho_{k}^{2}}\right)
+(9)
+where
+n
+c
+n_{c}
+is the number of dimensions of
+𝐱
+\mathbf{x}
+. We will use this later to incorporate covariates other than time into the model.
+Finally, we would like to emphasise that in contrast to the random walk in Equation
+4
+, the GP prior in Equation
+6
+does not enforce conditional independence assumptions about players’ skill development over time. In the next section, we illustrate how the choice of different kernel functions leads to different assumptions about the evolution of player skills through time.
+2.2
+Gaussian Processes as priors over functions
+A useful way to think about Gaussian Processes is as priors over functions. In this section, we illustrate how the choice of kernel function affects this prior.
+Figure 1:
+Draws from an RBF prior with the variance
+α
+2
+\alpha^{2}
+fixed, and varying lengthscale
+ρ
+\rho
+. As the lengthscale increases, the function varies more slowly as a function of
+x
+x
+. The variance
+α
+2
+\alpha^{2}
+governs the range of values in the
+y
+y
+direction; here, they range roughly from -2 and 2, as expected for a normal distribution with variance 1.
+Figure
+1
+shows how the choice of lengthscale affects the draws from a GP with an RBF prior. As mentioned previously, shorter lengthscales lead to functions that vary more quickly, since the covariance between points drops off more quickly.
+So far, we have discussed only the RBF kernel. However, this is only one choice among many possible kernels. Figure
+2
+shows samples drawn from priors defined by some other kernel functions. The draws illustrate that while some kernels put prior weight on very smooth functions (particularly the RBF kernel), others instead look very jagged (Matérn 1/2 or Brownian kernel).
+Figure 2:
+Draws of different kernels for the same variance (1) and lengthscale (also 1). Despite similar parameters, the functions differ significantly in their appearance. The RBF kernel appears smoothest, followed by the Matérn 3/2 kernel. The Brownian and Matérn 1/2 kernels are very jagged.
+Kernel functions can also be combined. The two most common ways of combining kernels are addition and multiplication. Adding two kernel functions can be thought of as assuming that the function is a sum of two underlying functions with different properties (such as one fast-varying component and a slowly-varying one), while multiplication is particularly useful when combining kernels placed on different covariates. For example, we later multiply one kernel function placed on time with another placed on covariates, which leads to a covariance matrix that has its highest values for pairs of points that are both close in time and in terms of the covariates, and which takes on small values when either kernel function is small.
+2.3
+Model conditional on kernel hyperparameters
+In this section, we assume that a kernel function and its hyperparameters (lengthscale and variance) have been chosen (we will discuss how to choose these parameters in the next section), and focus on inference for the parameters
+𝐟
+\mathbf{f}
+given this kernel.
+Full Prior
+As discussed in section
+2.1
+, we place independent multivariate normal priors on each player’s skill vector
+𝐟
+𝐢
+\mathbf{f_{i}}
+(Equation
+6
+). Concatenating all these skill vectors into one long skill vector
+𝐟
+\mathbf{f}
+, and collecting the hyperparameters of the kernel into the vector
+𝜽
+\boldsymbol{\theta}
+, leads to another joint multivariate normal prior:
+P
+⁡
+(
+𝐟
+|
+𝜽
+)
+=
+𝒩
+⁡
+(
+𝐟
+|
+𝟎
+,
+𝐊
+)
+\displaystyle P(\mathbf{f}|\boldsymbol{\theta})=\mathcal{N}(\mathbf{f}|\mathbf{0},\mathbf{K})
+(10)
+Because of the assumption that each player’s skill is independent of each other player’s skill (Equation
+5
+), this kernel matrix
+𝐊
+\mathbf{K}
+is block diagonal, with each block given by each player’s kernel matrix
+𝐊
+𝐢
+\mathbf{K_{i}}
+.
+Likelihood
+We assume that we have a dataset of
+n
+n
+matches. The likelihood for match
+i
+i
+is the Bradley-Terry likelihood:
+P
+⁡
+(
+y
+i
+|
+f
+w
+⁡
+(
+i
+)
+,
+f
+l
+⁡
+(
+i
+)
+)
+=
+logit
+−
+1
+​
+(
+f
+w
+⁡
+(
+i
+)
+−
+f
+l
+⁡
+(
+i
+)
+)
+\displaystyle P(y_{i}|f_{w(i)},f_{l(i)})=\textrm{logit}^{-1}(f_{w(i)}-f_{l(i)})
+(11)
+Here,
+w
+⁡
+(
+i
+)
+w(i)
+maps the match
+i
+i
+to the index of the match winner in the concatenated vector
+𝐟
+\mathbf{f}
+, and
+l
+⁡
+(
+i
+)
+l(i)
+maps to the loser. Since each match involves two players, the full vector
+𝐟
+\mathbf{f}
+has
+2
+​
+n
+2n
+elements – two entries for each match. The full likelihood factors over matches, so that:
+P
+⁡
+(
+𝐲
+|
+𝐟
+)
+=
+∏
+i
+=
+1
+n
+logit
+−
+1
+​
+(
+f
+w
+⁡
+(
+i
+)
+−
+f
+l
+⁡
+(
+i
+)
+)
+\displaystyle P(\mathbf{y}|\mathbf{f})=\prod_{i=1}^{n}\textrm{logit}^{-1}(f_{w(i)}-f_{l(i)})
+(12)
+Note that conditional on
+𝐟
+\mathbf{f}
+, the likelihood is independent of the kernel hyperparameters
+𝜽
+\boldsymbol{\theta}
+.
+Posterior
+The posterior
+P
+⁡
+(
+𝐟
+|
+𝐲
+,
+𝜽
+)
+P(\mathbf{f}|\mathbf{y},\boldsymbol{\theta})
+is given by Bayes’ rule:
+P
+⁡
+(
+𝐟
+|
+𝐲
+,
+𝜽
+)
+=
+P
+⁡
+(
+𝐟
+|
+𝜽
+)
+​
+P
+​
+(
+𝐲
+|
+𝐟
+)
+P
+⁡
+(
+𝐲
+|
+𝜽
+)
+\displaystyle P(\mathbf{f}|\mathbf{y},\boldsymbol{\theta})=\frac{P(\mathbf{f}|\boldsymbol{\theta})P(\mathbf{y}|\mathbf{f})}{P(\mathbf{y}|\boldsymbol{\theta})}
+(13)
+2.4
+Approximate inference given kernel hyperparameters
+The non-Gaussian Bradley-Terry likelihood in Equation
+12
+is not conjugate to the Gaussian prior, which means that there is no closed-form expression for the posterior in Equation
+13
+. Instead, we resort to the Laplace approximation to compute an approximate posterior
+Rasmussen (2004)
+.
+The Laplace approximation first finds the minimum of the negative log posterior and then uses a Taylor expansion to approximate the function with a multivariate normal distribution. To find the mode, we initialise each element of
+𝐟
+\mathbf{f}
+to zero and proceed using Newton’s method until convergence:
+𝐟
+′
+=
+𝐟
+−
+𝐇
+−
+1
+​
+𝐣
+\displaystyle\mathbf{f^{\prime}}=\mathbf{f}-\mathbf{H}^{-1}\mathbf{j}
+(14)
+Here,
+𝐇
+−
+1
+\mathbf{H}^{-1}
+is the inverse of the Hessian of the negative log posterior evaluated at
+𝐟
+\mathbf{f}
+, and
+𝐣
+\mathbf{j}
+is its Jacobian.
+Calculating the update in Equation
+14
+initially seems prohibitively expensive: since
+𝐟
+\mathbf{f}
+has dimension
+2
+​
+n
+2n
+, twice the number of matches, the Hessian can become very large. In tennis, roughly 2000 matches are played on the men’s professional ATP tour every year. Calculating
+𝐇
+−
+1
+​
+𝐣
+\mathbf{H}^{-1}\mathbf{j}
+would thus seem to involve
+𝒪
+⁡
+(
+(
+2
+​
+n
+)
+3
+)
+\mathcal{O}((2n)^{3})
+operations. However, we will show that the Hessian of the negative log posterior is in fact very sparse, which allows faster computation.
+The negative log posterior, as a function of
+𝐟
+\mathbf{f}
+, is:
+−
+log
+​
+(
+P
+​
+(
+𝐟
+|
+𝐲
+,
+𝜽
+)
+)
+\displaystyle-\textrm{log}(P(\mathbf{f}|\mathbf{y},\boldsymbol{\theta}))
+=
+−
+log
+​
+P
+​
+(
+𝐟
+|
+𝜽
+)
+−
+log
+​
+P
+​
+(
+𝐲
+|
+𝐟
+)
+\displaystyle=-\textrm{log}P(\mathbf{f}|\boldsymbol{\theta})-\textrm{log}P(\mathbf{y}|\mathbf{f})
+(15)
+=
+1
+2
+​
+𝐟
+T
+​
+𝐊
+−
+1
+​
+𝐟
+−
+log
+​
+P
+​
+(
+𝐲
+|
+𝐟
+)
+\displaystyle=\frac{1}{2}\mathbf{f}^{T}\mathbf{K}^{-1}\mathbf{f}-\textrm{log}P(\mathbf{y}|\mathbf{f})
+(16)
+where we have dropped terms that are constant as a function of
+𝐟
+\mathbf{f}
+. The Jacobian of this quantity is:
+−
+∇
+log
+​
+(
+P
+​
+(
+𝐟
+|
+𝐲
+,
+𝜽
+)
+)
+\displaystyle-\nabla\textrm{log}(P(\mathbf{f}|\mathbf{y},\boldsymbol{\theta}))
+=
+𝐊
+−
+1
+𝐟
+−
+∇
+log
+P
+(
+𝐲
+|
+𝐟
+)
+=
+𝐣
+\displaystyle=\mathbf{K}^{-1}\mathbf{f}-\nabla\textrm{log}P(\mathbf{y}|\mathbf{f})=\mathbf{j}
+(17)
+And the Hessian is:
+−
+∇
+∇
+log
+(
+P
+(
+𝐟
+|
+𝐲
+,
+𝜽
+)
+)
+\displaystyle-\nabla\nabla\textrm{log}(P(\mathbf{f}|\mathbf{y},\boldsymbol{\theta}))
+=
+𝐊
+−
+1
+−
+∇
+∇
+log
+P
+(
+𝐲
+|
+𝐟
+)
+=
+𝐇
+\displaystyle=\mathbf{K}^{-1}-\nabla\nabla\textrm{log}P(\mathbf{y}|\mathbf{f})=\mathbf{H}
+(18)
+Since
+𝐊
+\mathbf{K}
+is block diagonal,
+𝐊
+−
+𝟏
+\mathbf{K^{-1}}
+is also block diagonal and can be obtained cheaply by separately inverting each player’s covariance matrix.
+So far, we have been following the derivation in
+Rasmussen (2004)
+exactly. However, while their derivation assumes that the Hessian of the log likelihood is diagonal, this is not the case for the Bradley-Terry likelihood. The log likelihood is:
+log
+​
+P
+​
+(
+𝐲
+|
+𝐟
+)
+=
+∑
+k
+=
+1
+n
+g
+⁡
+(
+f
+w
+⁡
+(
+k
+)
+−
+f
+l
+⁡
+(
+k
+)
+)
+\displaystyle\textrm{log}P(\mathbf{y}|\mathbf{f})=\sum_{k=1}^{n}g(f_{w(k)}-f_{l(k)})
+(19)
+where we have set
+log
+​
+(
+logit
+−
+1
+​
+(
+x
+)
+)
+=
+g
+⁡
+(
+x
+)
+\textrm{log}(\textrm{logit}^{-1}(x))=g(x)
+for notational convenience. The partial derivative of the log likelihood with respect to a single element
+f
+i
+f_{i}
+is:
+∂
+log
+​
+P
+​
+(
+𝐲
+|
+𝐟
+)
+∂
+f
+i
+\displaystyle\frac{\partial\textrm{log}P(\mathbf{y}|\mathbf{f})}{\partial{}f_{i}}
+=
+g
+′
+​
+(
+f
+w
+⁡
+(
+k
+)
+−
+f
+l
+⁡
+(
+k
+)
+)
+​
+if w(k) = i or
+\displaystyle=g^{\prime}(f_{w(k)}-f_{l(k)})\textrm{ if w(k) = i or}
+(20)
+=
+−
+g
+′
+​
+(
+f
+w
+⁡
+(
+k
+)
+−
+f
+l
+⁡
+(
+k
+)
+)
+​
+if l(k) = i
+\displaystyle=-g^{\prime}(f_{w(k)}-f_{l(k)})\textrm{ if l(k) = i}
+(21)
+In other words, only one term in the sum in Equation
+19
+remains after differentiation, corresponding to one match, and the sign changes depending on whether the player corresponding to element
+i
+i
+was the winner or loser in the match.
+In both cases, the second derivatives are
+∂
+2
+log
+​
+P
+​
+(
+𝐲
+|
+𝐟
+)
+∂
+f
+i
+2
+=
+g
+′′
+​
+(
+f
+w
+⁡
+(
+k
+)
+−
+f
+l
+⁡
+(
+k
+)
+)
+​
+where w(k) = i or l(k) = i
+\displaystyle\frac{\partial^{2}\textrm{log}P(\mathbf{y}|\mathbf{f})}{\partial{}f_{i}^{2}}=g^{\prime\prime}(f_{w(k)}-f_{l(k)})\textrm{ where w(k) = i or l(k) = i }
+(22)
+and
+∂
+2
+log
+​
+P
+​
+(
+𝐲
+|
+𝐟
+)
+∂
+f
+i
+​
+f
+j
+\displaystyle\frac{\partial^{2}\textrm{log}P(\mathbf{y}|\mathbf{f})}{\partial{}f_{i}f_{j}}
+=
+−
+g
+′′
+​
+(
+f
+w
+⁡
+(
+k
+)
+−
+f
+l
+⁡
+(
+k
+)
+)
+​
+if
+w
+⁡
+(
+k
+)
+∈
+i
+,
+j
+and
+l
+⁡
+(
+k
+)
+∈
+i
+,
+j
+,
+i
+≠
+j
+\displaystyle=-g^{\prime\prime}(f_{w(k)}-f_{l(k)})\textrm{ if $w(k)\in i,j$ and $l(k)\in i,j$, $i\neq j$ }
+(23)
+=
+0
+​
+otherwise.
+\displaystyle=0\textrm{ otherwise.}
+(24)
+In plain English, even though the Hessian of the log likelihood is of size
+2
+​
+n
+×
+2
+​
+n
+2n\times 2n
+, it only has two non-zero elements per row: one on the diagonal, and one where
+i
+i
+and
+j
+j
+correspond to the winner and loser of a match, respectively. This leads to
+4
+​
+n
+4n
+total non-zero entries.
+Since
+𝐊
+−
+1
+\mathbf{K}^{-1}
+is sparse, and
+−
+∇
+∇
+log
+P
+(
+𝐲
+|
+𝐟
+)
+-\nabla\nabla\textrm{log}P(\mathbf{y}|\mathbf{f})
+is sparse, the Hessian
+𝐇
+\mathbf{H}
+is sparse, too. In addition,
+𝐇
+\mathbf{H}
+is positive definite (we do not prove this here), which has two advantages: firstly, the negative log posterior function is convex, which makes the Newton iterations converge very quickly; and secondly, we can use a sparse Cholesky decomposition to efficiently solve each Newton update step
+𝐇
+−
+1
+​
+𝐣
+\mathbf{H}^{-1}\mathbf{j}
+. We call the
+CHOLMOD
+library
+Chen et al. (2008)
+from python using the
+scikit-sparse
+library to accomplish this.
+Once the posterior mode is found, the Laplace approximation to the posterior
+P
+⁡
+(
+𝐟
+|
+𝐲
+,
+𝜽
+)
+P(\mathbf{f}|\mathbf{y},\boldsymbol{\theta})
+is given by:
+Q
+⁡
+(
+𝐟
+|
+𝐲
+,
+𝜽
+)
+=
+𝒩
+⁡
+(
+𝐟
+|
+𝐟
+^
+,
+𝐇
+−
+1
+)
+\displaystyle Q(\mathbf{f}|\mathbf{y},\boldsymbol{\theta})=\mathcal{N}(\mathbf{f}|\mathbf{\hat{f}},\mathbf{H}^{-1})
+(25)
+where
+𝐟
+^
+\mathbf{\hat{f}}
+is the mode of the negative log posterior, and
+𝐇
+\mathbf{H}
+is its Hessian, evaluated at
+𝐟
+^
+\mathbf{\hat{f}}
+.
+Prediction
+Once again following
+Rasmussen (2004)
+, under the Laplace approximation, the predictive mean
+f
+∗
+f_{*}
+at a new input
+𝐱
+∗
+\mathbf{x_{*}}
+is:
+𝔼
+q
+[
+f
+∗
+|
+𝐗
+,
+𝐲
+,
+𝐱
+∗
+]
+=
+𝐤
+∗
+T
+𝐊
+−
+1
+𝐟
+^
+\displaystyle\mathbb{E}_{q}[f_{*}|\mathbf{X},\mathbf{y},\mathbf{x}_{*}]=\mathbf{k}_{*}^{T}\mathbf{K}^{-1}\mathbf{\hat{f}}
+(26)
+where
+𝐤
+∗
+\mathbf{k_{*}}
+is the vector obtained by evaluating the kernel function between all “training” inputs
+𝐗
+\mathbf{X}
+(a
+2
+​
+n
+×
+1
+2n\times 1
+matrix if only time is used, and
+2
+​
+n
+×
+n
+c
+2n\times n_{c}
+in the general case when covariates are used) and the “test” input
+𝐱
+∗
+\mathbf{x}_{*}
+. The predictive variance at
+f
+∗
+f_{*}
+is:
+𝕍
+q
+[
+f
+∗
+|
+𝐗
+,
+𝐲
+,
+𝐱
+∗
+]
+=
+k
+(
+𝐱
+∗
+,
+𝐱
+∗
+)
+−
+𝐤
+∗
+T
+𝐊
+−
+1
+𝐤
+∗
++
+𝐤
+∗
+T
+𝐊
+−
+1
+𝐇
+−
+1
+𝐊
+−
+1
+𝐤
+∗
+\displaystyle\mathbb{V}_{q}[f_{*}|\mathbf{X},\mathbf{y},\mathbf{x_{*}}]=k(\mathbf{x_{*}},\mathbf{x_{*}})-\mathbf{k_{*}}^{T}\mathbf{K}^{-1}\mathbf{k_{*}}+\mathbf{k_{*}}^{T}\mathbf{K}^{-1}\mathbf{H}^{-1}\mathbf{K}^{-1}\mathbf{k_{*}}
+(27)
+2.5
+Selecting hyperparameters using the approximate log marginal likelihood
+In the previous section, we derived a procedure to approximate the posterior
+given
+the kernel hyperparameters
+𝜽
+\boldsymbol{\theta}
+, such as lengthscale and variance. We still require a procedure to set these. As is common in the GP literature, we choose these by maximising the log marginal likelihood of the data given the hyperparameters,
+P
+⁡
+(
+𝐲
+|
+𝜽
+)
+P(\mathbf{y}|\boldsymbol{\theta})
+Rasmussen (2004)
+.
+The approximate log marginal likelihood under the Laplace approximation is given by:
+log
+​
+Q
+​
+(
+𝐲
+|
+𝜽
+)
+=
+log
+​
+P
+​
+(
+𝐟
+^
+|
+𝜽
+)
++
+log
+​
+P
+​
+(
+𝐲
+|
+𝐟
+^
+)
++
+n
+​
+log
+​
+(
+2
+​
+π
+)
+−
+1
+2
+​
+log
+​
+|
+𝐇
+|
+\displaystyle\textrm{log}Q(\mathbf{y}|\boldsymbol{\theta})=\textrm{log}P(\mathbf{\hat{f}}|\boldsymbol{\theta})+\textrm{log}P(\mathbf{y}|\mathbf{\hat{f}})+n\textrm{log}(2\pi)-\frac{1}{2}\textrm{log}|\mathbf{H}|
+(28)
+where
+n
+n
+is the number of matches as before. The first two terms are the unnormalised log posterior and the last term can once again be calculated efficiently using the sparse Cholesky decomposition of the matrix
+𝐇
+\mathbf{H}
+. In practice, we drop the
+n
+​
+log
+​
+(
+2
+​
+π
+)
+n\textrm{log}(2\pi)
+term since it does not depend on the model.
+Ideally, we would derive the gradients of this log marginal likelihood and maximise it using these. However, the gradients involve third derivatives of the log likelihood, which are relatively straightforward to compute when the Hessian of the log likelihood is diagonal, but more difficult to derive for the Bradley-Terry likelihood.
+The number of hyperparameters is small, however: the models we consider later have at most 8 hyperparameters. We thus maximise the log marginal likelihood using Bayesian Optimisation, using the python package
+GPyOpt
+González (2016)
+. Given a function and search bounds for its parameters, Bayesian Optimisation maximises the function by exploring the search space. It does this by fitting surrogate GP models to the function evaluations, trading off exploitation (searching near the current best set of parameters) with exploration (reducing overall uncertainty about the function).
+We compare the results obtained by Bayesian Optimisation with randomly exploring the search space. To perform the random search, we uniformly sample from the bounds of each parameter, evaluate the function at the point sampled, and repeat this procedure, recording the best parameter values and function value found.
+2.6
+Experiments
+2.6.1
+Validation dataset and training procedure
+We use the 2018 season of the ATP, the men’s professional tennis circuit, to evaluate the model’s performance. The data was obtained using the
+OnCourt
+software
+2
+2
+2
+http://www.oncourt.info/download.html
+. We discard the unusual Davis Cup and ATP Next Gen Finals tournaments, as well as limiting the dataset to the tour level, removing lower-tier Challenger and Qualification events. This resulted in a validation dataset of 2,623 matches. The majority of matches were played on hard courts (1,072), followed by clay (810), indoor hard (417) and grass courts (324).
+We fit the GP models beginning in 2016 and predict each match in an iterative fashion: to predict the first day of matches, we fit the model using all data up to that day. After predicting, we include the match results of this day in the training set to predict the next day, and so on, until all matches have been predicted.
+2.6.2
+Kernel choices
+The framework derived in this paper is very general, and it is not obvious which choice of kernel will perform best for tennis. Here, we experiment with three different choices:
+Experiment 1
+In the first experiment, we fit a single Matérn 3/2 kernel to the data. This kernel has two free parameters: the standard deviation and lengthscale. We set the search bounds of the standard deviation to be (0.01, 2), and (0.1, 10) for the lengthscale, corresponding to a lengthscale between 30 and 3,000 days.
+Experiment 2
+We exploit the fact that two kernel functions added together are also a valid kernel function by combining one Matérn 1/2 kernel and one Matérn 3/2 kernel. As Figure
+2
+shows, the Matérn 3/2 kernel is relatively smooth, while the 1/2 kernel is quite jagged. We hypothesised that perhaps a tennis player’s skill evolution could be modelled by a slow smooth component and a faster, more jagged component, hence this choice of kernels. The combined kernel has four free parameters – lengthscale and standard deviation for each kernel – which are given the same bounds as the single kernel in experiment 1.
+Experiment 3
+Finally, we investigate the utility of adding surface covariates to the model. We do this by one-hot encoding the surfaces into a
+2
+​
+n
+×
+4
+2n\times 4
+matrix and placing an RBF kernel with automatic relevance determination (see Equation
+9
+) on this matrix. We then combine this kernel with a single Matérn 3/2 kernel on the time dimension by multiplying the kernels together. The resulting kernel has six hyperparameters: two for the Matérn kernel on time (lengthscale and standard deviation), and four lengthscales for the surfaces.
+2.6.3
+Kernel hyperparameter fitting
+To fit the hyperparameters for each experiment, we maximise the log marginal likelihood using the 2016 and 2017 seasons. To investigate how many evaluations are required, we set the number of iterations in Bayesian Optimisation to a grid of 10, 50, 100 and 200, and run the optimisation 10 times for each. Each time, we record the optimal hyperparameters that were found as well as the best function value. To investigate the benefit of Bayesian Optimisation, we also run the same experiments using random search.
+2.6.4
+Baseline models
+We choose Elo and Glicko as the baseline models. Elo has a single hyperparameter (the learning rate
+k
+k
+); Glicko has two (the initial standard deviation and the period-to-period variance). We set these by optimising the log likelihood on the training set. For Glicko, a period length has to be chosen; we found that a period length of 1 performed best.
+Previous work suggests that Elo performs better with earlier start dates
+Kovalchik (2016)
+. We thus also fit Elo and Glicko from the very start of the dataset (August 2002) to compare against the 2016 start.
+2.6.5
+Evaluation metrics
+We compare the models using two metrics: log loss and accuracy. Log loss is the negative mean log likelihood:
+log loss
+(
+y
+,
+p
+)
+=
+−
+1
+n
+∑
+i
+=
+1
+n
+[
+y
+i
+log
+(
+p
+i
+)
++
+(
+1
+−
+y
+i
+)
+log
+(
+1
+−
+p
+i
+)
+]
+\displaystyle\textrm{log loss}(\textbf{y},\textbf{p})=-\frac{1}{n}\sum_{i=1}^{n}\left[y_{i}\textrm{log}(p_{i})+(1-y_{i})\textrm{log}(1-p_{i})\right]
+(29)
+where
+n
+n
+is the number of matches in the evaluation set,
+y
+is the vector of outcomes, and
+p
+is the vector of probabilities predicted by the model. Log loss provides a good estimate of model calibration, penalising the model harshly for outcomes it considers unlikely.
+Accuracy is simply the fraction of binary outcomes correctly predicted by the model:
+accuracy
+​
+(
+y
+,
+p
+)
+=
+1
+n
+​
+∑
+i
+=
+1
+n
+[
+y
+i
+​
+𝕀
+​
+(
+p
+i
+>
+0.5
+)
++
+(
+1
+−
+y
+i
+)
+​
+𝕀
+​
+(
+p
+i
+≤
+0.5
+)
+]
+\displaystyle\textrm{accuracy}(\textbf{y},\textbf{p})=\frac{1}{n}\sum_{i=1}^{n}\left[y_{i}\mathbb{I}(p_{i}>0.5)+(1-y_{i})\mathbb{I}(p_{i}\leq 0.5)\right]
+(30)
+where
+𝕀
+\mathbb{I}
+is the indicator function and
+y
+and
+p
+are defined as before. We include accuracy as a metric because it is more easily interpretable than log loss.
+2.7
+Speed test
+To investigate how well the model scales with more data, we record the time the model takes to fit datasets containing varying numbers of matches
+n
+n
+, ranging from
+n
+=
+1306
+n=1306
+(June 2017 - December 2017) to
+n
+=
+13,159
+n=\textrm{13,159}
+(January 2013 - December 2017). We run each set ten times and record the mean time taken in seconds. Each time, we record how long it takes to find the posterior mode
+𝐟
+^
+\hat{\mathbf{f}}
+plus the time taken to calculate the approximate log marginal likelihood. We ran this speed test on a 2017 MacBook Pro with a 3.1GHz Intel Core i5 and 16GB of RAM.
+3
+Results
+3.1
+Speed
+Figure
+3
+shows the time taken to find the mode
+𝐟
+^
+\mathbf{\hat{f}}
+of the posterior plus the calculation of the approximate log marginal likelihood for varying numbers of matches. The increase in time taken closely resembles the quadratic function
+3.25
+⋅
+10
+−
+7
+​
+n
+2
+3.25\cdot 10^{-7}n^{2}
+, where
+n
+n
+is the number of matches. The dataset used to optimise the hyperparameters consisted of 5,323 matches, which took 7.8 seconds to fit. The largest dataset tested contained 13,159 matches and took 56.2 seconds.
+Figure 3:
+Time required to fit datasets containing a varying number of matches. The scaling seems to be very well described by a quadratic fit of the form
+3.25
+⋅
+10
+−
+7
+​
+n
+2
+3.25\cdot 10^{-7}n^{2}
+, shown in yellow, where
+n
+n
+is the number of matches.
+3.2
+Hyperparameter optimisation
+Figure
+4
+shows the result of fitting the hyperparameters to the kernels in experiments (1) to (3) outlined previously.
+Figure 4:
+Results from the hyperparameter optimisation. The y-axis shows the negative marginal log likelihood (lower indicates better fit); the x-axis the number of iterations used in the search. “BO” is short for Bayesian Optimisation; “Random” for random search. The single Matérn kernel and combined kernels in panels 1 and 2 converge to very similar values. Adding the surface information appears to improve the fit (panel 3).
+In Experiment (1), the single Matérn 3/2 kernel, both approaches appear to converge to an optimum fairly quickly. After 10 iterations, there is some variation in the results found, but this decreases for 50 iterations, and for the runs searching for 100 and 200 iterations, random search and Bayesian Optimisation both find values close to 13116.8. The results for Bayesian Optimisation are slightly lower in general, and for 50 iterations, random search has a notably worse run returning a negative marginal log likelihood of around 13120, while all runs of Bayesian Optimisation return similar optima. The optimum lengthscale found was 5.29 (about 1,587 days), and the standard deviation was 0.882.
+Experiment (2), the combined Matérn 1/2 and 3/2 kernels, appears to result in a similar optimum as experiment (1): the best value found was 13116.4. This corresponded to setting the Matérn 3/2 kernel to a lengthscale of 9.87 (2,961 days) with a standard deviation of 0.687, and the 1/2 kernel to a lengthscale of 7.95 (2,385 days) with standard deviation of 0.571. Both random search and Bayesian Optimisation return suboptimal outliers for 50 and 100 iterations in some of the 10 runs, but return similar results after 200 iterations and appear to have settled close to an optimal value.
+Experiment (3), combining a Matérn 3/2 kernel on time with an ARD RBF kernel on surface, appears harder to optimise, with neither method honing in exactly on an optimum even after 200 iterations. The best value found was 13109.3, found by Bayesian Optimisation after 200 iterations, which is an outlier in the box plot. This is lower than the negative marginal log likelihood found for experiments (1) and (2). The optimum lengthscale for the Matérn 3/2 kernel was 5.25 and the standard deviation 0.897, which is very similar to the kernel in experiment (1). The lengthscales for clay, grass, hard and indoor hard were 2.57, 2.31, 7.47 and 2.08, respectively.
+We convert these lengthscales to the correlation matrix shown in Table
+5
+using Equation
+9
+. Correlations range from 72% (grass and indoor hard) to 81% (hard and clay). Hard court results are estimated to be most correlated to other surfaces, with correlations ranging from 78% (indoor hard) to 81% (clay).
+clay
+grass
+hard
+indoor_hard
+clay
+1.00
+0.75
+0.81
+0.73
+grass
+0.75
+1.00
+0.80
+0.72
+hard
+0.81
+0.80
+1.00
+0.78
+indoor_hard
+0.73
+0.72
+0.78
+1.00
+Figure 5:
+Correlation matrix implied by the lengthscales found for the ARD RBF kernel. Performances on all surfaces are strongly correlated, with values ranging from 72% (grass and indoor hard) to 81% (hard and clay).
+3.3
+Evaluation on 2018 ATP season
+Table
+6
+shows the metrics of each model on the 2018 evaluation set. The log loss scores range from 0.631 (GP with surface covariates) to 0.639 (Elo starting in 2016). Accuracy scores range from 62.8% (Elo and Glicko with a 2016 start) to 64.4% (Elo with 2002 start).
+Starting Elo and Glicko in 2002 improves their log loss (0.637 to 0.635 for Glicko, 0.639 to 0.638 for Elo) and accuracy (62.8% for both to 64.1% for Glicko and 64.4% for Elo). Even with the 2002 start, the log loss is higher than for the GP models, but accuracy is slightly higher (64.4% for Elo compared to 63.7% for the best GP model).
+Log loss
+Accuracy
+Model
+GP Matérn 3/2 + Surface 2016
+0.631
+0.636
+GP Matérn 3/2 2016
+0.634
+0.637
+GP Matérn 3/2 + 1/2 2016
+0.634
+0.634
+Glicko 2002
+0.635
+0.641
+Glicko 2016
+0.637
+0.628
+Elo 2002
+0.638
+0.644
+Elo 2016
+0.639
+0.628
+Figure 6:
+Evaluation metrics on the 2018 evaluation set. On log loss, the surface-specific GP performs best across all models (0.631) and the GP models outperform all Elo and Glicko models, even when fit starting in 2002. On accuracy, Elo and Glicko perform better when starting in 2002, with the Elo model showing the best accuracy (64.4%). Among the models fit with a 2016 start, the Matérn 3/2 model has the best accuracy (63.7%).
+3.4
+Prediction example compared to Elo and Glicko
+Figure
+7
+compares the predictions made by the GP with the single Matérn 3/2 kernel against Elo and Glicko on the 2018 season for an example player (Feliciano Lopez). We compare the predictions on the Elo scale, rather than the logit scale, by multiplying the logits by
+400
+log
+​
+(
+10
+)
+\frac{400}{\textrm{log}(10)}
+and adding
+1500
+1500
+. This transformation can be straightforwardly derived from equations
+1
+and
+2
+.
+Elo, Glicko and the GP model make similar adjustments to Lopez’s rating over the course of the season. The credible interval is slightly narrower than that predicted by Glicko, and the GP rates Feliciano Lopez somewhat more highly than Glicko and Elo throughout the season.
+Figure 7:
+An example of the predictions made by the Matérn 3/2 GP model on the 2018 evaluation set compared to Elo and Glicko. The shaded regions show credible intervals defined by two standard deviations from the approximate posterior for Glicko and the GP model (Elo does not provide uncertainty estimates).
+3.5
+Illustration of covariates
+We fit the model from 2012 onwards to illustrate how the surface covariates affect the predictions of the latent ability. Figure
+8
+shows an example of the surface abilities inferred for Rafael Nadal, one of the most successful players in recent years. The figure shows the posterior estimates of Nadal’s skill with the model fit to the entire dataset. These estimates are notably smoother than those shown in Figure
+7
+. This is because figure
+7
+displays the predicted skill using only information leading up to each match, while Figure
+8
+uses both information before and after the match.
+The figure shows that differences between surfaces are large, with Nadal’s rating highest on clay, followed by hard courts, indoor hard courts, and finally grass courts. Overall, the shape of the rating evolution is similar for all court types, but Nadal’s grass court ability is estimated to have improved more rapidly since 2017 than his skill on indoor hard courts.
+Figure 8:
+Rafael Nadal’s ratings on different surfaces over time, as inferred by the surface-specific model. The bands show credible intervals corresponding to two standard deviations. The differences between surfaces are considerable, with Nadal’s mean clay ability estimated to be around 2,200 points in 2013, compared to a grass rating of around 1,950. The gaps between skills are relatively constant, except the grass court rating, which appears to be rising in recent years.
+Gilles Muller, shown in Figure
+9
+, is another striking example. In 2012, his skills on different surfaces were estimated to be similar, but over time, his grass court rating improved dramatically.
+Figure 9:
+Gilles Muller’s ratings on different surfaces over time, as inferred by the surface-specific model. As in Figure
+8
+, the bands show credible intervals corresponding to two standard deviations.
+3.6
+Ranking example
+Table
+10
+illustrates the model’s ability to rank players. The rankings displayed were obtained by fitting the surface-specific GP model starting in 2016 up to the end of 2018 and predicting each player’s rating at the end of the 2018 season (31st December 2018). Rafael Nadal, Novak Djokovic and Roger Federer are ranked highly on all four surfaces, with Nadal ranked first on three of the four. Nadal’s ranking is highest on clay (2061), where he is ranked almost 150 points ahead of Novak Djokovic (1916), and lowest on indoor hard (1932), where Federer is ranked slightly ahead (1933). Standard deviations of the ratings appear to be highest on grass courts (72 to 83) and lowest on hard courts (58 to 70), which is likely a consequence of there being considerably fewer grass court matches in the dataset than hard court matches.
+Table
+10
+also highlights differing surface specialisations among the top players. Dominic Thiem is ranked sixth on clay courts but is ranked outside the top 8 on all other surfaces. Novak Djokovic, on the other hand, has relatively consistent ratings across all surfaces.
+mean
+sd
+Player
+Rafael Nadal
+2061
+73
+Novak Djokovic
+1916
+68
+Roger Federer
+1914
+74
+Alexander Zverev
+1882
+64
+Juan Martin Del Potro
+1848
+70
+Dominic Thiem
+1841
+62
+Kei Nishikori
+1808
+66
+Marin Cilic
+1793
+67
+(a)
+Clay
+mean
+sd
+Player
+Rafael Nadal
+1956
+83
+Novak Djokovic
+1935
+73
+Roger Federer
+1925
+74
+Juan Martin Del Potro
+1848
+77
+Marin Cilic
+1831
+72
+Alexander Zverev
+1814
+73
+Kevin Anderson
+1794
+72
+Karen Khachanov
+1780
+73
+(b)
+Grass
+mean
+sd
+Player
+Rafael Nadal
+1997
+70
+Roger Federer
+1958
+66
+Novak Djokovic
+1949
+63
+Juan Martin Del Potro
+1893
+59
+Alexander Zverev
+1840
+58
+Kevin Anderson
+1808
+58
+Kei Nishikori
+1808
+61
+Marin Cilic
+1803
+61
+(c)
+Hard
+mean
+sd
+Player
+Roger Federer
+1933
+74
+Rafael Nadal
+1932
+88
+Juan Martin Del Potro
+1898
+76
+Novak Djokovic
+1897
+77
+Alexander Zverev
+1822
+69
+Kei Nishikori
+1811
+66
+Kevin Anderson
+1789
+67
+Marin Cilic
+1783
+72
+(d)
+Indoor hard
+Figure 10:
+Ratings at the end of the 2018 ATP season (31st December 2018), obtained from the surface-specific model with a fit starting in 2016. Each subtable shows the eight players with the highest means on each surface. For each player, their mean rating and its standard deviation (“sd”) is displayed.
+4
+Discussion
+4.1
+Setting kernel hyperparameters
+In Figure
+4
+, we compared two strategies for selecting the kernel hyperparameters: random search and Bayesian Optimisation. Both seemed to consistently find an optimum in the case of the single Matérn and two Matérn kernels using 200 iterations, but the additional parameters involved in the surface kernel seemed challenging, with the best value being an outlier after 200 runs. This suggests that the 200 iterations may not have been sufficient to ensure convergence, and longer runs may be desirable.
+In the comparison of random search and Bayesian Optimisation, Bayesian Optimisation tended to perform slightly better, finding the optimum more quickly for experiments (1) and (2), and performing similarly in experiment (3). We used the default arguments in
+GPy
+, which may not have been ideal: they consist of using point estimates to fit the hyperparameters of the surrogate model and use a particular acquisition function to choose where to evaluate the function next. Another inference method, such as Markov Chain Monte Carlo, as well as different acquisition functions, may perform better.
+Overall, having to select the hyperparameters using gradient-free optimisation likely limits the number of parameters that can be fit within a reasonable length of time. Future work may include tackling the derivation of gradients, which would allow a much larger number of covariates to be fit.
+4.2
+Choosing the best kernel
+As discussed in section
+2.2
+, the Gaussian Process framework allows modellers to experiment with a large variety of kernels to best fit their data. This freedom however can also make it difficult to choose which combination of kernels to use. For the tennis prediction example, we experimented with three different kernels, but other combinations may perform better. It would be interesting to attempt to adapt the automatic kernel discovery work in
+Duvenaud (2014)
+to the GP presented here to investigate whether the automated procedure can find better models.
+4.3
+Comparison against Elo and Glicko
+We believe that the model presented may be preferable to Elo and Glicko in certain situations. While it is more computationally expensive, the ability to fit thousands of matches in seconds should be sufficient for many modelling applications. It is also somewhat harder to implement, but we hope to mitigate this by providing code to fit the model online
+3
+3
+3
+https://github.com/martiningram/paired-comparison-gp-laplace
+.
+Aside from these drawbacks, the model has a number of advantages. It performs somewhat better on the evaluation dataset presented in the paper, particularly when adding surface covariates. Given that Elo outperformed other published prediction models in a previous review of tennis models
+Kovalchik (2016)
+, we believe this makes it quite a strong prediction model.
+We also believe that the ability to combine kernels could be interesting to explore further. In tennis, this seemed to add little to model fit, with both kernels set to very long lengthscales (2,961 and 2,385 days) and similar values of the marginal log likelihood. However, this may be different in other sports.
+Finally, the ability to include covariates sets the model apart from the baseline models. Adding surface covariates improved model fit considerably on the tennis dataset, and other covariates may further improve model fit. In other sports, other covariates may be of interest; for example, in chess, matches are sometimes played with different time limits, which may be analogous to the surface effect in tennis.
+Acknowledgements
+This research was partially supported by the Melbourne Research Scholarship (MRS).
+References
+Bradley ((1984))
+Bradley, R.A.
+(1984).
+Paired comparisons: Some basic procedures and examples.
+Handbook of statistics 4  299–326.
+Bradley & Terry ((1952))
+Bradley, R.A. & Terry, M.E.
+(1952).
+Rank analysis of incomplete block designs: I. the
+method of paired comparisons.
+Biometrika 39 3/4 324–345.
+Chen et al. ((2008))
+Chen, Y., Davis, T.A., Hager, W.W. & Rajamanickam, S.
+(2008).
+Algorithm 887: Cholmod, supernodal sparse
+cholesky factorization and update/downdate.
+ACM Transactions on Mathematical Software
+(TOMS) 35 3 22.
+Chu & Ghahramani ((2005))
+Chu, W. & Ghahramani, Z.
+(2005).
+Preference
+learning with gaussian processes.
+In Proceedings of the 22nd international conference on
+machine learning ( 137–144).
+Duvenaud ((2014))
+Duvenaud, D.
+(2014).
+Automatic model construction with gaussian processes .
+: University of Cambridge.
+Elo ((1978))
+Elo, A.E.
+(1978).
+The rating of
+chessplayers, past and present.
+: Arco Pub.
+Glickman ((1999))
+Glickman, M.E.
+(1999).
+Parameter estimation in large dynamic paired comparison
+experiments.
+Journal of the Royal Statistical Society: Series C
+(Applied Statistics) 48 3 377–394.
+González ((2016))
+González, J.
+(2016).
+Gpyopt:
+A bayesian optimization framework in python.
+https://sheffieldml.github.io/GPyOpt/
+.
+Kovalchik ((2016))
+Kovalchik, S.A.
+(2016).
+Searching for the goat of tennis win prediction.
+Journal of Quantitative Analysis in
+Sports 12 3 127–138.
+Lasek et al. ((2013))
+Lasek, J., Szlávik, Z. & Bhulai, S.
+(2013).
+The predictive power of ranking systems in association
+football.
+International Journal of Applied Pattern
+Recognition 1 1 27–46.
+Maystre et al. ((2016))
+Maystre, L., Kristof, V., Ferrer, A.J.G. & Grossglauser, M.
+(2016).
+The player kernel: Learning team strengths
+based on implicit player contributions.
+CoRR abs/1609.01176  .
+http://arxiv.org/abs/1609.01176
+McHale & Morton ((2011))
+McHale, I. & Morton, A.
+(2011).
+A bradley-terry type model for forecasting tennis match
+results.
+International Journal of Forecasting 27 2 619–630.
+Morris & Bialik ((2015))
+Morris, B. & Bialik, C.
+(2015).
+Serena williams and the difference between all-time
+great and greatest of all time.
+: FiveThirtyEight.
+http://fivethirtyeight.com/features/serena-williams-and-the-difference-between-all-time-great-and-greatest-of-all-time/
+Rao & Kupper ((1967))
+Rao, P. & Kupper, L.L.
+(1967).
+Ties in paired-comparison experiments: A
+generalization of the bradley-terry model.
+Journal of the American Statistical
+Association 62 317 194–204.
+Rasmussen ((2004))
+Rasmussen, C.E.
+(2004).
+Gaussian
+processes in machine learning.
+In Advanced
+lectures on machine learning ( 63–71).
+: Springer.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

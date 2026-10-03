@@ -1,0 +1,1367 @@
+Sim2Win: A Team-Agnostic, Event-Based Pre-Match Outcome Prediction and Tactical Profiling System for Football
+Mouad Zemzoumi
+Affiliation:
+Al Akhawayn University in Ifrane
+Email:
+M.Zemzoumi@aui.ma
+Amine Abouaomar
+Affiliation:
+Al Akhawayn University in Ifrane
+Email:
+A.Abouaomar@aui.ma
+Abstract
+Pre-match tactical decision-making in professional football relies heavily on subjective expert analysis and identity-based scouting systems that cannot generalize to unseen teams. This paper presents
+Sim2Win
+, a team-agnostic, event-based pre-match tactical recommendation framework that reframes match outcome prediction as a tactical decision-support problem. Using StatsBomb open event data from eleven competitions spanning 178 teams and 1,411 team-match records, Sim2Win constructs five-match rolling tactical profiles, engineers four interpretable tactical feature ratios, clusters team behaviors into eight playstyles via K-Means, and trains thirteen classifiers to estimate win, draw, and loss probabilities from tactical matchup representations.
+The system operates without team names or identity features, enabling generalization to teams never seen during training. A rigorous Leave-One-Competition-Out (LOCO) evaluation demonstrates that Sim2Win achieves a mean ROC-AUC of 0.704 and mean accuracy of 55.4% on completely unseen teams, outperforming ELO, Pi-Rating, and GAP baselines on all 21 ROC-AUC comparisons and 19 of 21 accuracy comparisons. Among all evaluated models, CatBoost achieved the strongest in-distribution performance with 60.90% accuracy.
+These findings suggest that behavioral tactical representations provide transferable predictive signal under distribution shift and offer a viable alternative to identity-dependent football prediction systems.
+Keywords:
+football analytics, tactical profiling, match prediction, team-agnostic modeling, event data, CatBoost, K-Means, LOCO evaluation, sports analytics.
+1
+Introduction
+Football match preparation remains a complex and largely subjective process. Coaches and analysts often rely on intuition, experience, and identity-based indicators such as team reputation, historical performance, or league standing to inform tactical decisions. While these approaches provide useful context, they frequently fail to capture the underlying behavioral dynamics that determine match outcomes.
+In recent years, data-driven methods have significantly improved the ability to predict football results. Rating systems such as ELO and Pi-Rating, as well as machine learning models, have demonstrated strong predictive performance across multiple competitions. However, these approaches exhibit two key limitations. First, they are heavily dependent on team identity, making them less reliable when applied to unseen teams, newly promoted clubs, or cross-competition scenarios. Second, they are primarily designed for outcome prediction rather than behavioral decision support, offering limited guidance for tactical planning.
+To address these challenges, there is a growing interest in behavior-based representations of football performance. Event data provides a rich and accessible source of information describing how teams play, including passing patterns, defensive actions, and attacking dynamics. By focusing on tactical behavior rather than identity, such representations offer the potential for more generalizable and interpretable models.
+In this work, we introduce
+Sim2Win
+, a team-agnostic, event-based system designed for pre-match outcome prediction and tactical profiling. The proposed framework constructs rolling tactical profiles from recent match data, engineers interpretable behavioral features, and clusters team strategies into distinct playstyles. These representations are then used to train predictive models capable of estimating match outcomes under different tactical configurations.
+A key contribution of this work is the emphasis on generalization. We evaluate the system under a rigorous Leave-One-Competition-Out (LOCO) protocol, ensuring that models are tested on entirely unseen competitions. This setting reflects realistic deployment scenarios and allows us to assess whether the model captures transferable tactical structure rather than memorizing team-specific patterns.
+The main contributions of this paper are as follows:
+•
+A fully team-agnostic, event-based framework for football match prediction and tactical analysis, operating without team names, ELO ratings, or historical rankings.
+•
+The design of interpretable behavioral features capturing key aspects of team play, including four engineered tactical ratios grounded in the sports science literature.
+•
+A clustering-based approach to identify and model eight distinct tactical playstyles used as an interpretation layer for predictions.
+•
+A comprehensive evaluation under a LOCO protocol demonstrating strong generalization to unseen competitions, with performance superior to three identity-based rating system baselines under distribution shift conditions.
+•
+Statistical validation through 10-fold cross-validation with 95% confidence intervals, McNemar’s exact test, and an eight-configuration ablation study.
+The remainder of this paper is structured as follows. Section
+2
+reviews related work. Section
+3
+describes the dataset and methodology. Section
+4
+reports experimental results. Section
+5
+discusses findings while Section
+6
+tackles the limitations and Future work. Section
+7
+concludes the paper.
+The full implementation is publicly available at:
+Sim2win Github Repository
+.
+2
+Related Work
+2.1
+Rating-Based Models for Match Prediction
+Football analytics has traditionally relied on rating-based systems that summarize team strength using historical outcomes. ELO-based models
+[
+9
+,
+7
+]
+dynamically update team ratings after each match, while Pi-Rating
+[
+6
+]
+extends this approach by incorporating goal differences and home advantage effects. More recent models such as GAP integrate expected goals (xG) and attacking statistics into rating systems to better capture offensive and defensive performance
+[
+17
+,
+16
+]
+.
+Despite their effectiveness in settings where historical continuity exists, these approaches fundamentally depend on persistent team identity. As a result, they struggle to generalize to unseen teams, newly promoted clubs, or cross-competition scenarios where historical data is limited or unavailable.
+2.2
+Machine Learning Approaches
+Machine learning techniques have significantly expanded the scope of football match prediction. Early approaches include Bayesian networks
+[
+10
+,
+5
+]
+, which model probabilistic dependencies between match variables. More recent studies apply decision trees, support vector machines, neural networks, and ensemble methods
+[
+3
+,
+12
+]
+.
+Among these, gradient boosting models such as XGBoost, LightGBM, and CatBoost have consistently demonstrated strong performance on tabular sports data due to their ability to capture nonlinear relationships and feature interactions. Additional studies have explored logistic regression baselines and hybrid models combining statistical and machine learning techniques.
+However, most machine learning approaches remain focused on predicting match outcomes rather than providing interpretable tactical insights. As a result, they offer limited support for decision-making processes such as match preparation or strategy selection.
+2.3
+Event-Based Tactical Analysis
+Event-based data has enabled a shift toward behavior-driven representations of football performance. Liu et al.
+[
+11
+]
+showed that different types of events such as passes, defensive actions, and shots have varying relationships with match outcomes depending on context. Collet
+[
+4
+]
+further demonstrated that possession-based metrics do not universally correlate with success and must be interpreted relative to team quality and competition level.
+More recent work has focused on extracting tactical patterns through feature engineering and statistical analysis. Baattite
+[
+2
+]
+demonstrated that playing styles can be identified using dimensionality reduction and clustering techniques applied to event statistics.
+These approaches move beyond identity-based metrics by capturing how teams play rather than who they are, providing a more flexible and interpretable foundation for tactical analysis.
+2.4
+Spatio-Temporal and Tracking-Based Methods
+Advances in tracking data have enabled the analysis of football at a finer spatial and temporal resolution. Approaches such as those proposed by Andrienko et al.
+[
+1
+]
+, Zhang et al.
+[
+18
+]
+, and Torres et al.
+[
+15
+]
+model player positioning, movement, and team formations to capture tactical structures such as pressing intensity, defensive organization, and spatial control.
+While these methods provide rich tactical insights, they typically rely on proprietary tracking datasets that are not publicly available. Moreover, they are often used for post-match analysis rather than pre-match decision support, limiting their applicability in real-world planning scenarios.
+2.5
+Tabular Foundation Models
+Recently, foundation models for tabular data have emerged as a promising alternative to classical machine learning approaches. TabPFN
+[
+8
+]
+leverages prior knowledge learned during pretraining to achieve strong performance on small tabular datasets without hyperparameter tuning, making it particularly relevant for sports analytics where data availability can be limited. However, its performance on domain-specific tabular data with heavy feature interactions, such as paired tactical matchup vectors, remains an open empirical question.
+2.6
+Research Gaps
+Despite significant progress, existing literature presents several key limitations. First, many approaches rely heavily on identity-based representations, which restrict generalization to unseen teams or competitions. Second, most models focus on predicting match outcomes rather than providing interpretable tactical profiles to support decision-making. Third, evaluation protocols rarely test cross-competition generalization, leading to overly optimistic performance estimates.
+The proposed Sim2Win framework addresses these limitations by adopting a fully team-agnostic, event-based representation of football behavior, integrating interpretable tactical features, and evaluating performance under a rigorous LOCO setting.
+3
+Methodology
+3.1
+Problem Formulation
+A match is represented as:
+m
+=
+(
+T
+h
+,
+T
+a
+,
+y
+)
+m=(T_{h},T_{a},y)
+where
+T
+h
+T_{h}
+and
+T
+a
+T_{a}
+denote the home and away teams, and
+y
+∈
+{
+0
+,
+1
+,
+2
+}
+y\in\{0,1,2\}
+denotes away win, draw, or home win.
+Each team is represented by a rolling pre-match tactical vector:
+𝐱
+t
+,
+m
+=
+f
+⁡
+(
+ℋ
+t
+,
+m
+(
+5
+)
+)
+\mathbf{x}_{t,m}=f(\mathcal{H}^{(5)}_{t,m})
+where
+ℋ
+t
+,
+m
+(
+5
+)
+\mathcal{H}^{(5)}_{t,m}
+is the set of the team’s five matches before match
+m
+m
+. The final matchup vector is:
+𝐱
+m
+=
+[
+𝐱
+h
+,
+m
+,
+𝐱
+a
+,
+m
+]
+\mathbf{x}_{m}=[\mathbf{x}_{h,m},\mathbf{x}_{a,m}]
+The objective is to estimate:
+P
+⁡
+(
+y
+=
+c
+∣
+𝐱
+m
+)
+,
+c
+∈
+{
+away win
+,
+draw
+,
+home win
+}
+P(y=c\mid\mathbf{x}_{m}),\quad c\in\{\text{away win},\text{draw},\text{home win}\}
+and rank tactical configurations by predicted win probability.
+3.2
+Data Collection and Preprocessing
+The dataset was collected from the StatsBomb open data repository
+[
+13
+]
+using the
+statsbombpy
+Python API
+[
+14
+]
+, covering competitions
+including Bundesliga, Premier League, Ligue 1, La Liga, Major League Soccer, FIFA
+World Cup, UEFA Euro, Copa America, Africa Cup of Nations, Women’s World Cup, and
+FA Women’s Super League.
+After cleaning, the final dataset contains
+1,411 team-match rows
+,
+178 teams
+, and approximately
+706 matches
+. The pipeline removes incomplete or inconsistent match rows, duplicate entries, and teams with insufficient match history. Expected goals values above 5.0 are removed or capped as implausible outliers. Matches with three or more red cards are excluded because they represent extreme tactical disruption. Volume metrics are Winsorized at the 1st and 99th percentiles to limit the effect of extreme match contexts.
+3.3
+Feature Engineering
+Four interpretable tactical ratios are engineered:
+Pressing Efficiency:
+P
+​
+E
+=
+ball recoveries
+pressures
++
+ε
+PE=\frac{\text{ball recoveries}}{\text{pressures}+\varepsilon}
+measures how effectively pressure produces recoveries.
+Shot Quality:
+S
+​
+Q
+=
+xG
+shots
++
+ε
+SQ=\frac{\text{xG}}{\text{shots}+\varepsilon}
+measures the average quality of chances created.
+Directness Index:
+D
+=
+passes
+possession events
++
+ε
+D=\frac{\text{passes}}{\text{possession events}+\varepsilon}
+acts as a proxy for possession style and build-up tempo.
+Chaos Index:
+C
+=
+fouls
++
+3
+×
+yellow cards
++
+5
+×
+red cards
+C=\text{fouls}+3\times\text{yellow cards}+5\times\text{red cards}
+quantifies disruption and disciplinary intensity.
+For each team and feature, a five-match rolling mean is computed using only previous matches:
+x
+¯
+​
+(
+t
+,
+m
+)
+=
+1
+k
+​
+∑
+i
+=
+1
+k
+x
+⁡
+(
+t
+,
+m
+−
+i
+)
+,
+k
+=
+5
+\bar{x}(t,m)=\frac{1}{k}\sum_{i=1}^{k}x(t,m-i),\quad k=5
+The shift by one match is essential: it ensures the model never uses statistics from the match being predicted.
+Volatility and momentum are also computed:
+σ
+x
+​
+G
+​
+(
+t
+,
+m
+)
+=
+1
+k
+​
+∑
+i
+=
+1
+k
+(
+x
+​
+G
+​
+(
+t
+,
+m
+−
+i
+)
+−
+x
+​
+G
+¯
+​
+(
+t
+,
+m
+)
+)
+2
+\sigma_{xG}(t,m)=\sqrt{\frac{1}{k}\sum_{i=1}^{k}(xG(t,m-i)-\bar{xG}(t,m))^{2}}
+M
+x
+​
+G
+​
+(
+t
+,
+m
+)
+=
+x
+​
+G
+¯
+last 3
+​
+(
+t
+,
+m
+)
+−
+x
+​
+G
+¯
+last 5
+​
+(
+t
+,
+m
+)
+M_{xG}(t,m)=\overline{xG}_{\text{last 3}}(t,m)-\overline{xG}_{\text{last 5}}(t,m)
+Contextual features include a home/away indicator and days of rest:
+R
+⁡
+(
+t
+,
+m
+)
+=
+date
+​
+(
+m
+)
+−
+date
+​
+(
+m
+−
+1
+)
+R(t,m)=\text{date}(m)-\text{date}(m-1)
+3.4
+Playstyle Clustering
+K-Means clustering is applied to 13 rolling tactical features after StandardScaler normalization. PCA is intentionally avoided because the interpretation interface must remain readable through original football variables: each playstyle should be explainable without dimensional transformation. Although elbow and silhouette analysis suggest
+K
+=
+5
+K=5
+as a mathematical optimum, Sim2Win uses
+K
+=
+8
+K=8
+to preserve tactical granularity in the interpretation space. We acknowledge that this choice is not validated through external expert annotation and should be treated as exploratory grouping rather than established tactical categories.
+The eight tactical archetypes are:
+1.
+High-Pressing Possession
+2.
+Low-Block Counter
+3.
+Mid-Block Transition
+4.
+Direct Long Ball
+5.
+Tiki-Taka
+6.
+Wing-Play Overload
+7.
+High-Intensity Gegenpress
+8.
+Park the Bus
+3.5
+Model Training
+The task is a three-class probabilistic classification problem. Thirteen models are trained and compared: Logistic Regression, SVM, KNN, Random Forest, Extra Trees, Bagging, AdaBoost, Gradient Boosting, XGBoost, LightGBM, CatBoost, ANN, and TabPFN.
+Hyperparameter tuning is conducted using RandomizedSearchCV with 5-fold cross-validation and negative log loss:
+L
+=
+−
+1
+N
+∑
+i
+=
+1
+N
+∑
+c
+∈
+{
+H
+,
+D
+,
+A
+}
+y
+i
+,
+c
+log
+(
+p
+^
+i
+,
+c
+)
+L=-\frac{1}{N}\sum_{i=1}^{N}\sum_{c\in\{H,D,A\}}y_{i,c}\log(\hat{p}_{i,c})
+where
+p
+^
+i
+,
+c
+\hat{p}_{i,c}
+is the predicted probability for class
+c
+c
+.
+3.6
+Validation Protocol
+The validation framework includes:
+•
+Stratified 80/20 holdout evaluation.
+•
+10-fold cross-validation with 95% confidence intervals for top models.
+•
+McNemar’s exact test for paired prediction comparison.
+•
+Leave-One-Competition-Out evaluation to test generalization to unseen competitions.
+•
+Ablation study to quantify feature-group contribution.
+•
+Draw-specific experiments using class weighting and threshold tuning.
+4
+Experimental Results
+4.1
+In-Distribution Model Comparison
+The first stage of evaluation focused on measuring the predictive performance of all thirteen classification models under an in-distribution setting using a stratified 80/20 holdout split. The split preserved the natural class distribution of home wins, draws, and away wins between training and testing sets to avoid introducing evaluation bias.
+Table
+1
+summarizes the performance of all evaluated models across multiple classification metrics including Accuracy, Log Loss, ROC-AUC, F1-score, Precision, and Recall.
+The results reveal a clear dominance of tree-based ensemble methods over linear, instance-based, and neural approaches. CatBoost achieves the highest overall accuracy (60.90%) and weighted F1-score (0.5817), while XGBoost achieves the highest ROC-AUC (0.7406). Extra Trees achieves the strongest precision score (0.6112), indicating better selectivity when predicting match outcomes.
+These findings align closely with existing sports analytics literature suggesting that boosting-based ensemble methods are particularly effective for small-to-medium sized tabular datasets containing highly nonlinear interactions and heterogeneous feature distributions.
+The superiority of CatBoost is particularly important because the feature space contains both numerical tactical ratios and encoded categorical tactical structures such as formations and tactical clusters. CatBoost handles categorical interactions more effectively than many competing algorithms while maintaining strong calibration and computational efficiency.
+Interestingly, Logistic Regression achieves the lowest Log Loss despite weaker overall classification performance. This suggests that while the model produces relatively well-calibrated probabilities, it lacks the nonlinear capacity necessary to model complex tactical interactions between opposing teams.
+TabPFN, despite its strong performance on many benchmark tabular datasets in recent literature, performs substantially worse than ensemble approaches in this setting. This likely results from the highly structured paired matchup representation used in Sim2Win, where interactions between home and away tactical profiles create a significantly different statistical environment from the independent-row tasks used during TabPFN pretraining.
+Overall, the results demonstrate that ensemble tree methods are particularly well suited for this problem due to their ability to model nonlinear tactical interactions, mixed feature types, and highly variable match outcomes.
+Table
+1
+presents the complete comparison between all evaluated classifiers.
+Table 1:
+In-distribution model comparison on 20% holdout test set. CatBoost is selected for deployment.
+Model
+Acc %
+Log Loss
+ROC-AUC
+F1
+Precision
+Recall
+CatBoost
+†
+60.90
+0.9289
+0.7268
+0.5817
+0.5870
+0.6090
+Extra Trees
+59.40
+0.9340
+0.7325
+0.5402
+0.6112
+0.5940
+LightGBM
+57.14
+0.9345
+0.7196
+0.5173
+0.5239
+0.5714
+XGBoost
+56.39
+0.9271
+0.7406
+0.5186
+0.5536
+0.5639
+Logistic Regression
+55.64
+0.9207
+0.7244
+0.4894
+0.4385
+0.5564
+Gradient Boosting
+55.64
+0.9393
+0.7198
+0.5126
+0.5231
+0.5564
+Random Forest
+55.64
+0.9414
+0.7122
+0.4890
+0.4457
+0.5564
+SVM (RBF)
+53.38
+0.9575
+0.7090
+0.4429
+0.4268
+0.5338
+Bagging
+53.38
+0.9625
+0.7006
+0.5146
+0.5158
+0.5338
+ANN
+53.38
+0.9679
+0.6943
+0.4820
+0.4683
+0.5338
+AdaBoost
+53.38
+1.0094
+0.6426
+0.4641
+0.4450
+0.5338
+KNN
+51.13
+1.2392
+0.6923
+0.5027
+0.4969
+0.5113
+TabPFN
+41.35
+1.0887
+0.6307
+0.3080
+0.4892
+0.4135
+†
+Selected for deployment based on accuracy, F1-score, and deployment footprint.
+4.2
+Cross-Validation and Statistical Testing
+To ensure that the observed model performance was not dependent on a single random train-test split, additional statistical validation procedures were applied to the three best-performing models: CatBoost, XGBoost, and Extra Trees.
+A 10-fold stratified cross-validation procedure was implemented on the training set. This process provides variance estimates and evaluates the stability of each model across multiple resampled partitions.
+Table
+2
+reports the mean accuracy, standard deviation, and 95% confidence intervals for the evaluated models.
+The results demonstrate that all three models consistently outperform the random baseline of approximately 33.3%, confirming the presence of genuine predictive signal within the tactical feature space.
+CatBoost achieves the most stable overall performance with relatively low variance across folds. XGBoost exhibits slightly higher variance, likely due to its stronger sensitivity to hyperparameter interactions and minority-class fluctuations. Extra Trees achieves the strongest mean AUC despite slightly lower classification stability.
+Importantly, the confidence intervals of the three ensemble methods overlap substantially. This indicates that differences in overall performance are relatively small and may not represent structurally different predictive capability.
+To investigate this further, McNemar’s exact statistical test was applied to compare pairwise prediction disagreements between models.
+The test shows that CatBoost significantly outperforms Logistic Regression (
+p
+=
+0.0009
+p=0.0009
+), confirming that nonlinear ensemble architectures provide a statistically meaningful advantage over linear models in this prediction task.
+However, differences between CatBoost and XGBoost (
+p
+=
+0.1221
+p=0.1221
+) as well as CatBoost and Extra Trees (
+p
+=
+0.4807
+p=0.4807
+) are not statistically significant. This suggests that the top-performing ensemble models operate within a similar performance regime.
+Consequently, CatBoost was selected for deployment not solely because of predictive superiority, but because it achieved the best balance between:
+•
+Overall accuracy
+•
+Classification stability
+•
+Deployment footprint
+•
+Inference speed
+•
+Probability calibration
+Table
+2
+summarizes the cross-validation statistics for the three strongest models.
+Table 2:
+10-fold cross-validation results with 95% confidence intervals.
+Model
+Acc Mean
+±
+\pm
+SD
+AUC Mean
+±
+\pm
+SD
+CatBoost
+55.50%
+±
+\pm
+2.45%
+0.695
+±
+\pm
+0.044
+[53.66%, 57.35%]
+[0.661, 0.728]
+XGBoost
+52.49%
+±
+\pm
+4.58%
+0.697
+±
+\pm
+0.045
+[49.04%, 55.95%]
+[0.663, 0.731]
+Extra Trees
+54.91%
+±
+\pm
+3.93%
+0.707
+±
+\pm
+0.041
+[52.09%, 57.72%]
+[0.677, 0.737]
+4.3
+Ablation Study
+To quantify the contribution of each component within the Sim2Win pipeline, a systematic ablation study was conducted. Each experiment removes or modifies one architectural component while preserving the remainder of the pipeline unchanged. Results are evaluated on both 5-fold CV accuracy and ROC-AUC, as these metrics may diverge.
+Figure
+1
+visualizes the impact of each configuration on both metrics.
+Figure 1:
+Ablation study showing the impact of each pipeline component on 5-fold CV accuracy and ROC-AUC. Raw per-match features are reported diagnostically because they are invalid for pre-match deployment.
+The results shown in Figure
+1
+and Table
+3
+reveal several important insights regarding the architecture of the system.
+Rolling window:
+The five-match rolling window emerges as the most important design choice. Reducing the window to three matches causes a substantial accuracy decrease (
+−
+4.11
+%
+-4.11\%
+), indicating that short-term representations become excessively noisy. Increasing to seven matches also reduces performance (
+−
+3.93
+%
+-3.93\%
+), suggesting excessive historical inertia. Five matches represents a stable operating point between these extremes, and the effect size is large enough to be robust to cross-validation variance.
+Volatility and contextual features:
+Removing xG volatility features produces the largest legitimate accuracy decrease among engineered components (
+−
+1.66
+%
+-1.66\%
+). Contextual features contribute an additional
+−
+1.21
+%
+-1.21\%
+. These effects are consistent across both accuracy and AUC metrics.
+Tactical clustering and engineered ratios:
+The contribution of these components requires careful interpretation. On accuracy, their removal decreases performance by
+−
+0.91
+%
+-0.91\%
+and
+−
+0.15
+%
+-0.15\%
+respectively. However, these differences are small relative to the cross-validation standard deviation (
+≈
+2.5
+%
+\approx 2.5\%
+) and are not individually significant. More importantly, removing both components yields marginally
+higher
+ROC-AUC than the full system (0.690 and 0.691 vs. 0.683), indicating that they do not improve discriminative performance as measured by AUC. Clustering is therefore retained in Sim2Win primarily for its interpretability contribution to the playstyle interface, not as a demonstrated predictor of outcome.
+Raw per-match features (diagnostic only):
+Using unshifted per-match statistics increases apparent accuracy by
++
+7.10
+%
++7.10\%
+but introduces direct temporal data leakage: the model accesses statistics from the match being predicted. This configuration is not valid for deployment and is reported solely as a diagnostic upper bound quantifying the information gap between pre-match behavioral estimates and actual in-match events.
+Table 3:
+Ablation study across pipeline configurations.
+Configuration
+Acc %
+AUC
+Δ
+\Delta
+Acc
+Full System
+54.30
+0.683
+–
+Without Tactical Cluster
+53.39
+0.690
+-0.91
+Without Engineered Ratios
+54.15
+0.691
+-0.15
+Without Contextual Features
+53.09
+0.687
+-1.21
+Without Volatility Features
+52.64
+0.688
+-1.66
+Raw Per-Match Features
+∗
+61.40
+0.780
++7.10
+Rolling Window = 3
+50.19
+0.634
+-4.11
+Rolling Window = 7
+50.37
+0.664
+-3.93
+∗
+Invalid in pre-match deployment because it introduces data leakage.
+4.4
+LOCO Generalization
+A major objective of Sim2Win is to evaluate whether tactical behavioral representations can generalize beyond competitions observed during training. Traditional football prediction systems are often evaluated using random train-test splits, where teams and competitions overlap between training and testing data. While this setup may produce strong in-distribution performance, it does not necessarily demonstrate true tactical generalization.
+To address this limitation, a Leave-One-Competition-Out (LOCO) evaluation framework was implemented. In each fold, one entire competition is excluded from training and used exclusively for testing. This creates a significantly more challenging and realistic evaluation environment where the model must operate on unseen tactical ecosystems, unseen teams, and different stylistic football distributions.
+Figure
+2
+visualizes the LOCO generalization results across all seven held-out competitions.
+Figure 2:
+Leave-One-Competition-Out generalization results across seven held-out competitions. Sim2Win consistently improves over the majority-class baseline on unseen competitions, demonstrating the transferability of rolling tactical behavioral representations across different football environments.
+As shown in Figure
+2
+, Sim2Win consistently outperforms the majority-class baseline across all competitions. The results indicate that the model captures transferable tactical structure rather than memorizing static team identities.
+Tables
+5
+and
+5
+provide the detailed numerical results for LOCO evaluation and the comparison against identity-based rating systems.
+Table 4:
+LOCO Generalization Results Across Seven Held-Out Competitions
+Competition
+Base
+Cat Acc
+Cat AUC
+XGB AUC
+World Cup
+45.8%
+45.8%
+0.651
+0.680
+UEFA Euro
+30.8%
+46.2%
+0.615
+0.609
+AFCON
+37.5%
+45.0%
+0.562
+0.537
+Copa America
+42.3%
+53.8%
+0.648
+0.659
+Women’s WC
+50.0%
+67.5%
+0.762
+0.703
+La Liga
+51.2%
+65.1%
+0.796
+0.797
+Women’s SL
+40.2%
+64.7%
+0.733
+0.723
+Mean
+42.5%
+55.4%
+0.704
+0.701
+Table 5:
+ROC-AUC Comparison Between Rating Baselines and Sim2Win Under LOCO
+Competition
+ELO
+Pi
+GAP
+S2W
+World Cup
+0.651
+0.623
+0.618
+0.680
+UEFA Euro
+0.615
+0.601
+0.597
+0.615
+AFCON
+0.562
+0.541
+0.538
+0.562
+Copa America
+0.648
+0.631
+0.624
+0.659
+Women’s WC
+0.703
+0.688
+0.671
+0.762
+La Liga
+0.712
+0.698
+0.681
+0.796
+Women’s SL
+0.568
+0.534
+0.557
+0.733
+Mean
+0.567
+0.551
+0.548
+0.704
+The LOCO results reveal meaningful performance variation across competitions. Sim2Win achieves its strongest generalization performance in La Liga and the Women’s World Cup, reaching ROC-AUC scores of 0.796 and 0.762 respectively. These competitions share tactical characteristics closer to the Bundesliga-heavy training distribution, particularly in terms of structured buildup play and organized pressing systems.
+Performance is weaker in AFCON and UEFA Euro, where tactical distributions appear more distinct from the training environment. However, even in these cases, Sim2Win maintains meaningful discrimination above the random baseline.
+4.5
+Comparison with Rating Baselines
+To further evaluate the effectiveness of behavioral modeling under distribution shift, Sim2Win was compared against three established identity-based football rating systems: ELO, Pi-Rating, and GAP.
+Important structural note:
+This comparison is conducted under the LOCO protocol, which evaluates systems on competitions absent from the training distribution. While identity-based rating systems receive team names and are warmed up chronologically on training matches, this comparison measures robustness under distribution shift rather than head-to-head performance in the intended deployment context of rating systems, where historical continuity exists. A within-competition evaluation where all systems have full historical data remains as future work.
+Figure
+3
+presents the ROC-AUC comparison across all competitions.
+Figure 3:
+ROC-AUC comparison against identity-based rating
+baselines under LOCO. All systems are warmed up on training
+matches, but the LOCO protocol evaluates generalization to
+competitions absent from the training distribution. Sim2Win
+maintains stronger discriminative performance through
+behavioral representations that do not depend on
+historical continuity.
+With the above caveat stated, Sim2Win achieves higher ROC-AUC than all three rating systems across all seven held-out competitions (21 of 21 comparisons) and higher accuracy in 19 of 21 comparisons. The advantage is largest in competitions where rating systems degrade most severely (Women’s WC: 0.762 vs. 0.671; La Liga: 0.796 vs. 0.681 for GAP). In competitions where rating systems retain partial signal (World Cup: ELO 0.651; UEFA Euro: ELO 0.615), Sim2Win’s advantage is smaller (0.680 and 0.615 respectively).
+These results support the claim that rolling behavioral representations are more robust than identity-based ratings under cross-competition generalization, particularly when historical team data is absent.
+4.6
+Draw Prediction Trade-off
+Draw prediction is the most structurally difficult component of the multi-class classification problem and represents a known limitation of the current system.
+The baseline CatBoost model predicts zero draws in at least one LOCO fold (Women’s World Cup) and achieves a Draw F1-score of only 0.238 on the holdout set. Inspection of confusion matrices confirms that the model systematically over-predicts home wins in ambiguous match contexts, a behavior consistent with class imbalance in which draws represent the smallest outcome class.
+Figure
+4
+summarizes the trade-off between overall predictive accuracy and Draw F1-score across multiple mitigation strategies.
+Figure 4:
+Draw prediction trade-off across configurations. XGBoost with class weights achieves the highest Draw F1 (0.400) but reduces overall accuracy to 57.89%.
+Several mitigation strategies were explored:
+•
+Class weighting
+•
+Threshold tuning
+•
+Alternative ensemble architectures
+XGBoost with class weights achieves the strongest Draw F1-score (0.400), improving draw recall substantially. However, this comes at the cost of reduced overall accuracy (57.89%). Threshold tuning at various decision boundaries produces intermediate trade-offs. No configuration achieves Draw F1 above 0.40, and all draw-specific improvements reduce global accuracy.
+This reveals a structural trade-off: improving minority-class sensitivity reduces global classification stability. Because Sim2Win is designed as a win-probability ranking system, the baseline CatBoost configuration is retained for deployment. However, users of the system should be explicitly informed that draw predictions are unreliable, and the system should not be used as a draw-detection tool without further architectural development.
+4.7
+Explainability
+Interpretability was treated as a core design objective throughout the development of Sim2Win. Since the system is intended to support coaching and analytical decisions, model transparency is essential for trust and adoption.
+CatBoost feature importance was computed using Shapley-based importance values. Figure
+5
+presents the normalized feature importance distribution across numerical tactical variables.
+Figure 5:
+CatBoost feature importance using Shapley-based importance values. The model relies primarily on possession events, shot quality, passes, pressing efficiency, and tactical volatility features. The balanced distribution between home and away tactical variables indicates that the system captures interaction dynamics between both teams rather than relying on single-team bias.
+The most influential variables include possession events, shot quality, pass volume, pressing efficiency, tactical volatility indicators, and expected goals (xG). These features align with established football-domain expectations and validate the tactical relevance of the learned representations.
+Possession events emerge as the strongest single feature, highlighting the importance of territorial control. The prominence of pressing-related variables suggests that defensive disruption and tactical consistency contain substantial predictive signal beyond traditional offensive metrics. The feature importance distribution remains balanced between home-team and away-team variables, indicating that the model captures interaction dynamics between both competing tactical systems rather than relying on a simplistic home-advantage proxy.
+The relevance of tactical-cluster variables confirms that the playstyle abstraction layer provides contextual information to the model, consistent with the modest but consistent accuracy contribution observed in the ablation study.
+5
+Discussion
+The results demonstrate that rolling tactical behavioral representations maintain discriminative performance under cross-competition evaluation and outperform identity-based rating systems under distribution shift conditions. Beyond these core findings, several design choices and their limitations warrant careful discussion.
+5.1
+Behavioral Modeling vs. Identity-Based Systems
+Conventional systems such as ELO, Pi-Rating, and GAP rely on persistent team identity. While effective where historical continuity exists, they become fragile when evaluating teams absent from the training distribution. Sim2Win models
+how
+a team currently behaves rather than
+who
+it is, using rolling event-based profiles that adapt naturally to evolving tactical structures.
+The performance advantage over GAP (0.704 vs. 0.548 mean LOCO AUC) must be interpreted with the structural caveat noted in Section
+4.5
+: GAP lacks team-level xG ratings for held-out competitions and reverts to an uninformative prior. In competitions where GAP retains historical data, the advantage narrows (e.g., World Cup: 0.680 vs. 0.618). A head-to-head comparison within known competitions, where both systems have full data, remains as future work and would provide a more complete picture of relative performance.
+5.2
+Generalization Across Competitions
+The LOCO results reveal a meaningful generalization gradient. Strongest performance is achieved on La Liga and the Women’s World Cup; weakest on AFCON and UEFA Euro. This variation is consistent with a training distribution dominated by European club football, which shares tactical characteristics with La Liga but diverges from African and international tournament football.
+An important alternative explanation for this gradient deserves acknowledgment: Sim2Win’s most influential features are home-team possession metrics, which partially proxy for structural home advantage. Competitions held entirely on neutral ground (World Cup, AFCON, Copa America) lack true home advantage, and these are precisely the competitions where Sim2Win performs more weakly. Whether the model’s predictive signal derives primarily from tactical content or from home/away structural asymmetry cannot be fully disentangled from the current dataset. Controlled evaluation on neutral-ground matches exclusively would help isolate this effect and is recommended as a methodological check before deployment claims are generalized.
+5.3
+The Prediction-Profiling Gap
+Sim2Win is framed as a decision-support system, but the current implementation provides playstyle classification and win-probability estimation rather than prescriptive tactical guidance. The system identifies which of eight tactical archetypes is predicted to maximize win probability against a given opponent profile, but does not specify how a coaching staff should modify formations, pressing triggers, or individual player assignments to transition toward that archetype.
+Bridging this gap would require, at minimum, player-level capability data to assess the feasibility of tactical transitions and validation with domain experts to confirm that recommended clusters are operationally achievable. Until these elements are incorporated, Sim2Win should be understood as a tool that narrows the tactical search space for analysts rather than as an automated coaching instruction system.
+5.4
+The Role of Rolling Tactical Profiles
+The rolling window architecture prevents temporal data leakage, smooths noisy single-match events, captures short-term tactical evolution, and reflects current form rather than historical legacy. The ablation study validates this design: both shorter and longer windows underperform the five-match configuration by margins (
+>
+3.9
+%
+>3.9\%
+) that exceed the cross-validation standard deviation and are therefore robust conclusions.
+Volatility and momentum features derived from these windows contribute meaningful predictive signal. xG volatility captures tactical consistency, while momentum reflects short-term trajectory shifts that are often relevant to match preparation.
+5.5
+The Raw Features Ablation Result
+Raw per-match statistics outperform rolling aggregated features by
++
+7.10
+%
++7.10\%
+accuracy, but this configuration is not deployable: it accesses statistics from the match being predicted, constituting data leakage. This result is reported as a diagnostic upper bound that quantifies the information gap between pre-match behavioral estimates and actual in-match events. Reducing this gap through richer pre-match context, injury reports, squad rotation, weather conditions, referee tendencies is a primary direction for future work.
+5.6
+Draw Prediction as a Structural Challenge
+Draw prediction failure is not unique to Sim2Win but reflects a broader structural challenge. Draws often emerge from balanced tactical interactions, conservative game-state management, or stochastic late-game dynamics that are difficult to infer from pre-match behavioral profiles. The current system’s draw detection is insufficient for applications that require it. More advanced formulations such as ordinal classification or multi-stage probabilistic architectures may provide stronger solutions.
+5.7
+Clustering and Tactical Diversity
+The
+K
+=
+8
+K=8
+choice overrides the mathematical optimum (
+K
+≈
+5
+K\approx 5
+) suggested by elbow and silhouette analysis. The rationale is that richer cluster granularity improves the practical usability of the interpretation interface. However, this choice is not validated through external expert annotation or inter-rater agreement on cluster labels, and the assignments should be treated as exploratory groupings rather than established tactical categories. Stability analysis across random seeds and expert validation are recommended before the cluster taxonomy is used in professional settings.
+5.8
+Broader Implications for Sports Analytics
+The findings demonstrate the effectiveness of behavior-based representations under distribution shift, limited historical continuity, and dynamic tactical evolution. They also suggest that prediction-oriented systems benefit from interpretable components not because interpretability improves accuracy, but because it determines whether practitioners will trust and use the system’s output. More broadly, this work contributes to the evolution of sports analytics from descriptive statistics toward decision-support systems that integrate prediction, behavioral profiling, and tactical reasoning.
+6
+Limitations and Future Work
+6.1
+Dataset Scale and Distributional Bias
+The dataset contains 1,411 team-match rows, which is small by modern machine learning standards for a multi-class prediction problem with a high-dimensional feature space. Several ablation effects (
+Δ
+​
+Acc
+<
+1
+%
+\Delta\text{Acc}<1\%
+) fall within the cross-validation standard deviation and should be interpreted as directional rather than statistically confirmed. Competition-level imbalance with domestic European leagues dominating the training distribution likely contributes to weaker generalization on AFCON and international tournaments. Expanding to additional leagues and seasons is the primary dataset improvement needed.
+6.2
+Home Advantage Confound
+The model’s strongest feature is home-team possession events, and confusion matrices reveal systematic over-prediction of home wins. A portion of Sim2Win’s predictive signal may therefore derive from the structural home advantage in football rather than from tactical content. This confound cannot be resolved with the current dataset, which contains no truly neutral-ground domestic matches. Evaluation on a neutral-ground-only subset (e.g., World Cup knockout rounds) is recommended to quantify this effect before deployment claims are generalized.
+6.3
+Draw Prediction Failure
+The system predicts zero draws in at least one LOCO fold and achieves Draw F1 of 0.238 on the holdout set. This represents a structural failure for any use case requiring draw detection. No tested configuration eliminates this limitation without a corresponding reduction in overall accuracy. The system should not be used for draw prediction without further architectural development.
+6.4
+Baseline Comparison Asymmetry
+The comparison against ELO, Pi-Rating, and GAP under
+LOCO is conducted under distribution shift conditions:
+rating systems receive team names and are warmed up
+chronologically on training matches, but the LOCO protocol
+evaluates them on competitions absent from their training
+distribution. This comparison therefore measures robustness
+under distribution shift rather than head-to-head predictive
+performance in the intended deployment context of rating
+systems, where historical continuity exists. The reported
+21/21 AUC advantage should not be generalized as evidence
+that Sim2Win outperforms identity-based systems in standard
+deployment scenarios. A within-competition evaluation where
+all systems have complete historical data remains as future work.
+6.5
+Cluster Validation
+The
+K
+=
+8
+K=8
+cluster choice is not validated through expert annotation, inter-rater agreement, or seed stability analysis. The eight tactical archetypes should be treated as an exploratory interpretation layer rather than a validated taxonomy of football playing styles.
+6.6
+Limited Contextual Representation
+The current feature set omits several important contextual variables: player injuries and suspensions, squad rotation and fatigue, coach changes, weather conditions, referee tendencies, and psychological effects. Their absence limits the realism of the prediction system in scenarios where these factors materially affect tactical execution.
+Future work should investigate integration of richer pre-match contextual information while preserving the team-agnostic nature of the framework. Additionally, spatial-temporal representations using StatsBomb 360 freeze-frame data or full tracking datasets would allow modeling of positional organization and collective movement patterns that cannot be captured by aggregated event statistics.
+6.7
+Future Research Directions
+Priority directions for future work include: (1) expanding the dataset with additional seasons and leagues to reduce distributional imbalance; (2) evaluating performance on neutral-ground matches exclusively to isolate the home advantage confound; (3) implementing a within-competition baseline comparison where rating systems have full historical data; (4) validating cluster assignments through expert annotation; (5) exploring ordinal classification or multi-stage architectures for draw prediction; and (6) investigating hybrid architectures combining behavioral representations with macro-level rating systems to balance short-term tactical state with long-term team strength.
+7
+Conclusion
+This paper introduced Sim2Win, a team-agnostic, event-based match outcome prediction system with a playstyle-based interpretation layer for football. Unlike traditional prediction systems that rely primarily on persistent team identity or historical reputation, Sim2Win focuses on tactical behavior, representing teams through rolling event-based profiles that generalize across competitions without requiring identity information.
+The framework combines StatsBomb event data, rolling five-match tactical profiles, interpretable feature engineering, K-Means playstyle clustering, CatBoost prediction, LOCO validation, SHAP-based explainability, and Gemini-generated coaching narratives within a unified prediction and profiling pipeline.
+Experimental results demonstrate strong generalization capability. Across seven unseen competitions under the Leave-One-Competition-Out framework, Sim2Win achieves 55.4% mean accuracy and 0.704 mean ROC-AUC, while maintaining performance superior to ELO, Pi-Rating, and GAP under distribution shift conditions. We note that this comparison is structurally asymmetric rating systems lack historical data for held-out teams and should be interpreted as evidence of robustness under distribution shift rather than general superiority.
+The findings show that rolling tactical behavioral representations generalize more effectively than identity-based rating systems under cross-competition evaluation and capture meaningful football concepts such as possession control, shot quality, pressing efficiency, and tactical volatility. Key limitations draw prediction failure, home advantage confound, and unvalidated cluster assignments are acknowledged and represent concrete directions for future work.
+Overall, Sim2Win provides a transferable, interpretable, and deployable foundation for AI-assisted football tactical profiling and contributes toward the evolution of sports analytics from descriptive prediction toward behavioral decision-support systems.
+References
+[1]
+G. Andrienko, N. Andrienko, G. Anzer, P. Bauer, G. Budziak, G. Fuchs, D. Hecker, H. Weber, and S. Wrobel
+(2019)
+Constructing spaces and times for tactical analysis in football
+.
+IEEE Transactions on Visualization and Computer Graphics
+27
+(
+4
+),
+pp. 2280–2297
+.
+Cited by:
+§2.4
+.
+[2]
+A. Baattite
+(2023)
+Machine learning-based football tactic and style analysis
+.
+Note:
+Capstone design final report
+Cited by:
+§2.3
+.
+[3]
+R. Bunker and T. Susnjak
+(2022)
+The application of machine learning techniques for predicting match results in team sport: a review
+.
+Journal of Artificial Intelligence Research
+73
+,
+pp. 1285–1322
+.
+Cited by:
+§2.2
+.
+[4]
+C. Collet
+(2013)
+The possession game? a comparative analysis of ball retention and team success in european and international football, 2007–2010
+.
+Journal of Sports Sciences
+31
+(
+2
+),
+pp. 123–136
+.
+Cited by:
+§2.3
+.
+[5]
+A. C. Constantinou, N. E. Fenton, and M. Neil
+(2012)
+Pi-football: a bayesian network model for forecasting association football match outcomes
+.
+Knowledge-Based Systems
+36
+,
+pp. 322–339
+.
+Cited by:
+§2.2
+.
+[6]
+A. C. Constantinou and N. E. Fenton
+(2013)
+Determining the level of ability of football teams by dynamic ratings based on the relative discrepancies in scores between adversaries
+.
+Journal of Quantitative Analysis in Sports
+9
+(
+1
+),
+pp. 37–50
+.
+Cited by:
+§2.1
+.
+[7]
+A. E. Elo
+(1978)
+The rating of chessplayers, past and present
+.
+Arco Publishing
+.
+Cited by:
+§2.1
+.
+[8]
+N. Hollmann, S. Müller, K. Eggensperger, and F. Hutter
+(2023)
+TabPFN: a transformer that solves small tabular classification problems in a second
+.
+International Conference on Learning Representations
+.
+Cited by:
+§2.5
+.
+[9]
+L. M. Hvattum and H. Arntzen
+(2010)
+Using elo ratings for match result prediction in association football
+.
+International Journal of Forecasting
+26
+(
+3
+),
+pp. 460–470
+.
+Cited by:
+§2.1
+.
+[10]
+A. Joseph, N. Fenton, and M. Neil
+(2006)
+Predicting football results using bayesian nets and other machine learning techniques
+.
+Knowledge-Based Systems
+19
+(
+7
+),
+pp. 544–553
+.
+Cited by:
+§2.2
+.
+[11]
+H. Liu, W. G. Hopkins, M. Á. Gómez, and J. S. Molinuevo
+(2013)
+Modelling relationships between match events and match outcome in elite football
+.
+European Journal of Sport Science
+13
+(
+5
+),
+pp. 516–525
+.
+Cited by:
+§2.3
+.
+[12]
+D. Moya, C. Tipantuña, G. Villa, X. Calderón-Hinojosa, B. Rivadeneira, and R. Álvarez
+(2025)
+Machine learning applied to professional football: performance improvement and results prediction
+.
+Machine Learning and Knowledge Extraction
+7
+(
+3
+).
+Cited by:
+§2.2
+.
+[13]
+StatsBomb
+StatsBomb open data
+.
+Note:
+https://github.com/statsbomb/open-data
+Accessed 2024
+Cited by:
+§3.2
+.
+[14]
+StatsBomb
+Statsbombpy: python package for working with statsbomb data
+.
+Note:
+https://github.com/statsbomb/statsbombpy
+Accessed 2024
+Cited by:
+§3.2
+.
+[15]
+L. Torres-Ronda, E. Beanland, S. Whitehead, A. Sweeting, and J. Clubb
+(2022)
+Tracking systems in team sports: a narrative review of applications of the data and sport specific analysis
+.
+Sports Medicine - Open
+8
+.
+Cited by:
+§2.4
+.
+[16]
+E. Wheatcroft
+(2020)
+A profitable model for predicting the over/under market in football
+.
+International Journal of Forecasting
+36
+.
+Cited by:
+§2.1
+.
+[17]
+E. Wheatcroft
+(2021)
+Forecasting football matches by predicting match statistics
+.
+Journal of Sports Analytics
+7
+(
+2
+),
+pp. 77–97
+.
+Cited by:
+§2.1
+.
+[18]
+G. Zhang, M. Kempe, A. McRobert, H. Folgado, and S. B. H. Olthof
+(2025)
+Navigating team tactical analysis in football: an analytical pipeline leveraging player tracking technology
+.
+Proceedings of the Institution of Mechanical Engineers, Part P: Journal of Sports Engineering and Technology
+.
+Cited by:
+§2.4
+.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

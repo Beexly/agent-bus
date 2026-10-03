@@ -1,0 +1,21 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/2036-what-went-wrong-data-lakes.md
+## What it is (1-2 sentences)
+A practitioner retrospective (Gahi, 2026, arXiv:2606.08266v1) synthesizing 64 sources plus ~500 field reality checks into seven recurring data-lake anti-patterns ("Seven Deadly Sins"), a Governance Debt explanatory framework, and a measurable six-indicator definition of a "data swamp," with staged intervention matrices and a GDAM rubric. Reader verdict is ADAPT as the lane's capstone risk paper — the organizational audit of whether the lakehouse engineering will be operated or abandoned.
+## Key metrics/methods (formulas where given, else "not specified")
+- Operational swamp definition: a lake exhibiting 3+ of 6 measurable indicators: (1) no assigned ownership for >50% of assets; (2) metadata completeness <40%; (3) >40% of datasets unused in 90 days; (4) undocumented/untraceable lineage for critical pipelines; (5) duplicate datasets >20% of assets; (6) no automated quality validation on ingestion. Formulas + data sources given per indicator; thresholds declared heuristics to calibrate.
+- Seven Deadly Sins (self-reinforcing loop): (1) Ingest Without Purpose/Gluttony, (2) Schema Avoidance/Sloth, (3) Governance as Afterthought/Pride, (4) Technology Worship/Idolatry, (5) Democratization Illusion/Envy, (6) Skills Mirage/Greed, (7) Cost Delusion/Wrath.
+- Governance Debt: compounding cost of deferred governance decisions (classic governance dimensions + operational debt + engineering-discipline debt); governance gravity = pull back to warehouse approaches when governance gets hard.
+- GDAM rubric: 5 dimensions (Metadata Completeness, Quality Observability, Access Governance, Lineage Traceability, Organizational Ownership) read at Absent/Ad hoc/Partial/Established (deliberately no numeric score).
+## Data sources named
+- 64 sources: academic work, analyst reports (Gartner, NewVantage), practitioner accounts; author's private catalogue of ~500 field reality checks over 15 years building/rescuing enterprise lakes (financial services, telecom, Morocco and West Africa); expert review panel of 8 practitioners (3 data architects, 2 governance PMs, 1 CDO, 2 consultants). Formal empirical validation explicitly deferred.
+## Findings (numbers and facts, not vibes)
+- Convergent failure signals: Gartner 60–85% big data project failure (2015–17); NewVantage 2020: 98.8% of Fortune 1000 investing, only 37.8% data-driven; VentureBeat 87% of data science projects fail to reach production; NewVantage 2022: 92% of executives say culture not technology is the main obstacle; 83% of leaders call data literacy essential, only 28% of orgs have reached it.
+- Sins ranking: governance sins (purposeless ingestion, governance-as-afterthought) most frequently cited; democratization illusion least.
+- Three sequential breaking points: (1) trust collapse (shadow systems); (2) compliance shock (can't say what data is held — Capital One 2019: 100M+ records, $80M OCC fine); (3) remediation impossibility (retrospective governance costs more than rebuilding).
+- Limitations in file: framework unvalidated — expert review gives face validity only; all thresholds heuristics; instruments are "testable hypotheses, not validated standards"; single-author study, field catalogue not public/auditable; 2026 preprint.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- Six-indicator swamp dashboard computable on GSE's own store quarterly (ownership, metadata completeness ≥90% target, 90-day dormancy, lineage traceability, duplication <20%, ingestion validation) — OTHER.
+- Governance-debt ledger entry per deferred governance decision with a revisit date — OTHER.
+- Schema-avoidance guard: every new signal lands with schema, units, and source documented at ingestion — OTHER.
+## Engine-actionable? (yes/no + one-line what)
+yes — Adopt the swamp-indicator dashboard + quarterly GDAM self-review iff all six indicators are computable within one quarter, metadata completeness ≥90% and duplication <20% at first full run, and quarterly re-run takes <2 hours; if dormancy shows >40% of signals unused in 90 days, trigger Stage-3 deprecation review instead of more ingestion.

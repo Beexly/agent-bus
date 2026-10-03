@@ -1,0 +1,3350 @@
+Abstract
+In-play football forecasting models have struggled to match the accuracy of betting exchange prices, which aggregate information from many market participants. We close this gap by combining two extensions to a Weibull accelerated failure time model: calibrating team strength parameters to Betfair Exchange prices at kick-off to capture pre-match market information, and including post-shot expected goals as a time-varying covariate to capture in-play information. The calibration approach, where we jointly fit team-strength parameters to 1X2 and over/under betting markets via squared-error minimisation, applies to any intensity-based goal arrival model and enables stronger in-play forecasting. Evaluated across 140 English Premier League matches at minute intervals, the calibrated model almost matches Betfair’s classification accuracy (70.2% versus 70.6%) while retaining interpretable team-level parameters and covariate effects. A comparison with two alternative continuous-time scoring models, both calibrated to the same pre-match odds, confirms that market calibration is the dominant driver of predictive accuracy. A betting simulation against Betfair in-play odds yields a 4.5% return on investment (Sharpe ratio 5.94) over 17,458 bets, suggesting an inefficiency within in-play football markets.
+1
+Introduction
+The prediction of association football match outcomes attracts considerable interest from the sports analytics and betting communities. In-play betting, where bettors use observed match events to update their forecasts during a match, now commands around 60% of the sports betting market.
+1
+1
+1
+https://www.mordorintelligence.com/industry-reports/online-sports-betting-market
+Betting exchanges such as Betfair Exchange (and prediction markets) have substantial in-play liquidity for elite-level football matches, with some bettors placing thousands of bets per match as they react to match events and market dynamics. Live data feeds from providers such as Stats Perform---whose Opta brand collects over 1 billion unique data points annually across more than 20 sports and 3,900 competitions
+2
+2
+2
+https://www.statsperform.com/resource/opta-by-stats-perform-global-leader-ai-sports-data-analytics/
+—enable fully automated betting strategies in these markets. While association football is the most widely played and watched sport globally, forecasting match outcomes in-play presents clear challenges: the sport is inherently low-scoring, with less than three goals per match on average, and matches can result in draws, creating a three-way outcome classification problem.
+Pre-match forecasting has a long history, from early Poisson models
+(
+22
+)
+to bivariate extensions
+(
+7
+;
+15
+;
+2
+)
+and machine learning approaches
+(
+3
+)
+. However, these methods do not address in-play updating. In higher-scoring sports, within-match updating is more straightforward: tennis models update win probabilities point-by-point
+(
+17
+;
+20
+)
+and basketball models simulate possession-by-possession
+(
+32
+)
+. In football, goals are sufficiently rare that models must extract signal from non-scoring events to update forecasts meaningfully between goals.
+A growing body of in-play work addresses this challenge.
+28
+model scoring intensity as a Poisson process conditioned on many match-event covariates, including expected threat, attacking passes, and duel success rates. Their pre-match baseline, however, rests on a single Elo rating differential, which captures relative strength but offers no team-specific attack or defence decomposition: two fixtures with the same Elo gap are assigned identical pre-match expected goals, regardless of the teams’ scoring rates. Other notable point-process approaches
+(
+8
+;
+34
+;
+23
+;
+41
+)
+model arrivals directly, but condition on score state, red cards, and time effects alone, drawing little signal from shot-level or event-derived data between goals.
+21
+model goal inter-arrival times directly, via a Weibull accelerated failure time model. A gap-time formulation provides a natural basis for simulating match progressions, and a fitted shape parameter above unity captures the rise in scoring rate as matches progress. Their model achieves precise in-sample league reconstruction and its structure admits a straightforward extension to in-play covariates, which they leave as future work.
+A further limitation shared by all of the above models is their comparatively weak performance relative to betting markets. Prediction markets aggregate dispersed information from many participants into efficient forecasts
+(
+37
+)
+, and football betting odds in particular have been shown to be highly accurate predictors of match outcomes.
+40
+demonstrates across nearly 100,000 matches that bookmaker odds outperform methods based on average points, goals, and Elo ratings in predicting both match winners and team-level goal totals. Yet no in-play forecasting model has incorporated pre-match market prices, leaving the accuracy of in-play forecasts constrained by their pre-match baseline.
+The most relevant work in this respect is that of
+9
+, who invert bookmaker 1X2 odds through the Skellam distribution to recover match-level home and away Poisson means, then combine these with historical attack–defence estimates via a per-match convex combination with a Bayesian-estimated mixing weight. Applied to the top four European leagues, the model yields positive expected returns under an EV-betting strategy and predictive accuracy close to bookmaker odds. However, it models only final scores, with no in-play updating, and the convex-combination form constrains the calibrated rate to lie between the historical and odds-implied estimates rather than fitting freely to market prices.
+Two limitations motivate the work we present. First, the Weibull gap-time framework of
+21
+has not been applied in-play, despite the authors explicitly proposing this as future work and the structure admitting in-play covariates by design. Second, pre-match baselines estimated from historical data alone are substantially less accurate than market prices, constraining in-play performance from the outset.
+In this paper, we address both limitations by extending the Weibull accelerated failure time model with in-play covariates and pre-match calibration. We adopt half-specific shape parameters and incorporate post-shot expected goals (PSxG) as a time-varying covariate, capturing shot volume and quality beyond what the score alone reflects. To close the information gap with the market, we calibrate the model’s scoring-rate parameters to Betfair Exchange prices at kick-off. We use the term calibration throughout in the sense of financial model calibration, where one selects parameters to reproduce observed market prices, as opposed to probability calibration.
+We evaluate all models against Betfair Exchange in-play prices across 140 matches from the second half of the 2024–25 season, using log-loss, Ranked Probability Score, and classification accuracy at minute intervals. The calibrated Weibull model matches Betfair Exchange classification accuracy while retaining interpretable team-level parameters and in-play covariate effects. We compare against the Bayesian birth process of
+41
+and the Cox process of
+23
+, both calibrated to the same pre-match odds. The calibrated Weibull and Maia models perform similarly, and both outperform the Zou model, confirming that calibration to market prices is the dominant driver of predictive accuracy. A betting simulation with the calibrated Weibull model against Betfair in-play odds yields 4.5% ROI with Kelly staking (Sharpe ratio 5.94) over 17,458 bets, providing evidence that the model captures predictive information not fully reflected in exchange prices.
+2
+Related work
+Considering pre-match forecasting, early work on score distributions
+(
+24
+;
+27
+)
+concluded the Poisson model was inadequate, favouring the Negative Binomial. However,
+22
+demonstrated that a Poisson regression model with team-specific attack and defence parameters could adequately describe match scores, establishing a framework for subsequent forecasting models. Notable extensions to this framework include incorporating time-varying team strengths with a low-score dependence correction
+(
+7
+)
+, using a bivariate Poisson model with diagonal inflation to better capture draws
+(
+15
+)
+, and implementing a Weibull count process with copula-induced dependence
+(
+2
+)
+.
+Player data has been used to forecast match outcomes, with
+12
+introducing a Skellam regression approach that uses player ratings with positional interactions. Machine learning methods have also been applied to predict outcomes, with gradient-boosted tree models demonstrating competitive performance
+(
+3
+)
+.
+Scoring rates are known to rise through the course of a match
+(
+1
+)
+, and trailing teams have an elevated scoring rate in the second half
+(
+29
+)
+.
+8
+first introduced a bivariate non-homogeneous Poisson birth process in which home and away goal rates depend on the current scoreline.
+34
+extended this to a semi-parametric Cox model with a non-parametric baseline intensity for each team, estimated directly from observed goal times, allowing scoring rates to vary continuously over match time rather than being piecewise-constant between score changes.
+33
+took a different approach and jointly modelled goals and bookings as an eight-dimensional counting process under Weibull proportional hazards, finding that red cards sharply alter scoring rates but yellow cards do not, and that home scoring rates fall once the home team leads. Each of these models accounts for the evolving match state, yet assumes team-ability parameters remain fixed throughout.
+Building on the birth process framework of
+8
+,
+41
+update team scoring intensities in-play via conjugate Gamma posteriors as goals are observed, without consideration of the information contained in shots, cards, and other match events that might foreshadow goals.
+28
+address this limitation by treating scoring intensity as a temporal stochastic process with regression weights that evolve throughout the match. Beyond score and time, they incorporate expected threat
+(
+30
+)
+, attacking passes, duel success rates, and cards, enabling win probability to respond to shifts in momentum before goals are scored. However, their use of Elo ratings as the pre-match baseline captures only relative team strength, precluding the matchup-specific attack–defence decomposition needed for informative scoreline forecasts.
+Following the shift towards greater use of in-play covariates,
+19
+evaluated the incremental value of 18 performance indicators—including shots, passes, space control, and running distance—for match outcome prediction. Using an ordered logistic regression to forecast second-half results, they found that first-half goals added no significant predictive value for second-half outcomes once pre-match bookmaker odds were included.
+More recently,
+23
+treat goal arrivals as Cox processes with dynamic regressors for score differential, red-card difference, a half-time indicator, and the log-ratio of pre-match market values. They find that a team’s scoring intensity drops by over 30% upon receiving a red card, and trailing teams exhibit 10–20% higher intensity. Although they provide a general structure for incorporating in-play covariates into goal intensity models, they do not explore more informative features, such as shots.
+3
+Data
+We collect data from several sources for four English Premier League seasons 2021–25 inclusive. WhoScored.com records a variety of timestamped match events, from which we extract goal arrival times, red card events, and injury time added. For shot-level detail, we use FBref.com, which provides post-shot expected goals (PSxG): the probability a shot results in a goal given its location, context, placement, and goalkeeper positioning.
+Betfair Exchange freely provides minute-by-minute historical data for football markets, recording the last traded price for each outcome. As a crude estimate of executable odds, we use the price recorded two minutes after each evaluation minute, allowing the market time to absorb any recent events.
+Of the 1,520 scheduled fixtures, three with missing data are excluded. The remaining 1,517 are split into 1,377 training and 140 evaluation matches. The evaluation set comprises all fixtures from gameweek 25 onwards in the 2024–25 season.
+4
+A Weibull accelerated failure time model
+21
+introduce a Weibull accelerated failure time (AFT) model
+(
+14
+)
+for goal inter-arrival times using match data from the English Premier League 2018–19 season. Rather than addressing “How many goals will be scored?”, they use the time between successive goals to answer “When will a goal be scored?” such that in a match between home team
+H
+H
+and away team
+A
+A
+, goal arrival times follow:
+T
+H
+\displaystyle T_{H}
+∼
+Weibull
+​
+(
+γ
+,
+λ
+H
+)
+,
+\displaystyle\sim\text{Weibull}(\gamma,\lambda_{H}),
+(1)
+T
+A
+\displaystyle T_{A}
+∼
+Weibull
+​
+(
+γ
+,
+λ
+A
+)
+.
+\displaystyle\sim\text{Weibull}(\gamma,\lambda_{A}).
+(2)
+The shape parameter
+γ
+\gamma
+governs how goal probability evolves over time. When
+γ
+>
+1
+\gamma>1
+, the hazard increases with time, making goals more probable the longer the scoreline stays the same. The authors found a posterior mean of 1.13 with a 95% posterior interval ranging from 1.078 to 1.186, indicating that goal-scoring rate increases as matches progress. They also fit a model with a score-state-dependent shape parameter that achieved a superior fit as measured by the Deviance Information Criterion (DIC
+=
+10,870
+=10{,}870
+vs.
+11,010
+11{,}010
+):
+γ
+=
+{
+0.943
+if team is leading
+,
+1.044
+if match is tied
+,
+1.731
+if team is trailing
+.
+\gamma=\begin{cases}0.943&\text{if team is leading},\\
+1.044&\text{if match is tied},\\
+1.731&\text{if team is trailing}.\end{cases}
+(3)
+The sharply increased hazard for the trailing team reflects increased attacking urgency.
+To determine
+λ
+H
+\lambda_{H}
+and
+λ
+A
+\lambda_{A}
+, the “standard vanilla formulation” of
+15
+is used:
+log
+⁡
+𝔼
+⁡
+[
+T
+H
+]
+\displaystyle\log\mathbb{E}[T_{H}]
+=
+μ
++
+β
+home
++
+a
+H
++
+d
+A
+,
+\displaystyle=\mu+\beta_{\text{home}}+a_{H}+d_{A},
+(4)
+log
+⁡
+𝔼
+⁡
+[
+T
+A
+]
+\displaystyle\log\mathbb{E}[T_{A}]
+=
+μ
++
+a
+A
++
+d
+H
+,
+\displaystyle=\mu+a_{A}+d_{H},
+(5)
+where
+μ
+\mu
+is the intercept,
+β
+home
+\beta_{\text{home}}
+captures home advantage, and each team
+k
+k
+has attacking ability
+a
+k
+a_{k}
+and defensive ability
+d
+k
+d_{k}
+. Lower attacking parameters indicate a stronger attack (shorter expected time to score); higher defensive parameters indicate a stronger defence (longer expected time for opponent to score). For identifiability, sum-to-zero constraints are imposed:
+∑
+k
+a
+k
+=
+∑
+k
+d
+k
+=
+0
+\sum_{k}a_{k}=\sum_{k}d_{k}=0
+.
+For the half-time interval, they found that treating time as continuous rather than censoring and resetting at the 45th minute yielded a better fit (DIC
+11,010
+11{,}010
+vs.
+11,070
+11{,}070
+). They also investigated dependence between goal arrival times using a Marshall–Olkin bivariate Weibull distribution and random effects models, but found no improvement over the independent Weibull model.
+We estimate all parameters by maximising the Weibull likelihood over interval-censored goal times, in contrast to the Bayesian approach with low-informative priors of
+21
+, and use BIC for model comparison. We fit this model on 1,377 in-sample matches from four EPL seasons (2021–25), using the score-state-dependent shape parameters of Equation
+3
+. The intercept
+μ
+=
+4.09
+\mu=4.09
+closely matches
+21
+’s estimate of 4.03, and we obtain
+β
+home
+=
+−
+0.12
+\beta_{\text{home}}=-0.12
+compared to their
+−
+0.19
+-0.19
+. We now describe our adaptations for in-play prediction.
+5
+Adaptation for in-play prediction
+We generate in-play forecasts by Monte Carlo simulation: at each prediction point, we sample 10,000 match completions from the current minute to full time, conditioning on the observed score and elapsed time. Outcome probabilities are obtained from the proportions of home wins, draws, and away wins across simulations. We also apply several adaptations to the base model: time-decaying team strengths that evolve across gameweeks, half-specific shape parameters, a conditional sampling mechanism for the Weibull distribution, and in-play covariates that update the scoring rate as events occur.
+5.1
+Time decay
+The performance of a football team notoriously varies throughout a season due to tactical adjustments, managerial changes, injuries and transfers. While
+21
+’s choice of static team strength parameters is appropriate for validation of the accelerated failure time approach within a single season, we use a larger dataset and hence re-estimate team parameters after each gameweek using all previous matches.
+We implement exponential time decay to capture the evolution of team strengths. Specifically, at each gameweek, all previous matches are weighted by
+w
+k
+=
+exp
+(
+−
+ξ
+⋅
+d
+k
+3.5
+)
+,
+w_{k}=\exp\left(-\xi\cdot\frac{d_{k}}{3.5}\right),
+(6)
+where
+d
+k
+d_{k}
+is the number of days elapsed since match
+k
+k
+, and division by 3.5 converts to half-weeks.
+We use
+ξ
+=
+0.0065
+\xi=0.0065
+per half-week following
+7
+, who optimised this value by maximising predictive log-likelihood on match outcomes. This yields a half-life of approximately one year.
+5.2
+Second half scoring
+Table 1:
+Model comparison for hazard specification.
+Model
+k
+k
+Δ
+\Delta
+BIC
+\@BTrule
+[]Score-state
+γ
+\gamma
+(baseline)
+3
+0.0
+Single
+γ
+\gamma
+1
+−
+16.7
+-16.7
+Half-specific
+γ
+\gamma
+2
+−
+302.9
+\mathbf{-302.9}
+Δ
+\Delta
+BIC relative to baseline (BIC
+=
+41,629
+=41{,}629
+); negative indicates improvement.
+Table 2:
+Parameter estimates for the half-specific
+γ
+\gamma
+model.
+Parameter
+Estimate
+SE
+95% Confidence Interval
+\@BTrule
+[]
+γ
+1H
+\gamma_{\text{1H}}
+0.983
+0.015
+[0.953, 1.012]
+γ
+2H
+\gamma_{\text{2H}}
+1.395
+0.036
+[1.325, 1.465]
+21
+found that treating the half-time interval as continuous (rather than censoring at the end of the first half) yielded a better fit. However, their score-state-dependent
+γ
+\gamma
+does not account for systematic differences in scoring patterns between halves. When we re-estimate the score-state gammas on our data, the sharp differentiation between leading, tied, and trailing states is not replicated:
+γ
+leading
+=
+1.19
+\gamma_{\text{leading}}=1.19
+,
+γ
+tied
+=
+1.19
+\gamma_{\text{tied}}=1.19
+,
+γ
+trailing
+=
+1.21
+\gamma_{\text{trailing}}=1.21
+. A single
+γ
+\gamma
+achieves better BIC than the freely estimated three-gamma model (
+Δ
+\Delta
+BIC =
+−
+16.7
+-16.7
+).
+Furthermore, we find strong evidence for a half-specific effect. The estimated shape parameters are
+γ
+1H
+=
+0.98
+\gamma_{\text{1H}}=0.98
+and
+γ
+2H
+=
+1.40
+\gamma_{\text{2H}}=1.40
+(Table
+2
+), indicating the hazard increases substantially faster in the second half. This specification yields a BIC improvement of 302.9 over the score-state-dependent specification (Table
+1
+).
+5.3
+Conditional Weibull
+To adapt the framework for in-play prediction, we first consider that the Weibull distribution is not memoryless: the probability of a goal in the next minute depends on how long the current scoreline has persisted. We must therefore condition on the time
+s
+s
+elapsed since the last goal (or kickoff). Following
+18
+, we sample
+T
+−
+s
+|
+T
+>
+s
+T-s\mid T>s
+via inverse transform:
+T
+remaining
+=
+(
+s
+γ
++
+−
+log
+⁡
+(
+U
+)
+λ
+)
+1
+/
+γ
+−
+s
+,
+U
+∼
+Uniform
+​
+(
+0
+,
+1
+)
+.
+T_{\text{remaining}}=\left(s^{\gamma}+\frac{-\log(U)}{\lambda}\right)^{1/\gamma}-s,\quad U\sim\text{Uniform}(0,1).
+(7)
+Since we simulate from the current minute to full time, we must estimate the match endpoint, which depends on stoppage time added by the referee at the end of each half. While
+21
+sample total stoppage uniformly from
+[
+3
+,
+7
+]
+[3,7]
+minutes, we use half-specific means computed exclusively from the 240 training matches preceding the evaluation period: 3.1 minutes for the first half and 6.2 for the second. We restrict this computation to the same-season data because of FIFA’s 2023 effective playing time directive, which caused substantial differences in stoppage across seasons. Although approaches to estimating stoppage time during a match exist
+(
+35
+, see)
+, the simple mean performs comparably to an oracle that knows the true match duration on our evaluation set (log-loss 0.737 vs. 0.737, accuracy 66.5% vs. 66.6%).
+When simulating from the first half, the survival time resets to zero at the half-time transition.
+21
+find that treating goal arrivals as a continuous process across halves is preferable to censoring at half-time, a finding we corroborate on our dataset (
+Δ
+\Delta
+BIC =
+184
+184
+for the censored model). However, because our half-specific extension assigns different shape parameters to each half (
+γ
+1H
+\gamma_{\text{1H}}
+and
+γ
+2H
+\gamma_{\text{2H}}
+), the conditional Weibull inverse CDF, which assumes a constant shape throughout the survival period, cannot be applied directly across the boundary. Since
+γ
+^
+1H
+=
+0.98
+\hat{\gamma}_{\text{1H}}=0.98
+is not significantly different from 1 (95% CI
+[
+0.95
+,
+1.01
+]
+[0.95,1.01]
+), the first half is approximately memoryless: we reset the elapsed-time clock to zero at the half-time boundary and lose negligible information, while still applying
+γ
+^
+1H
+\hat{\gamma}_{\text{1H}}
+for sampling within the first half itself.
+5.4
+Shot quality
+Figure 1:
+Cumulative goals and PSxG for Arsenal vs. Everton (2–1, 19 May 2024) against the population mean PSxG. The dotted line indicates the population mean PSxG trajectory, estimated from the training data.
+Shots provide richer information than goals alone, but vary widely in scoring potential—a long-range effort and a six-yard chance contribute equally to a shot count despite very different conversion probabilities. The idea of weighting each shot by its estimated scoring probability dates to
+25
+, who modelled this probability via logistic regression on shot location and context; now termed expected goals (xG). The metric has since been refined, notably as post-shot expected goals (PSxG), which refines xG using the observed shot trajectory (specifically, the ball’s end location) and is defined only for shots on target; off-target shots contribute zero. Let
+s
+k
+,
+j
+s_{k,j}
+denote the PSxG of team
+k
+k
+’s
+j
+j
+-th shot at minute
+t
+j
+t_{j}
+. The cumulative PSxG process
+S
+k
+(
+t
+)
+=
+∑
+j
+:
+t
+j
+≤
+t
+s
+k
+,
+j
+S_{k}(t)=\sum_{j:\,t_{j}\leq t}s_{k,j}
+(8)
+is the running total from kick-off; we apply no within-match windowing or decay. Since
+S
+k
+​
+(
+t
+)
+S_{k}(t)
+grows with
+t
+t
+, we subtract an estimated linear baseline
+S
+¯
+​
+(
+t
+)
+\bar{S}(t)
+, obtained by regressing
+S
+k
+​
+(
+t
+)
+S_{k}(t)
+on
+t
+t
+across all team-matches in the 1,377 training matches. The PSxG deviation covariate is
+x
+PSxG
+,
+k
+​
+(
+t
+)
+=
+S
+k
+​
+(
+t
+)
+−
+S
+¯
+​
+(
+t
+)
+.
+x_{\text{PSxG},k}(t)=S_{k}(t)-\bar{S}(t).
+(9)
+Positive values indicate above-typical shot quality for the match stage. Figure
+1
+illustrates this for Arsenal’s 2–1 win over Everton on 19 May 2024, where Arsenal’s cumulative PSxG runs well above the population mean throughout the second half. At prediction minute
+M
+M
+,
+x
+PSxG
+,
+k
+​
+(
+M
+)
+x_{\text{PSxG},k}(M)
+is held fixed across all Monte Carlo paths; future shots are not simulated. We define a similar covariate for cumulative goals, evaluated alongside PSxG in Section
+5.5
+.
+5.5
+Covariates
+Table 3:
+Nested covariate model comparison. Team parameters
+(
+μ
+\mu
+,
+β
+home
+\beta_{\text{home}}
+,
+a
+k
+a_{k}
+,
+d
+k
+d_{k}
+) are fixed from the first
+estimation stage; shape and covariate parameters are jointly estimated.
+Standard errors in parentheses.
+M0
+M1
+M2
+M3
+\@BTrule
+[]
+γ
+^
+1H
+\hat{\gamma}_{\text{1H}}
+1.00
+1.00
+1.00
+1.00
+1.01
+1.01
+1.01
+1.01
+γ
+^
+2H
+\hat{\gamma}_{\text{2H}}
+1.40
+1.40
+1.40
+1.40
+1.43
+1.43
+1.41
+1.41
+β
+^
+red
+\hat{\beta}_{\text{red}}
+—
+−
+0.41
+-0.41
+(
+0.06
+)
+(0.06)
+−
+0.38
+-0.38
+(
+0.06
+)
+(0.06)
+−
+0.36
+-0.36
+(
+0.06
+)
+(0.06)
+β
+^
+goals
+\hat{\beta}_{\text{goals}}
+—
+—
+−
+0.07
+-0.07
+(
+0.01
+)
+(0.01)
+—
+β
+^
+psxg
+\hat{\beta}_{\text{psxg}}
+—
+—
+—
+−
+0.10
+-0.10
+(
+0.02
+)
+(0.02)
+\@BTrule
+[]
+k
+k
+2
+2
+3
+3
+4
+4
+4
+4
+Δ
+\Delta
+BIC
+0.0
+0.0
+−
+37.1
+-37.1
+−
+49.4
+-49.4
+−
+53.4
+\mathbf{-53.4}
+LRT
+p
+p
+-value
+—
+7.0
+×
+10
+−
+12
+7.0\times 10^{-12}
+2.3
+×
+10
+−
+6
+2.3\times 10^{-6}
+2.9
+×
+10
+−
+7
+2.9\times 10^{-7}
+Covariates:
+β
+red
+\beta_{\text{red}}
+= red card difference;
+β
+goals
+\beta_{\text{goals}}
+= goals deviation from population mean;
+β
+psxg
+\beta_{\text{psxg}}
+= PSxG deviation from population mean.
+Δ
+\Delta
+BIC relative to M0 (BIC
+=
+29,883
+=29{,}883
+); LRT tests M0
+→
+\to
+M1, M1
+→
+\to
+M2, and M1
+→
+\to
+M3.
+21
+identify the incorporation of in-play covariates within their model as a primary direction for future work. The scoreline is the most fundamental in-play variable: both
+21
+and
+23
+find that trailing teams have elevated goal-scoring rates. However, as discussed in Section
+5.2
+, we do not replicate this score-state differentiation; half-specific effects dominate instead. With access to event-level data, we include two covariates: the PSxG deviation defined in Section
+5.4
+and red cards.
+To incorporate covariates, we extend the log-expected time equations:
+log
+⁡
+𝔼
+⁡
+[
+T
+H
+]
+\displaystyle\log\mathbb{E}[T_{H}]
+=
+μ
++
+β
+home
++
+a
+H
++
+d
+A
++
+𝜷
+⊤
+​
+𝐱
+H
+\displaystyle=\mu+\beta_{\text{home}}+a_{H}+d_{A}+\boldsymbol{\beta}^{\top}\mathbf{x}_{H}
+(10)
+log
+⁡
+𝔼
+⁡
+[
+T
+A
+]
+\displaystyle\log\mathbb{E}[T_{A}]
+=
+μ
++
+a
+A
++
+d
+H
++
+𝜷
+⊤
+​
+𝐱
+A
+\displaystyle=\mu+a_{A}+d_{H}+\boldsymbol{\beta}^{\top}\mathbf{x}_{A}
+(11)
+where
+𝐱
+\mathbf{x}
+is a vector of covariate values accumulated from match start to the current prediction time.
+Red cards, though rare, substantially affect match dynamics.
+23
+, with 3,039 matches containing 715 red cards, report a 30% reduction in goal intensity for a team at a player disadvantage.
+21
+found only weak evidence given their smaller sample of 380 matches with 47 red cards. Our training set of 1,377 matches contains 175 red cards. We encode the red card difference (own minus opponent) so that positive values indicate a player advantage.
+Table
+3
+reports a nested model comparison. Red cards alone yield the largest single-covariate improvement (
+Δ
+\Delta
+BIC
+=
+−
+37.1
+=-37.1
+; M1), with the negative coefficient (
+β
+^
+red
+=
+−
+0.41
+\hat{\beta}_{\text{red}}=-0.41
+) indicating that a team with a player advantage scores sooner on average. Adding a deviation covariate further improves the fit: both deviation goals (M2) and deviation PSxG (M3) are significant by LRT, with negative coefficients confirming that sustained attacking pressure shortens expected goal arrival times. Including PSxG deviation achieves the best BIC (
+Δ
+\Delta
+BIC
+=
+−
+53.4
+=-53.4
+), consistent with the fact that goals are discrete and rare, whereas PSxG provides a more granular measure of attacking output. The jointly estimated shape parameters shift negligibly across all specifications (Table
+3
+), confirming that the half-specific hazard structure is robust to covariate inclusion. At each prediction minute
+M
+M
+, we draw
+N
+=
+10,000
+N=10{,}000
+Monte Carlo paths and take the win/draw/loss proportions; Algorithm
+1
+describes the exact process.
+Algorithm 1
+In-play Monte Carlo forecast at minute
+M
+M
+with
+N
+=
+10,000
+N=10{,}000
+paths.
+1:
+prediction minute
+M
+M
+; number of paths
+N
+N
+; score
+(
+g
+H
+,
+g
+A
+)
+(g_{H},g_{A})
+;
+elapsed time
+s
+s
+since the last goal (or kickoff if none);
+log-expected goal-arrival times
+η
+H
+=
+μ
++
+β
+home
++
+a
+H
++
+d
+A
++
+𝜷
+⊤
+​
+𝐱
+H
+\eta_{H}=\mu+\beta_{\text{home}}+a_{H}+d_{A}+\boldsymbol{\beta}^{\top}\mathbf{x}_{H}
+and
+η
+A
+=
+μ
++
+a
+A
++
+d
+H
++
+𝜷
+⊤
+​
+𝐱
+A
+\eta_{A}=\mu+a_{A}+d_{H}+\boldsymbol{\beta}^{\top}\mathbf{x}_{A}
+(Eqs.
+10
+–
+11
+);
+half-specific shapes
+γ
+1H
+,
+γ
+2H
+\gamma_{\text{1H}},\gamma_{\text{2H}}
+;
+mean stoppage times
+U
+1
+,
+U
+2
+U_{1},U_{2}
+2:
+λ
+k
+(
+q
+)
+←
+(
+Γ
+⁡
+(
+1
++
+1
+/
+γ
+q
+)
+​
+e
+−
+η
+k
+)
+γ
+q
+\lambda_{k}^{(q)}\leftarrow\left(\Gamma(1+1/\gamma_{q})\,\mathrm{e}^{-\eta_{k}}\right)^{\gamma_{q}}
+,
+k
+∈
+{
+H
+,
+A
+}
+,
+q
+∈
+{
+1H
+,
+2H
+}
+k\in\{H,A\},\;q\in\{\text{1H},\text{2H}\}
+3:
+for
+i
+=
+1
+,
+…
+,
+N
+i=1,\ldots,N
+do
+4:
+(
+h
+,
+a
+,
+s
+~
+)
+←
+(
+g
+H
+,
+g
+A
+,
+s
+)
+(h,a,\tilde{s})\leftarrow(g_{H},g_{A},s)
+5:
+if
+M
+<
+45
++
+U
+1
+M<45+U_{1}
+then
+6:
+t
+rem
+←
+45
++
+U
+1
+−
+M
+t_{\text{rem}}\leftarrow 45+U_{1}-M
+7:
+(
+h
+,
+a
+)
+←
+SimulateHalf
+​
+(
+h
+,
+a
+,
+s
+~
+,
+γ
+1H
+,
+λ
+H
+(
+1H
+)
+,
+λ
+A
+(
+1H
+)
+,
+t
+rem
+)
+(h,a)\leftarrow\textsc{SimulateHalf}(h,a,\tilde{s},\gamma_{\text{1H}},\lambda_{H}^{(\text{1H})},\lambda_{A}^{(\text{1H})},t_{\text{rem}})
+8:
+s
+~
+←
+0
+\tilde{s}\leftarrow 0
+⊳
+\triangleright
+γ
+1H
+≈
+1
+⇒
+\gamma_{\text{1H}}\approx 1\Rightarrow
+memoryless
+9:
+end
+if
+10:
+t
+rem
+←
+90
++
+U
+2
+−
+max
+⁡
+(
+M
+,
+45
++
+U
+1
+)
+t_{\text{rem}}\leftarrow 90+U_{2}-\max(M,45+U_{1})
+11:
+(
+h
+i
+,
+a
+i
+)
+←
+SimulateHalf
+​
+(
+h
+,
+a
+,
+s
+~
+,
+γ
+2H
+,
+λ
+H
+(
+2H
+)
+,
+λ
+A
+(
+2H
+)
+,
+t
+rem
+)
+(h_{i},a_{i})\leftarrow\textsc{SimulateHalf}(h,a,\tilde{s},\gamma_{\text{2H}},\lambda_{H}^{(\text{2H})},\lambda_{A}^{(\text{2H})},t_{\text{rem}})
+12:
+end
+for
+13:
+return
+p
+H
+=
+1
+N
+∑
+i
+𝟏
+[
+h
+i
+>
+a
+i
+]
+p_{H}=\tfrac{1}{N}\sum_{i}\mathbf{1}[h_{i}>a_{i}]
+,
+p
+D
+=
+1
+N
+∑
+i
+𝟏
+[
+h
+i
+=
+a
+i
+]
+p_{D}=\tfrac{1}{N}\sum_{i}\mathbf{1}[h_{i}=a_{i}]
+,
+p
+A
+=
+1
+−
+p
+H
+−
+p
+D
+p_{A}=1-p_{H}-p_{D}
+14:
+15:
+function
+SimulateHalf
+(
+h
+,
+a
+,
+s
+,
+γ
+,
+λ
+H
+,
+λ
+A
+,
+t
+rem
+h,a,s,\gamma,\lambda_{H},\lambda_{A},t_{\text{rem}}
+)
+16:
+while
+t
+rem
+>
+0
+t_{\text{rem}}>0
+do
+17:
+Independently sample
+τ
+k
+\tau_{k}
+from
+T
+k
+−
+s
+|
+T
+k
+>
+s
+T_{k}-s\mid T_{k}>s
+via
+Eq.
+7
+, for
+k
+∈
+{
+H
+,
+A
+}
+k\in\{H,A\}
+18:
+τ
+∗
+←
+min
+⁡
+(
+τ
+H
+,
+τ
+A
+)
+\tau^{*}\leftarrow\min(\tau_{H},\tau_{A})
+19:
+if
+τ
+∗
+>
+t
+rem
+\tau^{*}>t_{\text{rem}}
+then
+break
+20:
+end
+if
+21:
+(
+h
+,
+a
+)
+←
+(
+h
+,
+a
+)
++
+(
+𝟏
+[
+τ
+H
+≤
+τ
+A
+]
+,
+1
+[
+τ
+A
+<
+τ
+H
+]
+)
+(h,a)\leftarrow(h,a)+(\mathbf{1}[\tau_{H}\leq\tau_{A}],\;\mathbf{1}[\tau_{A}<\tau_{H}])
+22:
+s
+←
+0
+s\leftarrow 0
+;
+t
+rem
+←
+t
+rem
+−
+τ
+∗
+t_{\text{rem}}\leftarrow t_{\text{rem}}-\tau^{*}
+23:
+end
+while
+24:
+return
+(
+h
+,
+a
+)
+(h,a)
+25:
+end
+function
+6
+Evaluation metrics
+We evaluate each model’s performance using three complementary metrics over the predicted probability distribution
+𝐩
+=
+(
+p
+H
+,
+p
+D
+,
+p
+A
+)
+\mathbf{p}=(p_{H},p_{D},p_{A})
+. The Ranked Probability Score (RPS) measures the accuracy of cumulative probability forecasts
+(
+10
+)
+:
+RPS
+=
+1
+2
+​
+∑
+i
+=
+1
+2
+(
+∑
+j
+=
+1
+i
+p
+j
+−
+∑
+j
+=
+1
+i
+a
+j
+)
+2
+,
+\text{RPS}=\frac{1}{2}\sum_{i=1}^{2}\left(\sum_{j=1}^{i}p_{j}-\sum_{j=1}^{i}a_{j}\right)^{2},
+(12)
+where outcomes are ordered as home win, draw, away win, and
+a
+j
+=
+1
+a_{j}=1
+if outcome
+j
+j
+occurred, 0 otherwise. RPS is standard in football forecasting
+(
+6
+, see)
+because it penalises predictions further from the true outcome more heavily than those nearby. However,
+36
+argues this “sensitivity to distance” provides no practical benefit, finding that log-loss identifies superior forecasters more efficiently. Hence, we also report log-loss,
+−
+log
+⁡
+p
+y
+-\log p_{y}
+where
+y
+∈
+{
+H
+,
+D
+,
+A
+}
+y\in\{H,D,A\}
+denotes the realised outcome. Unlike RPS, log-loss considers only the probability assigned to the outcome and penalises confident incorrect predictions severely. We also report classification accuracy, though this discards probabilistic information.
+We evaluate forecasts at every minute throughout each match, from minute 0 (pre-match) to the final whistle as determined by the last recorded event. We report aggregate metrics across all evaluation points; we also plot log-loss by minute, revealing how forecast accuracy evolves as match information accumulates and match-time remaining decreases.
+7
+Calibrated team strengths
+Figure 2:
+Total-goals distribution across the
+N
+=
+140
+N=140
+calibrated matches. Bars show, left to right: uncalibrated Weibull simulations, calibrated Weibull simulations, Betfair over/under-implied probabilities, and empirical season proportions (hatched). Simulated values aggregate
+10,000
+10{,}000
+simulations per match; the final bucket aggregates five or more goals.
+21
+achieve an out-of-sample agreement rate of 70.5% for binary outcomes (win-or-loss versus draw) when predicting the second half of the 2018–19 EPL season from the first, and reconstruct the same season’s final league table to within 1.4 positions in-sample. However, the betting market is widely recognised as the most accurate pre-match forecaster
+(
+11
+;
+31
+;
+40
+)
+: on our evaluation set, the uncalibrated Weibull achieves 56.4% pre-match accuracy versus 61.4% for Betfair. To analyse the model’s effectiveness at forecasting in-play, we calibrate the team strength parameters so that pre-match forecasts are approximately the same as those from Betfair.
+To do this, we utilise the over/under markets where bettors wager on whether the total number of goals in a match exceeds a given threshold. For example, ‘over 2.5 goals’ pays out if three or more goals are scored. These markets provide direct estimates of the goals distribution: prices at thresholds
+g
+∈
+{
+0.5
+,
+1.5
+,
+2.5
+,
+3.5
+,
+4.5
+}
+g\in\{0.5,1.5,2.5,3.5,4.5\}
+give the market-implied probability
+P
+⁡
+(
+G
+>
+g
+)
+P(G>g)
+for total goals
+G
+G
+, and collectively these five values determine the probability of each scoreline.
+These additional probabilities resolve an identifiability issue: match outcome probabilities alone are consistent with many combinations of
+(
+λ
+H
+,
+λ
+A
+)
+(\lambda_{H},\lambda_{A})
+at different absolute scoring levels. Over/under thresholds fix the total scoring rate, yielding a unique solution. Denoting the log-expected scoring times
+η
+H
+=
+μ
++
+β
+home
++
+a
+H
++
+d
+A
+\eta_{H}=\mu+\beta_{\text{home}}+a_{H}+d_{A}
+and
+η
+A
+=
+μ
++
+a
+A
++
+d
+H
+\eta_{A}=\mu+a_{A}+d_{H}
+, we find for each match the calibrated parameters
+(
+η
+H
+κ
+,
+η
+A
+κ
+)
+(\eta_{H}^{\kappa},\eta_{A}^{\kappa})
+that minimise
+ℒ
+=
+∑
+o
+∈
+{
+H
+,
+D
+,
+A
+}
+(
+p
+^
+o
+−
+p
+o
+mkt
+)
+2
++
+∑
+g
+∈
+𝒢
+(
+p
+^
+>
+g
+−
+p
+>
+g
+mkt
+)
+2
+,
+\mathcal{L}=\sum_{o\in\{H,D,A\}}\left(\hat{p}_{o}-p_{o}^{\text{mkt}}\right)^{2}+\sum_{g\in\mathcal{G}}\left(\hat{p}_{>g}-p_{>g}^{\text{mkt}}\right)^{2},
+(13)
+where
+p
+^
+o
+\hat{p}_{o}
+and
+p
+^
+>
+g
+\hat{p}_{>g}
+are simulation-based estimates from the Weibull model at minute 0 evaluated at
+(
+η
+H
+,
+η
+A
+)
+(\eta_{H},\eta_{A})
+, for match outcome
+o
+o
+and the over-
+g
+g
+goals market, and
+p
+o
+mkt
+p_{o}^{\text{mkt}}
+and
+p
+>
+g
+mkt
+p_{>g}^{\text{mkt}}
+are the corresponding Betfair-implied probabilities, with
+𝒢
+=
+{
+0.5
+,
+1.5
+,
+2.5
+,
+3.5
+,
+4.5
+}
+\mathcal{G}=\{0.5,1.5,2.5,3.5,4.5\}
+. For minimisation, we use Powell’s method
+(
+26
+)
+, initialised at the model-estimated
+(
+η
+H
+,
+η
+A
+)
+(\eta_{H},\eta_{A})
+.
+In Figure
+2
+, we compare the total-goals distribution from the Weibull model against the market-implied and empirical rates. The uncalibrated Weibull overestimates the frequency of high-scoring outcomes (five or more goals), while calibration pulls the distribution close to the Betfair-implied and empirically observed totals.
+Figure 3:
+Market calibration adjustments to team scoring parameters for gameweek 25 (first evaluation gameweek, 10 matches). Each paired row shows the shift from model-estimated to market-calibrated
+η
+\eta
+for the home (blue) and away (orange) team. Positive values indicate the market assigns a slower scoring rate than the model. Rows ordered by total absolute shift.
+Figure
+3
+illustrates the calibration adjustments for Gameweek 25 of the 2024–25 season. Shifts range from near zero to over 0.47 (a 42-minute increase in Leicester’s expected time to score against Arsenal), reflecting the information gap between the model’s scoreline-derived parameters and the market’s richer assessment of team quality. The predominantly positive direction suggests the uncalibrated model overestimates scoring rates, consistent with the over-prediction of high goal counts observed in Figure
+2
+.
+Table 4:
+Pre-match prediction performance (minute 0).
+N
+=
+140
+N=140
+matches. Calibrated variants (
+⋅
+κ
+\cdot_{\kappa}
+) are fitted to Betfair pre-match odds; subscript
+ψ
+\psi
+indicates inclusion of the post-shot expected goals (PSxG) covariate.
+Model
+Accuracy
+RPS
+Log-loss
+\@BTrule
+[]
+Weibull
+ψ
+\text{Weibull}_{\psi}
+0.564
+0.1980
+0.9560
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+0.614
+0.1829
+0.9147
+Zou
+0.557
+0.2041
+0.9726
+Zou
+κ
+\text{Zou}_{\kappa}
+0.614
+0.1824
+0.9113
+Maia
+ψ
+\text{Maia}_{\psi}
+0.564
+0.2036
+0.9711
+Maia
+κ
+,
+ψ
+\text{Maia}_{\kappa,\psi}
+0.614
+0.1833
+0.9140
+Betfair
+0.614
+0.1845
+0.9202
+At minute 0, all three calibrated models (
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+,
+Zou
+κ
+\text{Zou}_{\kappa}
+,
+Maia
+κ
+,
+ψ
+\text{Maia}_{\kappa,\psi}
+) closely resemble Betfair (Table
+4
+), confirming that the calibration successfully incorporates market information into team-strength parameters across structurally different model classes, while retaining each model’s structure for in-play updating. We do not interpret these small RPS and log-loss advantages over Betfair as a real edge: sampling variation easily covers the differences at
+N
+=
+140
+N=140
+, and Betfair would likely outperform calibrated models at scale.
+8
+Comparison models
+For comparison, we select two recent approaches that update scoring intensities during the match: the Bayesian birth process of
+41
+and the Cox process of
+23
+. We refer to these as the Zou and Maia models, respectively. We calibrate both models to Betfair Exchange odds at kick-off using the same objective as the Weibull model (Equation
+13
+), with outcome probabilities computed via a recursive algorithm for the birth process and Monte Carlo simulation for the Cox process.
+8.1
+Birth process with Bayesian updating
+41
+build on the non-homogeneous Poisson birth process of
+8
+, where home and away goal intensities depend on team-specific attack (
+α
+\alpha
+) and defence (
+β
+\beta
+) parameters, score-state multipliers, and a home advantage factor. Their contribution is a Bayesian update of the composite scoring parameters
+θ
+1
+=
+α
+H
+​
+β
+A
+\theta_{1}=\alpha_{H}\beta_{A}
+and
+θ
+2
+=
+α
+A
+​
+β
+H
+\theta_{2}=\alpha_{A}\beta_{H}
+as goals are observed. Using Gamma priors conjugate to the Poisson likelihood, the posterior mean after observing
+X
+⁡
+(
+T
+)
+X(T)
+home goals by minute
+T
+T
+is
+θ
+^
+1
+=
+r
+1
++
+X
+⁡
+(
+T
+)
+r
+1
++
+E
+H
+​
+(
+T
+)
+​
+θ
+^
+01
+,
+\hat{\theta}_{1}=\frac{r_{1}+X(T)}{r_{1}+E_{H}(T)}\,\hat{\theta}_{01},
+(14)
+where
+θ
+^
+01
+\hat{\theta}_{01}
+is the prior estimate from historical matches,
+E
+H
+​
+(
+T
+)
+E_{H}(T)
+is the expected home goals by minute
+T
+T
+, and
+r
+1
+=
+E
+H
+​
+(
+45
+)
+r_{1}=E_{H}(45)
+balances prior and in-match information: calibrating lightly in the first half and more aggressively in the second. Outcome probabilities are computed exactly via a recursive algorithm. Unlike our Weibull model, this approach updates team strengths through goals alone, without shot-level covariates.
+Stoppage time is handled with injury-time multipliers that inflate the scoring rate at minutes 45 and 90, rather than simulating additional match time. We use this model without covariates: jointly estimating a covariate coefficient would break the Gamma–Poisson conjugacy underlying the closed-form Bayesian update, while treating it as a fixed offset would depart from the original specification.
+8.2
+Cox process with dynamic regressors
+23
+model goal arrivals as Cox processes with time-varying regressors. Home goal intensity at minute
+t
+t
+is
+λ
+H
+​
+(
+t
+)
+=
+α
+H
+​
+β
+A
+​
+exp
+⁡
+(
+δ
++
+ξ
+half
+​
+h
+​
+(
+t
+)
++
+ξ
+gd
+​
+Δ
+H
+​
+(
+t
+)
++
+ξ
+rc
+​
+R
+H
+​
+(
+t
+)
+)
+,
+\lambda_{H}(t)=\alpha_{H}\beta_{A}\exp\!\left(\delta+\xi_{\text{half}}\,h(t)+\xi_{\text{gd}}\,\Delta_{H}(t)+\xi_{\text{rc}}\,R_{H}(t)\right),
+(15)
+where
+δ
+\delta
+captures home advantage,
+h
+⁡
+(
+t
+)
+=
+1
+h(t)=1
+if
+t
+t
+is in the second half and 0 otherwise,
+Δ
+H
+​
+(
+t
+)
+\Delta_{H}(t)
+and
+R
+H
+​
+(
+t
+)
+R_{H}(t)
+are the goal and red-card differences from team
+H
+H
+’s perspective. The model jointly estimates goal, red card, and stoppage time processes. Red card arrivals follow a non-homogeneous Poisson process with power-law intensity, and stoppage times for each half are Poisson-distributed with log-linear regressors for red cards and goals scored, with the second half additionally including a close-match indicator. Outcome probabilities are computed via Monte Carlo simulation.
+The original specification includes a team market value regressor, which we omit due to data limitations. However, our use of calibration to pre-match odds serves as a reasonable substitute. To control for the addition of PSxG in our Weibull model, we extend the Cox process intensity with the per-team PSxG deviation covariate
+x
+PSxG
+,
+k
+​
+(
+t
+)
+x_{\text{PSxG},k}(t)
+defined in Equation
+9
+, applied to home and away intensities with a shared coefficient
+ξ
+psxg
+\xi_{\text{psxg}}
+. This coefficient is estimated jointly with the other parameters and held constant during forward simulation from the current prediction minute. Both ‘Maia’ variants reported below include this covariate; its marginal effect within the Cox intensity is limited.
+8.3
+Betfair Exchange
+The market benchmark uses Betfair Exchange 1X2 last-traded prices, converted to implied probabilities by inverting the decimal odds and normalising to sum to unity. Since exchange prices at minute
+M
+M
+may not yet reflect a goal recorded at minute
+M
+M
+by the event data provider, we use prices from minute
+M
++
+2
+M+2
+. This shift is conservative: a timing analysis across 470 goals in the 2024–25 training matches shows that 99% of Betfair price reactions are absorbed within two minutes.
+9
+Predictive performance
+We denote the base survival model as Weibull, and use
+Weibull
+ψ
+\text{Weibull}_{\psi}
+when extended with the post-shot expected goals (PSxG) covariate. A subscript
+κ
+\kappa
+indicates team strengths calibrated to Betfair Exchange at kick-off; thus
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+denotes the full model. The same convention applies to the comparison models:
+Zou
+κ
+\text{Zou}_{\kappa}
+,
+Maia
+ψ
+\text{Maia}_{\psi}
+, and
+Maia
+κ
+,
+ψ
+\text{Maia}_{\kappa,\psi}
+. Betfair denotes odds-implied probabilities from the 1X2 market.
+Table 5:
+Aggregate predictive performance across 140 matches evaluated at every minute from kick-off to final whistle (13,832 prediction points per model). Uncalibrated variants use model-estimated team strengths; calibrated variants (
+⋅
+κ
+\cdot_{\kappa}
+) are fitted to Betfair pre-match odds. Subscript
+ψ
+\psi
+indicates inclusion of the post-shot expected goals (PSxG) covariate.
+Model
+Accuracy
+RPS
+Log-loss
+\@BTrule
+[]Weibull
+0.677
+0.1353
+0.7109
+Weibull
+ψ
+\text{Weibull}_{\psi}
+0.682
+0.1347
+0.7091
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+0.702
+0.1294
+0.6933
+Zou
+0.661
+0.1473
+0.7844
+Zou
+κ
+\text{Zou}_{\kappa}
+0.682
+0.1412
+0.7569
+Maia
+ψ
+\text{Maia}_{\psi}
+0.688
+0.1375
+0.7206
+Maia
+κ
+,
+ψ
+\text{Maia}_{\kappa,\psi}
+0.694
+0.1303
+0.6963
+Betfair
+0.706
+0.1254
+0.6714
+Figure 4:
+Left: first half (minutes 0–44). Right: second half (minutes 45–95). Top: log-loss at each evaluation minute. Bottom: log-loss difference relative to Betfair (
+Δ
+<
+0
+\Delta<0
+indicates the model outperforms the market).
+Table
+5
+summarises aggregate performance.
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+achieves the highest classification accuracy (70.2%), close to Betfair (70.6%), though Betfair retains the best RPS and log-loss. When both models incorporate PSxG and calibration,
+Maia
+κ
+,
+ψ
+\text{Maia}_{\kappa,\psi}
+slightly trails
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+on RPS (0.130 vs. 0.129) and log-loss (0.696 vs. 0.693), while
+Zou
+κ
+\text{Zou}_{\kappa}
+lags substantially despite calibration. This similarity between two structurally different models indicates the importance of pre-match calibration for in-play forecasting accuracy.
+The closest comparable in-play model is that of
+28
+, who report an aggregate RPS of 0.1338 over a different evaluation window (100 frames per match, five leagues, eight seasons), suggesting that
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+at 0.1294 is competitive with the state of the art.
+Figure
+4
+traces performance by match minute. Both
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+and
+Maia
+κ
+,
+ψ
+\text{Maia}_{\kappa,\psi}
+perform close to Betfair. Betfair holds general dominance throughout the match as the market incorporates information beyond goals and shots that our covariates do not capture. Betfair’s relative performance improves against all models at minute 45 (the second-half restart), as the half-time interval allows the market to fully absorb first-half information.
+Weibull
+ψ
+\text{Weibull}_{\psi}
+remains consistently above the calibrated version, confirming the importance of calibrated team strength estimates. The log-loss of
+Zou
+κ
+\text{Zou}_{\kappa}
+rises sharply around minute 20, as its Bayesian updating overrides the calibrated pre-match strengths based on sparse goal evidence. In a 0–0 match, the update reduces scoring rates by 30% at minute 20 and 50% at half-time, pushing predictions heavily toward draws.
+Despite PSxG’s strong in-sample signal, its out-of-sample impact on probabilistic forecasts is small. In the Maia Cox process, adding PSxG leaves aggregate RPS essentially unchanged (
+0.1376
+0.1376
+without versus
+0.1375
+0.1375
+with), and in the Weibull model, the full covariate set yields a similarly modest improvement (
+0.1353
+0.1353
+to
+0.1347
+0.1347
+RPS). Calibration to market prices, by contrast, produces the largest reductions across all three architectures. This suggests that while shot-quality information refines in-sample likelihood, pre-match information dominates the accuracy gap between models and the betting market.
+10
+Betting simulation
+Table 6:
+Betting simulation against Betfair in-play odds, 140 matches evaluated every minute.
+Commission of 2% applied to net match winnings.
+Model
+Strategy
+Bets
+Win (%)
+Net Profit
+ROI (%)
+Sharpe
+\@BTrule
+[]
+Weibull
+ψ
+\text{Weibull}_{\psi}
+Unit
+13,455
+44
+−
+819.72
+-819.72
+−
+6.1
+-6.1
+−
+6.46
+-6.46
+Kelly
+18,247
+39
+−
+24.83
+-24.83
+−
+0.8
+-0.8
+−
+0.93
+-0.93
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+Unit
+13,455
+55
+−
+458.93
+-458.93
+−
+3.4
+-3.4
+−
+4.34
+-4.34
+Kelly
+17,458
+49
+158.15
+158.15
+4.5
+4.5
+5.94
+5.94
+Maia
+κ
+,
+ψ
+\text{Maia}_{\kappa,\psi}
+Unit
+13,455
+50
+−
+1,659.76
+-1{,}659.76
+−
+12.3
+-12.3
+−
+15.11
+-15.11
+Kelly
+17,077
+45
+34.65
+34.65
+1.3
+1.3
+1.60
+1.60
+Table
+6
+reports the results of a betting simulation in which each model trades against Betfair in-play 1X2 odds. At every evaluation minute, the model’s predicted probabilities are compared with the exchange-implied probabilities. Under unit staking, one unit is placed on the outcome for which the model assigns the highest probability above the market. Under Kelly staking
+(
+16
+)
+, every outcome with positive expected value (
+EV
+=
+p
+⋅
+o
+−
+1
+>
+0
+\text{EV}=p\cdot o-1>0
+) is staked at the Kelly fraction
+f
+=
+(
+b
+​
+p
+−
+q
+)
+/
+b
+f=(bp-q)/b
+, where
+p
+p
+is the model probability,
+o
+=
+1
+/
+q
+BF
+o=1/q_{\text{BF}}
+the Betfair-implied decimal odds,
+b
+=
+o
+−
+1
+b=o-1
+, and
+q
+=
+1
+−
+p
+q=1-p
+; the bankroll is reset to one unit before each bet, so stakes do not compound.
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+is profitable under Kelly staking, achieving an ROI of
+4.5
+%
+4.5\%
+(Sharpe 5.94). At first glance, this seems inconsistent with the log-loss of
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+exceeding Betfair’s at almost all match minutes (Figure
+4
+), but profitability and forecast accuracy are not equivalent objectives
+(
+39
+;
+13
+;
+38
+, see)
+, since betting returns can arise from exploiting market biases that do not translate into a measurable accuracy edge. Our finding is consistent with these results and motivates the profit-based extensions discussed in Section
+11
+. Unit staking is unprofitable (
+−
+3.4
+%
+-3.4\%
+ROI): at late-game minutes where outcomes are near-certain, decimal odds approach 1.0, so a single incorrect unit bet erases dozens of correct bets that each return only fractions of a unit. Kelly staking avoids this by sizing bets proportional to edge, reducing exposure when the perceived advantage is small.
+Weibull
+ψ
+\text{Weibull}_{\psi}
+is unprofitable under both staking strategies, confirming that calibrated team strengths substantially improve in-play trading performance. Although unit staking is unprofitable, restricting the strategy to bets with higher expected value proves highly profitable. For example,
+EV
+≥
+0.20
+\text{EV}\geq 0.20
+yields an ROI of
+8.5
+%
+8.5\%
+over 3,241 bets.
+While
+Maia
+κ
+,
+ψ
+\text{Maia}_{\kappa,\psi}
+achieves similar predictive accuracy to
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+(Table
+5
+), it yields markedly lower Kelly returns (
+1.3
+%
+1.3\%
+versus
+4.5
+%
+4.5\%
+ROI). This indicates that the strength of
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+extends beyond accuracy alone, and that comparable forecast quality does not necessarily translate into comparable economic value.
+Figure 5:
+Cumulative profit for
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+against Betfair in-play odds (
+N
+=
+140
+N=140
+matches), under unit and Kelly staking. Commission of 2% applied to net match winnings.
+Kelly staking shows a broadly upward trajectory of cumulative profit, while unit staking accumulates profit through the mid-game before late-match bets at short odds erode returns (Figure
+5
+).
+(a)
+Unit staking
+(b)
+Kelly staking
+Figure 6:
+ROI at different expected value (EV) thresholds. Grey numbers indicate bet counts. Positive ROI persists across a range of thresholds, indicating the edge is not confined to marginal bets.
+Figure
+6
+is an expected value threshold plot, introduced by
+12
+. For
+Weibull
+κ
+,
+ψ
+\text{Weibull}_{\kappa,\psi}
+under Kelly staking, ROI rises with the threshold, peaking near 0.2 at over
+20
+%
+20\%
+ROI (3,377 bets). Returns decline past this point, perhaps reflecting the winner’s curse
+(
+4
+)
+: at seemingly large edges, the filter disproportionately selects bets where the model’s probability, rather than the market’s, is furthest from the truth.
+A potential concern is that the model’s edge is derived from an information timing advantage: the model observes a goal and updates immediately, whereas exchange prices may lag by one or two minutes. We classify Kelly bets into those placed in a “goal window”—evaluation points where a goal occurred in the preceding five-minute interval—and those outside it. Of the 17,458 Kelly bets, 3,212 fall in goal windows (gross ROI
+4.7
+%
+4.7\%
+) and 14,246 outside them (gross ROI
+4.9
+%
+4.9\%
+). The similar profitability across both settings indicates that the model’s edge does not arise from exploiting stale post-goal prices. The 140-match sample is, however, small for betting evaluation, where ROI and Sharpe are sensitive to outliers; we interpret these figures as preliminary.
+11
+Conclusion
+We have extended the Weibull accelerated failure time model of
+21
+for in-play football forecasting, incorporating half-specific hazard parameters, post-shot expected goals as a time-varying covariate, and a novel calibration approach that aligns team strength parameters to Betfair Exchange prices at kick-off. The calibrated Weibull model exhibits a similar classification accuracy to Betfair across 140 evaluation matches, while retaining interpretable team-level parameters and covariate effects that the market does not provide. A comparison with the Bayesian birth process of
+41
+and the Cox process of
+23
+, both calibrated to the same pre-match odds, confirms that calibration to market prices is the dominant driver of predictive accuracy. These findings support the view of
+11
+and
+40
+that betting odds encode information difficult to replicate from historical match data, and suggest that integrating market prices into goal arrival models is a productive direction for in-play forecasting. The profitable betting results provide preliminary evidence that in-play exchange prices do not fully incorporate shot-level information between scoring events.
+Our evaluation relies on Betfair’s last-traded prices, which approximate the available odds but may not reflect executable prices at the time of prediction. This, combined with the use of three distinct data sources (WhoScored, FBref, Betfair) whose event timestamps do not always align, means the betting simulation results should be interpreted with caution. The 140-match sample is also small for betting evaluation, where ROI and Sharpe figures are sensitive to outliers and sampling variance.
+39
+demonstrate that positive betting returns can arise without a superior forecasting model, and that accuracy and profitability are distinct objectives. For this reason, we consider the predictive accuracy results more robust than the betting
+returns, and believe that methodical replication is needed to validate profitability claims in sports forecasting
+(
+5
+)
+. Furthermore, PSxG values were sourced from FBref, which has since lost access to the underlying Opta statistics.
+3
+3
+3
+https://www.sports-reference.com/blog/2026/01/fbref-stathead-data-update/
+Future research could extend the model in several directions. The market’s consistent advantage from minute 20 onwards, and particularly at the second-half restart, suggests the model would benefit from stronger in-play covariates. Substitutions are a natural candidate: managers use them to alter team shape and attacking intent, and they are easily observed. Expected threat from passing sequences
+(
+30
+)
+could capture sustained momentum more effectively than shot-level statistics, which are still relatively sparse by nature. The half-time gap could also be narrowed by incorporating half-time market prices as a second calibration point, updating team strengths mid-match in the same way we calibrate to pre-match odds.
+Our evaluation is limited to 140 English Premier League matches from a single half-season. Extending to multiple leagues and seasons would test the generalisability of both the underlying Weibull model and the calibration approach, particularly in leagues where second-half scoring patterns or market liquidity may differ. Given that the calibration method itself is not specific to the Weibull model and could be applied to any intensity-based goal arrival process, a deeper evaluation across model classes would clarify which model choice is most suitable. Access to Betfair’s Pro tier historical data, which records limit order book depth at 50ms intervals, would further enable executable rather than last-traded prices, supporting a more rigorous test of betting profitability.
+A final direction is to optimise the model directly for profitability rather than for likelihood.
+38
+show theoretically that the equivalence of accuracy- and profitability-optimal model selection rests on restrictive assumptions, and
+13
+demonstrate in NBA betting that an accuracy-inferior model can produce systematic profits when decorrelating predictions from market prices is included in the optimisation function. While our calibration step targets pre-match market consistency, team-strength estimation could instead target profit, fitting parameters that maximise expected returns against historical in-play prices rather than market-fit at kick-off. We make our code available at [X].
+LC’s PhD is supported by a studentship from the Engineering and Physical Sciences Research Council (EPSRC) Doctoral Training Partnership (DTP), grant number EP/W524414/1. JC is supported by the UK Research and Innovation (UKRI) Engineering and Physical Sciences Research Council (EPSRC), grant number EP/Y028392/1: AI for Collective Intelligence (AI4CI). ZS received no specific funding for this work.
+Bibliography
+Ayana
+et al.
+(2025)
+G. Ayana, A. Ehlert, J. Ehlert, L. Santagata, M. Torricelli, and B. Klein
+Temporal dynamics of goal scoring in soccer
+.
+Note:
+arXiv preprint arXiv:2501.18606.
+https://arxiv.org/abs/2501.18606
+Cited by:
+§2
+.
+Boshnakov
+et al.
+(2017)
+G. Boshnakov, T. Kharrat, and I. G. McHale
+A bivariate Weibull count model for forecasting association football scores
+.
+International Journal of Forecasting
+33
+(
+2
+),
+pp. 458–466
+.
+External Links:
+Document
+Cited by:
+§1
+,
+§2
+.
+Bunker
+et al.
+(2024)
+R. Bunker, C. Yeung, and K. Fujii
+Machine learning for soccer match result prediction
+.
+In
+Artificial Intelligence, Optimization, and Data Sciences in Sports
+,
+pp. 7–49
+.
+External Links:
+Document
+Cited by:
+§1
+,
+§2
+.
+Capen
+et al.
+(1971)
+E. C. Capen, R. V. Clapp, and W. M. Campbell
+Competitive bidding in high-risk situations
+.
+Journal of Petroleum Technology
+23
+(
+06
+),
+pp. 641–653
+.
+External Links:
+Document
+Cited by:
+§10
+.
+Clegg and Cartlidge (2025)
+L. Clegg and J. Cartlidge
+Not feeling the buzz: correction study of mispricing and inefficiency in online sportsbooks
+.
+International Journal of Forecasting
+41
+(
+2
+),
+pp. 798–802
+.
+External Links:
+Document
+Cited by:
+§11
+.
+Constantinou and Fenton (2012)
+A. C. Constantinou and N. E. Fenton
+Solving the problem of inadequate scoring rules for assessing probabilistic football forecast models
+.
+Journal of Quantitative Analysis in Sports
+8
+(
+1
+),
+pp. 1–14
+.
+External Links:
+Document
+Cited by:
+§6
+.
+Dixon and Coles (1997)
+M. J. Dixon and S. G. Coles
+Modelling association football scores and inefficiencies in the football betting market
+.
+Journal of the Royal Statistical Society: Series C (Applied Statistics)
+46
+(
+2
+),
+pp. 265–280
+.
+External Links:
+Document
+Cited by:
+§1
+,
+§2
+,
+§5.1
+.
+Dixon and Robinson (1998)
+M. Dixon and M. Robinson
+A birth process model for association football matches
+.
+Journal of the Royal Statistical Society: Series D (The Statistician)
+47
+(
+3
+),
+pp. 523–538
+.
+External Links:
+Link
+Cited by:
+§1
+,
+§2
+,
+§2
+,
+§8.1
+.
+Egidi
+et al.
+(2018)
+L. Egidi, F. Pauli, and N. Torelli
+Combining historical data and bookmakers’ odds in modelling football scores
+.
+Statistical Modelling
+18
+(
+5-6
+),
+pp. 436–459
+.
+External Links:
+Document
+Cited by:
+§1
+.
+Epstein (1969)
+E. S. Epstein
+A scoring system for probability forecasts of ranked categories
+.
+Journal of Applied Meteorology (1962-1982)
+8
+(
+6
+),
+pp. 985–987
+.
+External Links:
+Document
+Cited by:
+§6
+.
+Forrest
+et al.
+(2005)
+D. Forrest, J. Goddard, and R. Simmons
+Odds-setters as forecasters: the case of English football
+.
+International Journal of Forecasting
+21
+(
+3
+),
+pp. 551–564
+.
+External Links:
+Document
+Cited by:
+§11
+,
+§7
+.
+Holmes and McHale (2024)
+B. Holmes and I. G. McHale
+Forecasting football match results using a player rating based model
+.
+International Journal of Forecasting
+40
+(
+1
+),
+pp. 302–312
+.
+External Links:
+Document
+Cited by:
+§10
+,
+§2
+.
+Hubáček and Šír (2023)
+O. Hubáček and G. Šír
+Beating the market with a bad predictive model
+.
+International Journal of Forecasting
+39
+(
+2
+),
+pp. 691–719
+.
+External Links:
+Document
+Cited by:
+§10
+,
+§11
+.
+Kalbfleisch and Prentice (2011)
+J. D. Kalbfleisch and R. L. Prentice
+The statistical analysis of failure time data
+.
+2nd edition
+,
+John Wiley & Sons
+,
+Hoboken, NJ
+.
+Cited by:
+§4
+.
+Karlis and Ntzoufras (2003)
+D. Karlis and I. Ntzoufras
+Analysis of sports data by using bivariate Poisson models
+.
+Journal of the Royal Statistical Society: Series D (The Statistician)
+52
+(
+3
+),
+pp. 381–393
+.
+External Links:
+Document
+Cited by:
+§1
+,
+§2
+,
+§4
+.
+Kelly (1956)
+J. L. Kelly
+A new interpretation of information rate
+.
+The Bell System Technical Journal
+35
+(
+4
+),
+pp. 917–926
+.
+External Links:
+Document
+Cited by:
+§10
+.
+Klaassen and Magnus (2003)
+F. J. Klaassen and J. R. Magnus
+Forecasting the winner of a tennis match
+.
+European Journal of Operational Research
+148
+(
+2
+),
+pp. 257–267
+.
+External Links:
+Document
+Cited by:
+§1
+.
+Kleinbaum and Klein (2012)
+D. G. Kleinbaum and M. Klein
+Survival analysis: a self-learning text
+.
+3rd edition
+,
+Springer
+.
+External Links:
+Document
+Cited by:
+§5.3
+.
+Klemp
+et al.
+(2021)
+M. Klemp, F. Wunderlich, and D. Memmert
+In-play forecasting in football using event and positional data
+.
+Scientific Reports
+11
+(
+1
+),
+pp. 24139
+.
+External Links:
+Document
+Cited by:
+§2
+.
+Kovalchik and Reid (2019)
+S. Kovalchik and M. Reid
+A calibration method with dynamic updates for within-match forecasting of wins in tennis
+.
+International Journal of Forecasting
+35
+(
+2
+),
+pp. 756–766
+.
+External Links:
+Document
+Cited by:
+§1
+.
+Leriou and Ntzoufras (2025)
+I. Leriou and I. Ntzoufras
+Survival modeling of goal arrival times in English Premier League
+.
+Computational Statistics
+40
+(
+4
+),
+pp. 2109–2133
+.
+External Links:
+Document
+Cited by:
+§1
+,
+§1
+,
+§11
+,
+§4
+,
+§4
+,
+§5.1
+,
+§5.2
+,
+§5.3
+,
+§5.3
+,
+§5.5
+,
+§5.5
+,
+§7
+.
+Maher (1982)
+M. J. Maher
+Modelling association football scores
+.
+Statistica Neerlandica
+36
+(
+3
+),
+pp. 109–118
+.
+External Links:
+Document
+Cited by:
+§1
+,
+§2
+.
+Maia
+et al.
+(2026)
+L. F. G. N. Maia, T. Pennanen, M. A. H. B. da Silva, and R. S. Targino
+Stochastic modelling of football matches using dynamic regressors
+.
+International Journal of Forecasting
+42
+(
+2
+),
+pp. 181–202
+.
+External Links:
+Document
+Cited by:
+§1
+,
+§1
+,
+§11
+,
+§2
+,
+§5.5
+,
+§5.5
+,
+§8.2
+,
+§8
+.
+Moroney (1956)
+M. J. Moroney
+Facts from figures
+.
+3rd edition
+,
+Penguin
+,
+London
+.
+Cited by:
+§2
+.
+Pollard and Reep (1997)
+R. Pollard and C. Reep
+Measuring the effectiveness of playing strategies at soccer
+.
+Journal of the Royal Statistical Society Series D: The Statistician
+46
+(
+4
+),
+pp. 541–550
+.
+External Links:
+Document
+Cited by:
+§5.4
+.
+Powell (1964)
+M. J. Powell
+An efficient method for finding the minimum of a function of several variables without calculating derivatives
+.
+The Computer Journal
+7
+(
+2
+),
+pp. 155–162
+.
+External Links:
+Document
+Cited by:
+§7
+.
+Reep and Benjamin (1968)
+C. Reep and B. Benjamin
+Skill and chance in association football
+.
+Journal of the Royal Statistical Society. Series A (General)
+131
+(
+4
+),
+pp. 581–585
+.
+External Links:
+Document
+Cited by:
+§2
+.
+Robberechts
+et al.
+(2021)
+P. Robberechts, J. Van Haaren, and J. Davis
+A Bayesian approach to in-game win probability in soccer
+.
+In
+Proceedings of the 27th ACM SIGKDD Conference on Knowledge Discovery & Data Mining
+,
+pp. 3512–3521
+.
+External Links:
+Document
+Cited by:
+§1
+,
+§2
+,
+§9
+.
+Silva and Swartz (2016)
+R. M. Silva and T. B. Swartz
+Analysis of substitution times in soccer
+.
+Journal of Quantitative Analysis in Sports
+12
+(
+3
+),
+pp. 113–122
+.
+External Links:
+Document
+Cited by:
+§2
+.
+Singh (2019)
+K. Singh
+Introducing Expected Threat (xT)
+.
+Note:
+Accessed: 2026-05-15
+External Links:
+Link
+Cited by:
+§11
+,
+§2
+.
+Štrumbelj and Robnik-Šikonja (2010)
+E. Štrumbelj and M. Robnik-Šikonja
+Online bookmakers’ odds as forecasts: the case of European soccer leagues
+.
+International Journal of Forecasting
+26
+(
+3
+),
+pp. 482–488
+.
+External Links:
+Document
+Cited by:
+§7
+.
+Štrumbelj and Vračar (2012)
+E. Štrumbelj and P. Vračar
+Simulating a basketball match with a homogeneous Markov model and forecasting the outcome
+.
+International Journal of Forecasting
+28
+(
+2
+),
+pp. 532–542
+.
+External Links:
+Document
+Cited by:
+§1
+.
+Titman
+et al.
+(2015)
+A. Titman, D. Costain, P. Ridall, and K. Gregory
+Joint modelling of goals and bookings in association football
+.
+Journal of the Royal Statistical Society Series A: Statistics in Society
+178
+(
+3
+),
+pp. 659–683
+.
+External Links:
+Document
+Cited by:
+§2
+.
+Volf (2009)
+P. Volf
+A random point process model for the score in sport matches
+.
+IMA Journal of Management Mathematics
+20
+(
+2
+),
+pp. 121–131
+.
+External Links:
+Document
+Cited by:
+§1
+,
+§2
+.
+Watanabe
+et al.
+(2015)
+N. M. Watanabe, P. Wicker, and J. C. Reuter
+Determinants of stoppage time awarded to teams in the English Premier League
+.
+International Journal of Sport Finance
+10
+(
+4
+),
+pp. 310–327
+.
+External Links:
+Document
+Cited by:
+§5.3
+.
+Wheatcroft (2021)
+E. Wheatcroft
+Evaluating probabilistic forecasts of football matches: the case against the ranked probability score
+.
+Journal of Quantitative Analysis in Sports
+17
+(
+4
+),
+pp. 273–287
+.
+External Links:
+Document
+Cited by:
+§6
+.
+Wolfers and Zitzewitz (2004)
+J. Wolfers and E. Zitzewitz
+Prediction markets
+.
+Journal of Economic Perspectives
+18
+(
+2
+),
+pp. 107–126
+.
+External Links:
+Document
+Cited by:
+§1
+.
+Wunderlich
+et al.
+(2026)
+F. Wunderlich, M. G. Caparrós, and D. Memmert
+Does the consideration of market prices in model selection increase model profitability? Evidence from theory, artificial data and real-world data
+.
+International Journal of Forecasting
+.
+Note:
+In press, corrected proof
+External Links:
+Document
+Cited by:
+§10
+,
+§11
+.
+Wunderlich and Memmert (2020)
+F. Wunderlich and D. Memmert
+Are betting returns a useful measure of accuracy in (sports) forecasting?
+.
+International Journal of Forecasting
+36
+(
+2
+),
+pp. 713–722
+.
+External Links:
+Document
+Cited by:
+§10
+,
+§11
+.
+Wunderlich (2025)
+F. Wunderlich
+Using the wisdom of crowds in sports: how performance analysis in football can benefit from the information enclosed in betting odds
+.
+International Journal of Performance Analysis in Sport
+25
+(
+4
+),
+pp. 687–706
+.
+External Links:
+Document
+Cited by:
+§1
+,
+§11
+,
+§7
+.
+Zou
+et al.
+(2020)
+Q. Zou, K. Song, and J. Shi
+A Bayesian in-play prediction model for association football outcomes
+.
+Applied Sciences
+10
+(
+8
+),
+pp. 2904
+.
+External Links:
+Document
+Cited by:
+§1
+,
+§1
+,
+§11
+,
+§2
+,
+§8.1
+,
+§8
+.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

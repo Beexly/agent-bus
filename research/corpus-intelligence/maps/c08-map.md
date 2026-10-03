@@ -1,0 +1,86 @@
+# c08 Slice Map — Corpus Coordinator 8 of 10
+
+**Slice:** `~/workspace/vendor/Sports/docs`, sorted index mod 10 == 7 → 294 unique files (299 list lines, 5 duplicate basenames).
+**Coverage: 294/294 files briefed (100%).** Briefs at `~/workspace/corpus-intelligence/briefs/c08/reader-{1..63}/`.
+**Readers deployed:** 63 total (wave 1: 30 readers, 17 completed / 13 errored on 429s; density re-dispatch: 32 readers × ~5 files + final reader × 2 files, 63/63 reported).
+**Chunks:** `~/workspace/corpus-intelligence/chunks/c08/` (wave 1) and `~/workspace/corpus-intelligence/chunks/c08r2/r2-chunk-00..31` (density pass).
+**Date:** 2026-10-02. Read-only on all repos; intake only, no building/wiring.
+
+**Slice character:** roughly half the slice is arXiv deep-read ledgers (arxiv-deep series) and half is repo-internal ops/calibration/governance/audit docs. The repo-internal docs turned out to contain hard measured engine state and trust defects — some of the highest-urgency findings in this slice.
+
+---
+
+## Top 20 most engine-actionable findings (with file refs)
+
+1. **LIVE CQR correctness bug in shipped code (reader 41, `1639-conformalized-quantile-regression`).** GSE's `apps/web/lib/calibration/cqr.ts` clamps the quantile rank to n−1, falsely certifying 90% coverage at 83.33% — published intervals are 6.67pp tighter than claimed. Paper gives the exact repair recipe (unclamped (1−α)(n+1) rank, E_i = max{q̂_lo−y, y−q̂_hi}); 1–2 days + backtest. **Highest urgency: trust defect in shipped output.**
+
+2. **Board ranking is anti-predictive at the top (reader 56, `docs/ops/hermes/BUILD-QUEUE-2026-09-18-ranking.md`).** Confidence ≥80 (n=235) claimed 0.8663 but realized 0.5191 (z=−10.7, Brier 0.3617 vs 0.25 for constant 0.5); realized win rate peaked at 75–79 (0.6146) then fell to 0.4643 at 90–94. Root cause: priced rows (trueProb) and unpriced rows (confidence-only / `rankingP = confidence/100` on TOTAL path) compared on one scalar. Specified remedy: `rankingSource`-tiered ordering, Tier 1 by expectedClv. **Pick ordering and any public ranking surface must not let a high-confidence, never-priced pick outrank a priced edge pick.**
+
+3. **Calibration leaf 6.5–9.5 is confidently wrong (reader 49, `CALIBRATION_LEAF_DRIFT_6_5_9_5.md`).** n=576: train base 65.86% vs actual 57.12%, Δ=−8.74pp, z=−4.42, p=9.7e−06 (Bonferroni 4.9e−05). Cochran's Q=19.57 (p=6.07e−04, I²=79.6%) rejects uniform league-wide drift — the effect is concentrated in this band. Owner-gated recommendation: collapse the leaf into a neighboring band or fall back to the global mean until the mechanism is understood.
+
+4. **Market consensus is an anti-signal; the odds path near close is signal (reader 56, `PLACEABILITY_AND_PERFORMANCE_2026-09-07.md`; reader 36, `0887-final-market-prices-information-aggregation`).** On-ladder MLB totals hit 36.3% (70/193, ~3.8σ below a coin flip) vs 49.5% off-ladder; MLB spreads 43.2% on-ladder vs 50.0% off-ladder — the engine does materially worse exactly where books agree. But a 10% *late* odds move carries ~14× the return association of an equivalent cross-sectional final-odds difference (β₂=−0.3386, SE 0.0392, n=894,127, ~8.6σ; ~50% of JRA handle arrives in the final five minutes). **Action: gate/down-weight high-consensus games; engineer odds-path velocity/convexity features.**
+
+5. **Airwave claim taxonomy = ready-made off-field intake schema (reader 31, `docs/ai/airwave/AIRWAVE_OPERATOR_RUNBOOK.md`).** 15-value `claim_type` enum (injury_read, availability_read, role_change, coaching_note, market_signal, dfs_value, waiver_note, depth_chart_note, usage_trend, odds_context, weather_context, …) + three-level EMPHATIC/LEAN/HEDGED confidence + hard evidence gates (UNFALSIFIABLE claims can never become pick evidence; injury reads require official corroboration; market signals pair with live Odds API data). Maps directly onto the total-signal engine's still-empty player-signals intake.
+
+6. **DFS construction rules with measured repair effect (reader 50, `docs/dfs/research/2026-09-25/dfs-week3/PROVENANCE.md`).** Double-stack (QB + ≥2 same-team catchers; 39.5% of top-100 Milly lineups vs 28.6% field) and no-TE-in-FLEX: on a real 41-lineup portfolio, double-stack 4/41 → 41/41; TE-in-FLEX 38/41 → 0/41; final 36 unique lineups, zero validation violations. Plus exact prop-implied projection formulas (proj = 0.6×appg + 0.4×propsImplied; non-QB = recYds/10 + recs×1 PPR + rushYds/10 + tdProb×6; QB = passYds/25 + passTD×4 + rushYds/10 − 0.8) and a git-apply-verified engine patch (`doubleStack`/`noTeFlex` opts in `dfs-optimizer.ts`).
+
+7. **ARBY OL matchup formula (reader 50, `docs/dfs/research/2026-09-26/full-tables/README.md`).** Verbatim replicable weighting: 65% 2025 / 35% 2026; 65% ARBY / 35% RB yards per carry; 50/50 offense-defense (30 ranked rows, slate average 52.4). Ready-to-implement OL matchup feature for the player-signals/adjustment layer.
+
+8. **Peak ages as aging priors (reader 47, `matt_barlowe.md`).** Natural-cubic-spline derivatives of EPA age contributions: RB 24.53 yr, WR 25.33 yr, QB 26.67 yr (149,694 RB carries, 134,254 WR targets, 200,377 QB dropbacks; 94% pointwise intervals). Directly usable as aging priors in projection blends.
+
+9. **Physiological-load signal class for props (reader 47, `2609.23158-radar-second-pass.md`).** Existence proof that exertion-driven physiological state is real and unpriced by books (books price injury binary, not fatigue/recovery as a continuous latent variable). Actionable with zero new hardware: backtest load-proxy features — snap-count trajectories (esp. 3-week declines, 1H/2H splits), schedule-density compounding (short week × travel × time-zone × altitude), post-bye vs pre-bye splits, age × workload late-season decay, practice-participation gradations (DNP→limited→full) — against prop CLV/outcomes.
+
+10. **FPOE/xFP stack = highest-ROI reproduction build (reader 58, `agents-draft-eight-posts.md`).** Full-reproduction path from nflverse PBP columns; GSE differentiators specified: luck-layer decomposition (xTD-luck vs efficiency), bootstrap uncertainty bands, opponent adjustment, same-day refresh, xFP-vs-FPOE quadrant display. Buy-low rule: high-xFP + negative-FPOE (Clay sign) mean-reverts.
+
+11. **Improvement Ledger = the engine wiring backlog (reader 43, `IMPROVEMENT-LEDGER.md`).** 1,251 papers each converted to a concrete change with a numeric acceptance gate and owner (Hermes 405 / Mimo 494 / Motif-lab 352); 881 are PROPRIETARY_EDGE. The 45 CALIBRATE small-effort entries (ENIR ≥15% lower ECE, CQR repair, EnbPI +3pp early-season coverage over ICP, rankECE, CRPSmod) are the highest-density quick-win cluster.
+
+12. **Prop settlement variance is dominated by exposure error, not rate error (reader 48, `EDGE_FACTORY_MASTERPLAN.md`).** "A 15% exposure miss swamps a 2% rate miss." Plus the Dirichlet-multinomial share core as the single biggest coherence win (replaces per-player NB models that can imply incoherent 55-target team totals); E-C1 est-routes/TPRR exposure offset, E-C2 change-point detector, E-C3 vacancy elasticity — all priced:false, CC-BY data, zero spend.
+
+13. **Human-AI selective-prediction messaging (reader 40, `1492-human-ai-selective-prediction`).** 198-participant within-subject study: showing the AI's uncertain prediction HURT human accuracy (57.8% vs 60.2% when not shown, p=0.003); showing deferral status only helped (61.9% vs 58.4%, p<0.001); on model-wrong cases, showing the wrong prediction dragged humans to 41.9% — below chance. **Action for posted-card review: surface abstained games as "ENGINE ABSTAINS — low confidence" WITHOUT the engine's lean; require written justification for analyst overrides on abstained picks.**
+
+14. **ICI fusion for correlated pick sources (reader 35, `0790-view-fusion-black-litterman`).** GSE's pick-probability sources (engine, market-implied/CLV, analyst adjustments, LLM panels) share information — naive inverse-variance averaging is overconfident. PW fusion median Sharpe 0.11 vs ICI 0.48; global Sharpe 0.10 vs 0.34. Concrete ≥1% log-loss gate in file. Same lesson from RD-FGL (reader 42, `1675`): regime-dependent factor graphical LASSO achieved MSFE ratios to equal weights of ~0.31–0.44 (60–70% reduction) — recipe: PCA-strip common forecast errors, GL on idiosyncratic precision, Bai–Perron break-aware regime weights.
+
+15. **CRPS doctrine + `crps.ts` (reader 41, `1649-proper-scoring-rules-estimation-forecast-evaluation`).** GSE is Brier-only today with no CRPS and no written properness rationale. Action: adopt CRPS as the primary objective for margin/total distributional forecasts, implement `crps.ts`, run a weekly model-vs-market proper-score skill-gap scoreboard. Companion: twCRPS + λ=0.6 linear pooling buys ~1.3–2.5% tail skill at the 90th percentile for blowout/shootout/DFS-ceiling forecasting (reader 35, `0746`).
+
+16. **Two-stage Élő beats pure online Élő at p=7.8×10⁻⁵ (reader 39, `0004-bradley-terry-elo-unification`).** Large initial batch MLE to convergence, then online per-game updates. Plus unified log-odds refactor L = θ·1ᵀ − 1·θᵀ + h·1·1ᵀ making home advantage, features, structure composable — but only a small set of binary covariates (rookie QB, short rest): the paper's two-factor/rank-four extensions (H2 p≈1) and trace-norm path (45.89% < naive) demonstrably failed on real data.
+
+17. **Edge-sheet 10-metric feature set + the pressure split (reader 60, `docs/predictions/research/2026-09-17/edge-sheet/DESIGN_BRIEF.md`).** Off EPA/play, Dropback EPA, Rush EPA, Success rate, Explosive play rate, Def EPA/play, Def dropback EPA, Def rush EPA, Points/drive, Turnover luck (actual minus expected, signed) + situational splits — directly usable engine features. Brief explicitly calls **EPA/dropback under pressure "the single most predictive situational split in football"** (QB-BEHAVIOR/SCHEME). Orphan-number ban (every stat carries league rank/percentile/average or is cut).
+
+18. **Skellam margin model + NOTEARS DAG pruning (reader 44, `1790-skellam-regression-model`, `1962-notears`).** Fit final-score differential as Z ~ Skellam(λ1, λ2) with log-links on unit-strength covariates (Brier 0.58 vs 0.65 climatology) — closed-form NFL spread/total probability surface complementing Monte Carlo, with the key-number caveat (±3, ±7 need a mixture extension). NOTEARS: learn a causal DAG over ~35 team-week indicators, prune the prediction stack to the Markov blanket of the spread-cover target, gated on held-out Brier within 0.002 of full-feature baseline at ≤60% feature count.
+
+19. **Per-class abstention gates with randomized tie-breaking (reader 43, `1776-classification-abstention-class-conditional-error-constraints`).** Replace a single global gate with per-market-type gates (spread/total/moneyline as "classes") minimizing additive ambiguity subject to separate loss-rate caps; use the additive formulation (product ambiguity violates caps); implement randomized tie-breaking at the gate boundary — strict deterministic feasibility can force a degenerate all-abstain week.
+
+20. **Verifier + pre-registration gate, already landed (reader 63, `RESCUE-2026-09-26-2-verifier-port.md`).** Frozen-holdout scorecard/duel/joint/fact-graph package landed in PR #914 with 108/108 of its own tests green (28 hand-computed stat pins) and a kill-line pre-registration gate that refuses specs written after their runs — directly usable to score engine predictions before public picks.
+
+---
+
+## Cross-file patterns
+
+**Calibration is the dominant theme of the slice — and the engine is calibration-honest but information-empty.**
+Recurring honesty machinery: CQR bug (finding 1), ranking defect (2), leaf drift (3), honest coverage-gate protocol for backtests (counts beside every rate; no win rate below floor samples; pushes excluded — reader 56), "would_not_claim" output contracts (reader 52), per-class abstention (19), per-class eligibility gates (Brier 0.275 / ECE 0.112 / Murphy RES 0.002 → RED; ranking/independents raise RES, maps don't invent it — reader 55), 30+ settled picks per model version claim gate (reader 54).
+But measured engine state is calibration-solved yet edge-empty: ECE 0.0044 / holdout Brier 0.2556 vs suppression spread 0.0017 and R*≈−0.0057 (reader 58); MI probe I(score; Y | q_close) = 0.0095 nats, p=0.060 — no info beyond the close (reader 57); raw hit rate 50.9% (200W/193L) sits below the ~52.4% breakeven at −110 even after isotonic calibration (reader 48). The frontier dossier's measured verdict: calibration-solved, information-empty.
+
+**Ensemble lesson, stated five ways:** naive averaging of correlated sources is overconfident. ICI (Sharpe 0.48 vs 0.11), RD-FGL (60–70% MSFE reduction), time-varying combination with group-SCAD pruning (70%+ variance cut, best ASCFE 2.650×1000 — reader 40, `1482`), Black-Litterman view fusion, and the epistemic/aleatoric variance decomposition (reader 35) all converge: model the correlation, prune dead components, make weights regime-aware.
+
+**Staking converges on haircuts + flat-first-period discipline:** CRRA/MDP distilled to linear-in-edge ω̃ ≈ m·e + k per risk-aversion level (reader 43, `1747`); k-parallel Universal Portfolio beats best-CRP hindsight 44.98 vs 38.46, invalidating the i.i.d. Kelly assumption (reader 38); Bayesian edge-learning under a drawdown cap (+2.94% return, halving worst drawdown −11.74% vs −27.18%) with reduced stakes for new categories until posteriors tighten (reader 35, `0822`); Kelly layer λ≈0.3 with James-Stein haircut, Ledoit-Wolf shrinkage, CLV deflator, self-disarm below 50 settled (reader 57).
+
+**Line-path information > cross-sectional price:** late-steam velocity (finding 4), WST spike test spec for line-movement featurization (Kymatio 1D scattering vs engineered features, pass gate ≥0.02 OOS AUC — reader 47), CLV graded in price space not points-only per Bickel & Kim 2014 (rank-1 frontier item — reader 58), grouping-loss lower bound as the resolution gate (reader 57). Plus the integrity gate C-15: 59 of 140 ML lock prices are model-derived pseudo-odds below −1000 (e.g. −21200 implying p=0.995) — CLV claims are uninterpretable until fixed (reader 58).
+
+**Coherence before accuracy:** Dirichlet-multinomial share core (12), Skellam margin surface (18), unified log-odds refactor (16), AC ordinal model for cover/push/no-cover with uniform slopes (reader 40, `1446`), EMS multi-entry portfolio optimization for DFS (PROP+ 138.62/192 EMS at 100 entries; 2023 DK $1M pool case study 2.2% win probability — reader 43, `1760`).
+
+**Feature families that recur:** under-pressure EPA (17), within-unit dispersion features (team-std, max–min gaps beat mean-skill ratings — reader 36, `0931`), drive-scoring linear feature 0.2007·ydstogo − 0.0446·yardline_100 (AUC 0.6039, ~95% of HGB lift — reader 51), stadium factors via pairwise logistic decomposition (reader 42, `1700`), weather counterfactual inference (factual vs neutral-weather double-run — reader 42, `1710`), load proxies (9), WR/CB matchup pack (TPRR, YPRR, first-read share, assignment/overlap maps — reader 58, `magicsportsguy.md`).
+
+**Trust/governance pattern:** no-bet reason codes (calibration_drift, model_disagreement, stale_market_context, missing_required_data, source_rights_blocked — reader 53), SHADOW_WOULD_REFUSE admit/refuse + shadow-metrics pattern with signed receipts (reader 53), Jarvis stub-mode honesty guard + NOVA five-label draft-state vocabulary retiring the word "landed" (reader 31), quote-precedence ladder with divergence flags instead of overwrites (reader 56).
+
+### Contradictions between sources
+- **Calibration-honest vs edge-empty:** ECE 0.0044 / Brier 0.2556 (solved) vs R*≈−0.0057, MI 0.0095 nats p=0.060 (empty). Calibration honesty and edge existence are different problems; the slice is unanimous that maps, rescaling, and isotonic don't invent resolution.
+- **Market consensus vs late steam:** high book-consensus games are where the engine underperforms most (36.3% on-ladder MLB totals); late odds-path moves carry 14× the information of cross-sectional final odds. Consensus at rest is noise; the path near close is signal.
+- **Transparency vs human-AI performance:** the instinct to show engine leans is contradicted by 1492 — deferral-status-only messaging wins.
+- **Sim-to-real:** ForecastBench-sim correlation ρ=+0.43 is modest; sim resolution is only as good as the simulator (reader 40, `1472`).
+- **LOPO R² 0.91→0.38 within-vs-across-individual collapse (reader 33):** within-individual fits don't transfer across individuals — directly relevant to the QB-behavioral program's player-specific parameter discipline (trust is player-specific, not category-based).
+- **Isotonic plateaus destroy ranking for Kelly sizing while RES≈0 (reader 55):** a calibration method that's fine for display can be harmful for staking — calibration and sizing must be chosen jointly.
+
+### Methods that compose
+- Odds-path features (WST) → CLV-in-price-space grading → grouping-loss bound → LCB fire gate (FIRE ⇔ LCB(e) > τ, 100-row Venn-Abers floor).
+- Dirichl
+...[truncated 2760 chars]

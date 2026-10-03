@@ -1,0 +1,596 @@
+                                                             Forecasting the Winner of a Live Tennis Match
+                                                                      Charles Xie                                                 Aneesh Muppidi
+                                                                           Student                                                      Mentor
+                                                                     Natick High School                                           University of Oxford
+                                                     15 West Street, Natick, Massachusetts 01760, USA                           Oxford, United Kingdom
+                                                                 charlesxie157@gmail.com                                     aneesh.muppidi@magd.ox.ac.uk
+
+
+
+                                        Abstract                                                                 introducing DeepTennis, a long short-term memory (LSTM)
+                                        With the rise of live sports betting in recent years, tennis fore-       model with the same goal as Gollub’s work. Their model
+                                        casting has expanded from pre-match prediction to models                 combined sequential point-by-point match data with pre-match
+arXiv:2609.07617v1 [cs.LG] 7 Sep 2026
+
+
+
+
+                                        that update win probabilities as a match unfolds. A central              probability estimates, achieving an overall test accuracy of
+                                        challenge in creating such a model is the constant need for              79.5%.8 Among the live tennis studies reviewed, this was
+                                        models to adapt to score and performance changes. This study             the highest reported accuracy. However, because this model
+                                        examines how pre-match and live information can be most                  used different test years and data, it serves as a contextual
+                                        effectively integrated into a model to produce accurate win-             benchmark rather than a directly comparable baseline for this
+                                        probability estimates. The analysis uses 8,222 Grand Slam                study.
+                                        matches containing a total of 1,505,355 points. Five mod-                   Although this study focuses primarily on live-match pre-
+                                        els were evaluated using a chronological split, with matches             diction, pre-match models remain valuable because they pro-
+                                        from 2011–2021 used for training, 2022 for validation, and               vide predictive information before the match starts, allowing a
+                                        2023–2024 for testing. Trace, a hybrid model, achieved accu-             model to start away from a 50/50 prediction. One prominent
+                                        racies of 76.06%, 82.15%, and 88.34% at 25%, 50%, and 75%                and useful model is the creation of an Elo system for tennis,
+                                        match progress, suggesting that hybrid modeling is a practical           which has been explored in depth by multiple papers. Vaughan
+                                        approach to live tennis forecasting.                                     Williams et al. found that Elo-based methods generally pro-
+                                                                                                                 vided stronger forecasts of current player performance than
+                                        1 Introduction                                                           official rankings, supporting their use as pre-match probabil-
+                                        In recent decades, advances in real-time data collection and             ity estimates.9 More concretely, Kovalchik compared eleven
+                                        digital betting platforms have contributed to the rapid growth of        pre-match tennis forecasting approaches and found that the
+                                        live sports betting.1 Consequently, live betting has developed           career-history Elo model performed second best, just below
+                                        into a substantial market, with tennis emerging as a major               the market consensus odds, achieving 70% accuracy overall.10
+                                        contribution to its growth. In fact, approximately 80% of the            This further corroborates the use of Elo as a reliable pre-match
+                                        money wagered on tennis matches has been reported to be                  prior.
+                                        placed in-play.2                                                            This study investigates different methods of adapting pre-
+                                            Unlike pre-match forecasting, live tennis prediction provides        match and live tennis data to produce a strong live win-
+                                        an influx of live statistics. This can be seen with the growing          probability estimate. Unlike the prior studies discussed above,
+                                        use of technologies such as Hawk-Eye® , substantially augment-           it compares score structure, Elo, live serve updates, and ma-
+                                        ing the amount of shot-level and contextual information that             chine learning within the same chronological evaluation.
+                                        can be collected throughout a tennis match.3 Although this
+                                        information may contain useful predictive signals, it can also
+                                                                                                                 2 Data
+                                        be harmful if incorporated indiscriminately. For instance, too           This study uses Jeff Sackmann’s Grand Slam point-by-point
+                                        little or too much live data can trick a model into thinking in a        data along with ATP and WTA match results.11–13 The Grand
+                                        false direction.4 Thus, a successful live model must determine           Slam data provide live information recorded throughout each
+                                        a way to balance the incorporation of live data.5                        match, including the server, point winner, current score, serve
+                                                                                                                 outcomes, rally length, and break-point information. The ATP
+                                        1.1 Related Work                                                         and WTA match data are used separately to calculate each
+                                        Klaassen and Magnus introduced a hierarchical Markov model               player’s pre-match Elo rating.
+                                        that updates a player’s win probability from the current score.6
+                                                                                                                 2.1 Data Preprocessing
+                                        Gollub extended hierarchical Markov prediction by adding
+                                        serve probabilities from pre-match data and updating them                After data cleaning, the dataset retained 8,222 matches and
+                                        using a beta-binomial model mid-match. For live matches,                 1,505,355 point-level prediction states. Table 1 shows the
+                                        this model reached a maximum accuracy of 76.5% across all                division of data and other key data characteristics. These counts
+                                        points.7                                                                 refer to the dataset before filtering by Elo availability.
+                                           Lerner, Badri, and Monogue built on Gollub’s model by
+
+
+                                                                                                             1
+Table 1: Composition, filtering, and Elo coverage of the prepared        processed dataset.
+dataset; Association of Tennis Professionals (ATP) and Women’s
+Tennis Association (WTA) data are included, and Elo ratings were         Table 3: Principal variable groups in the processed point-level dataset,
+matched to 96.0% of prepared matches. Source: authors’ analysis of       summarizing score state, live serve performance, rally and ace context,
+the cited datasets.11–13                                                 and derived match state. Source: authors’ processing of the Grand
+                                                                         Slam point-by-point data.12
+     Quantity                         Matches Point states
+                                                                         Feature group Examples                  Description
+     Prepared sample                                                     Score state   best_of, p1_sets,   Describes the match format and the
+     Total                               8,222     1,505,355                           p2_sets, p1_games, current set, game, point-score, and
+                                                                                       p2_games, p1_score, server state.
+     ATP                                 4,181             –                           p2_score,
+     WTA                                 4,041             –                           p1_serving,
+                                                                                       tiebreak
+     Temporal split                                                      Match outcome winner, y           The final match result is stored and used
+     Training, 2011–2021                 6,774     1,238,084                                               exclusively as the prediction target.
+                                                                         Live serve    p1_serve_rate,      Tracks each player’s observed
+     Validation, 2022                      473        87,439             performance   p2_serve_rate,      serve-point win rate and corresponding
+     Testing, 2023–2024                    975       179,832                           p1_serve_n,         sample size, before the current point.
+                                                                                       p2_serve_n
+     Filtering and coverage                                              Rally and ace rally_avg,          Summarizes rally length and ace
+                                                                         context       recent_rally_avg,   performance from previously completed
+     Raw matches excluded (21.8%)        2,286             –                           p1_ace_rate,        points when such measurements are
+     Matched to Elo ratings (96.0%)      7,896             –                           p2_ace_rate         available.
+                                                                         Derived state sets_diff,          Provides compact representations of the
+                                                                         summaries     games_diff,         evolving match state from player 1’s
+   A match was kept only if the following criteria were met:                           score_diff,         perspective.
+                                                                                       pts_played
+it produced a valid, non-tied final set score, the winner had
+completed either two or three sets, more than 20 points were
+                                                                         2.2 Elo
+recorded, and the server and point winner were identified as
+either player 1 or player 2. This process removed nonessential           To represent player strength before each match, Elo ratings
+data, such as matches with walkovers.                                    were built from historical ATP and WTA results. Mirroring
+   After filtering, the data were organized so that each row             the Elo approach of Kovalchik,10 every player started with an
+shows the state of the match before a point was played. Each             Elo of 1500. Ratings were then updated in chronological order,
+row included the current set, game, and point scores, the server,        with the size of each update decreasing as a player played more
+the match format, and other live features. The eventual match            matches.
+winner was stored in a separate column as the target variable,             For a match between players i and j, player i’s expected
+ensuring that each prediction is based only on information               probability of winning was
+available at that point in the match. This was an essential step                                              1
+to mitigate data leakage.                                                                   qi,t =                           ,                   (1)
+                                                                                                     1 + 10(Rj,t −Ri,t )/400
+   Next, the match states were converted into a numerical for-
+mat that the models could process. For instance, tennis point            where Ri,t and Rj,t are the players’ ratings immediately before
+scores had to be encoded numerically because the Markov                  the match. After the outcome was observed, the rating was
+recursion cannot directly use labels such as 15, 30, 40, and             updated as
+advantage. Table 2 shows the encoding used.
+                                                                                                                              250
+Table 2: Numerical encoding of tennis point scores, with advantage
+                                                                         Ri,t+1 = Ri,t + Ki,t (Si,t − qi,t ),            Ki,t =        ,
+                                                                                                                         (mi,t + 5)0.4
+encoded as 4. Source: authors’ implementation.14                                                                                    (2)
+                                                                         where Si,t ∈ {0, 1} gives the result of the match and mi,t is
+              Raw point score Encoded value                              the number of matches player i has completed beforehand.
+                                                                            Each player’s Elo rating was recorded before the outcome
+                      0                   0
+                                                                         of the current match, preventing information from the match
+                     15                   1
+                                                                         itself from interfering with the pre-match Elo estimate. These
+                     30                   2
+                                                                         ratings were then added to the Grand Slam point-by-point data.
+                     40                   3
+                     AD                   4                              2.3 Evaluation Split
+                                                                         The data were split chronologically to prevent data leakage and
+   The other match-state variables, such as server identity and          mirror how a model would work in a real-time environment.
+tiebreak status, were similarly standardized.                               Matches from 2011 to 2021 were used for training, 2022
+   After encoding the match states, new cumulative features              was used for validation and parameter tuning, and matches
+were constructed from the raw point-by-point data from the               from 2023–2024 were used for testing.
+dataset. Unlike raw features, such as an ace or point won, these
+newly constructed features, such as serve rates and game or              3 Methods
+set outcomes, better capture a player’s overall performance.             To examine the value that different sources of information
+Table 3 summarizes the main groups of features used in the               add to live tennis predictions, this paper evaluates five models:
+
+
+                                                                     2
+a symmetric Markov baseline, an Elo-asymmetric Markov                    3.2 Symmetric Markov Baseline
+model, a serve-shrink Markov model, a histogram gradient-                The symmetric Markov baseline treats both players as equally
+boosting model (HGBM), and Trace. The models build on one                strong:
+another in different ways, making it possible to compare the                                  pa = pb = p.                        (9)
+value of the different methodologies.
+                                                                            The value of p is selected using the validation season from
+3.1 Markov Score Recursion                                               {0.60, 0.61, 0.62, 0.63, 0.64, 0.65}. At 25%, 50%, and 75%
+The Markov recursion forms the backbone of every model                   match progress, the selected values were 0.65, 0.64, and 0.60,
+except the HGBM. Its role is to take point-level serve proba-            respectively. Since both players receive the same serve proba-
+bilities and use tennis scoring rules to calculate the probability       bility, this model receives information solely from the match
+that player 1 eventually wins the match.                                 score. For instance, if two matches have the same score state,
+   Markov recursion is a natural fit for tennis because of the           this model gives them the same win probability regardless of
+way its scoring system is organized: points make up games,               who the players are.
+games make up sets, and sets determine the match.15 From                    This baseline was created to isolate the predictive value of
+any score, the model can consider the two possible outcomes              tennis scoring.
+of the next point and calculate how each outcome changes the
+                                                                         3.3 Elo-asymmetric Markov Model
+probability of eventually winning the match.
+   Let p1 be player 1’s probability of winning a point on serve          Because players often differ in strength, the underlying assump-
+and p2 be player 2’s probability of winning a point on serve.            tion behind the symmetric Markov model is not practical for
+The probability that player 1 wins the next point is                     real tennis matches. The Elo-asymmetric model resolves this
+                                                                         issue by allowing the two players to start with different serve
+                  (
+                    p1 ,      when player 1 serves,                      probabilities. The model uses the pre-match Elo difference:
+             q=                                                (3)
+                    1 − p2 , when player 2 serves.                                              d = Elo1 − Elo2 .                     (10)
+     More formally, the complete match state can be represented            Subsequently, the Elo gap is converted into a serve-
+as                                                                       probability edge:
+              s = (S1 , S2 , G1 , G2 , P1 , P2 , σ, τ, b),    (4)
+                                                                                           e = clip(αd, −0.15, 0.15),                 (11)
+where S1 and S2 are the sets won by each player, G1 and G2
+are the games won in the current set, P1 and P2 are the encoded          where α is a validation-tuned slope. The baseline serve prob-
+point scores, σ identifies the server, τ indicates whether the           ability was searched from 0.59 to 0.65 in increments of 0.01.
+current game is a tiebreak, and b is the best-of match format.           The slope grid was 4, 6, 9, 13, 18, and 22 × 10−5 . At 25%,
+Let T1 (s) and T2 (s) denote the states reached when player 1            50%, and 75% match progress, the selected (β, α) values were
+or player 2 wins the next point. The probability that player 1           (0.64, 1.3 × 10−4 ), (0.59, 1.3 × 10−4 ), and (0.59, 1.3 × 10−4 ),
+eventually wins the match is then                                        respectively.
+                                                                            The serve probabilities are then
+         V (s) = q(s)V (T1 (s)) + (1 − q(s)) V (T2 (s)) .     (5)
+                                                                                          pa = clip(β + e, 0.45, 0.88),               (12)
+ If m(b) = ⌈b/2⌉ is the number of sets required to win the
+match, the terminal conditions are                                                        pb = clip(β − e, 0.45, 0.88),               (13)
+                         (
+                            1, S1 = m(b),                                where β is the tour-average baseline serve probability, and
+                 V (s) =                                (6)              the clipping bounds were added to prevent the model from
+                            0, S2 = m(b).
+                                                                         producing unrealistic serve probabilities.
+  Deuce and tiebreak states require slight modifications to                 Overall, this model can prevent the initial match estimate
+the standard recursion. From deuce, player 1’s probability of            from defaulting to 50–50 when the players differ in strength.
+winning the game can be written as                                       3.4 Serve-shrink Markov Model
+                                        q2                               The Elo-asymmetric model assigns serve probabilities using
+                     D(q) =                           ,       (7)        pre-match information but does not update them as the match
+                                q 2 + (1 − q)2
+                                                                         progresses. Suppose a player with a historical serve-point win
+where q is player 1’s probability of winning the next point.             rate of 70% wins 9 of their first 10 serve points, thus producing
+Tiebreaks use the same recursive framework, but the server               a live serve rate of 90%. Although this may indicate that the
+changes according to the standard service sequence,                      player is playing especially well, the estimate is based on a
+                                                                         limited sample and may reflect a temporary variation in skill
+                       1, 2, 2, 1, 1, 2, 2, . . . ,           (8)        level, and it is unlikely that they will consistently play at this
+                                                                         skill level throughout the entire match.
+with one player serving the opening point followed by alternat-             The serve-shrink model addresses this limitation by weigh-
+ing two-point service turns.                                             ing the player’s observed in-match serve rate against their
+
+
+                                                                     3
+pre-match serve rate. In this example, the player’s estimated              nodes, and L2 regularization. Training used log loss with early
+serve probability should increase, but not immediately to 90%.             stopping disabled and a fixed random state of 42. After tuning,
+The live serve rate is therefore weighted in proportion to the             the selected configuration was refit on the combined training
+amount of in-match evidence available.                                     and validation data and evaluated on the test set.
+   Using a simplified form of the Bayesian shrinkage approach                 XGBoost and LightGBM were also evaluated using the same
+described by Colin and Bechler,16 the general equation for the             training and validation procedure.18, 19 However, because the
+serve-shrink model is                                                      histogram gradient-boosting classifier achieved the lowest vali-
+                        n            κ                                     dation log loss, it was selected as the machine-learning base-
+                θ̂ =       θ̂live +      θprior ,          (14)            line.
+                     n+κ            n+κ
+where θ̂live is the live estimate, θprior is the pre-match estimate,       3.6 Trace
+θ̂ is the resulting updated estimate, n is the number of observed          The final model used in this study is Trace. It combines pre-
+serve points, and κ is a prior pseudo-count that controls the              dictions from the Elo-asymmetric and serve-shrink Markov
+amount of shrinkage.                                                       models with the current score and additional live features.
+    Let π1 and π2 denote the Elo-based prior serve-point win               These inputs are passed to a histogram gradient-boosting model
+probabilities for players 1 and 2. Let r1 and r2 denote the                (HGBM), which produces the final match-win probability.
+observed in-match serve-point win rates, and n1 and n2 denote                 Let p̂M (s) denote the Elo-asymmetric Markov probability,
+the corresponding numbers of serve points observed before the              p̂S (s) denote the serve-shrink Markov probability, and z(s)
+current match state. The updated serve probabilities are                   denote the remaining score-state and live-match features. The
+                                                                           resulting feature vector is
+                 n1 r1 + κπ1               n2 r2 + κπ2
+          pa =               ,      pb =               .       (15)
+                   n1 + κ                    n2 + κ
+   The live serve rate receives weight ni /(ni + κ) while the                                       
+                                                                                                          p̂M (s)
+                                                                                                                     
+pre-match prior receives weight κ/(ni + κ). As ni increases,                                              p̂S (s)   
+the weight progressively shifts toward the observed live serve                                     
+                                                                                                    logit(p̂M (s)) 
+                                                                                                                     
+rate.                                                                                       x(s) = 
+                                                                                                                    ,               (17)
+                                                                                                    logit(p̂S (s)) 
+                                                                                                                     
+   The parameter κ controls the strength of shrinkage toward                                       p̂S (s) − p̂M (s)
+the pre-match estimate, with large values giving more weight
+                                                                                                            z(s)
+to the prior and smaller values giving more weight to re-
+cent serve performance. To select the value of κ, the values
+{40, 80, 160, 320, 640} were compared using validation log
+loss. The final values were then determined to be 640, 160, and            where
+40 at 25%, 50%, and 75% match progress, respectively.
+   The resulting pa and pb values are then passed into the
+Markov recursion with the current score state to obtain player
+                                                                                                                       
+                                                                                                                   p
+1’s match-win probability.                                                                   logit(p) = log                 .         (18)
+                                                                                                                  1−p
+3.5 Histogram Gradient-Boosting Baseline
+The histogram gradient-boosting model was used as a machine-
+learning baseline and was implemented with scikit-learn’s Hist-              Trace then produces
+GradientBoostingClassifier.17 It was designed to test the ef-
+fectiveness of machine learning in detecting the winner of a
+match. Unlike the Markov-based models discussed earlier, it
+learns player 1’s match-win probability solely from the current                                p̂Trace (s) = fθ (x(s)),               (19)
+score and live features.
+   Let z represent the score and live performance features avail-
+able at the current match state. The baseline prediction is                where fθ is the HGBM.
+                          p̂H = gϕ (z),                        (16)           The hypothesized advantage that Trace has over the Elo-
+                                                                           asymmetric Markov and serve-shrink models is its ability to
+where gϕ is a histogram gradient-boosting classifier and p̂H is            capture non-linearity. With the help of the HGBM, Trace was
+the predicted probability that player 1 wins the match.                    predicted to be able to more effectively capture nuanced and
+   The HGBM provides a machine-learning baseline that es-                  complex scenarios that the models could not. The vector z(s)
+timates live win probability directly from live match features             contains the remaining live-match features used by the HGBM.
+without using a Markov prediction.                                         To prevent the possibility of data leakage, at every state s,
+   Four hyperparameter settings were evaluated by val-                     these variables are constructed only from information available
+idation log loss: (0.03, 150, 15, 1.0), (0.03, 300, 15, 1.0),              before the next point is played, preventing future information
+(0.05, 200, 15, 3.0), and (0.05, 200, 31, 3.0). The entries cor-           from entering the prediction.
+respond to learning rate, maximum iterations, maximum leaf                    The Trace pipeline is shown in Figure 1.
+
+
+                                                                       4
+                                                                          Table 4: Model accuracy at fixed match-progress checkpoints and
+                                                                          across all points; HGBM denotes the histogram gradient-boosting
+                                                                          model, and Trace has the highest accuracy in every reported column.
+                                                                          Source: authors’ model evaluation.14
+
+                                                                           Model                      25%      50%      75%     All Points
+                                                                           Symmetric Markov          0.6851   0.7703   0.8544    73.21%
+                                                                           Elo-asymmetric Markov     0.7575   0.8050   0.8648    77.56%
+                                                                           Serve-shrink Markov       0.7564   0.7946   0.8720    77.68%
+                                                                           HGBM                      0.6944   0.7918   0.8738    73.98%
+                                                                           Trace                     0.7606   0.8215   0.8834    77.84%
+
+                                                                            Figure 2 shows all five models across match progress.
+
+
+
+
+                 Figure 1: Trace model pipeline.
+
+
+
+
+                                                                             Figure 2: Accuracy of the five models across match progress.
+
+   Hyperparameters were chosen according to validation log
+                                                                             Trace achieved the highest accuracy at each reported check-
+loss. Four HGBM settings were evaluated: (0.03, 7, 1.0),
+                                                                          point and across all point-level predictions. Its largest advan-
+(0.03, 15, 1.0), (0.05, 7, 1.0), and (0.05, 15, 3.0), with each tu-
+                                                                          tage over the other models occurred during the middle stages of
+ple giving the learning rate, maximum number of leaf nodes,
+                                                                          the match, particularly between approximately 40% and 70%
+and L2 regularization. All configurations used log loss, early
+                                                                          match progress, as shown in Figure 2.
+stopping, and a maximum of 250 boosting iterations. The 25%,
+                                                                             Accuracy increased for all models as the match progressed,
+50%, and 75% checkpoint models used random states 19, 30,
+                                                                          and the differences between the five plotted models narrowed
+and 6, respectively.
+                                                                          near the end of the match. However, because accuracy does not
+4 Results and Discussion                                                  assess the quality or confidence of the predicted probabilities,
+                                                                          the models were also evaluated using log loss and calibration.
+The models were evaluated on the test set, which contains
+matches strictly from 2023 and 2024. The accuracies of the                4.2 Log Loss and Calibration
+models were collected at fixed intervals of match progress.               To get a better grasp of model performance, the models’ log
+For example, at 25% match progress, the model received the                losses were also calculated. Log loss evaluates the quality of
+score state and live features from approximately one-quarter              the model estimates rather than only whether the predicted
+of the way through each match. This was repeated at 50%                   winner is correct. In essence, it rewards confident and correct
+and 75%. This setup measures how performance changes as                   estimates while penalizing confident incorrect predictions es-
+more information about the match is revealed to the models.               pecially strongly. The loss function used for every model was
+Additionally, the accuracies of the models over all points were           binary log loss, which is defined as
+examined.
+  The project reports two metrics: log loss and accuracy.                             1 X
+                                                                                          N
+These metrics are explained in detail in the following sections.              L=−           [yi log(pi ) + (1 − yi ) log(1 − pi )] .    (20)
+                                                                                      N i=1
+4.1 Accuracy
+Accuracy is a widely used and intuitive measure of model                  Here, pi is the predicted probability that player 1 wins, yi ∈
+performance, making it useful for straightforward comparisons             {0, 1} is the observed match outcome, and N is the total num-
+between models. Table 4 reports the checkpoint and all-point              ber of predictions. A lower log loss indicates better probability
+results.                                                                  estimates. Table 5 reports log loss at the three checkpoints.
+
+
+                                                                      5
+Table 5: Model log loss at fixed match-progress checkpoints; HGBM
+denotes the histogram gradient-boosting model, and Trace has the
+lowest log loss at all three checkpoints. Source: authors’ model
+evaluation.14
+
+ Model                      25% Loss 50% Loss 75% Loss
+ Symmetric Markov             0.6292          0.5363    0.3498
+ Elo-asymmetric Markov        0.5210          0.4549    0.3096
+ Serve-shrink Markov          0.5142          0.4266    0.2842
+ HGBM                         0.5376          0.3788    0.2299
+ Trace                        0.4753          0.3530    0.2002
+
+
+
+
+   Trace performed best across all evaluated match-progress
+checkpoints. To examine the reliability of its probability es-
+timates more directly, the model was also evaluated using a
+calibration curve. Calibration curves complement log loss
+                                                                          Figure 3: Calibration curve for Trace at 25%, 50%, and 75% match
+by comparing predicted win probabilities with observed win
+                                                                          progress.
+frequencies.
+   Following Guo et al.,20 the predicted probabilities are di-              The reliability diagram indicates that Trace is reasonably
+vided into intervals, or bins, such as 0.60–0.75. For each bin            well calibrated, especially at 25% and 50% match progress.
+Bk , the mean predicted probability is calculated as
+                                                                          4.3 Tour-specific Performance
+                                                                          Figure 4 separates model accuracy by tour for ATP and WTA
+                                                                          matches to observe if the two tours differed in model predic-
+                                                                          tions. Such differences may be obscured when results from
+                                                                          both tours are combined.
+                                1 X
+                    Predk =          pi ,                     (21)
+                               |Bk |
+                                       i∈Bk
+
+
+
+
+and the corresponding observed win frequency is calculated as
+
+
+
+
+                                1 X
+                     Obsk =          yi ,                     (22)
+                               |Bk |
+                                     i∈Bk
+
+
+
+
+where pi is the predicted probability that player 1 wins, yi is the
+observed match outcome, and |Bk | is the number of predictions
+in bin Bk . A perfectly calibrated model has an observed win
+frequency equal to its mean predicted probability in each bin.
+   Figure 3 plots the mean predicted probability, Predk , against                Figure 4: Model accuracy by tour (ATP and WTA).
+the observed win frequency, Obsk , for each probability interval
+Bk . Predictions closer to the diagonal line Obsk = Predk                   The main pattern is similar on both tours: Trace is almost
+indicate better calibration.                                              always the strongest model across both ATP and WTA matches,
+
+
+                                                                      6
+especially through the middle portions of the match. It can also          prove causation.
+be observed that the WTA graph exhibits greater fluctuation                  The results were also compared with DeepTennis,8 an
+than the ATP graph.                                                       LSTM-based live prediction model trained on Grand Slam
+                                                                          data from 2011–2019. DeepTennis reported an overall accu-
+4.4 Discussion
+                                                                          racy of 79.5%, with accuracies of 73.2%, 84.9%, and 89.2% at
+The models developed along noticeably different performance               25%, 50%, and 75% match progress, respectively.
+trajectories as the match progressed, and those differences are              Although DeepTennis uses very similar evaluation methods,
+useful to reveal what each approach is actually extracting from           its results are not directly comparable to the main results of
+the available information. The most notable trajectory was the            this study because the data were split differently over time.
+HGBM baseline: it was extremely weak early in matches, even               DeepTennis uses 2017 for development and 2014 for testing, so
+falling behind the symmetric Markov baseline. Nonetheless, its            the evaluation is not fully chronological. This raises a major red
+performance improved substantially as matches unfolded. By                flag, as the dataset includes matches from both before and after
+75% match progress, it achieved the highest accuracy among                2014, allowing the possibility for later-season information to
+the individual models and also produced lower log loss than               have been available during training. By contrast, this study uses
+all three Markov models at both 50% and 75%. This pattern                 a strictly chronological split, with all training and validation
+suggests that as matches develop, live features become a sub-             data coming before the test period.
+stantially more valuable source of information for models than               To examine the effect of this difference, the models in this
+the Markov score recursion.                                               study were also evaluated under the same non-chronological
+   Another interesting performance was the serve-shrink model.            testing setup. Under this alternative split, multiple models
+On the surface, its accuracy gains over the Elo-asymmetric                matched or exceeded the performance reported by DeepTennis.
+model were relatively small and were not consistent at ev-                Table 6 presents this comparison:
+ery checkpoint. However, its distinction appeared in the log
+loss, where it consistently outperformed the Elo-asymmetric               Table 6: Accuracy under the 2011–2019 non-chronological split;
+model. This finding suggests that the live serve update mainly            HGBM denotes the histogram gradient-boosting model, and Trace
+improves the quality of the probability estimate rather than              reaches 81.30% across all points on this comparison split. Source:
+frequently changing which player the model expects to win.                authors’ model evaluation.14
+For instance, in some scenarios both models remained on the
+same side of the 0.5 threshold, but the serve-shrink model pro-            Model                      25%      50%       75%     All Points
+duced better-calibrated probability estimates; that is, it assigned        Symmetric Markov         69.24%    80.64%    87.99%     76.73%
+higher confidence when correct and lower confidence when                   Elo-asymmetric Markov    77.40%    83.05%    88.70%     81.12%
+incorrect more often than the Elo-asymmetric model. While ac-              Serve-shrink Markov      77.53%    83.84%    88.83%     81.29%
+curacy is still the sharpest way to evaluate model performance,            HGBM                     71.81%    81.50%    88.48%     77.53%
+this distinction still remains valuable because it allows users to         Trace                    77.66%    83.84%    88.96%     81.30%
+trust the model’s predictions better.
+   As expected, Trace produced the strongest overall results.                These comparison results should be interpreted cautiously
+As an ensemble of previous models, Trace was able to pool                 because the split allows for potential data leakage. However, be-
+the advantages of all the models together and limit their weak-           cause DeepTennis was the strongest comparable model found,
+nesses. For instance, the serve-shrink Markov outperformed                the comparison still suggests that Trace is competitive with
+the HGBM throughout the early stages of the match, but was                prior live-tennis prediction approaches.
+outperformed by it during the later stages. Hence, because
+Trace utilizes both of these models, it was able to dominate              5 Limitations
+throughout the entire match.                                              This project has several limitations. First, the models in this
+   The tour-specific curves revealed similar model trajectories,          study mainly explore service points and features. Future mod-
+but one noteworthy finding in this experiment was that the                els could incorporate return features and statistics, which could
+WTA predictions fluctuated more sharply over the course of                add additional insights into a player’s performance.
+a match than the ATP predictions. A plausible explanation                    Another limitation is the lack of surface-specific perfor-
+is the smaller average serving advantage in women’s tennis.               mance. Players can perform very differently across hard, clay,
+Previous research has found that male Grand Slam players                  and grass courts, with Rafael Nadal’s success on clay being a
+serve at higher velocities, produce more aces and unreturned              well-known example.23 The current Elo system does not di-
+serves, and win a greater proportion of service points than               rectly account for different types of surfaces, so adding surface-
+female players.21 Professional men have also been reported to             specific Elo ratings or performance statistics could provide a
+hold approximately 79% of service games, with a substantially             more accurate measure of a player’s strength.
+lower hold rate of 66% for women.22 Because breaking serves                  Despite the fact that the number of features used for this
+occur far more frequently in the WTA, the direction of a match            project is already quite large, there are still several factors that
+can shift very quickly, which may contribute to the larger                are not represented, including fatigue, injury, weather, hand-
+movements seen in the serve-based probability estimates. This             edness, and playing style. These factors could undoubtedly
+explanation should still be treated with caution, since this study        have a sizeable impact on live performance, which could give
+does not test in depth whether this correlation is sufficient to          models a better estimate of a player’s overall performance. Al-
+
+
+                                                                      7
+though some of these effects may be indirectly reflected by                References
+the existing data, giving them a more concrete representation               [1] Ding, Q. The Influence of Artificial Intelligence to the Earnings
+may make it easier for models to incorporate these additional                   of Sports Betting Companies. Financial Economics Research
+features.                                                                       2025, 2 (3), 162–167. https://doi.org/10.70267/
+   Finally, this project only analyzed Grand Slam matches.                      fer.250203.162167.
+Since Grand Slams represent only a small fraction of total
+                                                                            [2] Sipko, M. Machine Learning for the Prediction of
+professional tennis tournaments, the results may not general-                   Professional Tennis Matches. MEng Computing Fi-
+ize well to lower-level tour events. Hence, adding ATP and                      nal Year Project, Imperial College London, 2015.
+WTA tour-level events to the existing dataset could expand the                  https://www.doc.ic.ac.uk/teaching/
+usefulness of these models.                                                     distinguished-projects/2015/m.sipko.pdf.
+
+6 Conclusion                                                                [3] Fitzpatrick, A.; Stone, J. A.; Choppin, S.; Kelley, J.
+                                                                                Analysing Hawk-Eye® Ball-Tracking Data to Explore Suc-
+This study developed a live tennis win-probability model that
+                                                                                cessful Serving and Returning Strategies at Wimbledon. In-
+combines Markov score recursion with pre-match and live                         ternational Journal of Performance Analysis in Sport 2024, 24
+match information. Five models were tested, including a sym-                    (3), 251–268. https://doi.org/10.1080/24748668.
+metric Markov baseline, an Elo-asymmetric Markov model, a                       2023.2291238.
+serve-shrink model, an HGBM baseline, and Trace. Trace com-
+bined features from the other models, making it the main focus              [4] Gollub, J. Forecasting Serve Performance in Professional Tennis
+of the evaluation. Trace produced the greatest accuracy among                   Matches. Journal of Sports Analytics 2021, 7 (4), 223–233.
+the five models in the primary evaluation, reaching 77.84%                      https://doi.org/10.3233/JSA-200345.
+across all points. The results of the other four models reveal              [5] Ciobanu, R. Profitability in Sports Betting: A Case
+many interesting patterns between the uses of different sources                 Study of Men’s Tennis. Undergraduate thesis, The
+of information. These results demonstrate that each source                      Wharton School, University of Pennsylvania, 2023.
+of information is valuable for tennis models. In particular,                    https://repository.upenn.edu/bitstreams/
+Elo ratings provide useful information on player strength, live                 14decf5d-9b33-4043-bd59-0faab08dc5e7/
+serve statistics improve probability estimates, and the HGBM                    download.
+captures additional patterns that are not represented directly by           [6] Klaassen, F. J. G. M.; Magnus, J. R. Forecasting the Winner
+the Markov models.                                                              of a Tennis Match. European Journal of Operational Research
+   While much tennis forecasting focuses on pre-match predic-                   2003, 148 (2), 257–267. https://doi.org/10.1016/
+tion, this study demonstrates the practicality of developing a                  S0377-2217(02)00682-3.
+live-match prediction model.
+                                                                            [7] Gollub, J. Producing Win Probabilities for Professional Ten-
+7 Future Work                                                                   nis Matches from Any Score. Bachelor’s thesis, Harvard Col-
+                                                                                lege, 2017. http://nrs.harvard.edu/urn-3:HUL.
+The main direction of work is to build Trace into a real-time                   InstRepos:41024787.
+prediction system. As an example of how this would work, the
+system would receive point-by-point data from a live match,                 [8] Lerner, S.; Badri, D.; Monogue, K. DeepTennis: Mid-
+update the score state and live features, and then provide a new                Match Tennis Predictions. CS230 Project Report, Stan-
+match-win probability after every point.                                        ford University, 2019. https://cs230.stanford.edu/
+  More testing is necessary to ensure that the model remains                    projects_fall_2019/reports/26249098.pdf.
+accurate and efficient when applied to real-time tennis matches.            [9] Vaughan Williams, L.; Liu, C.; Dixon, L.; Gerrard, H. How Well
+                                                                                Do Elo-Based Ratings Predict Professional Tennis Matches?
+8 Implementation Notes                                                          Journal of Quantitative Analysis in Sports 2021, 17 (2), 91–105.
+The statistical analysis was implemented in Python 3.12.3 us-                   https://doi.org/10.1515/jqas-2019-0110.
+ing NumPy 2.5.0, pandas 3.0.3, scikit-learn 1.9.0, XGBoost
+                                                                           [10] Kovalchik, S. A. Searching for the GOAT of Tennis
+3.3.0, and LightGBM 4.6.0. Figures 2–4 were generated with
+                                                                                Win Prediction. Journal of Quantitative Analysis in Sports
+Matplotlib 3.11.0, and Figure 1 was prepared with TikZ/PGF                      2016, 12 (3), 127–138. https://doi.org/10.1515/
+in LaTeX.                                                                       jqas-2015-0059.
+   Code for the full pipeline is available in the project repository
+(https://github.com/cx-57/live-tennis-research).                           [11] Sackmann, J. ATP Tennis Rankings, Results, and Stats, 2024.
+                                                                                https://github.com/JeffSackmann/tennis_
+9 Acknowledgements                                                              atp.
+This project uses public tennis datasets maintained by Jeff                [12] Sackmann, J. Grand Slam Point-by-Point Tennis Data, 2024.
+Sackmann, including Grand Slam point-by-point data and                          https://github.com/JeffSackmann/tennis_
+ATP/WTA match results.                                                          slam_pointbypoint.
+
+                                                                           [13] Sackmann, J. WTA Tennis Rankings, Results, and Stats, 2024.
+                                                                                https://github.com/JeffSackmann/tennis_
+                                                                                wta.
+
+
+                                                                       8
+[14] Xie, C.; Muppidi, A. Live Tennis Research: Code and
+     Reproducibility Materials, 2026. https://github.com/
+     cx-57/live-tennis-research.
+
+[15] O’Malley, A. J. Probability Formulas and Statistical Analysis in
+     Tennis. Journal of Quantitative Analysis in Sports 2008, 4 (2), 1–
+     23. https://doi.org/10.2202/1559-0410.1100.
+
+[16] Colin, P.; Bechler, A. Informative Prior Distributions for
+     a Binomial Model to Predict Professional Tennis Results.
+     Journal de la Société Française de Statistique 2015, 156
+     (2), 25–37. https://www.numdam.org/item/JSFS_
+     2015__156_2_25_0/.
+
+[17] Pedregosa, F.; Varoquaux, G.; Gramfort, A.; Michel, V.;
+     Thirion, B.; Grisel, O.; Blondel, M.; Prettenhofer, P.; Weiss,
+     R.; Dubourg, V.; Vanderplas, J.; Passos, A.; Cournapeau,
+     D.; Brucher, M.; Perrot, M.; Duchesnay, É. Scikit-learn:
+     Machine Learning in Python. Journal of Machine Learn-
+     ing Research 2011, 12, 2825–2830. https://jmlr.org/
+     papers/v12/pedregosa11a.html.
+
+[18] Chen, T.; Guestrin, C. XGBoost: A Scalable Tree Boosting
+     System. In Proceedings of the 22nd ACM SIGKDD Interna-
+     tional Conference on Knowledge Discovery and Data Min-
+     ing; 2016; pp 785–794. https://doi.org/10.1145/
+     2939672.2939785.
+
+[19] Ke, G.; Meng, Q.; Finley, T.; Wang, T.; Chen, W.; Ma, W.;
+     Ye, Q.; Liu, T.-Y. LightGBM: A Highly Efficient Gradient
+     Boosting Decision Tree. In Advances in Neural Information
+     Processing Systems; 2017; Vol. 30, pp 3146–3154. https:
+     //proceedings.neurips.cc/paper/2017/hash/
+     6449f44a102fde848669bdd9eb6b76fa-Abstract.
+     html.
+
+[20] Guo, C.; Pleiss, G.; Sun, Y.; Weinberger, K. Q. On Cali-
+     bration of Modern Neural Networks. In Proceedings of the
+     34th International Conference on Machine Learning; Proceed-
+     ings of Machine Learning Research; PMLR, 2017; Vol. 70,
+     pp 1321–1330. https://proceedings.mlr.press/
+     v70/guo17a.html.
+
+[21] Reid, M.; Morgan, S.; Whiteside, D. Matchplay Character-
+     istics of Grand Slam Tennis: Implications for Training and
+     Conditioning. Journal of Sports Sciences 2016, 34 (19), 1791–
+     1798. https://doi.org/10.1080/02640414.2016.
+     1139161.
+
+[22] Goff, B.; Wilson, D.; Zimmer, D. Performing in High-Pressure
+     Situations: The Case of Tennis Players up a Break and Serv-
+     ing for the Set. Applied Economics 2025, 57 (39), 6138–
+     6147. https://doi.org/10.1080/00036846.2024.
+     2381129.
+
+[23] Bodo, P. The Clay Ran Red: Roger Federer Vs. Rafael Nadal at
+     Roland Garros; Diversion Books: New York, 2010.
+
+
+
+
+                                                                          9
+

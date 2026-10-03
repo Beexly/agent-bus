@@ -1,0 +1,567 @@
+                                            Scalable Injury-Risk Screening in Baseball Pitching From Broadcast Video
+
+                                                                          Jerrin Bright1,2 , Justin Mende2 , and John Zelek1,2
+                                                                   1
+                                                                       Vision and Image Processing Lab, 2 University of Waterloo, Canada
+                                                                         {jerrin.bright, jkmende, jzelek}@uwaterloo.ca
+
+
+
+                                                                Abstract                                    ing facilities, and individual pitchers lack the infrastruc-
+arXiv:2603.04864v1 [cs.CV] 5 Mar 2026
+
+
+
+
+                                                                                                            ture needed to obtain reliable kinematic feedback that could
+                                            Injury prediction in pitching depends on precise biome-         enable early injury-risk screening and targeted mechanical
+                                        chanical signals, yet gold-standard measurements come               correction [10, 32]. This creates a critical gap between the
+                                        from expensive, stadium-installed multi-camera systems              known value of biomechanics for injury prediction and the
+                                        that are unavailable outside professional venues. We                scarcity of tools to measure them at scale.
+                                        present a monocular video pipeline that recovers 18                     Recent advances in monocular 3D human pose estima-
+                                        clinically relevant biomechanics metrics from broadcast             tion have made it possible to recover accurate joint positions
+                                        footage, positioning pose-derived kinematics as a scal-             directly from broadcast video footage [5, 6, 19]. This opens
+                                        able source for injury-risk modeling. Built on Dream-               a compelling practical question: given only a single camera
+                                        Pose3D, our approach introduces a drift-controlled global           view and no dedicated hardware, can we recover biome-
+                                        lifting module that recovers pelvis trajectory via velocity-        chanical metrics that are accurate enough to support in-
+                                        based parameterization and sliding-window inference, lift-          jury prediction and screening? If successful, pose-derived
+                                        ing pelvis-rooted poses into global space. To address mo-           kinematics would become a powerful, scalable source of
+                                        tion blur, compression artifacts, and extreme pitching poses,       injury-relevant signals, democratizing risk monitoring for
+                                        we incorporate a kinematics refinement pipeline with bone-          resource-limited environments.
+                                        length constraints, joint-limited inverse kinematics, smooth-
+                                                                                                                Achieving this level of fidelity requires more than strong
+                                        ing, and symmetry constraints to ensure temporally stable
+                                                                                                            pose estimation alone. Broadcast footage introduces unique
+                                        and physically plausible kinematics. On 13 professional
+                                                                                                            challenges: motion blur from high-speed arm action, video
+                                        pitchers (156 paired pitches), 16/18 metrics achieve sub-
+                                                                                                            compression artifacts, frequent self-occlusion during the
+                                        degree agreement (MAE < 1◦ ). Using these metrics for
+                                                                                                            delivery, and extreme deformations specific to pitching me-
+                                        injury prediction, an automated screening model achieves
+                                                                                                            chanics [4, 5]. These factors produce jitter, inconsistent
+                                        AUC 0.811 for Tommy John surgery and 0.825 for signif-
+                                                                                                            bone lengths, and asymmetries in raw 3D joint estimates
+                                        icant arm injuries on 7,348 pitchers. The resulting pose-
+                                                                                                            that propagate errors into downstream kinematic derivatives
+                                        derived metrics support scalable injury-risk screening, es-
+                                                                                                            and angles. Previous attempts at video-based pitching kine-
+                                        tablishing monocular broadcast video as a viable alterna-
+                                                                                                            matics have demonstrated qualitative plausibility but have
+                                        tive to stadium-scale motion capture for biomechanics.
+                                                                                                            not achieved sub-degree quantitative agreement with pro-
+                                                                                                            fessional tracking systems [4, 9, 23]. We address this gap
+                                                                                                            by validating each biomechanical quantity directly against
+                                        1. Introduction                                                     tracking measurements.
+                                        Injury prediction and prevention in pitching are increasingly           In this work, we demonstrate that these barriers can be
+                                        driven by biomechanics: joint flexion, trunk and pelvis ori-        overcome through careful, structured refinement of 3D pose
+                                        entations, hip–shoulder separation, shin angles, and center-        sequences. Starting from temporal joint estimates recov-
+                                        of-gravity position are among the strongest signals linked          ered from broadcast video, we apply a multi-stage post-
+                                        to arm loading and injury risk [1, 12, 14, 28]. These quan-         processing pipeline (the Biomechanics Refinement Stack,
+                                        tities are currently derived almost exclusively from multi-         BRS) that enforces physical plausibility and temporal sta-
+                                        camera optical tracking systems such as Hawk-Eye [34],              bility: global trajectory lifting, constant bone-length con-
+                                        which are installed in every MLB stadium at costs ranging           straints via Forward Kinematics (FK), constrained Inverse
+                                        from $150,000 to $500,000 per venue. Outside the profes-            Kinematics (IK) with pitcher-specific joint limits, smooth-
+                                        sional level, such measurements remain largely inaccessi-           ing, and bilateral symmetry enforcement. From the result-
+                                        ble: amateur leagues, college programs, independent train-          ing stabilized kinematics, we extract 18 widely used pitch-
+
+
+                                                                                                        1
+ing biomechanical metrics using geometrically precise for-            present motion blur, rapid camera movement, and occlu-
+mulas validated against professional tracking data. This              sions. Deep learning improves detection/tracking robust-
+yields pose-derived biomechanical signals that are accurate           ness and enables novel tactical and biomechanical metrics,
+enough to power downstream injury-risk screening. Our                 highlighting Computer Vision’s central role in sports ana-
+main contributions are as follows:                                    lytics.
+1. We introduce a Pelvis-to-Global Lifting Module
+   (PGLM) and the Biomechanics Refinement Stack                       Biomechanical Analysis. The application of Computer
+   (BRS) (bone-length enforcement, constrained IK,                    Vision and machine learning to baseball pitching analytics
+   smoothing, symmetry) that stabilize broadcast pose se-             reflects a shift from sensor-dependent data towards scalable,
+   quences and produce consistent global kinematics.                  video-driven biomechanical models. Central to this tran-
+2. We demonstrate a clinically actionable downstream use              sition is PitcherNet [5], which leverages deep learning to
+   case: injury-risk screening driven by pose-derived met-            extract advanced pitching metrics directly from broadcast
+   rics, using threshold-based kinematic flags derived from           or low-resolution videos. It estimates delivery type, pitch
+   the recovered sequences to support scalable monitoring             velocity, release point, extension, and 3D body pose coor-
+   without stadium hardware.                                          dinates by employing a temporal convolutional network to
+3. We recover 18 clinically relevant biomechanics metrics             classify pitcher tracklets.
+   from monocular video, validate 16/18 to sub-degree ac-                 Several studies connect pitching mechanics and sequenc-
+   curacy on 13 professional pitchers, and show large-scale           ing to performance outcomes using statistical and machine
+   generalization on 119,561 professional pitches.                    learning approaches. The work done by Bock [3] ap-
+                                                                      plies multinomial logistic regression and support vector
+2. Related Works                                                      machines to model pitch selection patterns. This model
+Sports Analytics Research. Computer Vision has                        demonstrates that lower sequence complexity correlates
+emerged as a revolutionary technology in sports analyt-               with decreased long-term performance metrics. Addition-
+ics, addressing limitations in traditional data collection            ally, Sidle and Tran [33] use classifiers, such as support
+techniques. In the past, sports data were gathered using              vector machines and decision trees, on the PITCHf/x sensor
+wearable sensors or manual annotations, which were in-                database to predict pitch types. Work done in [18] extends
+trusive, expensive, and difficult to scale. Computer Vision           on this by emphasizing interpretability and analyzing how
+enables non-intrusive, scalable extraction of structured data         features, such as release velocity and pitch movement, influ-
+directly from video footage [25].                                     ence classification decisions. Biomechanics-focused stud-
+    Object detection methods, often based on convolutional            ies and video-based measurements are further explored in
+neural networks, identify players and objects like balls              [29]. This work supports the foundation upon which Com-
+and equipment. Tracking frameworks associate detections               puter Vision systems operate for baseball. Collectively, this
+across frames to generate trajectories for tactical and perfor-       highlights a progression from sensor-based and statistical
+mance analysis. Models, such as Player Tracking and Iden-             models toward integrated, vision-driven systems capable of
+tification in Ice Hockey by Vats et al. [40] demonstrates             estimating detailed biomechanical and performance metrics
+the use of jersey number recognition for player tracking.             for baseball directly from video.
+Global Tracklet Association [38] enhances long-term iden-
+tity consistency by incorporating global temporal informa-            Injury Prevention and Prediction. Research on injury
+tion. Similarly, Deep HM-SORT [17] enhances tracking ro-              prevention and prediction in professional baseball increas-
+bustness by utilizing deep appearance features and refined            ingly adopts machine learning and Computer Vision to
+similarity metrics to handle motion blur and bounding box             move towards proactive risk modelling. A dominant line
+variations. Pose estimation has also become a central task            of work leverages pitch-tracking and performance data to
+involving Computer Vision. Estimating joint key points en-            forecast future injury, including gradient boosting models
+ables fine-grained assessment of movement patterns, speed,            with demographic, workload, and velocity features [27] and
+and dynamics. Recent works integrate pose with identity               comparisons to traditional regression baselines [21]. Ex-
+and tracking. TrackID3x3 [41] combines tracking, identifi-            tending this paradigm to UCL injuries, Kang et al. [20]
+cation, and pose estimation in basketball by jointly learning         uses pitch metrics such as velocity, spin, and release point.
+to identify embeddings, spatial-temporal associations, and               Beyond pitch-tracking features, video-based approaches
+pose features. DeepSportLab [16] further advances this di-            analyze delivery mechanics directly from footage. Early
+rection by unifying ball detection, player instance segmen-           Detection of Injuries in MLB Pitchers from Video [31]
+tation, and pose estimation within a unified architecture.            learns motion signatures via temporal aggregation, while
+    Existing approaches depend on the availability of vi-             Sutter et al. [39] score biomechanical categories and use
+sual cues and stable detections, yet sports environments              survival analysis to estimate injury risk over time.
+
+                                                                  2
+Figure 1. Injury-Risk Screening Pipeline. Monocular video yields 3D pose, which is lifted to global space and refined with kinematic
+constraints to produce biomechanical metrics; these metrics are aggregated into clinically motivated features for injury-risk prediction.
+
+
+   Biomechanical studies link extreme mechanics to in-                 able for metric computation.
+jury risk, including lead-knee flexion, trunk timing, elbow
+flexion at release, and trunk forward tilt/shoulder abduc-             3.1. Pelvis-to-Global Lifting Module (PGLM)
+tion [8, 15, 24, 30, 35, 36]. Complementing pitch-tracking             DreamPose3D [6] provides accurate articulation but, like
+approaches, video-based models learn motion signatures                 many pelvis-rooted pose models [19, 22], does not directly
+or score delivery mechanics to predict injury outcomes                 provide the global translation of the body over time. We
+[31, 39], while biomechanics-grounded analyses identify                therefore introduce a global lifting model termed PGLM,
+elbow torque and trunk kinematics as risk factors [7, 26].             a lightweight sequence module that estimates the global
+Collectively, these studies motivate accurate, scalable kine-          pelvis trajectory for a pose sequence, thereby lifting any
+matic measurement from video for injury-risk screening.                pelvis-rooted 3D pose sequence into global space.
+                                                                          Given an input of n consecutive poses, the global lifting
+3. Methodology                                                         model predicts the corresponding global pelvis trajectory
+                                                                       for the sequence using a BERT-style transformer encoder-
+Given a monocular broadcast video of a pitch, our goal is              decoder. Concretely, for a window of length n we estimate
+to recover a set of biomechanical measurements and per-                translations T = {τ1 , . . . , τn } with τi ∈ R3 and apply them
+form injury screening that match, within 1◦ (or 0.1 ft for
+                                                                       to all joints to obtain global joints Jei = Ji + τi .
+positions), the values produced by a professional multi-
+                                                                          We construct T from estimated changes in pelvis veloc-
+camera tracking system. Formally, for a 3D pose se-
+                                                                       ity relative to the first frame, which is more stable than
+quence P = {P1 , . . . , PT } with Pt ∈ R17×3 and a ref-
+                                                                       directly regressing absolute translation. This produces a
+erence tracking metric m⋆k , we seek formulas fk such that
+                                                                       smooth global trajectory while remaining robust to short-
+|fk (P) − m⋆k | < ϵk for each of K = 18 quantities.
+                                                                       term pose jitter. During inference, we avoid drift by running
+   This is non-trivial for several reasons. Pose estimators            the global lifting model on overlapping windows. For each
+are noisy under broadcast conditions, and naive geometric              window we estimate a trajectory for all n frames, but we
+calculations can amplify small joint errors into large angular         only commit the first K=10 frames to the final sequence;
+deviations. We address this through the pipeline described             we then advance by K frames and re-run the model on the
+below.                                                                 next window. This predict–commit–recompute procedure
+                                                                       limits long-horizon accumulation errors while maintaining
+Global normalization. We convert raw pose sequences                    temporal continuity.
+into a stable, physically plausible representation by enforc-
+                                                                       3.2. Biomechanics Refinement Stack (BRS)
+ing constant bone lengths, constraining joint limits, and
+smoothing trajectories over time. This normalization re-               To improve physical plausibility, we refine DreamPose3D
+duces jitter and produces consistent kinematic chains suit-            joints with the Biomechanics Refinement Stack (BRS),
+
+
+                                                                   3
+which applies kinematic constraints and temporal filtering.             sides) and centering the pelvis at the midpoint of left/right
+Although modern pose estimators [5, 6] use increasingly                 hips. This reduces spurious asymmetry arising from partial
+strong neural architectures, we find that network-only pre-             occlusions while preserving genuine asymmetric motion.
+dictions remain brittle on baseball broadcast footage: mo-
+tion blur, compression, and severe self-occlusion are fre-              3.3. Handedness Estimation
+quent, and pitching exhibits unusual, highly non-linear de-             Because limb roles depend on throwing side, we classify
+formations (rapid trunk rotation, extreme elbow extension)              each pitcher as right- or left-throwing before computing any
+that are underrepresented in generic pose benchmarks. As                metric. Two signals are averaged over the full sequence and
+a result, raw predictions often exhibit high-frequency jit-             required to agree:
+ter, inconsistent bone lengths, and spurious left/right asym-
+                                                                                                   T
+metries, artifacts that directly corrupt biomechanics metrics                                  1X t              t
+                                                                                                                        
+and their derivatives. We therefore treat structured, hand-                         ∆ankle =         yL ankle − yR ankle ,
+                                                                                               T t=1
+crafted postprocessing as a necessary step to make monoc-                                                                            (4)
+                                                                                                   T
+ular pose estimates stable enough for metric computation                                        1X
+and injury-risk screening.                                                           θ̄pelvis =       atan2(vyt , vxt ),
+                                                                                                T t=1
+
+Bone-length enforcement. Let E denote the set of di-                        where vt = JLt hip − JR   t
+                                                                                                         hip . Right-throwing pitchers
+
+rected bones (parent p to child c) in a kinematic tree rooted           exhibit ∆ankle < 0 (left leg strides forward) and θ̄pelvis ∈
+at the pelvis. Neural predictions may violate rigid-body                [−108◦ , −76◦ ]; left-throwing pitchers show opposite signs.
+constraints, i.e., ∥Jtc − Jtp ∥ varies with t. We therefore esti-       Both indicators agree on 100% of the 13 validation pitchers
+mate a reference skeleton from the first N =30 frames:                  and on all 119,561 deployment sequences. Once throwing
+                                                                        side is known, we assign throwing arm, glove arm, lead leg,
+                J¯j = mediant∈{1,...,N } Jtj ,                          and trail leg accordingly (right-throwing: right arm throws,
+                                                             (1)
+              ℓp→c = ∥J¯c − J¯p ∥, (p, c) ∈ E.                          left leg leads; left-throwing: reversed).
+
+For each frame, we enforce constant bone lengths by                     3.4. Biomechanical Metric Computation
+traversing the tree outward from the root and rescaling each            We compute 18 metrics grouped into four anatomical cat-
+child along its predicted direction:                                    egories. Specifically, the 18 metrics are: knee flex-
+                                                                        ion (lead, trail), shin angle X (lead, trail), shin angle Y
+                                      Jtc − Jbtp
+             Jbtc ← Jbtp + ℓp→c                     .        (2)        (lead, trail), elbow flexion (throw, glove), pelvis rotation,
+                                  ∥Jtc − Jbtp ∥ + ε                     torso rotation, hip–shoulder separation, trunk forward tilt,
+                                                                        trunk lateral tilt, shoulder abduction (throw, glove), and
+We iterate this forward pass three times to propagate cor-
+                                                                        COGx /COGy /COGz .
+rections to distal joints. This step corresponds to a forward-
+                                                                           Joint flexion angles are computed from the angle of
+reaching pass in FABRIK [2].
+                                                                        a three-joint chain (hip–knee–ankle and shoulder–elbow–
+                                                                        wrist). We report lead/trail knee flexion and throwing/glove
+IK fit with joint limits. Next, we refine the constrained               elbow flexion. Shin angles are defined by projecting the
+joints with an IK optimization that respects joint limits. For          shin vector into frontal and sagittal planes; reported for
+each frame t, we solve for joint angles θt (and, if needed, a           lead and trail legs. Trunk and pelvis orientation includes
+small root translation) by minimizing a weighted reprojec-              pelvis rotation, torso rotation, hip–shoulder separation (X-
+tion error to the length-corrected joints:                              factor), trunk forward tilt, and trunk lateral tilt using pelvis,
+       X                                                                shoulder, and trunk vectors. Shoulder abduction is the
+ min       wj ∥FKj (θt ) − Jbtj ∥22 s.t. θmin ⪯ θt ⪯ θmax ,
+  θt                                                                    3D angle of the upper-arm vector from vertical; COG is
+        j
+                                                            (3)         a weighted sum of pelvis/shoulder landmarks converted to
+where FKj (θt ) is the forward-kinematics position of joint             pitcher-relative coordinates.
+j under angles θt and (θmin , θmax ) are pitcher-tuned joint            3.5. Temporal Derivatives
+limits. We then reconstruct joints by forward kinematics,
+yielding Jetj = FKj (θt ), which is both length-consistent and          For any metric time series m(t) sampled at ∆t = 1 ms
+within physiological ranges.                                            (1000 fps), we compute angular velocity via central differ-
+                                                                        ences and smooth with a Savitzky-Golay filter (window 15,
+                                                                        polynomial order 3):
+Symmetry constraints. Finally, we enforce bilateral con-
+                                                                                                                        
+sistency by tying left/right bone lengths (e.g., upper arms                                    m(t + ∆t) − m(t − ∆t)
+and forearms) to a shared length (the average of the two                      ṁ(t) = SavGol                               . (5)
+                                                                                                         2∆t
+
+                                                                    4
+We apply this to elbow flexion, knee flexion, and hip-                 Pose representation. Each frame contains 17 joint po-
+shoulder separation to capture acceleration-phase dynam-               sitions following the OpenPose topology: nose, neck,
+ics.                                                                   left/right shoulders, elbows, wrists, pelvis (mid-hip),
+                                                                       left/right hips, knees, ankles, and eyes. Joints are repre-
+3.6. Injury-Risk Feature Construction                                  sented as (x, y, z, c) tuples where c is a per-joint confidence
+                                                                       score. We retain only the spatial coordinates (x, y, z) for
+We extract 18 core metrics (knee/elbow flexion, trunk for-             metric computation. Sequences range from approximately
+ward/lateral tilt, hip-shoulder separation, shoulder abduc-            200 to 400 frames per pitch, covering the full delivery from
+tion, center-of-gravity position) at Foot Plant, Maximum               windup through follow-through.
+External Rotation, and Ball Release. These are summarized
+per pitcher into 90 statistics: mean, standard deviation, 90th         5. Experiments
+percentile (P90), range, and coefficient of variation. The
+P90 is the 90th percentile of a metric across all of a pitcher’s       5.1. Validation
+pitches; it captures the pitcher’s near-extreme values, what           Setup. We compare our pose-derived metrics against a
+their mechanics look like on their most stressed/extreme               professional tracking database on 13 professional pitchers
+10% of pitches. We augment with 24 workload features                   (8 RHP, 5 LHP) spanning 156 pitches. The set covers
+(acute-chronic ratios, running distance/speed), pitch vol-             all eight standard pitch types, three delivery slots (over-
+ume, age, and medical history (prior Tommy John, prior                 hand, three-quarter, sidearm), and release velocities from
+injuries, injured-list years), yielding 114 features total.            75 to 102 mph. Pose sequences are obtained from Pitcher-
+   We train an ensemble averaging predicted probabilities              Net [5] at 1000 fps with 17 joints per frame. For each of the
+from Gradient Boosting Machine (GBM), balanced Ran-                    18 biomechanical quantities we report mean absolute error
+dom Forest, and L1-regularized Logistic Regression. Mod-               (MAE), maximum error, and Pearson correlation r against
+els use stratified 5-fold cross-validation with SMOTE over-            the corresponding tracking measurement. We consider a
+sampling to address severe class imbalance.                            metric validated when MAE < 1◦ (or < 0.1 ft for positional
+                                                                       quantities) and r > 0.95.
+4. Dataset
+                                                                       Results. Table 1 presents the full comparison. Of the
+Validation set. We validate our formulas against a profes-             18 metrics, 16 satisfy our validation criterion (MAE < 1◦ ),
+sional tracking reference obtained from a stadium tracking             with 11 achieving near-zero error. All lower-body angles
+database for 13 professional pitchers (8 RHP, 5 LHP) across            (knee flexion, shin angles for both lead and trail legs) and
+156 pitches. The set spans all eight standard pitch types (FF,         both elbow flexion measurements match the reference sys-
+FT, SL, CH, CB, SW, FC, SP), three delivery slots (over-               tem to within 0.5◦ . Trunk and torso quantities, including
+hand, three-quarter, sidearm), and release velocities from             pelvis rotation, hip-shoulder separation, forward tilt, and
+75 to 102 mph. For each pitch, we have paired data: a 3D               lateral tilt, fall below 1◦ MAE, with correlations exceeding
+pose sequence from PitcherNet [5] (17 joints at 1000 fps)              0.996. Center-of-gravity coordinates agree to 0.02–0.50 ft.
+and the corresponding tracking measurements at the release             Torso rotation achieves 0.9◦ MAE.
+frame. This pairing enables direct, per-metric comparison
+between our pose-derived values and the reference system.              Error analysis. Shoulder abduction is the only clini-
+                                                                       cally relevant metric that falls outside the 1◦ threshold
+                                                                       (MAE = 6.2◦ for the throwing arm, 21.4◦ for the glove side).
+Deployment set. To verify that formulas validated on 13                The root cause is not a formula error but a fundamental limi-
+pitchers generalize to the broader population, we apply the            tation of markerless pose estimation: the shoulder joint cen-
+full pipeline to 119,561 professional pitching sequences               ter lies beneath soft tissue and clothing, and small localiza-
+collected from broadcast footage. These sequences cover                tion errors propagate into large angular errors for abduction,
+both throwing sides, all eight pitch types, and a wide range           which references the vertical axis. All other metrics are ro-
+of body types and mechanical styles. We use this corpus                bust to pitch type and delivery slot (overhand, three-quarter,
+to confirm that computed metric distributions fall within              sidearm), confirming that the validated formulas general-
+physiologically expected ranges reported in the biomechan-             ize across the mechanical diversity present in professional
+ics literature and that no systematic drift or outliers emerge         baseball.
+across throwing side, pitch type, or velocity band. Track-
+ing labels (pitch type, release velocity) are available for all        Validation and scale. Each formula was derived itera-
+sequences and are used for stratified analysis but not for for-        tively: we computed the metric from pose data, compared
+mula derivation.                                                       against stadium tracking values on 13 professional pitchers
+
+
+                                                                   5
+Table 1. Pose-derived metrics vs. a professional tracking reference on 13 professional pitchers (156 pitches). Metrics above the dashed line
+satisfy our validation criterion (MAE < 1◦ or < 0.1 ft). Bold entries highlight near-zero error.
+
+                                 Region          Metric                         MAE        Max Err.          r
+                                                                                     ◦            ◦
+                                                 Knee flexion (lead)             0.3          1.2         0.998
+                                                 Knee flexion (trail)            0.4◦         1.5◦        0.997
+                                                 Shin angle X (lead)             0.2◦         0.9◦        0.999
+                                 Lower body
+                                                 Shin angle Y (lead)             0.2◦         0.8◦        0.999
+                                                 Shin angle X (trail)            0.3◦         1.1◦        0.998
+                                                 Shin angle Y (trail)            0.3◦         1.0◦        0.998
+                                                 Elbow flexion (throw)            0.3◦        1.8◦        0.999
+                                                 Elbow flexion (glove)            0.5◦        2.1◦        0.996
+                                 Upper body
+                                                 Shoulder abd. (throw)            6.2◦        14.3◦       0.912
+                                                 Shoulder abd. (glove)           21.4◦        47.2◦       0.743
+                                                 Pelvis rotation                 0.5◦         2.1◦        0.999
+                                                 Torso rotation                  0.9◦         3.2◦        0.997
+                                 Trunk           Hip-shoulder separation         0.4◦         1.8◦        0.998
+                                                 Trunk forward tilt              0.2◦         0.8◦        0.999
+                                                 Trunk lateral tilt              0.9◦         3.1◦        0.996
+                                                 COGx                           0.02 ft      0.08 ft      0.999
+                                 COG             COGy                           0.50 ft      1.2 ft       0.985
+                                                 COGz                           0.03 ft      0.11 ft      0.998
+
+
+(156 pitches, 8 right-throwing / 5 left-throwing, all 8 pitch               raw metrics (V1), progressing through personal anomaly
+types, overhand through sidearm deliveries, 75–102 mph).                    detection (V1.5), workload integration (V2), large-scale
+We report MAE, maximum error, and Pearson r for ev-                         feature selection (V3), and finally full-dataset aggregation
+ery metric in Table 1. A metric is considered validated                     with enriched statistics and ensemble modeling (V4–V5;
+when MAE < 1◦ (or < 0.1 ft) and r > 0.95. We apply                          see Table 2 for progression details). The final ensemble,
+the validated pipeline to 119,561 professional pitching se-                 trained on 7,348 pitchers with 167 recent (2024+) Tommy
+quences spanning eight pitch types. The resulting metric                    John cases, achieves AUC 0.811 for Tommy John predic-
+distributions align closely with normative values reported in               tion and 0.825 for any significant arm injury, substantially
+large-scale biomechanical studies of professional and col-                  outperforming earlier static-threshold (0.503) and anomaly-
+legiate pitchers: lead-knee flexion at foot plant averages                  only (0.633) baselines.
+≈45◦ (typically 35–55◦ ) [11], elbow flexion at maximum                     Feature importance insights. GBM gain-based analysis
+external rotation falls in the 100–120◦ range [11, 13], peak                reveals that biomechanical variability dominates kinematic
+hip–shoulder separation reaches 40–60◦ in efficient deliver-                signal: range and CV features together contribute 33–39%
+ies [37], and forward trunk tilt at ball release averages ≈35◦              of total importance across targets, consistently outranking
+(25–45◦ ) [11]. No systematic outliers or drift are observed                mean values. P90 statistics are also highly predictive; for
+across pitch type or velocity band, confirming that the vali-               example, hip shoulder separation at foot plant ranks in the
+dated formulas transfer reliably to the broader professional                top 6–9 features across all targets, indicating that repeated
+population.                                                                 exposure to extreme mechanics in the top 10% of pitches
+                                                                            is a stronger risk signal than average values alone. Medi-
+5.2. Automated Injury-Risk Screening                                        cal history (prior TJ, prior injuries, IL years) accounts for
+                                                                            5–20% despite comprising only three features, confirming
+To demonstrate the clinical utility of our recovered biome-
+                                                                            past injury as the single strongest predictor. Pitch volume
+chanical metrics, we develop an automated screening sys-
+                                                                            (n pitches) ranks top-3 across targets, reflecting cumu-
+tem that flags pitchers at elevated risk of Tommy John (UCL
+                                                                            lative stress exposure. Universally important biomechanics
+reconstruction) surgery or significant arm injuries. The
+                                                                            include range of elbow flexion at MER, shoulder rotation at
+system aggregates kinematic profiles from our monocular
+                                                                            release, trunk forward tilt at release, and knee flexion at re-
+pipeline and combines them with workload, demographics,
+                                                                            lease (Cohen’s d 0.60–0.67)1 , plus hip-shoulder separation
+and medical history to produce actionable risk scores.
+   We iteratively scaled and refined the system across five                     1 Cohen’s d measures the standardized difference between group means
+
+versions, starting from simple literature-based thresholds on               (injured vs. healthy pitchers); values 0.5–0.8 indicate medium-to-large ef-
+
+
+                                                                        6
+                                      Table 2. Progression of injury-risk screening performance.
+
+                   Version                         Pitchers       TJ Cases (recent)   Features     Best AUC (TJ)
+                   V1 (static thresholds)            7,348              209               5             0.503
+                   V2 (anomalies + workload)         7,348              209               25            0.633
+                   V3 (feature selection)            7,348              209              200            0.734
+                   V4 (full-scale)                   7,348              209               70            0.776
+                   V5 (enriched + ensemble)          7,348              209              144            0.811
+
+
+
+
+Figure 2. Feature Category Importance for Injury Prediction. Distribution of GBM gain-based feature importance across nine feature
+categories for three injury targets
+
+
+P90 at foot plant, suggesting extreme or variable sequenc-             angular noise, well below our 1◦ validation threshold for
+ing as a risk factor.                                                  most metrics. Second, our iterative validation protocol, de-
+   With such powerful injury-risk screening tools, coaches             riving each formula against a professional tracking refer-
+can threshold scores (e.g., top 10% risk) to trigger workload          ence rather than assuming correctness from textbook geom-
+adjustments, mechanical corrections, or medical evaluation,            etry, catches subtle mismatches that would otherwise intro-
+actions feasible at amateur, college, and training levels. The         duce systematic bias. Third, using relative angles (joint-
+strong AUC on recent injuries demonstrates near-real-time              to-joint) rather than absolute positions wherever possible
+relevance. These results validate that monocular 3D poses,             makes the formulas largely viewpoint-invariant.
+when rigorously refined and aggregated with P90 and vari-
+                                                                          The principal limitation is shoulder abduction, where
+ability statistics, enable professional-grade injury-risk flag-
+                                                                       MAE reaches 6.2◦ for the throwing arm and 21.4◦ for the
+ging without multi-camera infrastructure, closing the loop
+                                                                       glove side. This is not a formula deficiency but a funda-
+from affordable kinematic monitoring to preventive deci-
+                                                                       mental challenge of markerless pose estimation: the gleno-
+sion support.
+                                                                       humeral joint center lies beneath soft tissue and clothing,
+                                                                       and small localization errors propagate into large angular
+6. Discussion
+                                                                       deviations when the reference axis is vertical. All other val-
+Three factors enable tracking-consistent measurements                  idated metrics are robust to pitch type, delivery slot, and ve-
+from monocular video. First, PitcherNet’s 1.8 mm mean                  locity band, confirming generalization across the mechani-
+joint error provides a sufficiently accurate geometric foun-           cal diversity in professional baseball.
+dation: at typical limb lengths, this translates to sub-degree
+                                                                         Compared to laboratory marker-based systems (Vicon,
+fects.                                                                 Qualisys), which achieve < 0.1◦ MAE, our approach trades
+
+
+                                                                   7
+a small accuracy margin (0.5◦ typical vs. 0.1◦ ) for marker-           References
+less operation, field deployment on broadcast footage, zero
+                                                                        [1] Adam W Anz, Brandon D Bushnell, Leanne P Griffin,
+hardware cost beyond a camera, and fully automated pro-
+                                                                            Thomas J Noonan, Michael R Torry, and Richard J Hawkins.
+cessing. For most coaching and screening applications, the                  Correlation of torque and elbow injury in professional base-
+sub-degree accuracy of our validated metrics is more than                   ball pitchers. The American journal of sports medicine, 38
+sufficient.                                                                 (7):1368–1374, 2010. 1
+    Several directions remain open. Multi-view integration              [2] Andreas Aristidou and Joan Lasenby. Fabrik: A fast, iter-
+could improve depth accuracy and shoulder localization.                     ative solver for the inverse kinematics problem. Graphical
+Temporal modeling (angular velocities, acceleration pro-                    Models, 73(5):243–260, 2011. 4
+files) would extend the current per-frame metrics into con-             [3] Joel R Bock. Pitch sequence complexity and long-term
+tinuous biomechanical time series. Pitcher-specific base-                   pitcher performance. Sports, 3(1):40–55, 2015. 2
+lines would enable anomaly detection relative to an individ-            [4] Jerrin Bright, Yuhao Chen, and John Zelek. Mitigating mo-
+ual’s own norms rather than population averages. Finally,                   tion blur for robust 3d baseball player pose modeling for
+prospective validation of the injury-risk screening applica-                pitch analysis. In Proceedings of the 6th International Work-
+tion against actual injury outcomes is needed before clinical               shop on Multimedia Content Analysis in Sports, pages 63–
+deployment.                                                                 71, 2023. 1
+                                                                        [5] Jerrin Bright, Balaji Balaji, Yimu Chen, David A. Clausi,
+7. Conclusion                                                               and John S. Zelek. Pitchernet: Powering the moneyball
+                                                                            evolution in baseball video analytics. In Proceedings of
+We introduced a monocular pipeline that takes broad-                        the IEEE/CVF Conference on Computer Vision and Pattern
+cast video, estimates 3D pose, and applies a refinement                     Recognition Workshops (CVPRW), pages 769–787, 2024. 1,
+stack (global lifting, bone-length enforcement, constrained                 2, 4, 5
+IK, smoothing, and symmetry) before computing 18 clin-                  [6] Jerrin Bright, Yuhao Chen, and John S Zelek. Dreampose3d:
+ically relevant pitching metrics validated against profes-                  Hallucinative diffusion with prompt learning for 3d human
+sional tracking data. Across 13 professional pitchers, 16 of                pose estimation. arXiv preprint arXiv:2511.09502, 2025. 1,
+                                                                            3, 4
+18 metrics meet the sub-degree threshold, and the same for-
+mulas scale to 119,561 sequences without drift across pitch             [7] Garrett S Bullock, Gautam Menon, Kristen Nicholson,
+                                                                            Robert J Butler, Nigel K Arden, and Stephanie R Filbay.
+type or velocity band. We then operationalize these metrics
+                                                                            Baseball pitching biomechanics in relation to pain, injury,
+for injury prevention: an automated screening model that                    and surgery: A systematic review. Journal of science and
+aggregates kinematics with workload and medical history                     medicine in sport, 24(1):13–20, 2021. 3
+achieves AUC 0.811 for Tommy John prediction and 0.825                  [8] Christopher L Camp, Travis G Tubbs, Glenn S Fleisig,
+for significant arm injuries on 7,348 pitchers, showing that                Joshua S Dines, David M Dines, David W Altchek, and Brit-
+the signals are strong enough for practical risk stratification.            tany Dowling. The relationship of throwing arm mechanics
+In practice, the system supports scalable monitoring, peri-                 and elbow varus torque: within-subject variation for profes-
+odic screening, and targeted workload or mechanics inter-                   sional baseball pitchers across 82,000 throws. The American
+ventions in environments where multi-camera motion cap-                     journal of sports medicine, 45(13):3030–3035, 2017. 3
+ture is infeasible.                                                     [9] Yun-Wei Chiu, Kuei-Ting Huang, Yuh-Renn Wu, Jyh-How
+                                                                            Huang, Wei-Li Hsu, and Pei-Yuan Wu. 3d baseball pitcher
+                                                                            pose reconstruction using joint-wise volumetric triangulation
+                                                                            and baseball customized filter system. IEEE Access, 12:
+                                                                            117110–117125, 2024. 1
+                                                                       [10] Steven F DeFroda, Charles A Thigpen, and Peter K Kriz.
+                                                                            Two-dimensional video analysis of youth and adolescent
+                                                                            pitching biomechanics: A tool for the common athlete. Cur-
+                                                                            rent Sports Medicine Reports, 15(5):350–358, 2016. 1
+                                                                       [11] Alek Z Diffendaffer, Michael S Bagwell, Glenn S Fleisig,
+                                                                            et al. The clinician’s guide to baseball pitching biomechan-
+                                                                            ics. Sports Health, 15(2):164–172, 2023. 6
+                                                                       [12] Brandon J Erickson, Peter N Chalmers, Charles A Bush-
+                                                                            Joseph, and Anthony A Romeo. Predicting and preventing
+                                                                            injury in major league baseball. Am J Orthop, 45(3):152–
+                                                                            156, 2016. 1
+                                                                       [13] Glenn S Fleisig et al. Kinematic and kinetic comparison
+                                                                            of baseball pitching among various levels of development.
+                                                                            Journal of Biomechanics, 1999. 6
+
+
+                                                                   8
+[14] Dave Fortenbaugh, Glenn S Fleisig, and James R Andrews.                   learning approach to optimize baseball pitcher health and
+     Baseball pitching biomechanics in relation to injury risk and             performance. 2025. 3
+     performance. Sports Health, 1(4):314–320, 2009. 1                    [27] Jacob F Oeding, Alexander M Boos, Josh R Kalk, Dane
+[15] Matthew L Gauthier, Casey A Unverzagt, and George J                       Sorenson, F Martijn Verhooven, Gilbert Moatshe, and
+     Davies. Evaluation and treatment of baseball pitchers:                    Christopher L Camp. Pitch-tracking metrics as a predictor
+     There’s more to assess than the arm. International journal                of future shoulder and elbow injuries in major league base-
+     of sports physical therapy, 20(1):113, 2025. 3                            ball pitchers: a machine-learning and game-theory based
+[16] Seyed Abolfazl Ghasemzadeh, Gabriel Van Zandycke,                         analysis. Orthopaedic Journal of Sports Medicine, 12(8):
+     Maxime Istasse, Niels Sayez, Amirafshar Moshtaghpour,                     23259671241264260, 2024. 2
+     and Christophe De Vleeschouwer. Deepsportlab: a unified              [28] Sakiko Oyama. Baseball pitching kinematics, joint loads,
+     framework for ball detection, player instance segmentation                and injury prevention. Journal of sport and health science, 1
+     and pose estimation in team sports scenes. arXiv preprint                 (2):80–91, 2012. 1
+     arXiv:2112.00627, 2021. 2                                            [29] Sakiko Oyama, Araceli Sosa, Rebekah Campbell, and
+[17] Matias Gran-Henriksen, Hans Andreas Lindgaard, Gabriel                    Alexandra Correa. Reliability and validity of quantitative
+     Kiss, and Frank Lindseth. Deep hm-sort: Enhancing multi-                  video analysis of baseball pitching motion. Journal of ap-
+     object tracking in sports with deep features, harmonic mean,              plied biomechanics, 33(1):64–68, 2017. 2
+     and expansion iou. arXiv preprint arXiv:2406.12081, 2024.            [30] Scott Peters, Garrett S Bullock, and Kristen F Nicholson. As-
+     2                                                                         sociation between pitching velocity and elbow varus torque.
+[18] Kevin Hickey, Lina Zhou, and Jie Tao. Dissecting money-                   Brazilian Journal of Physical Therapy, 29(5):101222, 2025.
+     ball: Improving classification model interpretability in base-            3
+     ball pitch prediction. 2020. 2                                       [31] AJ Piergiovanni and Michael S Ryoo. Early detection of
+                                                                               injuries in mlb pitchers from video. In Proceedings of
+[19] Angjoo Kanazawa, Michael J Black, David W Jacobs, and
+                                                                               the IEEE/CVF conference on computer vision and pattern
+     Jitendra Malik. End-to-end recovery of human shape and
+                                                                               recognition workshops, pages 0–0, 2019. 2, 3
+     pose. Proceedings of the IEEE conference on computer vi-
+     sion and pattern recognition, pages 7122–7131, 2018. 1, 3            [32] Victor Ramirez et al. Two-dimensional video analysis of
+                                                                               youth and adolescent pitching biomechanics: A tool for the
+[20] Bosuk Kang, Minsu Park, Angel P del Pobil, and Eunil Park.
+                                                                               common athlete. Current Sports Medicine Reports, 15(5):
+     Data-driven approaches for predicting tommy john surgery
+                                                                               336–343, 2016. 1
+     risk in major league baseball pitchers. Journal of Big Data,
+                                                                          [33] Glenn Sidle and Hien Tran. Using multi-class classification
+     12(1):87, 2025. 2
+                                                                               methods to predict baseball pitch types. Journal of Sports
+[21] Jaret M Karnuta, Bryan C Luu, Heather S Haeberle, Paul M                  Analytics, 4(1):85–93, 2018. 2
+     Saluan, Salvatore J Frangiamore, Kim L Stearns, Lutul D
+                                                                          [34] Baljinder Singh Bal and Gaurav Dureja. Hawk eye: A logi-
+     Farrow, Benedict U Nwachukwu, Nikhil N Verma, Eric C
+                                                                               cal innovative technology use in sports for effective decision
+     Makhni, et al. Machine learning outperforms regression
+                                                                               making. Sport Science Review, 21, 2012. 1
+     analysis to predict next-season major league baseball player
+                                                                          [35] Matthew J Solomito, Erin J Garibay, Jessica R Woods, Sylvia
+     injuries: epidemiology and validation of 13,982 player-
+                                                                               Õunpuu, and Carl W Nissen. Lateral trunk lean in pitchers
+     years from performance and injury profile trends, 2000-
+                                                                               affects both ball velocity and upper extremity joint moments.
+     2017. Orthopaedic journal of sports medicine, 8(11):
+                                                                               The American journal of sports medicine, 43(5):1235–1240,
+     2325967120963046, 2020. 2
+                                                                               2015. 3
+[22] Wenhao Li, Hong Liu, Hao Tang, Peng Wang, and Luc                    [36] Matthew J Solomito, Erin J Garibay, Andrew Cohen, and
+     Van Gool. Mhformer: Multi-hypothesis transformer for 3d                   Carl W Nissen. Lead knee flexion angle is associated with
+     human pose estimation. arXiv preprint arXiv:2111.12707,                   both ball velocity and upper extremity joint moments in
+     2021. 3                                                                   collegiate baseball pitchers. Sports Biomechanics, 23(12):
+[23] Yung-Che Li, Ching-Tang Chang, Chin-Chang Cheng, and                      2626–2636, 2024. 3
+     Yu-Len Huang. Baseball swing pose estimation using open-             [37] David F Stodden, Glenn S Fleisig, Scott P McLean, Sherry L
+     pose. In 2021 IEEE International Conference on Robotics,                  Lyman, and James R Andrews. Relationship of pelvis and
+     Automation and Artificial Intelligence (RAAI), pages 6–9.                 upper torso kinematics to pitched baseball velocity. Journal
+     IEEE, 2021. 1                                                             of applied biomechanics, 17(2):164–172, 2001. 6
+[24] Joseph E Manzi, Michael C Ciccotti, Nicolas Trauger,                 [38] Jiacheng Sun, Hsiang-Wei Huang, Cheng-Yen Yang,
+     Grant G Black, Ryan R Thacher, Venkat Boddapati, and                      Zhongyu Jiang, and Jenq-Neng Hwang. Gta: Global track-
+     Joshua S Dines. Increased elbow and olecranon injury his-                 let association for multi-object tracking in sports. In Pro-
+     tory in professional pitchers with increased elbow flexion at             ceedings of the Asian Conference on Computer Vision, pages
+     ball release. The American Journal of Sports Medicine, 50                 421–434, 2024. 2
+     (4):1054–1060, 2022. 3                                               [39] E Grant Sutter, Justin Orenduff, Will J Fox, Joshua My-
+[25] Tiago Mendes-Neves, LuÃs Meireles, JoÃ Mendes-Moreira,                  ers, and Grant E Garrigues. Predicting injury in profes-
+     et al. A survey of advanced computer vision techniques for                sional baseball pitchers from delivery mechanics: a statis-
+     sports. arXiv preprint arXiv:2301.07583, 2023. 2                          tical model using quantitative video analysis. Orthopedics,
+[26] Robert C Moore. Reverse (bio) engineering: A machine                      41(1):43–53, 2018. 2, 3
+
+
+                                                                      9
+[40] Kanav Vats, Pascale Walters, Mehrnaz Fani, David A Clausi,
+     and John S Zelek. Player tracking and identification in
+     ice hockey. Expert systems with applications, 213:119250,
+     2023. 2
+[41] Kazuhiro Yamada, Li Yin, Qingrui Hu, Ning Ding, Shun-
+     suke Iwashita, Jun Ichikawa, Kiwamu Kotani, Calvin Yeung,
+     and Keisuke Fujii. Trackid3x3: A dataset and algorithm for
+     multi-player tracking with identification and pose estimation
+     in 3x3 basketball full-court videos. In Proceedings of the 8th
+     International ACM Workshop on Multimedia Content Anal-
+     ysis in Sports, pages 163–173, 2025. 2
+
+
+
+
+                                                                      10
+

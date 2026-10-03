@@ -1,0 +1,447 @@
+    SV3.3B: A Sports Video Understanding Model for
+                 Action Recognition
+           Sai Varun Kodathala                         Yashwanth Reddy Vutukoori                          Rakesh Vunnam
+        Research and Development                       Research and Development                      Research and Development
+            Sports Vision, Inc.                            Sports Vision, Inc.                             Vizworld, Inc.
+            Minnetonka, USA                                Minnetonka, USA                               Minnetonka, USA
+          varun@sportsvision.ai                        yashwanth@sportsvision.ai                        rakesh@vizworld.ai
+
+
+
+
+    Abstract— This paper addresses the challenge of automated             Professional video analytics tools and expertise have
+sports video analysis, which has traditionally been limited by        historically been concentrated in elite sports organizations with
+computationally intensive models requiring server-side processing     substantial budgets, sophisticated multi-camera setups, and
+and lacking fine-grained understanding of athletic movements.         dedicated analysis teams. This has created a significant divide,
+Current approaches struggle to capture the nuanced                    where most amateur athletes and coaches worldwide lack access
+biomechanical transitions essential for meaningful sports analysis,   to the visual insights that could dramatically improve their
+often missing critical phases like preparation, execution, and        development. Visual understanding of sports videos helps us: (1)
+follow-through that occur within seconds. To address these            democratize access to professional-grade analytics for resource-
+limitations, we introduce SV3.3B, a lightweight 3.3B parameter
+                                                                      constrained environments prevalent in amateur sports,
+video understanding model that combines novel temporal motion
+difference sampling with self-supervised learning for efficient on-
+                                                                      addressing critical market needs where 70% of coaches cannot
+device deployment. Our approach employs a DWT-VGG16-LDA               effectively recall or analyze performance [1]. (2) transform basic
+based keyframe extraction mechanism that intelligently identifies     mobile footage into comprehensive multimodal insights that
+the 16 most representative frames from sports sequences, followed     connect coaching notes with video segments, tactical diagrams
+by a V-DWT-JEPA2 encoder pretrained through mask-denoising            with game footage, and enable natural language querying of
+objectives and an LLM decoder fine-tuned for sports action            video content. (3) capture fine-grained motion details while
+description generation. Evaluated on a subset of the NSVA             simultaneously identifying broader tactical patterns. (4) provide
+basketball dataset, SV3.3B achieves superior performance across       meaningful analysis despite amateur sports' unique challenges
+both traditional text generation metrics and sports-specific          including varying camera angles, limited available shots, and
+evaluation criteria, outperforming larger closed-source models        inconsistent lighting conditions. (5) address critical safety and
+including GPT-4o variants while maintaining significantly lower       development needs in youth and amateur sports where injury
+computational requirements. Our model demonstrates                    rates exceed professional leagues due to limited access to proper
+exceptional capability in generating technically detailed and         analysis tools.
+analytically rich sports descriptions, achieving 29.2%
+improvement over GPT-4o in ground truth validation metrics,               Unlike static videos, sports videos contain complex motion,
+with substantial improvements in information density, action          spatial, and temporal features vital for understanding multi-
+complexity, and measurement precision metrics essential for           phase actions. This necessitates using cross-modal features to
+comprehensive athletic analysis.                                      grasp the temporal understanding of sports videos. While
+                                                                      contemporary Multimodal Large Language Models (MLLMs)
+   Keywords—sports analytics, self-supervised learning, video         have demonstrated significant progress in building perception
+understanding model                                                   agents capable of understanding visual sequences, most of them
+                                                                      are computationally intensive and require server-side
+                       I.    INTRODUCTION                             processing, leading to extremely high costs for sports
+    Over the past two decades, the paradigm of sports                 applications. The requirements for on-device deployment in
+performance management has evolved from traditional, isolated         sports environments, considering connectivity limitations
+evaluation and conditioning to a more holistic, function-oriented     during training sessions, real-time analysis latency constraints,
+approach. This progression emphasizes integrating visual              and privacy considerations for athlete data, demand lightweight
+analysis into sports training. This perspective shift underscores     solutions that preserve comparable accuracy levels. Although
+the belief among practitioners that a comprehensive                   model compression efforts are ongoing, current approaches
+understanding of sports action sequences is crucial. Such             remain substantially larger than the maximum model size that
+knowledge empowers athletes to refine their skills, coaches to        can run efficiently on mobile devices while maintaining
+provide more practical guidance, and performance analysts to          acceptable inference speeds.
+identify and rectify performance deficits.
+Fig. 1. SV3.3B Architecture Overview. The framework operates through three main phases: (a) Video Encoder Pre-Training employs DWT-VGG16-LDA
+      sampling to extract 16 keyframes from input video sequences, processes appearance and motion features through dual VGG-16 pathways, applies K-means
+      clustering and LDA for feature fusion, and trains a ViT-L encoder using JEPA2 self-supervised learning; (b) LLM as Text Decoder Post-Training fine-tunes
+      a LLaMA-3.2-3B model with LoRA adaptation, using a linear projection layer to map frozen video encoder features to the LLM embedding space; (c) SV3.3B
+      Inference combines the pretrained video encoder with the fine-tuned LLM decoder through linear projection to generate sports action descriptions from input
+      videos.
+
+    Previous methods like Video-ChatGPT [2] use spatial and                                                  II.    RELATED WORK
+temporal pooling that loses critical information, while LLama-
+VID's extreme compression to two tokens per frame cannot                               The broader landscape of sports understanding [9]
+capture essential biomechanical transitions [3]. These systems                     encompasses diverse research domains including action spotting
+can identify broad events (e.g., "free throw") but lack granular                   [10, 11, 12], commentary generation [13, 14, 15, 16, 17], athlete
+understanding. Meaningful sports analysis requires detection of                    performance analysis [18, 19], tactical planning [20], and
+distinct phases like preparation (positioning), launch (initiating                 intelligent referring systems [21, 22]. Recent developments in
+motion), release (execution mechanics), and follow-through, all                    multimodal large language models have prompted researchers
+occurring within seconds. These transitions contain vital                          to create unified frameworks [23, 24, 25] capable of handling
+information about technique and performance that existing                          multiple sports understanding tasks simultaneously. While
+methods fail to preserve.                                                          visual-language models [26, 27, 28, 29, 30] have achieved
+                                                                                   remarkable success in general applications, their extension to
+    To address these limitations and bridge the gap between                        video understanding [31, 32, 33] presents additional
+computational efficiency and detailed sports understanding, we                     complexities including temporal alignment [34, 35], dense
+draw inspiration from self-supervised learning approaches,                         captioning [36, 37, 38], and audio description [39-41]. However,
+particularly Joint Embedding Predictive Architectures (JEPA)                       their applicability to specialized professional domains like
+[4] and their variants [5, 6]. Adapting the successful framework                   sports remains limited due to the unique temporal dynamics,
+from UI-JEPA [7], we introduce V-DWT-JEPA2 (SV3.3B), a                             domain-specific terminology, and nuanced movement patterns
+lightweight video-to-text model specifically designed for sports                   that characterize athletic activities, necessitating purpose-built
+activity analysis. Our approach employs a JEPA2 - based                            solutions rather than generic adaptations.
+encoder [8] that leverages novel temporal motion difference
+sampling techniques on unlabeled sports video data to extract                          Our work with V-DWT-JEPA2 addresses this fundamental
+abstract feature representations. Following the UI-JEPA                            challenge of extracting meaningful insights from sports videos
+paradigm, these representations are then processed by an LLM                       while operating under severe computational constraints. We
+decoder that generates comprehensive sports action                                 develop a model that automatically identifies and describes
+descriptions. Unlike UI activities that focus on user intent                       complex multi-phase athletic movements, from preparation
+prediction, our model is tailored to capture the nuanced                           through execution and follow-through, without requiring
+biomechanical transitions and multi-phase action sequences                         extensive labeled datasets or high-end hardware. Through our
+inherent in sports movements, making it particularly suitable for                  novel DWT-VGG16-LDA based sampling approach integrated
+fine-grained sports analysis where temporal precision is critical.                 with JEPA2 architecture, we achieve detailed sports action
+understanding that rivals computationally intensive MLLMs              deployment, with the complete system comprising 3.3B
+while maintaining the efficiency necessary for real-time analysis      parameters optimized for sports-specific video analysis
+on mobile devices. This research bridges the gap between               tasks.
+professional-grade sports analytics and accessible technology,
+demonstrating that sophisticated movement analysis can be           B. The DWT-VGG16-LDA based Sampling
+democratized through efficient model design and targeted self-          To improve temporal information extraction from sports
+supervised learning strategies.                                     video sequences for the V-DWT-JEPA2 framework, we
+                                                                    implement a robust keyframe selection mechanism that
+            III.   THE V-DWT-JEPA2 FRAMEWORK                        identifies the most representative frames corresponding to
+A. Architecture Design:                                             critical phases in athletic movements. Rather than relying on
+                                                                    uniform temporal sampling, which may miss crucial
+  1) Problem Formulation:                                           biomechanical transitions or include redundant information, this
+         Given an input sports video clip 𝑋 ∈ 𝑅𝐻×𝑊×3×𝑁              approach systematically processes video content to extract
+   consisting of 𝑁 RGB frames of size 𝐻 × 𝑊, we aim to              keyframes that provide a comprehensive yet concise visual
+   extract 𝐾 key frames (where 𝐾 << 𝑁 ) and predict a               summary of complex motion sequences.
+   sequence of descriptive text {𝑦} that accurately
+                                                                        The keyframe extraction algorithm builds upon the
+   characterizes the sports action captured in the video. The       combination of Discrete Wavelet Transform (DWT) for motion
+   sequence {𝑦} has arbitrary length and must capture the           analysis, VGG-based feature extraction for appearance
+   technical nuances of the action sequence. The challenge lies     understanding, and Linear Discriminant Analysis (LDA) for
+   in efficiently determining the optimal value of 𝐾 and            optimal feature fusion. The algorithm computes a wavelet
+   extracting the most relevant visual information from the         approximation (𝐴𝑖 , 𝑎𝑖 ) for each sampled frame 𝐹𝑖 using DWT
+   high-dimensional input 𝑋 while preserving the temporal           at the second decomposition level (𝐿 = 2) with Haar wavelet.
+   dynamics necessary for accurate action description.              This specific configuration preserves fine-grained motion
+  2) Overall Structure:                                             details while maintaining computational efficiency, making it
+         The SV3.3B framework operates through a three-             particularly suitable for capturing rapid biomechanical
+   phase architecture as illustrated in Fig. 1. In Phase (a), the   transitions such as release mechanics in basketball shooting or
+                                                                    quick directional changes in athletic movements. The Haar
+   input video sequence undergoes robust temporal sampling
+                                                                    wavelet provides excellent localization properties in both time
+   through our DWT-VGG16-LDA mechanism, which
+                                                                    and frequency domains, enabling effective detection of abrupt
+   reduces the N-frame sequence to K=16 representative              changes in motion patterns that characterize critical phases in
+   keyframes that capture critical biomechanical transitions.       sport actions.
+   These selected frames are processed through dual-path
+   feature extraction, where appearance features are extracted          The algorithm implements a dual-path feature extraction
+   using VGG-16 to capture static visual elements, while            approach, processing appearance and motion information
+   motion features are computed from wavelet approximation          through parallel streams. The original RGB frames are
+   coefficient differences between consecutive frames to            processed through the VGG-16 model to extract appearance
+   represent dynamic movement patterns. The resulting feature       features (𝑓𝑎 , 𝑖) that capture static visual elements such as posture
+   vectors undergo K-means clustering followed by Linear            and position. Simultaneously, motion maps (𝐷𝑖 , 𝑑𝑖 ) are
+                                                                    calculated as the difference between consecutive wavelet
+   Discriminant Analysis for optimal fusion, creating a unified
+                                                                    approximation coefficients (𝐿𝐿) of consecutive frames rather
+   high-dimensional representation that simultaneously
+                                                                    than raw pixel differences, resulting in a more robust motion
+   encodes spatial appearance and temporal dynamics. These          representation that remains stable under varying lighting
+   keyframes are then used to train a Vision Transformer Large      conditions. These motion maps are converted to 3-channel
+   (ViT-L) encoder with 300M parameters using the JEPA2             images and processed through the same VGG model to extract
+   self-supervised learning framework through mask-                 motion features (𝑓𝑚 , 𝑖) representing dynamic movement
+   denoising objectives.                                            patterns. These complementary feature vectors are collected into
+         In Phase (b), the frozen pretrained video encoder is       separate arrays (𝐹𝑎 𝑎𝑛𝑑 𝐹𝑚 ) throughout the frame sampling
+   combined with a fine-tuned LLaMA-3.2-3B decoder                  process. The critical fusion step combines these feature arrays
+   employing LoRA adaptation. The 1024-dimensional                  into a unified representation 𝐹 = [𝐹𝑎 , 𝐹𝑚 ] , creating a high-
+   spatiotemporal representations from the video encoder are        dimensional feature space that simultaneously encodes spatial
+   processed by a linear projection module that maps features       appearance and temporal dynamics.
+   to the LLM's embedding space, enabling the generation of
+                                                                        The parameter 𝐾 in the algorithm specifies the number of
+   natural language descriptions of sports actions. Phase (c)
+                                                                    keyframes to be extracted, which directly corresponds to the
+   demonstrates the complete SV3.3B inference pipeline,
+                                                                    number of distinct action phases in a sports motion sequence.
+   where input videos are processed through the integrated          For the V-DWT-JEPA2 implementation, 𝐾 is set to 16 to align
+   architecture to produce detailed sports action descriptions.     with the input requirements of the ViT-L JEPA2 architecture,
+   This design enables the model to capture fine-grained            ensuring optimal coverage of multi-phase athletic movements
+   biomechanical       understanding      while     maintaining     while maintaining computational efficiency. After feature
+   computational efficiency suitable for edge device                fusion, 𝐾-means clustering is applied to the combined feature
+space 𝐹 to obtain pseudo-labels that identify natural groupings          extraction method. The self-supervised learning approach trains
+of similar frames. Linear Discriminant Analysis is then                  the model to predict masked portions of video sequences in the
+employed for dimensionality reduction of the fused features,             learned representation space, enabling the model to learn
+                                                                         meaningful spatiotemporal representations without requiring
+                                                                         labeled data. The masking strategy applies to two different
+                                                                         configurations: 8 blocks with spatial masking scale [0.15, 0.15]
+                                                                         and 2 blocks with spatial scale [0.7, 0.7], both maintaining
+                                                                         temporal scale [1.0, 1.0] and aspect ratios between [0.75, 1.5].
+
+                                                                                                                       The        training
+                                                                            configuration in this work processes videos with a batch size
+                                                                            of 4 at 256×256-pixel resolution, using 16 frames per video
+                                                                            clip sampled at 4 fps with patch size of 16 and tubelet size of
+                                                                            2 for spatiotemporal tokenization. The model trains for 10
+                                                                            epochs with 300 iterations per epoch, totaling 3000 training
+                                                                            iterations using mixed precision bfloat16 for computational
+                                                                            efficiency. This pretraining approach enables the encoder to
+                                                                            develop specialized representations for temporal dynamics
+                                                                            through the robust keyframe sampling methodology.
+Fig. 2. PCA Projection of Fused Feature Space with Selected Keyframes.
+                                                                            b) LLM as text decoder Post-Training:
+maximizing the separation between the identified clusters while
+preserving their internal coherence. Within this LDA-                                                                 Following        the
+transformed space, the algorithm computes the center of each                video encoder pretraining, an LLM decoder is fine-tuned to
+cluster and selects the frame whose feature representation is               enable sports action description generation from the learned
+closest to each center as a keyframe as shown in Fig. 2. This               video representations. The approach adapts the framework
+precise selection mechanism ensures that each keyframe                      from UI-JEPA by employing a frozen pretrained V-DWT-
+represents a distinct phase of the action sequence while                    JEPA2 encoder combined with a fine-tuned language model
+collectively providing comprehensive coverage of the entire                 decoder, creating a multimodal architecture capable of
+motion, thereby enhancing the temporal understanding                        generating natural language descriptions of sports activities.
+capabilities of the sports video analysis framework.                                                                  Combined with the
+    The wavelet-VGG feature fusion method demonstrates                      300M parameter video encoder and 3B parameter LLM, the
+superior performance compared to conventional sampling                      total architecture comprises 3.3B parameters while
+approaches when evaluated across multiple sports domains. As                maintaining efficiency through strategic parameter freezing
+shown in experimental validation in Fig. 3, 4 and 5, this method            and adaptation techniques. The vision projection consists of
+significantly outperformed uniform sampling and color                       a two-layer multi-layer perceptron (MLP) that maps the
+histogram methods in identifying key biomechanical phases,                  1024-dimensional video features through a 512-dimensional
+demonstrating robust performance across basketball free                     intermediate layer to the LLM's embedding dimension,
+throws, golf swings, and other athletic movements beyond the                incorporating ReLU activation, dropout regularization, and
+initial baseball evaluation domain.                                         layer normalization for stable training. To maintain
+                                                                            computational efficiency while enabling adaptation, LoRA
+C. Training Pipeline                                                        (Low-Rank Adaptation) is applied to the LLaMA model with
+   a) Video Encoder Pre-Training:                                           rank 16, targeting all linear layers including query, key,
+                                                                            value, output, gate, up, and down projections. The fine-
+                                                                            tuning employs a batch size of 8 with a learning rate of 1e-4,
+                                             The video encoder
+                                                                            utilizing warmup steps and gradient clipping for stable
+employs a self-supervised pretraining strategy using the Video -            optimization. This post-training phase enables the model to
+Joint Embedding Predictive Architecture 2 (V-JEPA2)                         generate coherent sports action descriptions by leveraging
+framework with mask-denoising objectives. The encoder                       the rich temporal representations learned during the self-
+utilizes a Vision Transformer Large (ViT-L) architecture with               supervised    pretraining     stage    while     maintaining
+300 million parameters, processing video inputs as sequences of             computational efficiency.
+16 frames sampled using the DWT-VGG16-LDA keyframe
+
+
+
+
+Fig. 3. Extracted key frames using DWT-VGG16-LDA.
+Fig. 4. Extracted key frames using uniform sampling.
+
+
+
+
+Fig. 5. Extracted key frames using color histogram.
+
+
+
+
+Fig. 6. Training loss curves for pre-training and post-training, showing raw losses (blue) and smoothed trends (red).
+
+                    IV. EMPIRICAL EVALUATION                                        basketball action recognition without being biased toward
+                                                                                    specific players. Each video clip corresponds to a single
+A. Dataset                                                                          basketball event or sequence of related events, providing
+    We utilize a subset of the NSVA (NBA Sports Video                               temporally coherent training data essential for understanding
+Analysis) dataset [reference], which was originally collected by                    multi-phase athletic movements.
+leveraging publicly available data from the NBA's official
+website. The original NSVA dataset employs a comprehensive                          B. Training Dynamics
+web scraping approach to collect high-resolution (720P) video                           Fig. 6 illustrates the training loss progression for both
+clips paired with detailed play-by-play descriptions from 132                       phases of the V-DWT-JEPA2 model development. The left
+games across 10 NBA teams during the 2018-2019 season,                              panel shows the self-supervised pretraining phase, where the
+containing 32,019 video clips with associated action                                encoder loss exhibits rapid initial convergence from
+descriptions, player information, and contextual metadata.                          approximately 0.8 to 0.25 within the first 500 iterations,
+   For our SV3.3B training, we created a subset of NSVA [42]                        followed by stable training with minor fluctuations around
+due to computational resource constraints, resulting in 1,315                       0.25-0.3 for the remaining iterations. This convergence pattern
+video clips split into 1,050 training samples and 265 validation                    indicates effective learning of spatiotemporal representations
+samples. To enhance model generalizability and focus on action                      through the mask-denoising objective. The right panel
+understanding rather than player identification, we removed                         demonstrates the LLM decoder fine-tuning phase, displaying
+player names from the action annotations, retaining only the                        characteristic behavior of language model adaptation with an
+core basketball actions. The resulting annotations include                          initial sharp decrease from approximately 5.0 to 1.0 within the
+precise action descriptions such as "MISS 3' Layup",                                first 50 iterations, subsequently stabilizing around 0.5-1.0. The
+"OFFENSIVE REBOUND", "MISS 16' Pullup Jump Shot", and                               smoothed curves (red lines) reveal consistent downward trends
+"17' Jump Shot", enabling the model to learn fine-grained
+in both phases, confirming stable training dynamics and                      •Technical Coverage: Determines the percentage
+successful convergence for both the self-supervised encoder                   of available sports technical terms utilized from
+pretraining and the supervised decoder fine-tuning components                 the total corpus vocabulary, measuring
+of the architecture.                                                          comprehensiveness of domain knowledge
+                                                                              application.
+C. Evaluation Metrics
+                                                                       3) Composite Metrics:
+    The evaluation framework employs a comprehensive set of
+metrics designed to assess both the accuracy and richness of               • Ground Truth Validation Score: Combines
+sports action descriptions generated by the model. These metrics              ROUGE-L F1, BLEU Score, BERT F1, Content
+are categorized into individual measures and composite scores                 F1, and Semantic Similarity to assess overall
+that provide holistic performance assessment.                                 accuracy against reference descriptions.
+                                                                           • Information Richness Score: Aggregates
+    1) Individual Metrics:
+                                                                              Information Density, Action Complexity,
+        • ROUGE-L F1: Measures the longest common                             Measurement Precision, Sequence Length,
+             subsequence F1 score between predictions and                     Vocabulary Richness, and Technical Coverage
+             ground truth, providing insight into structural                  to evaluate analytical depth and technical
+             similarity and word ordering accuracy                            sophistication.
+             commonly used in text summarization tasks.                    • Combined Performance Score: Represents the
+        • BLEU Score: Evaluates n-gram precision with                         sum of Ground Truth Validation Score and
+             brevity penalty, particularly effective for                      Information Richness Score, providing unified
+             assessing exact terminology matching crucial in                  assessment across accuracy and richness
+             sports commentary, following standard machine                    dimensions      for    comprehensive       model
+             translation evaluation protocols.                                comparison.
+        • BERT F1: Captures semantic similarity through
+             contextual embeddings, enabling evaluation            D. Model Performance Analysis
+             beyond surface-level text matching by                          SV3.3B demonstrates strong performance across both
+             leveraging      pre-trained    language     model        traditional text generation metrics and sports-specific
+             representations.                                         evaluation criteria on the NSVA basketball dataset subset.
+        • Content F1: Focuses on meaningful word                      The model achieves a Ground Truth Validation Score of
+             overlap by excluding stop words, emphasizing             2.124, indicating effective alignment with reference
+             sports-relevant vocabulary alignment between             descriptions, and an Information Richness Score of
+             generated and reference descriptions.                    160.697, demonstrating superior capability in generating
+        • Semantic Similarity: Employs cosine similarity              technically detailed sports content. The combined
+             of sentence embeddings to measure conceptual             performance score of 162.821 reflects the model's balanced
+             alignment, quantifying semantic coherence                proficiency across accuracy and domain-specific analytical
+             independent of lexical overlap.                          dimensions.
+    2) Sports-Specific Metrics:                                             Analysis of individual metrics reveals notable
+                                                                      strengths in semantic understanding, with a BERT F1 score
+        • Information Density: Calculates the ratio of
+                                                                      of 0.856 ± 0.052 indicating robust contextual
+             technical sports terms to total words, measuring         comprehension. The model excels in sports-specific
+             the concentration of domain-specific vocabulary          criteria, achieving high Information Density (0.978 ± 0.053)
+             in generated descriptions.                               and Action Complexity (2.307 ± 1.161), demonstrating
+        • Action Complexity: Counts distinct sports                   effective utilization of technical terminology and
+             actions mentioned, assessing the model's ability         identification of multiple movement phases. The
+             to identify and describe multiple movement               Measurement Precision score of 2.557 ± 0.808 indicates the
+             phases within athletic sequences.                        model's capability to incorporate quantitative details
+        • Measurement Precision: Quantifies the use of                essential for comprehensive sports analysis. With an
+             quantitative details such as distances, times, and       average response length of 45.2 words, SV3.3B generates
+             scores, reflecting the analytical depth and              concise yet analytically rich descriptions that capture the
+             specificity of sports descriptions.                      essential technical nuances of basketball actions while
+        • Sequence Length: Measures the number of                     maintaining computational efficiency suitable for real-time
+             distinct events described in chronological order,        deployment scenarios.
+             evaluating temporal understanding capabilities.
+        • Vocabulary Richness: Evaluates diversity of              E. Comparison to State-Of-The-Art
+             sports terminology weighted by corpus                    To evaluate the model's performance, baseline comparisons
+             frequency, indicating lexical sophistication in       were conducted using GPT-o4 Mini, GPT-4o Mini, and GPT-4o
+             domain-specific language use.                         models with uniformly sampled video frames, while our SV3.3B
+                                                                   model utilized the proposed DWT-based temporal sampling
+approach. The results were validated against the comprehensive             both traditional text generation metrics and sports-specific
+metrics framework described above.                                         evaluation criteria while maintaining significantly lower
+                                                                           computational requirements compared to the larger closed-
+   The findings as described in Tables I, II, III and IV                   source baseline models.
+demonstrates that SV3.3B achieves superior performance across
+                                               TABLE I.        GROUND TRUTH VALIDATION METRICS
+                                                                                                                                           GT
+                                                                                                                 SEMANTIC
+      Model           ROUGE-L F1            BLEU SCORE              BERT F1              CONTENT F1                                    VALIDATION
+                                                                                                                SIMILARITY
+                                                                                                                                         SCORE
+    GPT-o4 Mini       0.212 ± 0.216          0.063 ± 0.116        0.732 ± 0.278           0.240 ± 0.249          0.467 ± 0.240            1.713
+    GPT-4o Mini       0.101 ± 0.108          0.016 ± 0.030        0.695 ± 0.287           0.112 ± 0.135          0.382 ± 0.198            1.305
+      GPT-4o          0.231 ± 0.239          0.033 ± 0.054        0.706 ± 0.299           0.223 ± 0.238          0.450 ± 0.263            1.643
+   SV3.3B (ours)      0.255 ± 0.248          0.103 ± 0.147        0.856 ± 0.052           0.350 ± 0.336          0.559 ± 0.235            2.123
+
+                                                 TABLE II.       INFORMATION RICHNESS METRICS
+                      Information               Action            Measurement                                     Vocabulary               Technical
+      Model                                                                            Sequence Length
+                         Density              Complexity            Precision                                       Richness               Coverage
+    GPT-o4 Mini       0.816 ± 0.337          1.453 ± 1.189        0.146 ± 0.353           1.995 ± 1.546           113.8 ± 78.8           0.020 ± 0.014
+    GPT-4o Mini       0.654 ± 0.318          1.370 ± 1.214        1.188 ± 1.553           3.536 ± 1.655            80.9 ± 46.7           0.031 ± 0.015
+      GPT-4o          0.829 ± 0.356          1.651 ± 1.228        0.094 ± 0.325           1.745 ± 1.243           131.7 ± 90.9           0.017 ± 0.012
+   SV3.3B (ours)      0.978 ± 0.053          2.307 ± 1.161        2.557 ± 0.808           3.271 ± 0.456           151.6 ± 66.4           0.028 ± 0.010
+
+                                                 TABLE III.     COMPREHENSIVE SCORE ANALYSIS
+           Rank                     Model                     GT Validation Score            Info Richness Score                 Combined Score
+            1                    SV3.3B (ours)                     2.1239                         160.6970                          162.8209
+            2                     GPT-o4 Mini                      1.6431                         136.0328                          137.6759
+            3                     GPT-4o Mini                      1.7134                         118.2262                          119.9397
+            4                       GPT-4o                         1.3056                          87.6506                          88.9562
+
+                                                      TABLE IV.      STATISTICAL ANALYSIS
+         Comparison                   GT Score Validation            Cohen’s d                 95% CI Lower                      95% CI Upper
+    SV3.3B vs GPT-o4 Mini                  +0.4105                     1.24                        0.31                              0.51
+    SV3.3B vs GPT-4o Mini                  +0.8183                     2.47                        0.71                              0.92
+      SV3.3B vs GPT-4o                     +0.4808                     1.45                        0.38                              0.58
+
+
+
+                       V.    CONCLUSION                                    can benefit both amateur and professional athletic development
+                                                                           through accessible, high-quality video analysis capabilities.
+    In this work, we introduced SV3.3B, a novel framework that
+addresses the fundamental challenge of generating detailed,                                                 REFERENCES
+accurate sports action descriptions while operating under severe           [1]    A. Ç. Seçkin, B. Ateş, and M. Seçkin, "Review on wearable technology
+computational constraints suitable for edge device deployment.                    in sports: Concepts, challenges and opportunities," Applied Sciences, vol.
+Our approach demonstrates that robust temporal sampling                           13, no. 18, p. 10399, 2023, doi: 10.3390/app131810399.
+through DWT-based keyframe extraction, combined with self-                 [2]    M. Maaz, H. Rasheed, S. Khan, and F. S. Khan, "Video-ChatGPT:
+supervised V-JEPA2 architecture and parameter-efficient fine-                     Towards detailed video understanding via large vision and language
+                                                                                  models," arXiv preprint arXiv:2306.05424, 2023.
+tuning, can achieve superior performance compared to
+                                                                           [3]    Y. Li, C. Wang, and J. Jia, "LLaMA-VID: An image is worth 2 tokens in
+computationally intensive closed-source models. The                               large language models," arXiv preprint arXiv:2311.17043, 2023.
+comprehensive evaluation across traditional text generation
+                                                                           [4]    Y. LeCun, "A path towards autonomous machine intelligence,"
+metrics and domain-specific sports analytics criteria confirms                    OpenReview,               2022.           [Online].            Available:
+that SV3.3B successfully bridges the gap between professional-                    https://openreview.net/pdf?id=BZ5a1r-kVsf.
+grade sports analytics and accessible technology. The model's              [5]    M. Assran, Q. Duval, I. Misra, P. Bojanowski, P. Vincent, M. Rabbat, Y.
+ability to capture fine-grained biomechanical transitions and                     LeCun, and N. Ballas, "Self-supervised learning from images with a joint-
+generate analytically rich descriptions while maintaining                         embedding predictive architecture," in Proc. IEEE/CVF Conf. Computer
+efficiency represents a significant advancement in                                Vision and Pattern Recognition (CVPR), 2023, pp. 15619–15629.
+democratizing sports video analysis. Future work will focus on             [6]    A. Bardes, Q. Garrido, J. Ponce, X. Chen, M. Rabbat, Y. LeCun, M.
+                                                                                  Assran, and N. Ballas, "V-JEPA: Latent video prediction for visual
+extending the framework to additional sports domains,                             representation learning," OpenReview, 2024. [Online]. Available:
+investigating longer temporal sequences, and exploring the                        https://openreview.net/forum?id=WFYbBOEOtv
+integration of real-time feedback mechanisms for enhanced                  [7]    Y. Fu, R. Anantha, P. Vashisht, J. Cheng, and E. Littwin, "UI-JEPA:
+coaching applications. We believe SV3.3B establishes a new                        Towards Active Perception of User Intent through Onscreen User
+paradigm for lightweight multimodal sports understanding that                     Activity," arXiv preprint arXiv:2409.04081, 2024.
+[8]  M. Assran, A. Bardes, D. Fan, Q. Garrido, R. Howes, M. Muckley, A.            [25] H. Xia, Z. Yang, J. Zou, R. Tracy, Y. Wang, C. Lu, C. Lai, Y. He, X.
+     Rizvi, C. Roberts, K. Sinha, A. Zholus, et al., “V-jepa 2: Selfsupervised          Shao, Z. Xie, et al., "SportU: A comprehensive sports understanding
+     video models enable understanding, prediction and planning,” arXiv                 benchmark for multimodal large language models," arXiv preprint
+     preprint arXiv:2506.09985, 2025.                                                   arXiv:2410.08474, 2024.
+[9] G. Thomas, R. Gade, T. B. Moeslund, P. Carr, and A. Hilton, "Computer          [26] J.-B. Alayrac, J. Donahue, P. Luc, A. Miech, I. Barr, Y. Hasson, K. Lenc,
+     vision for sports: Current applications and research topics," Computer             A. Mensch, K. Millican, M. Reynolds, et al., "Flamingo: a visual language
+     Vision and Image Understanding, vol. 159, pp. 3–18, 2017.                          model for few-shot learning," in Advances in Neural Information
+[10] A. Deliege, A. Cioppa, S. Giancola, M. J. Seikavandi, J. V. Dueholm, K.            Processing Systems, 2022, pp. 23716–23736.
+     Nasrollahi, B. Ghanem, T. B. Moeslund, and M. Van Droogenbroeck,              [27] J. Li, D. Li, C. Xiong, and S. Hoi, "BLIP: Bootstrapping language-image
+     "Soccernet-v2: A dataset and benchmarks for holistic understanding of              pre-training for unified vision-language understanding and generation," in
+     broadcast soccer videos," in Proc. IEEE Conf. Computer Vision and                  Proc. International Conference on Machine Learning, 2022, pp. 12888–
+     Pattern Recognition Workshops, 2021, pp. 4508–4519.                                12900.
+[11] S. Giancola, M. Amine, T. Dghaily, and B. Ghanem, "Soccernet: A               [28] J. Li, D. Li, S. Savarese, and S. Hoi, "BLIP-2: Bootstrapping language-
+     scalable dataset for action spotting in soccer videos," in Proc. IEEE Conf.        image pre-training with frozen image encoders and large language
+     Computer Vision and Pattern Recognition Workshops, 2018, pp. 1711–                 models," in Proc. International Conference on Machine Learning, 2023,
+     1721.                                                                              pp. 19730–19742.
+[12] X. Gu, X. Xue, and F. Wang, "Fine-grained action recognition on a novel       [29] A. Radford, J. W. Kim, C. Hallacy, A. Ramesh, G. Goh, S. Agarwal, G.
+     basketball dataset," in International Conference on Acoustics, Speech,             Sastry, A. Askell, P. Mishkin, J. Clark, et al., "Learning transferable visual
+     and Signal Processing, 2020, pp. 2563–2567.                                        models from natural language supervision," in Proc. International
+[13] H. Mkhallati, A. Cioppa, S. Giancola, B. Ghanem, and M. Van                        Conference on Machine Learning, 2021.
+     Droogenbroeck, "Soccernet caption: Dense video captioning for soccer          [30] X. Zhai, B. Mustafa, A. Kolesnikov, and L. Beyer, "Sigmoid loss for
+     broadcasts commentaries," in Proc. IEEE Conf. Computer Vision and                  language image pre-training," in Proc. International Conference on
+     Pattern Recognition Workshops, 2023, pp. 5074–5085.                                Computer Vision, 2023, pp. 11975–11986.
+[14] M. Qi, Y. Wang, A. Li, and J. Luo, "Sports video captioning via attentive     [31] K. Li, Y. Wang, Y. He, Y. Li, Y. Wang, Y. Liu, Z. Wang, J. Xu, G. Chen,
+     motion representation and group relationship modeling," IEEE                       P. Luo, L. Wang, and Y. Qiao, "MVBench: A comprehensive multi-modal
+     Transactions on Circuits and Systems for Video Technology, vol. 30, no.            video understanding benchmark," in Proc. IEEE Conf. Computer Vision
+     8, pp. 2617–2633, 2019.                                                            and Pattern Recognition, 2024, pp. 22195–22206.
+[15] J. Rao, H. Wu, C. Liu, Y. Wang, and W. Xie, "Matchtime: Towards               [32] Y. Li, C. Wang, and J. Jia, "Llama-vid: An image is worth 2 tokens in
+     automatic soccer game commentary generation," in Proc. Conf. Empirical             large language models," in Proc. European Conference on Computer
+     Methods in Natural Language Processing, 2024.                                      Vision, 2024.
+[16] Z. Xi, G. Shi, L. Wu, X. Li, J. Yan, L. Wang, and Z. Liu, "Knowledge          [33] H. Zhang, X. Li, and L. Bing, "Video-llama: An instruction-tuned audio-
+     graph supported benchmark and video captioning for basketball," arXiv              visual language model for video understanding," in Proc. Conf. Empirical
+     preprint arXiv:2401.13888, 2024.                                                   Methods in Natural Language Processing, 2023.
+[17] H. Yu, S. Cheng, B. Ni, M. Wang, J. Zhang, and X. Yang, "Fine-grained         [34] T. Han, W. Xie, and A. Zisserman, "Temporal alignment networks for
+     video captioning for sports narrative," in Proc. IEEE Conf. Computer               long-term video," in Proc. IEEE Conf. Computer Vision and Pattern
+     Vision and Pattern Recognition, 2018, pp. 6006–6015.                               Recognition, 2022, pp. 2906–2916.
+[18] D. Shao, Y. Zhao, B. Dai, and D. Lin, "Finegym: A hierarchical video          [35] Z. Li, Q. Chen, T. Han, Y. Zhang, Y. Wang, and W. Xie, "Multi-sentence
+     dataset for fine-grained action understanding," in Proc. IEEE Conf.                grounding for long-term instructional video," in Proc. European
+     Computer Vision and Pattern Recognition, 2020, pp. 2616–2625.                      Conference on Computer Vision, 2024.X
+[19] J. Xu, Y. Rao, X. Yu, G. Chen, J. Zhou, and J. Lu, "Finediving: A fine-       [36] T.-S. Chen, A. Siarohin, W. Menapace, E. Deyneka, H.-W. Chao, B. E.
+     grained dataset for procedure-aware action quality assessment," in Proc.           Jeon, Y. Fang, H.-Y. Lee, J. Ren, M.-H. Yang, and S. Tulyakov, "Panda-
+     IEEE Conf. Computer Vision and Pattern Recognition, 2022, pp. 2949–                70M: Captioning 70M videos with multiple cross-modality teachers," in
+     2958.                                                                              Proc. IEEE Conf. Computer Vision and Pattern Recognition (CVPR),
+[20] Z. Wang, P. Veličković, D. Hennes, N. Tomašev, L. Prince, M. Kaisers,              2024.
+     Y. Bachrach, R. Elie, L. K. Wenliang, F. Piccinini, et al., "Tacticai: An     [37] A. Yang, A. Nagrani, P. H. Seo, A. Miech, J. Pont-Tuset, I. Laptev, J.
+     AI assistant for football tactics," Nature Communications, vol. 15, no. 1,         Sivic, and C. Schmid, "Vid2seq: Large-scale pretraining of a visual
+     pp. 1–13, 2024.                                                                    language model for dense video captioning," in Proc. IEEE Conf.
+[21] J. Held, A. Cioppa, S. Giancola, A. Hamdi, B. Ghanem, and M. Van                   Computer Vision and Pattern Recognition, 2023, pp. 10714–10726.
+     Droogenbroeck, "VARS: Video assistant referee system for automated            [38] X. Zhou, A. Arnab, S. Buch, S. Yan, A. Myers, X. Xiong, A. Nagrani, and
+     soccer decision making from multiple views," in Proc. IEEE Conf.                   C. Schmid, "Streaming dense video captioning," in Proc. IEEE Conf.
+     Computer Vision and Pattern Recognition Workshops, 2023, pp. 5085–                 Computer Vision and Pattern Recognition, 2024.
+     5096.                                                                         [39] T. Han, M. Bain, A. Nagrani, G. Varol, W. Xie, and A. Zisserman,
+[22] J. Held, H. Itani, A. Cioppa, S. Giancola, B. Ghanem, and M. Van                   "Autoad: Movie description in context," in Proc. IEEE Conf. Computer
+     Droogenbroeck, "X-VARS: Introducing explainability in football                     Vision and Pattern Recognition, 2023, pp. 18930–18940.
+     refereeing with multimodal large language models," in Proc. IEEE Conf.        [40] T. Han, M. Bain, A. Nagrani, G. Varol, W. Xie, and A. Zisserman,
+     Computer Vision and Pattern Recognition Workshops, 2024, pp. 3267–                 "Autoad II: The sequel—who, when, and what in movie audio
+     3279.                                                                              description," in Proc. International Conference on Computer Vision,
+[23] H. Li, A. Deng, Q. Ke, J. Liu, H. Rahmani, Y. Guo, B. Schiele, and C.              2023, pp. 13645–13655.
+     Chen, "Sports-QA: A large-scale video question answering benchmark            [41] T. Han, M. Bain, A. Nagrani, G. Varol, W. Xie, and A. Zisserman,
+     for complex and professional sports," arXiv preprint arXiv:2401.01505,             "Autoad III: The prequel—back to the pixels," in Proc. IEEE Conf.
+     2024.                                                                              Computer Vision and Pattern Recognition, 2024, pp. 18164–18174.
+[24] H. Xia, Z. Yang, Y. Wang, R. Tracy, Y. Zhao, D. Huang, Z. Chen, Y.            [42] Sportsvision, "NSVA Subset: Basketball Video-Text Dataset," Hugging
+     Zhu, Y. Wang, and W. Shen, "SportQA: A benchmark for sports                        Face,                2025.                [Online].                Available:
+     understanding in large language models," in Proc. Conf. North American             https://huggingface.co/datasets/sportsvision/nsva_subset
+     Chapter of the Association for Computational Linguistics, 2024.
+

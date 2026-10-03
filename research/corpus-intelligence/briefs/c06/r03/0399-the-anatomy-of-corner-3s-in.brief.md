@@ -1,0 +1,22 @@
+# arxiv-deep/0399-the-anatomy-of-corner-3s-in.md
+## What it is (1-2 sentences)
+NBA tracking-data study (arXiv:2105.12785v1, Pelechrinis & Goldsberry 2021) asking why corner threes outperform above-the-break threes (~12 pts/100 shots): a logistic distance-only model explains <half the gap; trajectory clustering shows the mechanism is assist-generated openness, validated by a FIBA natural experiment; a zero-sum game yields a Nash equilibrium "commit, don't linger" defensive prescription. Verdict in file: ADAPT — basketball conclusions don't transfer, but the trajectory-clustering pipeline and the defender-commitment game model port directly to NFL NGS work (pass-rush arcs, route clusters, contain-vs-help decisions).
+## Key metrics/methods (formulas where given, else "not specified")
+- Efficiency decomposition: logistic regression of shot-make probability on shooter–basket distance only; contest via closest-defender distance at shot time.
+- Generation analysis: k-means on 4-s pre-shot (x, y) shooter+defender trajectories (25 Hz), 10 clusters selected via the gap statistic (Tibshirani et al. 2001); cluster coherence via radius of gyration r_C = √((1/‖C‖)·Σ(x_i−x_C)²).
+- Defensive game: zero-sum; defender strategy Σ_def = {1…21} ft separation; offense {drive, kick-out}; payoff matrix from Second Spectrum qSQ (league-average points/shot vs closest-defender distance) plus double-team factor (1 − 1/α^(22−d)), α ∈ [1, 2]; pass-success patch π_new = 0.8·π; solved for Nash equilibrium mixed strategies at α = 1.3 and 1.9.
+## Data sources named
+750 games of 2016–17 NBA season, six arena-rafter cameras, 25 Hz player+ball tracking (proprietary Second Spectrum-era, non-public, no URL). 324 games of 2016–17 FIBA Basketball Champions League shot data via the FIBA API (acknowledged, no link). No code stated.
+## Findings (numbers and facts, not vibes)
+- C3 FG% 38.8% vs ATB3 34.7% (4.1 pp gap); distance-only model predicts only ~1.8 pp — distance explains less than half. Shot distances: C3 23 ft, ATB3 25.1 ft.
+- >90% of C3s assisted vs just above 70% for ATB3; closest defender at C3 shot: 6.5 ft avg vs slightly <6 ft for ATB3. NBA efficiency gap: ~12 points/100 shots.
+- FIBA natural experiment: three-point-line geometry difference only 28% of NBA's, yet C3–ATB3 gap persists at 16 pts/100 shots (sample smaller, gap possibly inflated); FIBA C3 assist rate ≈45% higher than FIBA ATB3.
+- ~half of all C3s in the two "Stationed" clusters (shooter anchored ≥4 s pre-shot, defender lingering between corner and basket); ~one third of kick-out passes originate near the basket (Basket Area 20.6%/22.1% left/right corner; Deep Paint 5.8%/6.5%).
+- Nash equilibrium: defender should commit to corner shooter or drive; expected equilibrium distance d̂ ≈ 13 ft vs observed 12.3 ft — means match but shapes differ (bimodal mixed strategy vs empirical normal-like), evidence defenses deviate from equilibrium.
+- Caveats: assist analysis explicitly non-causal; no defender-quality/game-state controls; league-average payoff matrix; no pass-completion-when-doubled modeling; single season (2016–17); no predictive validation; clusters not stability-checked across seasons.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- SCHEME — pass-rush arc and route-stem trajectory clustering (k-means + gap statistic + radius of gyration) to discover empirical rush/route archetypes ("anchored edge contain" vs "stunt inside"); DTW upgrade arm for variable-timing NFL plays.
+- COACHING — commit-vs-help zero-sum game model for NFL help decisions (safety commit-to-man vs robber on run-pass conflict; edge contain vs crash) with EPA payoff matrices, detecting systematically suboptimal "in-between" positioning by comparing equilibrium to observed defender behavior.
+- OTHER — natural-experiment validation pattern (FIBA court geometry → NFL rule/season discontinuities like pre/post-2018 helmet rule, 2024 kickoff changes) as quasi-experiments for causal checks on metric claims.
+## Engine-actionable? (yes/no + one-line what)
+Yes — replicate the trajectory-clustering pipeline on NGS/Big Data Bowl tracking (≥10,000 pass-rush snaps, first 1.5 s post-snap, gap-statistic k, radius-of-gyration coherence) as a pattern-discovery feature for the NGS lane; gate: ≥2 clusters each ≥20% of snaps with below-median coherence and manually interpretable archetypes on 2023 season before production wiring.

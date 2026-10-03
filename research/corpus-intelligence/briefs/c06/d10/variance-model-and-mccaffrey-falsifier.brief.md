@@ -1,0 +1,29 @@
+# fantasy/research/2026-09-28/variance-model-and-mccaffrey-falsifier.md
+## What it is (1-2 sentences)
+A 2026-09-28 deep read of the fantasy variance model (`packages/prediction-engine/src/fantasy-variance.ts`) built on production Neon `player_game_stats` (32,894 player-weeks). It proves — arithmetically, not judgmentally — that the posted McCaffrey spot-check (proj=417, floor=313, ceiling=584) is a label leak with an impossible band, then ships an honest out-of-sample evaluation (MAPE 0.336).
+## Key metrics/methods (formulas where given, else "not specified")
+- Method: recency weight with **6-week half-life** (exponential decay); Empirical-Bayes shrinkage toward the positional mean: `reliability = n/(n+8)` applied to both the rate and the CV; band from the shrunk CV: `floor = proj*(1-CV)`, `ceiling = proj*(1+CV)`.
+- Falsifier 1 (symmetry check): band symmetric in CV by construction, so `floor + ceiling = 2*proj` must hold. Posted: 313+584 = 897 vs 2*417 = 834. Fails. Midpoint = 448.5, not 417.
+- Falsifier 2 (CV split): CV implied by floor = 1 - 313/417 = **0.2494**; by ceiling = 584/417 - 1 = **0.4005**; gap **0.1511**. No single CV produces the pair.
+- Label-leak proof: McCaffrey's realized 2025 PPR total = **416.6** over 17 games; posted "projection" = **round(416.6) = 417**. A model fit on seasons < 2025 cannot emit that number.
+- Fitted-as-specified projections for McCaffrey: 16 remaining games → proj 233.5 / floor 116.1 / ceiling 350.9; 17 → **248.0 / 123.3 / 372.8**; 18 → 262.6 / 130.6 / 394.7. Never reaches 417.
+## Data sources named
+- Production Neon `player_game_stats` (read-only); seasons 2020-2024 REG for training (n=771 players with ≥8 training games); 2025 realized for scoring; `.hermes/scratch/varfit.py` / `varfit2.py` reading a local CSV of 32,894 rows (seasons 2020-2026 REG + POST).
+- Code: `packages/prediction-engine/src/fantasy-variance.ts` (10 tests, 0 type errors); `apps/web/lib/integrations/variance-projections.ts` (fail-loud freshness gate, `StaleTrainingWindowError` if training window > 1 season behind forecast); `variance-provider.ts` / `variance-wiring.ts` behind existing `PROJECTIONS_PROVIDER` gate; falsifiers pinned in `packages/prediction-engine/src/__tests__/fantasy-variance.test.ts`.
+## Findings (numbers and facts, not vibes)
+- **Posted positional CV priors (QB 45%, RB 55%, WR 65%, TE 67%) do not match production.** Measured (mean of per-player within-player CV, 2020-2024 REG, ≥8 training games): QB **0.993** (n=96, delta +0.543), RB **0.872** (n=206, +0.322), WR **0.876** (n=304, +0.226), TE **0.936** (n=165, +0.266).
+- **The ordering is wrong**: spec makes QB the most consistent; data says **QB is the single most volatile position** (0.993 > 0.936 TE > 0.876 WR > 0.872 RB).
+- Pooled-per-game CV (also absorbs between-player variance): QB 0.661 / RB 0.910 / WR 0.916 / TE 0.970 — still above spec everywhere, so not a pooling artifact.
+- Shipping spec priors would publish a claimed ±25% band on a QB whose weekly output genuinely swings ±99%.
+- Out-of-sample (fit 2020-2024, scored vs realized 2025, remaining=16): n=287, **MAPE = 0.3359**, median absolute error = **30.8 points**.
+- Largest misses: McCaffrey RB proj 248.0 vs actual 416.6 (err **+168.6**); Thielen WR 200.4 vs 39.6 (−160.8); Jonnu Smith TE 227.9 vs 85.2 (−142.7); Brissett QB 89.8 vs 227.4 (+137.7); Gainwell RB 85.2 vs 221.3 (+136.1).
+- **6-week half-life is structurally pessimistic after a bad season**: McCaffrey's 2024 weekly tail `[4.8, 7.4, 2.7, 4.9, 1.5, 1.8, 3.3, 0.0, 1.8, 3.3, 1.0, 2.3]` (injury year) gets ~all the weight; fitted rate 14.59/game vs realized 24.51 — a 40% under-projection and the single largest error. A data-tuned half-life was deliberately NOT shipped (founder specified 6; silent retuning classed as the same error category as the leak).
+- Wiring status: fantasy suite (draft/waivers/optimizer/DFS/trade) still uses the old `floor * 0.75` / `* 1.4` band from the process grade in `graded-pool.ts`; `registerVarianceProjectionsFromProduction()` is not yet called from `instrumentation.ts` — enabling is a one-line switch **plus a founder go-live decision** (at MAPE 0.34 it would move every draft rank/waiver rec/DFS price).
+- Honesty rules enforced in code: `canPublishProjections` stays `false` on the process grade (test runs against a **network-disabled fetcher** so the flag is proven false on the error path too); process grade is context, never a forecast; stale source = hard failure, never a quiet number; `PROJECTIONS_PROVIDER` unchanged by this commit.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- QB-BEHAVIOR: **QB is the most volatile position in weekly fantasy output** (within-player CV 0.993) — wider bands needed for QB projections than any other position; contradicts the spec's ordering.
+- TRUST-SIGNAL: McCaffrey's 2025 number 416.6/17 = 24.51/game; 6-week half-life under-weights post-injury rebounds by ~40% — recency-decay strength is an injury-context variable, not a fixed constant. INFERENCE: a player returning from an injury-lost season needs a longer half-life or an explicit injury-recovery flag.
+- OTHER: anti-deception protocol — label-leak spot-checks are falsifiable by construction (symmetry check `floor+ceiling=2*proj` catches fabricated bands instantly); `classifyCvSource()` reports which CV table a caller passed so prior drift can never be silent; fail-loud freshness gates (`StaleTrainingWindowError`) instead of quiet numbers.
+- OTHER: process grade vs forecast separation — `graded-pool.ts` re-exports variance wiring but does not call it; the grade stays a grade.
+## Engine-actionable? (yes/no + one-line what)
+Yes — replace the fantasy suite's hardcoded `floor*0.75/*1.4` band with the measured-CV variance provider (needs founder go-live sign-off), and add the `floor+ceiling=2*proj` symmetry check plus `classifyCvSource()` audit to the projection pipeline.

@@ -1,0 +1,2110 @@
+SMGDiff: Soccer Motion Generation using diffusion probabilistic models
+Hongdi Yang
+Chengyang Li
+Zhenxuan Wu
+Affiliation:
+ShanghaiTech University
+Gaozheng Li
+Affiliation:
+ShanghaiTech University
+Jingya Wang
+Affiliation:
+ShanghaiTech University
+Jingyi Yu
+Affiliation:
+ShanghaiTech University
+Zhuo Su
+Affiliation:
+ByteDance
+Lan Xu
+Abstract
+Soccer is a globally renowned sport with significant applications in video games and VR/AR. However, generating realistic soccer motions remains challenging due to the intricate interactions between the human player and the ball. In this paper, we introduce SMGDiff, a novel two-stage framework for generating real-time and user-controllable soccer motions. Our key idea is to integrate real-time character control with a powerful diffusion-based generative model, ensuring high-quality and diverse output motion. In the first stage, we instantly transform coarse user controls into diverse global trajectories of the character. In the second stage, we employ a transformer-based autoregressive diffusion model to generate soccer motions based on trajectory conditioning. We further incorporate a contact guidance module during inference to optimize the contact details for realistic ball-foot interactions. Moreover, we contribute a large-scale soccer motion dataset consisting of over 1.08 million frames of diverse soccer motions. Extensive experiments demonstrate that our SMGDiff significantly outperforms existing methods in terms of motion quality and condition alignment.
+1
+Introduction
+Soccer is widely recognized as the most popular sport globally, leading to a growing emphasis on generating and controlling soccer motions in various games and VR/AR applications. However, real-time generation of realistic soccer motion in a highly controllable manner remains challenging. This challenge primarily stems from the complex interactions between the player and the ball, especially for the intricate human trajectories and the precise ball-foot contacts.
+Soccer motion has been extensively studied in both industry and academia.
+Popular soccer games like
+EA SPORTS FC
+series
+Electronic Arts 2024
+feature impressive soccer animations with interactive and real-time character control. Yet, they heavily rely on example-based motion matching techniques, leading to visual artifacts.
+In academia, various approaches
+Hong et al. 2019
+;
+Liu et al. 2021
+;
+Peng et al. 2021b
+;
+Peng et al. 2019
+focus on enhancing the physical realism of soccer motion control using reinforcement learning or physics-based simulation. Yet, these methods are restricted to specific skills of soccer motion. For example, Hong et al.
+Hong et al. 2019
+performed physical-based control for dribbling and shooting, while Xie et al.
+Xie et al. 2022
+utilized a layer-wise structure only for soccer juggling.
+Nevertheless, a high-quality soccer motion generation scheme should cover a diverse spectrum of soccer skills, from dribbling to playing tricks, from shooting to celebrating.
+Recent advancements in motion diffusion probabilistic models
+Guo et al. 2022
+;
+Zhang et al. 2022
+;
+Tevet et al. 2023
+;
+Tseng et al. 2023
+;
+Liang et al. 2024
+have brought significant potential for capturing complex data distribution and generating diverse motions. Some very recent variants
+Zhou et al. 2024
+;
+Zhao et al. 2024a
+;
+Chen et al. 2024
+further accelerate the diffusion models for efficient on-the-fly motion generation.
+Notably, CAMDM
+Chen et al. 2024
+utilizes efficient autoregressive diffusion to generate diverse character animation, responding to user-supplied control signals. Yet, these methods focus solely on human locomotion with diverse style transitions, instead of the soccer motions with complex human-object interactions. Additionally, some diffusion-based methods
+Diller and Dai 2024
+;
+Ghosh et al. 2023
+;
+Li et al. 2023b
+;
+Tevet et al. 2024
+generate realistic human-object interactions but require time-consuming post-optimization, unsuitable for real-time interactable applications.
+In a nutshell, it lacks a viable solution for real-time user-controllable soccer motion generation. The challenges stem from the limited availability of soccer motion datasets and the absence of an effective generation framework tailored for soccer motion.
+In this paper, we present
+SMGDiff
+, a motion diffusion model for real-time and user-controllable soccer motion generation. As shown in Fig.
+, given diverse user-supplied control signals like desired character speed, direction, and soccer skills, SMGDiff can generate high-quality and natural soccer motions in real-time, which was unseen before.
+Specifically, we first collect a large-scale soccer motion dataset, named
+Soccer-X
+for our generative model. In the Soccer-X dataset, we utilize 16 OptiTrack cameras
+Optitrack
+to reconstruct ground-truth 3D human and soccer motions. It covers six common soccer motion categories, comprising over 1.08 million frames and more than 10 hours of diverse and high-quality motion data from 30 soccer players. To the best of our knowledge, our Soccer-X dataset is the first of its kind for data-driven soccer motion generation featuring a wide range of soccer skills.
+With our unique dataset, we further propose an efficient two-stage framework for controllable soccer motion generation.
+In the first stage
+, we generate the global trajectory of the character (both the facing direction and location) from the coarse user-supplied control signals. Such a global trajectory serves as a strong conditioning for the subsequent soccer motion diffusion model. We adopt a single-step diffusion model based on a transformer encoder, for instant and diverse trajectory generation. We further utilize a temporal blending strategy to ensure the smoothness of the generated trajectory, responding in real-time to diverse control signals.
+In the second stage
+, we tailor a transformer-based autoregressive diffusion model
+Chen et al. 2024
+for efficient soccer motion generation, based on the trajectory conditioning from the first stage.
+Specifically, we jointly consider the skeletal human motion, rigid ball motion, and contact information in this soccer motion diffusion model.
+We further introduce a contact guidance module to refine ball-foot interactions during the inference process of the diffusion model.
+In our contact guidance module, when the moving speed of the ball significantly changes and ball-foot contact happens, a novel contact loss function is activated to adjust the sampling result of soccer motions.
+We conduct a series of experiments to demonstrate the effectiveness of our SMGDiff approach. We also showcase a real-time demo for vivid soccer motion generation with diverse soccer skills from user controls.
+In summary, our contributions are as follows:
+•
+We introduce a novel motion diffusion model for real-time, user-controllable soccer motion generation, achieving state-of-the-art performance.
+•
+We propose a highly efficient trajectory generation module, as well as a novel contact guidance module to generate diverse and accurate ball-foot contacts.
+•
+We contribute a large-scale motion dataset that includes high-quality soccer motion annotations. Our data and model will be disseminated to the community.
+Figure 2
+:
+Pipeline of SMGDiff. Our framework consists of two stages:
+In the trajectory generation stage, we transform soccer skill label
+𝐒
+\mathbf{S}
+, target trajectory point
+𝐆
+\mathbf{G}
+from user control, and past trajectory
+𝐓
+𝒫
+\mathbf{T}^{\mathcal{P}}
+into refined future trajectory
+𝐓
+ℱ
+\mathbf{T}^{\mathcal{F}}
+.
+In the soccer motion generation stage, the soccer motion diffusion model is fed with a noisy motion sequence
+𝐗
+T
+ℱ
+\mathbf{X}_{T}^{\mathcal{F}}
+and condition information
+𝐂
+\mathbf{C}
+, which concatenates
+𝐒
+\mathbf{S}
+,
+𝐓
+ℱ
+\mathbf{T}^{\mathcal{F}}
+and past motion
+𝐗
+𝒫
+\mathbf{X}^{\mathcal{P}}
+. Contact guidance module refines the predicted soccer motion
+𝐗
+^
+0
+ℱ
+\hat{\mathbf{X}}_{0}^{\mathcal{F}}
+during the diffusion process to enhance the contact details.
+2
+Related Work
+Real-Time Motion Controller.
+Real-time motion control holds significant value in the gaming domain. The earliest approaches were based on motion matching
+Clavet 2016
+;
+Holden et al. 2020a
+;
+Mach and Zhuravlov 2021
+;
+Starke et al. 2024
+and state machines
+Lau and Kuffner 2005
+;
+Starke et al. 2019b
+;
+Arikan and Forsyth 2002
+;
+Kovar et al. 2002
+.
+Later, numerous methods
+Fragkiadaki et al. 2015
+;
+Li et al. 2017
+;
+Holden et al. 2015
+;
+Holden et al. 2016
+;
+Starke et al. 2019b
+;
+Holden et al. 2020b
+;
+Cho et al. 2021
+;
+Mason et al. 2022
+;
+Starke et al. 2021
+have employed neural networks in character animation to enhance motion diversity. Additionally, physics-based approaches
+Lee et al. 2018
+;
+Lee et al. 2021
+;
+Libin Liu August 2018
+;
+Ye et al. 2022
+;
+Yao et al. 2022
+;
+Yao et al. 2023
+further enhanced the realism of character animations. Recent methods
+Holden et al. 2017
+;
+Starke et al. 2020b
+;
+Zhang et al. 2018
+have also incorporated feature extraction techniques. However, these methods, relying on deterministic networks, encounter challenges in generating high-quality and diverse motion sequences.
+Motion Diffusion.
+Probabilistic generative models
+Nichol et al. 2022
+;
+Saharia et al. 2022
+;
+Ho et al. 2020c
+have demonstrated the ability to produce high-quality and diverse motions
+Tevet et al. 2023
+;
+Zhang et al. 2022
+;
+Kim et al. 2023
+. A significant body of work incorporates various conditions during generation, including text
+Chen et al. 2023b
+;
+Liang et al. 2023
+;
+Yuan et al. 2023
+;
+Zhang et al. 2022
+;
+Liang et al. 2024
+;
+Kim et al. 2023
+, music
+Alexanderson et al. 2022
+;
+Tseng et al. 2023
+;
+Zhou and Wang 2023
+, action
+Zhao et al. 2023
+;
+Zhao et al. 2024b
+;
+Ho et al. 2020b
+, speech
+Ao et al. 2023
+;
+Zhao et al. 2024c
+;
+Chen et al. 2023a
+, incomplete motion sequences
+Tevet et al. 2023
+;
+Xie et al. 2023a
+;
+Zhang et al. 2023
+, trajectory
+Karunratanakul et al. 2023
+;
+Karunratanakul et al. 2024
+, and scene
+Li et al. 2023a
+;
+Huang et al. 2023
+. Recent methods, such as CAMDM
+Chen et al. 2024
+have enabled motion generation conditioned on user-controlled style transitions. Building on prior work, we apply motion diffusion models to soccer, a domain characterized by various complex motions.
+Human-Object Interactions.
+Previous works on Human-Object Interaction (HOI) generation have employed physics-based methods
+Xie et al. 2023b
+;
+Merel et al. 2020
+;
+Hassan et al. 2023
+and kinematic-based approaches
+Holden et al. 2017
+;
+Zhang et al. 2018
+;
+Starke et al. 2020a
+;
+Starke et al. 2019a
+. More recent approaches
+Diller and Dai 2024
+;
+Ghosh et al. 2023
+;
+Li et al. 2023b
+integrate physical constraints during inference to further boost realism. However, these methods often incur significant computational overhead, rendering them impractical for interactive applications like soccer that require low-latency responses. Popular soccer game EA SPORTS FC series
+Electronic Arts 2024
+relies on extensive pre-recorded data for motion matching rather than real-time motion synthesis. Prior soccer-related research
+Hong et al. 2019
+;
+Liu et al. 2021
+;
+Peng et al. 2019
+;
+Peng et al. 2021a
+;
+Xie et al. 2022
+has largely concentrated on specific actions, such as shooting, dribbling, and juggling, without covering the broader range of soccer motions. In contrast, we present a large-scale open-source soccer dataset and a novel framework to cover a diverse spectrum of soccer skills.
+3
+Method
+Our objective is to generate realistic and diverse soccer motions while enabling real-time user control. To this end, we propose a two-stage framework consisting of trajectory generation and soccer motion generation, as depicted in Fig.
+2
+.
+In the trajectory generation stage (Sec.
+3.1
+), coarse user control signals are transformed into refined trajectories, providing strong conditioning for the motion synthesis stage.
+In the soccer motion generation stage, we employ a soccer motion diffusion model (Sec.
+3.2
+) to produce a variety of soccer motions. Additionally, a contact guidance module (Sec.
+3.3
+) is implemented to refine ball-foot contacts.
+Representation.
+For clarity in presentation, we define a set of notations. First, the user selects a soccer skill label
+𝐒
+∈
+\mathbf{S}\in
+{dribble, trick, shoot, stand, celebrate, off-the-ball move} and specifies character direction and speed via keyboard arrow keys and press intensity. We multiply the character speed by the normalized direction vector and then add it to the character’s current position to get the target trajectory point
+𝐆
+\mathbf{G}
+.
+Under user control, the trajectory generation model generates the future trajectory
+𝐓
+ℱ
+\mathbf{T}^{\mathcal{F}}
+, which includes the future human root position and orientation projected onto the ground. Superscripts
+ℱ
+=
+{
+1
+,
+2
+,
+…
+,
+F
+}
+\mathcal{F}=\{1,2,\dots,F\}
+denote future frame indices and
+𝒫
+=
+{
+P
+,
+P
++
+1
+,
+…
+,
+−
+1
+}
+\mathcal{P}=\{P,P+1,\dots,-1\}
+denotes past frame indices, where
+P
+P
+and
+F
+F
+are the total numbers of past and future frames, respectively.
+Finally, the soccer motion generation model takes soccer skill label
+𝐒
+\mathbf{S}
+, future trajectory
+𝐓
+ℱ
+\mathbf{T}^{\mathcal{F}}
+and past soccer motion
+𝐗
+𝒫
+=
+{
+x
+i
+}
+i
+∈
+𝒫
+\mathbf{X}^{\mathcal{P}}=\{x^{i}\}_{i\in\mathcal{P}}
+as condition
+𝐂
+\mathbf{C}
+and generates future soccer motion
+𝐗
+ℱ
+=
+{
+x
+i
+}
+i
+∈
+ℱ
+\mathbf{X}^{\mathcal{F}}=\{x^{i}\}_{i\in\mathcal{F}}
+. In this context,
+x
+i
+=
+{
+h
+,
+b
+,
+c
+}
+x^{i}=\{h,b,c\}
+is the representation of soccer motion at frame
+i
+i
+, comprising three components: human state
+h
+h
+, ball state
+b
+b
+, and binary contact label
+c
+c
+. Human state
+h
+∈
+ℝ
+3
++
+24
+×
+6
+h\in\mathbb{R}^{3+24\times 6}
+includes root position
+h
+p
+h_{p}
+and joints rotation
+h
+θ
+h_{\theta}
+. We use the 24-joint SMPL format
+Loper et al. 2015a
+for the human skeleton and a 6-DOF representation
+Zhou et al. 2018
+for rotation and direction. Ball state
+b
+∈
+ℝ
+3
++
+3
++
+1
+b\in\mathbb{R}^{3+3+1}
+is composed of relative ball position
+b
+p
+′
+b_{p}^{\prime}
+, global ball velocity
+b
+v
+b_{v}
+and ball control weight
+w
+b
+w_{b}
+with reference to Starke et. al.
+Starke et al. 2020a
+. Ball control weight
+w
+b
+w_{b}
+is utilized to transform the ball’s global position
+b
+p
+b_{p}
+to relative ball position
+b
+p
+′
+b_{p}^{\prime}
+which is defined as:
+w
+b
+=
+1
+−
+‖
+b
+p
+x
+​
+y
+−
+h
+p
+x
+​
+y
+‖
+/
+r
+,
+w_{b}=1-||b_{p}^{xy}-h_{p}^{xy}||/r,
+(1)
+where
+b
+p
+x
+​
+y
+b_{p}^{xy}
+and
+h
+p
+x
+​
+y
+h_{p}^{xy}
+represent the horizontal global position of the ball and human root,
+r
+=
+2
+​
+m
+r=2m
+is the radius around the human root. We obtain relative ball position
+b
+p
+′
+b_{p}^{\prime}
+:
+b
+p
+′
+=
+w
+b
+⋅
+(
+b
+p
+−
+h
+p
+)
+.
+b_{p}^{\prime}=w_{b}\cdot(b_{p}-h_{p}).
+(2)
+The binary contact label
+c
+=
+{
+c
+g
+,
+c
+b
+}
+c=\{c_{g},c_{b}\}
+consists of two components:
+c
+g
+c_{g}
+represents the contact between the foot joints and the ground, while
+c
+b
+c_{b}
+indicates the contact between the foot joints and the ball. A value of 1 indicates contact and 0 indicates no contact.
+3.1
+Trajectory Generation Model
+We employ a single-step diffusion model to transform coarse user control signals into diverse character trajectories, followed by a blending strategy to ensure smoothness.
+Network Structure.
+To achieve real-time performance and efficiency, we deploy a lightweight single-step diffusion model based on a transformer encoder. The network’s conditional inputs include soccer skill label
+𝐒
+\mathbf{S}
+, target trajectory point
+𝐆
+\mathbf{G}
+, and past trajectory
+𝐓
+𝒫
+\mathbf{T}^{\mathcal{P}}
+. Additionally, the input conditions are concatenated with a random Gaussian noise
+ϵ
+∼
+𝒩
+⁡
+(
+0
+,
+𝐈
+)
+\epsilon\sim\mathcal{N}(0,\mathbf{I})
+to enhance the trajectory diversity. During runtime, we sample the random noise
+ϵ
+\epsilon
+and the model inference would be similar to a single-step diffusion reverse process, as defined in DDPM
+Ho et al. 2020a
+:
+p
+θ
+(
+𝐳
+0
+:
+1
+)
+:=
+ϵ
+p
+θ
+(
+𝐳
+0
+|
+𝐳
+1
+)
+,
+\displaystyle p_{\theta}(\mathbf{z}_{0:1}):=\epsilon p_{\theta}(\mathbf{z}_{0}|\mathbf{z}_{1}),
+(3)
+p
+θ
+​
+(
+𝐳
+0
+|
+𝐳
+1
+)
+:=
+𝒩
+⁡
+(
+𝐳
+0
+,
+μ
+θ
+​
+(
+𝐳
+1
+,
+1
+)
+,
+𝚺
+θ
+​
+(
+𝐳
+1
+,
+1
+)
+)
+,
+\displaystyle p_{\theta}(\mathbf{z}_{0}|\mathbf{z}_{1}):=\mathcal{N}(\mathbf{z}_{0};\mathbf{\mu}_{\theta}(\mathbf{z}_{1},1),\mathbf{\Sigma}_{\theta}(\mathbf{z}_{1},1)),
+where
+𝐳
+\mathbf{z}
+denotes the predicted future trajectory and the total timestep of diffusion is set to 1. During training, we employ a simple reconstruction loss and a velocity loss to optimize the network. For a more detailed explanation of the network structure, please refer to the supplementary materials.
+Trajectory Blending.
+At runtime, we adopt the
+Heuristic Future Trajectory Extension (HFTE)
+approach from CAMDM
+Chen et al. 2024
+to balance motion smoothness and consistency with user control. When the user inputs a new control signal, the newly generated trajectory results from the trajectory generation model will be blended with the previous generation output to prevent abrupt changes in the character’s direction and speed. The blended trajectory
+𝐓
+ℱ
+\mathbf{T}^{\mathcal{F}}
+is then used as the conditional input for the subsequent stage.
+3.2
+Soccer Motion Diffusion Model
+We deploy a transformer-based autoregressive diffusion model to generate high-quality and diverse soccer motions based on trajectory conditioning.
+Network Structure.
+Our method utilizes the diffusion probabilistic model to synthesize soccer motion. Following the definition of diffusion in DDPM
+Ho et al. 2020a
+, the forward diffusion process is formulated as a Markov chain:
+q
+⁡
+(
+𝐗
+t
+ℱ
+|
+𝐗
+0
+ℱ
+)
+=
+𝒩
+⁡
+(
+α
+¯
+t
+​
+𝐗
+0
+ℱ
+,
+(
+1
+−
+α
+¯
+t
+)
+​
+𝐈
+)
+,
+q(\mathbf{X}_{t}^{\mathcal{F}}|\mathbf{X}_{0}^{\mathcal{F}})=\mathcal{N}(\sqrt{\bar{\alpha}_{t}}\mathbf{X}_{0}^{\mathcal{F}},(1-\bar{\alpha}_{t})\mathbf{I}),
+(4)
+where
+𝐗
+0
+ℱ
+\mathbf{X}^{\mathcal{F}}_{0}
+is the future soccer motion drawn from data distribution,
+α
+¯
+t
+∈
+(
+0
+,
+1
+)
+\bar{\alpha}_{t}\in(0,1)
+are constants hyper-parameters, when
+α
+¯
+t
+\bar{\alpha}_{t}
+approaches 0, we can approximate
+𝐗
+t
+ℱ
+∼
+𝒩
+⁡
+(
+0
+,
+𝐈
+)
+\mathbf{X}_{t}^{\mathcal{F}}\sim\mathcal{N}(0,\mathbf{I})
+.
+In the reverse process, we follow Ramesh et al.
+Ramesh et al. 2022
+to directly predict
+𝐗
+0
+ℱ
+\mathbf{X}_{0}^{\mathcal{F}}
+itself as
+𝐗
+^
+ϕ
+ℱ
+​
+(
+𝐱
+t
+,
+t
+,
+𝐂
+)
+\hat{\mathbf{X}}_{\phi}^{\mathcal{F}}(\mathbf{x}_{t},t,\mathbf{C})
+, where
+ϕ
+\phi
+represents the parameters of the neural network.
+𝐂
+=
+{
+𝐒
+,
+𝐗
+𝒫
+,
+𝐓
+ℱ
+}
+\mathbf{C}=\{\mathbf{S},\mathbf{X}^{\mathcal{P}},\mathbf{T}^{\mathcal{F}}\}
+is the formulated condition information, including soccer skill label
+𝐒
+\mathbf{S}
+, past soccer motion
+𝐗
+𝒫
+\mathbf{X}^{\mathcal{P}}
+and future trajectory
+𝐓
+ℱ
+\mathbf{T}^{\mathcal{F}}
+. We optimize
+ϕ
+\phi
+with the
+simple
+objective introduced in Go et al.
+Ho et al. 2020a
+:
+ℒ
+simple
+=
+𝔼
+𝐗
+0
+ℱ
+,
+t
+​
+[
+‖
+𝐗
+0
+ℱ
+−
+𝐗
+^
+ϕ
+ℱ
+​
+(
+𝐗
+t
+ℱ
+,
+t
+,
+𝐂
+)
+‖
+2
+2
+]
+.
+\mathcal{L}_{\text{simple}}=\mathbb{E}_{\mathbf{X}_{0}^{\mathcal{F}},t}[||\mathbf{X}_{0}^{\mathcal{F}}-\hat{\mathbf{X}}^{\mathcal{F}}_{\phi}(\mathbf{X}_{t}^{\mathcal{F}},t,\mathbf{C})||_{2}^{2}].
+(5)
+We also incorporate auxiliary losses referenced from Tevet et al.
+Tevet et al. 2023
+to promote three aspects of physical realism: joint position (Eq.
+6
+), velocities (Eq.
+7
+) and foot contact (Eq.
+8
+).
+ℒ
+pos
+=
+1
+F
+​
+∑
+i
+=
+1
+F
+‖
+F
+​
+K
+​
+(
+x
+0
+i
+)
+−
+F
+​
+K
+​
+(
+x
+^
+0
+i
+)
+‖
+2
+2
+,
+\mathcal{L}_{\text{pos}}=\frac{1}{F}\sum_{i=1}^{F}||FK(x_{0}^{i})-FK(\hat{x}_{0}^{i})||_{2}^{2},
+(6)
+ℒ
+vel
+=
+1
+F
+−
+1
+​
+∑
+i
+=
+1
+F
+−
+1
+‖
+(
+x
+0
+i
++
+1
+−
+x
+0
+i
+)
+−
+(
+x
+^
+0
+i
++
+1
+−
+x
+^
+0
+i
+)
+‖
+2
+2
+,
+\mathcal{L}_{\text{vel}}=\frac{1}{F-1}\sum_{i=1}^{F-1}||(x_{0}^{i+1}-x_{0}^{i})-(\hat{x}_{0}^{i+1}-\hat{x}_{0}^{i})||_{2}^{2},
+(7)
+ℒ
+foot
+=
+1
+F
+−
+1
+​
+∑
+i
+=
+1
+F
+−
+1
+‖
+(
+F
+​
+K
+​
+(
+x
+^
+0
+i
++
+1
+)
+−
+F
+​
+K
+​
+(
+x
+^
+0
+i
+)
+)
+⋅
+c
+g
+i
+‖
+2
+2
+,
+\mathcal{L}_{\text{foot}}=\frac{1}{F-1}\sum_{i=1}^{F-1}||(FK(\hat{x}^{i+1}_{0})-FK(\hat{x}^{i}_{0}))\cdot c_{g}^{i}||_{2}^{2},
+(8)
+where
+F
+​
+K
+​
+(
+⋅
+)
+FK(\cdot)
+denotes the forward kinematic function converting human joint rotations into human joint global positions (only apply to foot joints in Eq.
+8
+),
+c
+g
+i
+c_{g}^{i}
+is the binary contact mask between foot and ground for each frame
+i
+i
+.
+Our final training loss is:
+ℒ
+=
+ℒ
+simple
++
+λ
+pos
+​
+ℒ
+pos
++
+λ
+vel
+​
+ℒ
+vel
++
+λ
+foot
+​
+ℒ
+foot
+.
+\mathcal{L}=\mathcal{L}_{\text{simple}}+\lambda_{\text{pos}}\mathcal{L}_{\text{pos}}+\lambda_{\text{vel}}\mathcal{L}_{\text{vel}}+\lambda_{\text{foot}}\mathcal{L}_{\text{foot}}.
+(9)
+For more details on the soccer motion diffusion model, please refer to the supplementary materials.
+3.3
+Contact Guidance
+During inference, we integrate a contact guidance module that utilizes an off-the-shelf loss guidance mechanism within the diffusion process to improve contact fidelity. Specifically, we develop a specialized contact loss function to refine the ball-foot contacts.
+Contact Loss Function.
+After the soccer motion generation model generates the future soccer motion sample
+𝐗
+^
+0
+ℱ
+\hat{\mathbf{X}}_{0}^{\mathcal{F}}
+, we get the future ball position
+b
+p
+b_{p}
+by applying the inverse transformation of Eq.
+2
+.
+We can also get ball acceleration
+b
+a
+b_{a}
+which is obtained by applying a second-order difference to the ball’s global positions.
+According to the laws of mechanics, the ball undergoes frictional forces from the ground, resulting in a small, constant acceleration. When the ball’s acceleration exceeds a certain threshold, we infer that the ball is influenced by both ground friction and the force exerted by the foot. In this case, we confirm that contact exists between the ball and foot joints, denoted as
+c
+^
+b
+\hat{c}_{b}
+.
+c
+^
+b
+=
+𝕀
+⁡
+(
+‖
+b
+a
+‖
+>
+τ
+a
+)
+,
+\hat{c}_{b}=\mathbb{I}(||b_{a}||>\tau_{a}),
+(10)
+where
+𝕀
+\mathbb{I}
+is the indicator function,
+τ
+a
+=
+2
+​
+m
+/
+s
+2
+\tau_{a}=2m/s^{2}
+signifies the acceleration threshold.
+Next, we identify the appropriate foot joint for ball contact. Based on real-life soccer motion, the lifted foot joint is given priority. We compute
+d
+d
+, the distance between the ball and each potential contact joint in every frame:
+d
+=
+min
+j
+∈
+foot joints
+⁡
+(
+(
+f
+p
+j
+−
+b
+p
+)
+⋅
+(
+1
++
+(
+w
+d
+−
+1
+)
+⋅
+c
+g
+j
+)
+)
+,
+d=\min_{j\in\text{foot joints}}((f_{p}^{j}-b_{p})\cdot(1+(w_{d}-1)\cdot c_{g}^{j})),
+(11)
+where superscript
+j
+j
+denotes the joint index,
+f
+p
+j
+f_{p}^{j}
+is the global position of the joint,
+c
+g
+j
+c_{g}^{j}
+indicates whether the joint is in contact with the ground,
+w
+d
+=
+2
+w_{d}=2
+is a penalty term that encourages the lifted foot to make contact with the ball.
+Finally, our contact loss function for guidance is
+L
+=
+∑
+i
+=
+1
+F
+d
+i
+⋅
+𝕀
+⁡
+(
+d
+i
+>
+τ
+d
+)
+⋅
+c
+^
+b
+i
+𝕀
+⁡
+(
+d
+i
+>
+τ
+d
+)
++
+δ
+,
+L=\sum_{i=1}^{F}d^{i}\cdot\frac{\mathbb{I}(d^{i}>\tau_{d})\cdot\hat{c}_{b}^{i}}{\mathbb{I}(d^{i}>\tau_{d})+\delta},
+(12)
+where superscript
+i
+i
+denotes the frame index,
+τ
+d
+=
+0.1
+​
+m
+\tau_{d}=0.1m
+is the contact distance threshold and
+δ
+\delta
+is a small constant to prevent division by zero. Our contact loss function precisely identifies the foot joint designated to make contact with the ball and incorporates the distance metric as the loss value, effectively guiding the contact between the foot and the ball.
+We adopt the loss guidance approach from DSG
+Yang et al. 2024
+, which proposes larger, adaptive step sizes while preserving the original data distribution. Initially, we compute the steepest gradient descent direction:
+𝐃
+∗
+=
+−
+n
+​
+σ
+t
+​
+∇
+𝐗
+t
+ℱ
+L
+​
+(
+𝐗
+^
+0
+ℱ
+)
+‖
+∇
+𝐗
+t
+ℱ
+L
+​
+(
+𝐗
+^
+0
+ℱ
+)
+‖
+2
+,
+\mathbf{D}^{*}=-\sqrt{n}\sigma_{t}\frac{\nabla_{\mathbf{X}_{t}^{\mathcal{F}}}L(\hat{\mathbf{X}}_{0}^{\mathcal{F}})}{||\nabla_{\mathbf{X}_{t}^{\mathcal{F}}}L(\hat{\mathbf{X}}_{0}^{\mathcal{F}})||_{2}},
+(13)
+where
+n
+n
+represents the data dimensions and
+σ
+t
+\sigma_{t}
+is the standard deviation in the diffusion process.
+Subsequently, we weigh the gradient direction and the unconditional sampling direction to enhance diversity:
+𝐃
+=
+𝐃
+t
++
+w
+r
+​
+(
+𝐃
+∗
+−
+𝐃
+t
+)
+,
+\mathbf{D}=\mathbf{D}_{t}+w_{r}(\mathbf{D}^{*}-\mathbf{D}_{t}),
+(14)
+𝐗
+t
+−
+1
+ℱ
+=
+μ
+t
++
+n
+​
+σ
+t
+​
+𝐃
+/
+‖
+𝐃
+‖
+,
+\mathbf{X}_{t-1}^{\mathcal{F}}=\mu_{t}+\sqrt{n}\sigma_{t}\mathbf{D}/||\mathbf{D}||,
+(15)
+where
+𝐃
+t
+=
+σ
+t
+​
+ϵ
+t
+​
+(
+ϵ
+t
+∼
+𝒩
+⁡
+(
+0
+,
+𝐈
+)
+)
+\mathbf{D}_{t}=\sigma_{t}\epsilon_{t}(\epsilon_{t}\sim\mathcal{N}(0,\mathbf{I}))
+represents the unconditional sampling direction,
+𝐃
+\mathbf{D}
+is the weighted direction,
+w
+r
+=
+0.5
+w_{r}=0.5
+is the guidance rate and
+μ
+t
+\mu_{t}
+is the mean prediction.
+3.4
+Implementation Details
+Network Parameters.
+To enable real-time soccer motion generation with user control, we meticulously calibrate our system parameters. During both training and inference, we use a 30Hz frame rate for the generated motions, with past frame number
+P
+=
+10
+P=10
+and future frame number
+F
+=
+45
+F=45
+to facilitate short-sequence predictions. Additionally, we configure the denoise step in the diffusion model to 8, ensuring real-time inference speed.
+Employment Strategy.
+Due to the time-consuming nature of gradient calculations in contact guidance, it’s impractical to perform contact guidance at every denoise step. We argue that applying contact guidance is unnecessary when diffusion noise is high, as the predicted motion is not sufficiently refined, and incorrect guidance may lead to unnatural results. Hence, we restrict the application of contact guidance to the last two steps of the diffusion model. Systematic experiments of the employment strategy are presented in Sec.
+5.3
+.
+Runtime Environment.
+For the environmental setup, we implement real-time character control through network communication between the Unity engine and Python. Initially, Unity captures user keyboard inputs and generates future trajectories using the employed trajectory generation model. The trajectory conditioning is then transmitted to Python via a TCP network. Utilizing the soccer motion generation model, the Python side generates human translation, joint rotations, and ball translation. The outputs are subsequently sent back to Unity for visualization, with the ball’s rotation computed using Unity’s physics engine. All model inferences and network communications are executed on a single machine equipped with an Intel Core i7-10700K CPU and an NVIDIA GeForce RTX 3080 Ti GPU.
+Figure 3
+:
+The top section exhibits selected highlights of our dataset. The bottom section features a proportion of different soccer motions. In total, our dataset comprises 2398 sequences and captures approximately 1.08 million frames of data.
+4
+Dataset
+To train and evaluate model performance, we construct
+Soccer-X
+, a high-quality human-soccer interaction dataset covering diverse soccer motions.
+Figure 4
+:
+Qualitative comparison between our method and baseline methods including LMP
+Starke et al. 2020b
+, MANN-DP
+Zhang et al. 2018
+;
+Starke et al. 2022
+and CM
+Starke et al. 2024
+. The green line represents the trajectories of the hands and feet. The motions generated by the baseline methods exhibit deficiencies in motion quality (such as foot sliding and skill accuracy). Our method significantly surpasses the baseline methods in terms of motion details. More qualitative results can be found in the supplementary video.
+We set up a high-precision multi-view motion capture system comprising 16 OptiTrack Prime x13 cameras
+Optitrack
+in a 6m
+×
+\times
+7.5m
+×
+\times
+2.5m capture area, recording at a rate of 240 frames per second. Our dataset includes recordings from 30 skilled soccer players, each demonstrating their unique playing styles. The final dataset contains over 10 hours of motion data, totaling 1.08 million frames. The human motion data adopts the SMPL model format
+Loper et al. 2015b
+, while the soccer ball data includes both translational and rotational information. The dataset is subsequently downsampled to 30 fps for processing. All motion data is systematically organized into six categories: Dribble, Stand, Off-the-ball Move, Trick, Shoot, and Celebrate.
+The statistical details of the data are presented in Fig.
+3
+. The Dribble category includes variations in speed, foot (left or right), and motion direction (straight-line and turning). The Trick motion features 5 specific soccer dribbling maneuvers. For the Shoot motion, due to spatial limitations in the indoor environment, the full ball trajectory was later reconstructed in Unity using physical simulations based on initially captured movements. Further details about the dataset are provided in the supplementary material.
+Motion Quality
+Condition Alignment
+Method
+FID
+↓
+\downarrow
+Ft. Slid.
+↓
+\downarrow
+Accel.
+↓
+\downarrow
+Div.
+↑
+\uparrow
+Traj. Err.
+↓
+\downarrow
+Orient. Err.
+↓
+\downarrow
+Skill Acc.
+↑
+\uparrow
+LMP
+Starke et al. 2020b
+0.3541
+1.0678
+1.6070
+0.3980
+4.1156
+6.4932
+73.3%
+MANN-DP
+Zhang et al. 2018
+;
+Starke et al. 2022
+0.3593
+1.3507
+1.5652
+0.4753
+4.0690
+5.2985
+69.1%
+CM
+Starke et al. 2024
+0.2494
+1.6498
+1.1752
+0.3520
+3.1034
+5.0663
+52.9%
+Ours
+0.1813
+0.8543
+1.1999
+0.6177
+2.4132
+4.9393
+93.3%
+Table 1
+:
+Quantitative comparison between our method and baseline methods including LMP
+Starke et al. 2020b
+, MANN-DP
+Zhang et al. 2018
+;
+Starke et al. 2022
+and CM
+Starke et al. 2024
+. Our method outperforms the baseline methods in terms of both motion quality and condition alignment.
+5
+Experiments
+In this section, we validate the capability of our method through various experiments.
+Evaluation Dataset.
+Due to the lack of publicly available large-scale soccer datasets, we use our
+Soccer-X
+dataset for both training and evaluation. The dataset is split into training and test sets with a 9:1 ratio.
+Figure 5
+:
+Qualitative evaluation of the Trajectory Generation Model (TGM). Given identical conditions, TGM enhances motion diversity. The dashed line represents the generated trajectory.
+Evaluation Metrics.
+To thoroughly assess the quality of generated motion, we adopt the following metrics, following previous work
+Chen et al. 2024
+;
+Tevet et al. 2023
+: (1)
+Fréchet Inception Distance
+(FID), which measures the distance between the distribution of generated motions and that of the training data, providing insights into fidelity and similarity. (2)
+Foot Sliding Distance
+(Ft. Slid.), quantifying the realism of the generated motion by measuring the distance (in meters) that the character’s toes move when the joint height falls below a specified threshold. (3)
+Acceleration
+(Accel.), calculated as the mean per-joint acceleration (in centimeters per second), aids in assessing the smoothness of the generated motion. (4)
+Diversity
+(Div.) measures the variance of each joint’s spatial locations over time for motions generated with the same control signals. The variance across all joints is averaged.
+To further assess the alignment of generated motion with conditions, we employ (5)
+Trajectory Error
+(Traj. Err.), which captures the angular difference (in degrees) between the expected and actual root movement directions; (6)
+Orientation Error
+(Orient. Err.), the difference (in degrees) between expected and actual root orientations; and (7)
+Skill Accuracy
+(Skill Acc.) quantifies the percentage of generated motions that align with the input style label. Following the approach
+Chen et al. 2024
+, we pre-trained a classifier to assess style accuracy.
+5.1
+Comparison
+Baseline Methods.
+We compare our method with several real-time character controller approaches. We benchmark against Local Motion Phase (LMP)
+Starke et al. 2020b
+, a variant that combines Mixture of Experts from MANN
+Zhang et al. 2018
+with DeepPhase features
+Starke et al. 2022
+(MANN-DP), and Categorical Codebook Matching (CM)
+Starke et al. 2024
+. For a fair comparison, we use the same motion representation as our approach.
+In comparison, we only focus on the quality of the soccer motions generated by different methods. Therefore, instead of applying trajectory generation, we use the trajectory inputs from the test set. To ensure a fair comparison, each method receives the same conditional input.
+Figure 6
+:
+Qualitative evaluation of the Contact Guidance Module (CGM). Given identical conditions, CGM effectively prevents instances of missed contact when the ball changes direction. Contact frames represent points where the ball’s trajectory shifts.
+Results.
+Tab.
+1
+presents the quantitative results of our experiments. Our method demonstrates superior motion quality and condition alignment. In terms of motion quality, our approach achieves the highest Diversity score and the lowest FID score, indicating that the generated motions are more diverse and better aligned with the distribution of soccer motion data. Additionally, our method exhibits the lowest foot sliding and comparable acceleration, further validating the realism of our generated motions. The CM
+Starke et al. 2024
+method generates slightly smoother motions but suffers from significant foot sliding and inaccurate execution of soccer skills. Regarding condition alignment, our method consistently achieves the best performance across all metrics, showing the highest consistency between the generated motions and user inputs. Fig.
+4
+provides the corresponding qualitative results of our experiments. Our method is capable of generating realistic and vivid football actions, while other methods often suffer from artifacts such as failure to generate the specified skill, foot sliding, jitter, or penetration issues.
+5.2
+Ablation Study
+Trajectory Generation Model (TGM).
+To analyze the effect of our trajectory generation model, we replace the generated trajectories with straight-line trajectories mapped from user control, denoted as
+w/o TGM
+. In the quantitative results shown in Tab.
+2
+, our full method achieves a significantly lower FID score and a higher Diversity score, indicating that incorporating the trajectory generation model produces more varied and realistic soccer motions. Qualitative results in Fig.
+5
+reveal that, under the same user inputs, the motions generated with trajectory generation exhibit noticeably more complex trajectories and greater diversity.
+FID
+↓
+\downarrow
+Ft.Slid.
+↓
+\downarrow
+Accel.
+↓
+\downarrow
+Div.
+↑
+\uparrow
+Ours w/o TGM
+0.3646
+1.0031
+1.1973
+2.4331
+Ours w/o CGM
+0.3704
+1.0046
+1.1957
+2.6908
+Ours
+0.3580
+1.0049
+1.2012
+2.6925
+Table 2
+:
+Quantitative evaluation of Trajectory Generation Model (TGM) and Contact Guidance Module (CGM).
+Contact Guidance Module (CGM).
+To verify the effectiveness of our contact guidance module, we compare our full model with a variant that excludes contact guidance during the diffusion process, denoted as
+w/o CGM
+. As shown in Tab.
+2
+, although adding contact guidance slightly reduces performance in terms of foot sliding and acceleration, the significant improvement in the FID metric demonstrates that contact guidance allows our method to generate motions that more closely resemble real-world human-ball interactions. Qualitative results in Fig.
+6
+demonstrate the enhancement of human-ball contact in the generated actions due to the addition of contact guidance.
+5.3
+Runtime Analysis
+In this section, we analyze the effects of different denoise steps and contact guidance employment strategies. We consider their impact on runtime efficiency and generation quality.
+Denoise Step.
+Consistent with previous findings
+Shi et al. 2023
+;
+Chen et al. 2024
+, we observe that directly training a diffusion model with fewer steps, rather than training a 1000-step model and applying the DDIM
+Song et al. 2022
+sampling strategy, leads to better soccer motion generation. As shown in Table 3, using 8 denoise steps during training and testing achieves an optimal balance between inference speed and generation quality. Consequently, we apply 8 denoise steps in our live demo.
+Contact Guidance Strategy.
+Based on the 8 denoise steps setup, adding contact guidance to a maximum of 2 diffusion steps still enables real-time inference. To determine the optimal insertion point for contact guidance within the diffusion process, we compared five insertion strategies. In Tab.
+4
+,
+Start
+M
+M
+denotes applying contact guidance in the initial
+M
+M
+denoise steps, while
+End
+N
+N
+applies contact guidance in the final
+N
+N
+steps of the diffusion process. As shown in Tab.
+4
+, applying contact guidance in the last two steps (denoted as End 2) yields the lowest FID score, demonstrating superior generation quality. Therefore, in our live demo, we enable contact guidance only during the final two denoise steps.
+Steps
+2
+4
+8
+16
+32
+Inf. Time
+3ms
+6ms
+12ms
+25ms
+52ms
+FID
+↓
+\downarrow
+0.3954
+0.3896
+0.3704
+0.3663
+0.3379
+Ft. Slid.
+↓
+\downarrow
+1.2438
+1.1471
+1.0046
+1.0434
+1.0708
+Accel.
+↓
+\downarrow
+1.1882
+1.1751
+1.1957
+1.1953
+1.2007
+Table 3
+:
+Evaluation of different denoise steps.
+Schedule
+Start 1
+End 1
+Start 2
+End 2
+Start 1, End 1
+FID
+↓
+\downarrow
+0.3642
+0.3629
+0.3672
+0.3580
+0.3661
+Ft. Slid.
+↓
+\downarrow
+1.0035
+1.0049
+1.0046
+1.0049
+1.0041
+Accel.
+↓
+\downarrow
+1.1939
+1.2029
+1.1931
+1.2012
+1.1984
+Table 4
+:
+Evaluation of contact guidance employment strategy.
+5.4
+Limitation
+Although our SMGDiff can generate diverse and high-quality soccer motions, it still has several limitations. Firstly, although contact guidance is incorporated, the model lacks optimization for real-world physics during training and inference. Future work could benefit from refining the generated results within physics engines such as Isaac Gym
+Makoviychuk et al. 2021
+. Second, we only consider interactions between the ball and the foot, neglecting other possible interactions between the ball and other parts of the body in real-life soccer scenarios. Third, the generated soccer motions do not involve interaction scenarios between different players. Therefore, a potential future direction is to integrate the diffusion model with a physics-based character animation method to generate physically realistic multi-person soccer motions.
+6
+Conclusion
+In this paper, we present SMGDiff, a novel approach for generating diverse soccer motions including dribbling, playing tricks, shooting, etc. Our approach applies powerful generative networks to character animation, which enables real-time, user-controllable animation of vivid and varied soccer motions.
+Our trajectory generation model utilizes a single-step diffusion model to transform high-level, coarse user inputs into refined trajectories, which indirectly enhances the diversity of the final generated motions.
+Our soccer motion generation model is able to produce high-quality and condition-aligned motion sequences.
+Furthermore, the contact guidance module employs a specialized loss function to refine ball-foot interactions, resulting in more accurate and realistic soccer animations.
+The extensive experimental results demonstrate the effectiveness of SMGDiff in real-time, controllable soccer motion generation tasks. We believe that our approach and dataset represent a significant step toward the field of character animation, with potential applications in gaming and VR/AR.
+References
+Alexanderson et al. (2022)
+Simon Alexanderson, Rajmund Nagy, Jonas Beskow, and Gustav Eje Henter.
+Listen, denoise, action! audio-driven motion synthesis with diffusion models.
+ACM Trans. Graph.
+, 2022.
+Ao et al. (2023)
+Tenglong Ao, Zeyi Zhang, and Libin Liu.
+Gesturediffuclip: Gesture diffusion model with clip latents.
+ACM Transactions on Graphics (TOG)
+, 42(4):1–18, 2023.
+Arikan and Forsyth (2002)
+Okan Arikan and David A. Forsyth.
+Interactive motion generation from examples.
+ACM Transactions on Graphics (TOG)
+, 2002.
+Chen et al. (2023a)
+Peng Chen, Xiaobao Wei, Ming Lu, Yitong Zhu, Naiming Yao, Xingyu Xiao, and Hui Chen.
+Diffusiontalker: Personalization and acceleration for speech-driven 3d face diffuser.
+arXiv preprint arXiv:2311.16565
+, 2023a.
+Chen et al. (2024)
+Rui Chen, Mingyi Shi, Shaoli Huang, Ping Tan, Taku Komura, and Xuelin Chen.
+Taming diffusion probabilistic models for character control.
+In
+SIGGRAPH
+, 2024.
+Chen et al. (2023b)
+Xin Chen, Biao Jiang, Wen Liu, Zilong Huang, Bin Fu, Tao Chen, and Gang Yu.
+Executing your commands via motion diffusion in latent space.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 18000–18010, 2023b.
+Cho et al. (2021)
+Kyungmin Cho, Chaelin Kim, Jungjin Park, Joonkyu Park, and Junyong Noh.
+Motion recommendation for online character control.
+ACM Transactions on Graphics (TOG)
+, 2021.
+Clavet (2016)
+Simon Clavet.
+Motion matching and the road to next-gen animation.
+In
+Proceedings of the Game Developers Conference (GDC)
+, 2016.
+Diller and Dai (2024)
+Christian Diller and Angela Dai.
+Cg-hoi: Contact-guided 3d human-object interaction generation.
+In
+2024 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, 2024.
+Electronic Arts (2024)
+Electronic Arts.
+EA SPORTS FC - Official Website.
+https://www.ea.com/games/ea-sports-fc
+, 2024.
+Fragkiadaki et al. (2015)
+Katerina Fragkiadaki, Sergey Levine, Panna Felsen, and Jitendra Malik.
+Recurrent network models for human dynamics.
+In
+Proceedings of the IEEE International Conference on Computer Vision (ICCV)
+, pages 4346–4354. IEEE, 2015.
+Ghosh et al. (2023)
+Anindita Ghosh, Rishabh Dabral, Vladislav Golyanik, Christian Theobalt, and Philipp Slusallek.
+Imos: Intent-driven full-body motion synthesis for human-object interactions.
+Comput. Graph. Forum
+, 42(2):1–12, 2023.
+Guo et al. (2022)
+Chuan Guo, Shihao Zou, Xinxin Zuo, Sen Wang, Wei Ji, Xingyu Li, and Li Cheng.
+Generating diverse and natural 3d human motions from text.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition
+, pages 5152–5161, 2022.
+Hassan et al. (2023)
+Mohamed Hassan, Yunrong Guo, Tingwu Wang, Michael Black, Sanja Fidler, and Xue Bin Peng.
+Synthesizing physical character-scene interactions, 2023.
+Ho et al. (2020a)
+Jonathan Ho, Ajay Jain, and Pieter Abbeel.
+Denoising diffusion probabilistic models.
+In
+Advances in Neural Information Processing Systems
+, pages 6840–6851. Curran Associates, Inc., 2020a.
+Ho et al. (2020b)
+Jonathan Ho, Ajay Jain, and Pieter Abbeel.
+Denoising diffusion probabilistic models.
+In
+Advances in Neural Information Processing Systems
+, 2020b.
+Ho et al. (2020c)
+Jonathan Ho, Ajay Jain, and Pieter Abbeel.
+Denoising diffusion probabilistic models.
+In
+Advances in Neural Information Processing Systems
+, pages 6840–6851, 2020c.
+Holden et al. (2015)
+Daniel Holden, Jun Saito, Taku Komura, and Thomas Joyce.
+Learning motion manifolds with convolutional autoencoders.
+In
+SIGGRAPH Asia 2015 Technical Briefs
+, page 18. ACM, 2015.
+Holden et al. (2016)
+Daniel Holden, Jun Saito, and Taku Komura.
+A deep learning framework for character motion synthesis and editing.
+ACM Transactions on Graphics (ToG)
+, 2016.
+Holden et al. (2017)
+Daniel Holden, Taku Komura, and Jun Saito.
+Phase-functioned neural networks for character control.
+ACM Trans. Graph.
+, 2017.
+Holden et al. (2020a)
+Daniel Holden, Oussama Kanoun, Maksym Perepichka, and Tiberiu Popa.
+Learned motion matching.
+ACM Transactions on Graphics (ToG)
+, 2020a.
+Holden et al. (2020b)
+Daniel Holden, Oussama Kanoun, Maksym Perepichka, and Tiberiu Popa.
+Learned motion matching.
+ACM Trans. Graph.
+, 2020b.
+Hong et al. (2019)
+Seokpyo Hong, Daseong Han, Kyungmin Cho, Joseph S. Shin, and Junyong Noh.
+Physics-based full-body soccer motion control for dribbling and shooting.
+ACM Trans. Graph.
+, 38(4), 2019.
+Huang et al. (2023)
+Siyuan Huang, Zan Wang, Puhao Li, Baoxiong Jia, Tengyu Liu, Yixin Zhu, Wei Liang, and Song-Chun Zhu.
+Diffusion-based generation, optimization, and planning in 3d scenes.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, pages 16750–16761, 2023.
+Karunratanakul et al. (2023)
+Korrawe Karunratanakul, Konpat Preechakul, Supasorn Suwajanakorn, and Siyu Tang.
+Guided motion diffusion for controllable human motion synthesis.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 2151–2162, 2023.
+Karunratanakul et al. (2024)
+Korrawe Karunratanakul, Konpat Preechakul, Emre Aksan, Thabo Beeler, Supasorn Suwajanakorn, and Siyu Tang.
+Optimizing diffusion noise can serve as universal motion priors.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, 2024.
+Kim et al. (2023)
+Jihoon Kim, Jiseob Kim, and Sungjoon Choi.
+Flame: Free-form language-based motion synthesis & editing.
+In
+Proceedings of the AAAI Conference on Artificial Intelligence
+, pages 8255–8263, 2023.
+Kovar et al. (2002)
+Lucas Kovar, Michael Gleicher, and Frédéric Pighin.
+Motion graphs.
+ACM Transactions on Graphics
+, 21(3):473–482, 2002.
+Lau and Kuffner (2005)
+Manfred Lau and James J. Kuffner.
+Behavior planning for character animation.
+In
+Proceedings of the Symposium on Computer Animation (SCA)
+, 2005.
+Lee et al. (2018)
+Kyungho Lee, Seyoung Lee, and Jehee Lee.
+Interactive character animation by learning multi-objective control.
+ACM Transactions on Graphics (TOG)
+, 2018.
+Lee et al. (2021)
+Kyungho Lee, Sehee Min, Sunmin Lee, and Jehee Lee.
+Learning time-critical responses for interactive character control.
+ACM Transactions on Graphics (ToG)
+, 40(4):Article 147, 2021.
+Li et al. (2023a)
+Jiaman Li et al.
+Object motion guided human motion synthesis.
+ACM Trans. Graph.
+, 2023a.
+Li et al. (2023b)
+Quanzhou Li, Jingbo Wang, Chen Change Loy, and Bo Dai.
+Task-oriented human-object interactions generation with implicit neural representations.
+CoRR
+, abs/2303.13129, 2023b.
+Li et al. (2017)
+Zimo Li, Yi Zhou, Shuangjiu Xiao, Chong He, Zeng Huang, and Hao Li.
+Auto-conditioned recurrent networks for extended complex human motion synthesis.
+arXiv preprint arXiv:1707.05363
+, 2017.
+Liang et al. (2023)
+Han Liang, Wenqian Zhang, Wenxuan Li, Jingyi Yu, and Lan Xu.
+Intergen: Diffusion-based multi-human motion generation under complex interactions.
+International Journal of Computer Vision
+, 2023.
+Liang et al. (2024)
+Han Liang, Jiacheng Bao, Ruichi Zhang, Sihan Ren, Yuecheng Xu, Sibei Yang, Xin Chen, Jingyi Yu, and Lan Xu.
+Omg: Towards open-vocabulary motion generation via mixture of controllers.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, pages 482–493, 2024.
+Libin Liu (August 2018)
+Jessica Hodgins Libin Liu.
+Learning basketball dribbling skills using trajectory optimization and deep reinforcement learning.
+ACM Transactions on Graphics
+, August 2018.
+Liu et al. (2021)
+Siqi Liu, Guy Lever, Zhe Wang, Josh Merel, S. M. Ali Eslami, Daniel Hennes, Wojciech M. Czarnecki, Yuval Tassa, Shayegan Omidshafiei, Abbas Abdolmaleki, Noah Y. Siegel, Leonard Hasenclever, Luke Marris, Saran Tunyasuvunakool, H. Francis Song, Markus Wulfmeier, Paul Muller, Tuomas Haarnoja, Brendan D. Tracey, Karl Tuyls, Thore Graepel, and Nicolas Heess.
+From motor control to team play in simulated humanoid football, 2021.
+Loper et al. (2015a)
+Matthew Loper, Naureen Mahmood, Javier Romero, Gerard Pons-Moll, and Michael J. Black.
+Smpl: a skinned multi-person linear model.
+ACM Trans. Graph.
+, 34(6), 2015a.
+Loper et al. (2015b)
+Matthew Loper, Naureen Mahmood, Javier Romero, Gerard Pons-Moll, and Michael J Black.
+Smpl: A skinned multi-person linear model.
+ACM Transactions on Graphics (TOG)
+, 34(6):1–16, 2015b.
+Mach and Zhuravlov (2021)
+Michal Mach and Maksym Zhuravlov.
+Motion matching in ’the last of us part ii’, 2021.
+https://www.gdcvault.com/play/1027118/Motion-Matching-in-The-Last
+.
+Makoviychuk et al. (2021)
+Viktor Makoviychuk, Lukasz Wawrzyniak, Yunrong Guo, Michelle Lu, Kier Storey, Miles Macklin, David Hoeller, Nikita Rudin, Arthur Allshire, Ankur Handa, and Gavriel State.
+Isaac gym: High performance gpu-based physics simulation for robot learning, 2021.
+Mason et al. (2022)
+Ian Mason, Sebastian Starke, and Taku Komura.
+Real-time style modelling of human locomotion via feature-wise transformations and local motion phases.
+Proc. ACM Comput. Graph. Interact. Tech.
+, 2022.
+Merel et al. (2020)
+Josh Merel, Saran Tunyasuvunakool, Arun Ahuja, Yuval Tassa, Leonard Hasenclever, Vu Pham, Tom Erez, Greg Wayne, and Nicolas Heess.
+Catch & carry: Reusable neural controllers for vision-guided whole-body tasks, 2020.
+Nichol et al. (2022)
+Alexander Quinn Nichol, Prafulla Dhariwal, Aditya Ramesh, Pranav Shyam, Pamela Mishkin, Bob McGrew, Ilya Sutskever, and Mark Chen.
+GLIDE: Towards photorealistic image generation and editing with text-guided diffusion models.
+In
+International Conference on Machine Learning (ICML)
+, 2022.
+(46)
+Optitrack.
+NaturalPoint, Inc. Motion Capture Systems.
+https://optitrack.com/
+, 2022.
+Peng et al. (2019)
+Xue Bin Peng, Michael Chang, Grace Zhang, Pieter Abbeel, and Sergey Levine.
+Mcp: Learning composable hierarchical control with multiplicative compositional policies, 2019.
+Peng et al. (2021a)
+Xue Bin Peng, Ze Ma, Pieter Abbeel, Sergey Levine, and Angjoo Kanazawa.
+Amp: adversarial motion priors for stylized physics-based character control.
+ACM Transactions on Graphics
+, 2021a.
+Peng et al. (2021b)
+Xue Bin Peng, Ze Ma, Pieter Abbeel, Sergey Levine, and Angjoo Kanazawa.
+Amp: Adversarial motion priors for stylized physics-based character control.
+ACM Transactions on Graphics (ToG)
+, 40(4):1–20, 2021b.
+Ramesh et al. (2022)
+Aditya Ramesh, Prafulla Dhariwal, Alex Nichol, Casey Chu, and Mark Chen.
+Hierarchical text-conditional image generation with clip latents.
+ArXiv
+, 2022.
+Saharia et al. (2022)
+Chitwan Saharia, William Chan, Saurabh Saxena, Lala Li, Jay Whang, Emily L Denton, Kamyar Ghasemipour, Raphael Gontijo Lopes, Burcu Karagol Ayan, Tim Salimans, and et al.
+Photorealistic text-to-image diffusion models with deep language understanding.
+In
+Advances in Neural Information Processing Systems (NeurIPS)
+, 2022.
+Shi et al. (2023)
+Yi Shi, Jingbo Wang, Xuekun Jiang, and Bo Dai.
+Controllable motion diffusion model.
+CoRR
+, 2023.
+Song et al. (2022)
+Jiaming Song, Chenlin Meng, and Stefano Ermon.
+Denoising diffusion implicit models, 2022.
+Starke et al. (2019a)
+Sebastian Starke, He Zhang, Taku Komura, and Jun Saito.
+Neural state machine for character-scene interactions.
+ACM Trans. Graph.
+, 38(6), 2019a.
+Starke et al. (2019b)
+Sebastian Starke, He Zhang, Taku Komura, and Jun Saito.
+Neural state machine for character-scene interactions.
+ACM Transactions on Graphics (ToG)
+, 38(6):209:1–209:10, 2019b.
+Starke et al. (2020a)
+Sebastian Starke, Yiwei Zhao, Taku Komura, and Kazi Zaman.
+Local motion phases for learning multi-contact character movements.
+ACM Trans. Graph.
+, 39(4), 2020a.
+Starke et al. (2020b)
+Sebastian Starke, Yiwei Zhao, Taku Komura, and Kazi Zaman.
+Local motion phases for learning multi-contact character movements.
+ACM Transactions on Graphics (SIGGRAPH)
+, 2020b.
+Starke et al. (2021)
+Sebastian Starke, Yiwei Zhao, Fabio Zinno, and Taku Komura.
+Neural animation layering for synthesizing martial arts movements.
+ACM Transactions on Graphics (TOG)
+, 2021.
+Starke et al. (2022)
+Sebastian Starke, Ian Mason, and Taku Komura.
+Deepphase: Periodic autoencoders for learning motion phase manifolds.
+ACM Transactions on Graphics (ToG)
+, 2022.
+Starke et al. (2024)
+Sebastian Starke, Paul Starke, Nicky He, Taku Komura, and Yuting Ye.
+Categorical codebook matching for embodied character controllers.
+ACM Trans. Graph.
+, 2024.
+Tevet et al. (2023)
+Guy Tevet, Sigal Raab, Brian Gordon, Yonatan Shafir, Daniel Cohen-Or, and Amit H. Bermano.
+Human motion diffusion model.
+In
+International Conference on Learning Representations (ICLR)
+, 2023.
+Tevet et al. (2024)
+Guy Tevet, Sigal Raab, Setareh Cohan, Daniele Reda, Zhengyi Luo, Xue Bin Peng, Amit H Bermano, and Michiel van de Panne.
+Closd: Closing the loop between simulation and diffusion for multi-task character control.
+arXiv preprint arXiv:2410.03441
+, 2024.
+Tseng et al. (2023)
+Jonathan Tseng, Rodrigo Castellon, and C. Karen Liu.
+Edge: Editable dance generation from music.
+In
+2023 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, 2023.
+Xie et al. (2023a)
+Yiming Xie, Varun Jampani, Lei Zhong, Deqing Sun, and Huaizu Jiang.
+Omnicontrol: Control any joint at any time for human motion generation.
+In
+The Twelfth International Conference on Learning Representations
+, 2023a.
+Xie et al. (2022)
+Zhaoming Xie, Sebastian Starke, Hung Yu Ling, and Michiel van de Panne.
+Learning soccer juggling skills with layer-wise mixture-of-experts.
+In
+ACM SIGGRAPH 2022 Conference Proceedings
+, 2022.
+Xie et al. (2023b)
+Zhaoming Xie, Jonathan Tseng, Sebastian Starke, Michiel van de Panne, and C. Karen Liu.
+Hierarchical planning and control for box loco-manipulation, 2023b.
+Yang et al. (2024)
+Lingxiao Yang, Shutong Ding, Yifan Cai, Jingyi Yu, Jingya Wang, and Ye Shi.
+Guidance with spherical gaussian constraint for conditional diffusion.
+In
+International Conference on Machine Learning
+, 2024.
+Yao et al. (2022)
+Heyuan Yao, Zhenhua Song, Baoquan Chen, and Libin Liu.
+Controlvae: Model-based learning of generative controllers for physics-based characters.
+ACM Trans. Graph.
+, 2022.
+Yao et al. (2023)
+Heyuan Yao, Zhenhua Song, Yuyang Zhou, Tenglong Ao, Baoquan Chen, and Libin Liu.
+Moconvq: Unified physics-based motion control via scalable discrete representations.
+In
+ACM SIGGRAPH 2024 Journal Proceedings
+, 2023.
+Ye et al. (2022)
+Yongjing Ye, Libin Liu, Lei Hu, and Shihong Xia.
+Neural3points: Learning to generate physically realistic full-body motion for virtual reality users.
+In
+Computer Graphics Forum
+. Wiley Online Library, 2022.
+Yuan et al. (2023)
+Ye Yuan, Jiaming Song, Umar Iqbal, Arash Vahdat, and Jan Kautz.
+Physdiff: Physics-guided human motion diffusion model.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision
+, pages 16010–16021, 2023.
+Zhang et al. (2018)
+He Zhang, Sebastian Starke, Taku Komura, and Jun Saito.
+Mode-adaptive neural networks for quadruped motion control.
+ACM Trans. Graph.
+, 2018.
+Zhang et al. (2023)
+Lvmin Zhang, Anyi Rao, and Maneesh Agrawala.
+Adding conditional control to text-to-image diffusion models.
+In
+Proceedings of the IEEE/CVF International Conference on Computer Vision (ICCV)
+, pages 3836–3847, 2023.
+Zhang et al. (2022)
+Mingyuan Zhang, Zhongang Cai, Liang Pan, Fangzhou Hong, Xinying Guo, Lei Yang, and Ziwei Liu.
+Motiondiffuse: Text-driven human motion generation with diffusion model.
+IEEE Transactions on Pattern Analysis & Machine Intelligence
+, 2022.
+Zhao et al. (2024a)
+Kaifeng Zhao, Gen Li, and Siyu Tang.
+Dart: A diffusion-based autoregressive motion model for real-time text-driven motion control, 2024a.
+Zhao et al. (2023)
+M. Zhao, M. Liu, B. Ren, and S. Dai.
+Modiff: Action-conditioned 3d motion generation with denoising diffusion probabilistic models.
+arXiv preprint arXiv:2301.03949
+, 2023.
+Zhao et al. (2024b)
+M. Zhao, M. Liu, B. Ren, and S. Dai.
+Denoising diffusion probabilistic models for action-conditioned 3d motion generation.
+In
+ICASSP 2024 - 2024 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)
+, 2024b.
+Zhao et al. (2024c)
+Qingcheng Zhao, Pengyu Long, Qixuan Zhang, Dafei Qin, Han Liang, Longwen Zhang, Yingliang Zhang, Jingyi Yu, and Lan Xu.
+Media2face: Co-speech facial animation generation with multi-modality guidance.
+In
+ACM SIGGRAPH 2024 Conference Papers
+, 2024c.
+Zhou et al. (2024)
+Wenyang Zhou, Zhiyang Dou, Zeyu Cao, Zhouyingcheng Liao, Jingbo Wang, Wenjia Wang, Yuan Liu, Taku Komura, Wenping Wang, and Lingjie Liu.
+Emdm: Efficient motion diffusion model for fast, high-quality motion generation.
+ECCV
+, 2024.
+Zhou et al. (2018)
+Yi Zhou, Connelly Barnes, Jingwan Lu, Jimei Yang, and Hao Li.
+On the continuity of rotation representations in neural networks.
+2019 IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, 2018.
+Zhou and Wang (2023)
+Zixiang Zhou and Baoyuan Wang.
+Ude: A unified driving engine for human motion generation.
+In
+Proceedings of the IEEE/CVF Conference on Computer Vision and Pattern Recognition (CVPR)
+, pages 5632–5641, 2023.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

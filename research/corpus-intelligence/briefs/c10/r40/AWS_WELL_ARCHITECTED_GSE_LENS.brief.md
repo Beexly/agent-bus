@@ -1,0 +1,13 @@
+# aws/AWS_WELL_ARCHITECTED_GSE_LENS.md
+## What it is (1-2 sentences)
+A "local compatibility lens only" document mapping the six AWS Well-Architected pillars to GSE's local controls and canonical artifacts (scorecard, operating intelligence matrix, cost-security gates, fixture library, shadow control-tower blueprint). Status is explicitly not an AWS account review and not a production-readiness claim; every automation stays shadow/manual-review until owner approval, zero-cost default, and no live AWS use is authorized by anything in the loop.
+## Key metrics/methods (formulas where given, else "not specified")
+not specified — governance structure only. Gates named per pillar: shadow/manual-review until owner approval (operational excellence); no credentials, account IDs, SDK calls, or provider mutations (security); local tests must prove blocked states stay blocked (reliability); no paid model call or hosted inference without owner gate (performance efficiency); monthly spend assumption remains zero (cost optimization); no live data movement or partner sharing without rights approval (sustainability). Review loop: read lens → scorecard → matching fixture → `npm run guard:aws-compatibility-index` → FABLE AWS validation → record failures in execution ledger.
+## Data sources named
+Canonical artifacts referenced (not read): `docs/fable/aws/AWS_SERVICE_SCORECARD.md`, `docs/fable/aws/AWS_OPERATING_INTELLIGENCE_MATRIX.md`, `docs/fable/aws/AWS_COST_SECURITY_GATES.md`, `docs/fable/aws/fixtures/AWS_LOCAL_FIXTURE_LIBRARY.json`, `docs/fable/aws/governance-os/SHADOW_CONTROL_TOWER_BLUEPRINT.json`, plus `docs/fable/aws/AWS_NO_COST_WORKFLOW_BLUEPRINTS.md`, `docs/fable/aws/AWS_CLEAN_ROOMS_PARTNERSHIP_PLAN.md`, `docs/fable/aws/AWS_OPERATING_INTELLIGENCE_RUNBOOK.md`, `infra/aws-shadow/*` fixtures (step-functions/metric-validation.asl.json, bedrock/guardrails-policy.json, sagemaker/model-monitor-card.json, agentcore/agent-contracts.json, control-tower-policy.json, cleanrooms/synthetic-collab-fixture.json).
+## Findings (numbers and facts, not vibes)
+Decision-tool framing: any service that cannot pass cost, security, data-rights, and reversibility gates stays local-only; the review loop explicitly does not authorize live AWS use.
+## Intelligence connections (tag each finding: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- Shadow/manual-review discipline with fail-closed gates and drift/refusal cases: TRUST-SIGNAL (governance pattern for engine promotion gates — shadow-only until proven).
+## Engine-actionable? (yes/no + one-line what)
+No — infra governance doc; the only transferable idea is the shadow-gate pattern, which the engine already has.

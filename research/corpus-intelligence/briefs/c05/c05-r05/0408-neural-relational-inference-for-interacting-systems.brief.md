@@ -1,0 +1,21 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0408-neural-relational-inference-for-interacting-systems.md
+## What it is (1-2 sentences)
+Deep-read ledger of arXiv:1802.04687v2 (Kipf et al. 2018), which introduces Neural Relational Inference (NRI): a variational autoencoder whose latent code is a discrete interaction graph over agents, decoded by a graph neural network — tested on simulated physics, CMU motion capture, and NBA SportVU pick-and-roll tracking. Verdict: ADAPT — man vs. zone coverage is framed as a latent interaction graph over the 22 players that NRI can infer unsupervised from NGS tracking trajectories.
+## Key metrics/methods (formulas where given, else "not specified")
+ELBO: L = E_{q_φ(z|x)}[log p_θ(x|z)] − KL[q_φ(z|x)‖p_θ(z)]; latent z_ij = discrete one-hot edge type between objects i, j, with Gumbel-softmax/concrete sampling z_ij = softmax((h²_{(i,j)} + g)/τ), τ = 0.5; encoder = 2-round GNN message passing on the fully-connected graph; decoder = per-edge-type MLPs predicting Δx with Gaussian noise σ²I, plus a recurrent (GRU) decoder variant for non-Markovian data. Anti-degeneracy trick: predict M = 10 steps into the future so the decoder cannot ignore z. Evaluation: unsupervised edge-recovery accuracy vs. ground truth; trajectory MSE at 1/10/20 predicted steps vs. Static, LSTM(single), LSTM(joint), NRI(full graph), NRI(true graph), correlation baselines.
+## Data sources named
+Simulated physics (springs, charged particles, Kuramoto — 50k/10k/10k trajectories), CMU Motion Capture Database (subject #35, 8,063 frames), NBA SportVU 2016 pick-and-roll (12k segments: 10k/1k/1k, 5 nodes: ball, ball handler, screener, two defensive matchups). Code: github.com/ethanfetaya/nri.
+## Findings (numbers and facts, not vibes)
+- Edge recovery, 5 objects: Springs NRI(learned) 99.9% (matches supervised 99.9%; correlation baselines ~52%); Charged 82.1% (supervised 95.0%; baselines ~54–56%); Kuramoto 96.0% (supervised 99.7%). 10-object: springs 98.4%, charged 70.8%, Kuramoto 75.7%.
+- Path prediction: NRI(learned) beats both LSTM baselines at 10–20 steps on all three physics tasks (e.g., springs 20-step MSE 2.13e-5 vs. LSTM(joint) 7.02e-4); LSTM wins only 1-step Kuramoto but "goes out of sync" long-term.
+- Motion capture: NRI beats full-graph and LSTM baselines long-term; dynamic graph re-evaluation significantly improves over static; learned graph beats the anatomical skeleton graph; 4-edge-type model finds an interpretable hand↔opposite-extremities edge.
+- NBA pick-and-roll: NRI beats LSTM, on par with full graph; learned edges separate ball + ball handler (off-ball) from the other three players (Figure 8) — semantic structure discovered unsupervised.
+- NFL transfer caveats: 22 players + ball = 506 directed edges/frame; paper's regime is 5 nodes/25 frames (2 orders of magnitude smaller); football interactions are dynamic (paper trains on static graphs — its own headline limitation); zone drops are ball-less coordination that pairwise coupling captures only weakly.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- Unsupervised coverage-scheme inference (man vs. zone vs. match) from tracking — the latent interaction graph maps to defensive structure: man = defender↔receiver edges, zone = defender↔area/teammate edges — SCHEME
+- NRI-inferred coverage graphs as state representation for the double-team RL policy (ledger 0407) — SCHEME
+- Blocking-engagement graphs for OL/DL evaluation ("who got beat 1-on-1 vs. doubled") — OL
+- Per-edge-type dynamics as parent of QB–receiver chemistry factors (ledger 0406) — QB-BEHAVIOR
+- Zone→man edge-type switching moment ("conversion at 1.8 s") as a new event type for coverage analytics (improvement experiment, dynamic NRI) — SCHEME
+## Engine-actionable? (yes/no + one-line what)
+Yes — build CoverageGraph: NRI on NGS tracking (22 players + ball, snap-to-throw, 5 Hz, K=4 edge types with sparsity prior) to produce an unsupervised coverage classifier benchmarked against charted man/zone labels; acceptance gate = ≥90% synthetic edge recovery AND beats LSTM baselines on 2024 NGS prediction MSE AND edge types classify charted coverage above majority baseline.

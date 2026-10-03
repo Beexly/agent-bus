@@ -1,0 +1,34 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/1927-statistics-and-samples-in-distributional-reinforcement-learning.md
+## What it is (1-2 sentences)
+Statistics and Samples in Distributional Reinforcement Learning (arXiv:1902.08102) — a unifying framework for distributional RL (every DRL algorithm = a statistical estimator + an imputation strategy), a theorem characterizing which statistic sets are "Bellman closed" (learnable exactly through Bellman updates), and a new expectile-based algorithm (EDRL/ER-DQN) built from the framework. Verdict: ADAPT.
+
+## Key metrics/methods (formulas where given, else "not specified")
+- General statistic form: s(μ) = E_{Z∼μ}[h(Z)].
+- Theorem 4.3 (Bellman-closedness characterization): the only finite sets of statistics of this form that are Bellman closed are those whose linear span equals the span of moment functionals {μ ↦ E_{Z∼μ}[Z^l] | l=0,…,L} for some L ≤ K. "Highlights how rare it is for statistics to be Bellman closed."
+- Lemma 4.4: the statistic sets learned under (i) CDRL (C51) and (ii) QDRL (QR-DQN) are NOT Bellman closed — "the learnt values of statistics ... need not correspond exactly to the true underlying values for the MDP (even in tabular settings)."
+- Definition 4.5 (ε-approximate Bellman closedness): formalizes average (not uniform) approximation error across a statistic collection — "in general it is not possible to simultaneously achieve low approximation error on all statistics in a non-Bellman closed set."
+- Theorems 4.6/4.7: extend approximation analyses to CDRL and QDRL (quantitative guarantees on intrinsic bias).
+- EDRL (expectile DRL): learn K expectiles of the return distribution with asymmetric-least-squares loss, using a sample-based imputation strategy (SciPy root-finding/optimization per update, Eqs. 7–8) to construct Bellman targets consistent with learned expectiles. ER-DQN = EDRL update + QR-DQN-style DQN architecture; experiments use K = 11 expectiles (tabular sweeps K ∈ {1,3,5,7,9}).
+- Mean consistency (§4.3): EDRL's expectile imputation PRESERVES the mean; C51 (support clipping) and QR-DQN (quantiles miss tails) do NOT.
+- Evaluation: expectile estimation error vs ground truth; greedy-policy optimality; Atari mean/median human-normalized scores, 3 seeds.
+
+## Data sources named
+(a) Tabular N-Chain (length 15; actions forward/backward with 0.95/0.05 transition noise; rewards −1/+1 at ends; γ=0.99; ground truth from 1,000 Monte Carlo rollouts); (b) 5-state MDP with exponential terminal reward distributions (Figure 7); (c) ALE Atari-57 (public), ER-DQN vs DQN vs QR-DQN(200 quantiles) vs naive ER-DQN(201 expectiles, no imputation), all re-run.
+
+## Findings (numbers and facts, not vibes)
+- N-Chain (Figures 4/5): EDRL with sample imputation "accurately represent[s] the true return distribution, even after many Bellman updates through the chain, and does not exhibit the collapse observed with the naive approach"; expectile estimation error "vastly reduced" with imputation (also shown for a Huber-quantile variant, Figure 6). N-Chain ran α=0.05 expectiles, 30,000 steps.
+- 5-state MDP (Figure 7): "Due to a lack of mean consistency both CDRL and QDRL learn a sub-optimal greedy policy" (CDRL: true support outside [0,2] bins; QDRL: quantiles miss tails). "In contrast, EDRL correctly learns the means of both return distributions, and so is able to act optimally." — the concrete mechanism: mean-inconsistent critics pick the WRONG ACTION.
+- Atari-57 (Figure 8, 3 seeds): "In terms of mean human normalised score, ER-DQN represents a substantial improvement over both QR-DQN and the naive version of ER-DQN that does not use an imputation strategy" — with only 11 expectiles vs QR-DQN's 200 quantiles. Exact mean/median numbers are figure-only (not quoted numerically in text) — UNCERTAIN on exact magnitudes.
+- Imputation compute: only 11 expectiles needed; "additional training overhead ... is low" — but per-update numerical optimization (SciPy) is a serving-latency concern (offline-training only is fine).
+- Expectiles are less interpretable than quantiles (no direct "P(loss > x)" reading) — a reporting cost.
+- Theory is tabular; function-approximation interaction explicitly left open.
+- Complements ledgers 1922/1925/1926 (those give algorithms; this gives the selection criterion). No repo overlap — nothing in the corpus discusses Bellman closedness, mean consistency of critics, or expectiles.
+
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER (staking/sizing — strongest connection): the paper's Figure 7 is EXACTLY a two-action choice where mean-inconsistent critics (C51, QR-DQN) pick wrong — this is the direct mechanism for GSE's offline staking critic: a mean-inconsistent critic misranks stake sizes, so a greedy stake policy built on a quantile critic can systematically stake wrong. The fix is an ER-DQN-style expectile head (K=11, asymmetric least squares + sample imputation, offline training only) as a fourth critic candidate, preferring whichever critic minimizes mean-consistency error. Serves the calibration/sizing program.
+- TRUST-SIGNAL (tracking lane): the mean-consistency DIAGNOSTIC itself is a permanent trust signal — on holdout weeks, compare the critic's implied mean weekly P&L per stake against Monte Carlo realized mean; flag stake actions where |implied − realized| > 0.5u. Any critic whose implied mean diverges from realized mean is untrustworthy for sizing regardless of its algorithmic elegance; keep this diagnostic as a permanent gate for all future critic changes even if expectiles are rejected.
+- OTHER (method discipline): Theorem 4.3 says exact Bellman-closedness is "rare" and achievable only via moment functionals — a theoretical justification for why critic choice is NOT a settle-once question: C51/QR-DQN are provably biased even in tabular settings (Lemma 4.4), so comparing critic heads on mean-consistency is principled, not fiddly. UNCERTAIN: the paper's theory is tabular; whether the bias bites under function approximation is explicitly open.
+- OTHER (content/reporting): expectiles cost interpretability — keep quantile heads for public-facing P(loss) reporting while using expectiles for internal stake decisions; the improvement experiment (K expectiles + J tail quantiles with joint imputation) tests whether both properties can be bought at once.
+
+## Engine-actionable? (yes/no + one-line what)
+Yes — add the mean-consistency diagnostic (flag |implied mean − realized mean| > 0.5u per stake) to the staking-critic pipeline, and implement the K=11 expectile head as a fourth critic candidate on GSE logged picks 2021–2024; ADOPT iff lowest mean-consistency error on 2024 with greedy-policy ROI within 1pp of the best quantile head (~1 week on top of existing pipeline).

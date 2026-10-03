@@ -1,0 +1,19 @@
+# dfs/research/2026-09-25/dfs-week3/REPORT.md
+## What it is (1-2 sentences)
+Full output log of the 2026-09-25 Week 3 DraftKings Sun–Mon slate optimizer run (36 lineups: 18 GPP + 17 leverage + 1 single-best), produced by GSE's real `dfs-optimizer.ts` engine (`optimizeOne` exact + `generateLineups` for GPP/leverage with 60% max exposure and stacking ON), after repair by construction-rules v2. LOCAL ONLY; all ownership values are PROXY, not public Sun–Mon ownership.
+## Key metrics/methods (formulas where given, else "not specified")
+Per-lineup: Salary (≤$50,000), Proj (projected points), Ceiling, Proxy ownership pts, Leverage (ratio-style; e.g. 2.66, 3.81 — formula not stated). Construction rules v2 (harness-applied, GPP/leverage only): double-stack (QB + ≥2 same-team WR/TE/RB) enforced via objective-ordered repair; TE excluded from FLEX via repair. Repair results: double-stack 4 → 41; TE-in-FLEX 38 → 0; 41 repaired; thin-team fallbacks 0; degenerate TE-FLEX keeps 0. Validation: every final lineup passed `validateLineup` (9-man, positional slots, ≤$50,000, no dupes/excludes, stack satisfied). Exposure caps: 60% max. Slate: 671 eligible players (767 DK rows − 96 injury/status exclusions). Exclusion list: 96 players (DK injury statuses + research "lean out/unlikely" verdicts, e.g. Zay Flowers Q, Brock Bowers Q, Caleb Williams D, Jayden Daniels OUT, Jaxson Dart OUT).
+## Data sources named
+DK slate data (767 rows, salary/contest structure); GSE `dfs-optimizer.ts` / `construction-rules.ts` engine projections (engine-owned, not external); PROXY ownership model (internal); exclusion research verdicts (internal dfs-week3 research); methodology reference: PROVENANCE.md.
+## Findings (numbers and facts, not vibes)
+- Before repair, only 4 of 41 engine lineups had double-stacks and 38 had TE-in-FLEX — after harness repair all 41 satisfied both rules, final portfolio 18 GPP + 17 leverage + 1 single-best.
+- Highest-proj GPP lineup: gpp-9, proj 209.4 / ceiling 363 / leverage 2.38, KC double-stack (Mahomes + Walker III RB + Kelce TE). Single-best: proj 205.3 / ceiling 356, CAR double-stack (Bryce Young QB $5,600, Jalen Coker WR $5,500 25.7 proj, Xavier Legette WR $3,500 4.2 proj).
+- Top GPP exposures: Jalen Coker 61% (11/18), Bryce Young 56% (10/18), Kenneth Walker III 56%, D'Andre Swift 56%, Amon-Ra St. Brown 56%, Derrick Henry 44%, Jonathan Taylor 44%, Chris Olave 44%. Top leverage exposures: Coker 82% (14/17), Dontayvion Wicks 71% (12/17), Dak Prescott 53%, Swift 53%, Walker III 53%, CeeDee Lamb 53%.
+- Leverage-batch QBs concentrated on Dak Prescott (9/17, 53%; $6,700, 22.6 proj) and Bryce Young (8/17); Prescott 5.0% proxy ownership is the leverage engine's core bet.
+- Bring-backs used sparingly: gpp-6/7 (Denzel Boston CLE vs CAR), lev-2/6/9 (Derrick Henry as BAL bring-back to DAL stacks).
+- Salary: GPP lineups used nearly all cap ($48,700–$50,000); lev-15 left $2,700 unused ($47,300) — INFERENCE: leverage objective tolerates salary waste to reach ownership extremes.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- SCHEME: all 36 lineups enforce double-stack structure; brings-backs encode expected game-script correlations — useful reference priors for the contest-decision engine (ownership/leverage model).
+- OTHER: raw validation that the 60%-exposure/double-stack/TE-repair pipeline works end-to-end on a 671-player slate; exposed failure modes (engine raw output had 38 TE-FLEX violations) worth regression-testing after any optimizer change.
+## Engine-actionable? (yes/no + one-line what)
+yes — the repair delta (4→41 double-stacks) is a quantitative baseline for optimizer quality; and the leverage-batch concentration (Dak Prescott 5% own, Coker 82%) defines the ownership-arbitrage template for GPP/leverage generation.

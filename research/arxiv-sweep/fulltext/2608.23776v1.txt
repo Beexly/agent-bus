@@ -1,0 +1,2358 @@
+Disentangled Skill Representations for Predictive Human Modeling
+Mariah Schrum
+Deepak Gopinath
+Srijan Srivatsa
+Guy Rosman
+Tiffany Chen
+Abstract
+Understanding human skill is important for AI systems that collaborate with, coach, or assist people. Unlike typical latent variable estimation problems which rely on single observations, skill is a persistent, compositional, and behaviorally grounded construct that must be inferred from patterns over time. We introduce Skill Abstraction with Interpretable Latents (
+SAIL
+), a method for modeling human skill as an interpretable, multi-dimensional construct inferred from naturalistic behavior. Our approach produces a skill embedding that is robust to transient performance fluctuations and learns a transferable representation of human subskills. Furthermore,
+SAIL
+supports skill-informed behavior prediction that generalizes across a variety of in-domain contexts. We represent each individual with a persistent skill embedding that controls a blend between expert and novice bases and is trained using counterfactual subskill swaps for disentanglement. This design encourages representations that are both robust to performance variation and structured for interpretability. We demonstrate across racing and baseball that
+SAIL
+achieves
+strong predictive performance and consistently improves
+behaviorally grounded disentanglement over the evaluated baselines,
+while also improving downstream AI coaching performance.
+Toyota Research Institute
+Los Altos, California, USA
+1
+Introduction
+AI systems that support, collaborate with, or coach humans must reason about human skill to personalize instruction, anticipate behavior, and adapt assistance over time. Unlike many latent variables in machine learning, human skill cannot be inferred from individual actions or outcomes. Instead, it is a persistent, behaviorally grounded, and compositional construct that must be inferred from patterns across repeated interactions while accounting for noise, variability, and changing task conditions
+(
+Iso-Ahola 2024
+;
+Langley et al. 2004
+)
+.
+Human skill differs from many notions of “skill” used in machine learning. In robotics and reinforcement learning, skill often refers to reusable action primitives or policies for task execution
+(
+Lesort et al. 2018
+)
+. In contrast, we model human skill as a persistent, participant-level construct composed of multiple interpretable subskills
+(
+Newell 1991
+;
+Ericsson et al. 1993
+)
+. We further distinguish skill from performance: performance reflects trial-specific outcomes influenced by situational factors such as fatigue or risk-taking, whereas skill represents stable abilities that generalize across contexts
+(
+Iso-Ahola 2024
+;
+Fitts and Posner 1967
+)
+. Conflating the two can lead to inaccurate assessment and inappropriate interventions.
+We propose that an effective skill representation should satisfy three desiderata:
+(1)
+Construct Validity
+(
+Messick 1995
+)
+: representations should remain stable across sessions and robust to trial-level noise.
+(2)
+Predictive Utility
+: representations should support accurate behavior prediction across in-domain contexts.
+(3)
+Interpretability
+: representations should decompose into disentangled subskills that correspond to human-recognizable aspects of expertise.
+To satisfy these desiderata, we introduce
+S
+kill
+A
+bstraction with
+I
+nterpretable
+L
+atents (
+SAIL
+), a computational framework for representing human skill. Rather than learning an unconstrained latent embedding and hoping it reflects skill, SAIL incorporates inductive biases inspired by theories of skill acquisition: skill is persistent across observations, expressed through behavior, progresses relative to expertise, and is composed of interpretable subskills.
+Intuitively, we ask how an individual’s behavior differs from characteristic novice and expert behaviors, rather than asking the representation to explain every observed trajectory directly.
+This constrains the representation to encode structured, skill-relevant variation instead of behavioral fluctuations. To encourage interpretability, we supervise subskill-specific latent slices with behaviorally grounded metrics and introduce a counterfactual training procedure that encourages each latent slice to represent a distinct subskill. Importantly, behavior prediction serves as a supervision signal for learning the representation rather than the primary objective.
+In this work we contribute the following:
+1.
+We formulate human skill modeling as a representation learning problem and identify construct validity, predictive utility, and interpretability as key desiderata.
+2.
+We propose
+SAIL
+, a participant-level skill representation that combines participant embeddings, novice–expert basis blending, and counterfactual supervision to learn stable, predictive, and interpretable skill representations.
+3.
+We demonstrate across racing and baseball that
+SAIL
+outperforms strong baselines and improves downstream instructor-feedback prediction by 10%.
+2
+Related Work
+Human skill has been studied across education, sports science, robotics, and human–AI interaction
+(
+Anderson 2014
+;
+Ericsson et al. 1993
+)
+. Unlike task performance, skill is a persistent, latent construct that must be inferred from behavior accumulated over time rather than individual outcomes
+(
+Newell 1991
+;
+Schmidt et al. 2018
+)
+. Traditional measures such as completion time or accuracy
+(
+Fitts and Posner 1967
+)
+are highly context dependent and often reflect transient
+performance
+rather than underlying skill. Psychometric approaches, including Item Response Theory and Bayesian Knowledge Tracing, estimate related latent constructs
+(
+Embretson and Reise 2013
+;
+Corbett and Anderson 1994
+;
+Piech et al. 2015
+)
+, but are designed for discrete responses rather than continuous behavioral trajectories.
+Trajectory-based approaches, including clustering and inverse reinforcement learning, infer latent structure from demonstrations
+(
+Ziebart et al. 2008
+;
+Abbeel and Ng 2004
+)
+. Likewise, work in robot teaching and reinforcement learning often represents "skills" as reusable action primitives or control policies
+(
+Argall et al. 2009
+;
+Cakmak and Thomaz 2012
+;
+Hausman et al. 2018
+;
+Petangoda et al. 2019
+;
+Dave and Rueckert 2025
+)
+. While effective for policy learning, these methods do not model skill as a persistent, interpretable construct that generalizes across repeated observations.
+Representation learning methods, including autoencoders, variational autoencoders, and contrastive learning, have been widely used to encode human behavior
+(
+Kingma and Welling 2013
+;
+van den Oord et al. 2018
+;
+Zhang et al. 2019
+)
+. More recently, participant-level representations have been explored to model persistent latent characteristics across repeated interactions, supporting personalization, adaptive human–AI interaction, and human behavior modeling
+(
+Jacques et al. 2019
+;
+Gopinath et al. 2017
+;
+DeCastro et al. 2024
+;
+Jeon et al. 2020
+;
+Schrum et al. 2023
+)
+. Disentangled representation learning further seeks to recover interpretable latent factors
+(
+Higgins et al. 2017
+;
+Chen et al. 2016
+;
+Kim and Mnih 2018
+)
+, although purely unsupervised objectives do not guarantee semantic alignment or identifiability
+(
+Locatello et al. 2019
+)
+. While these methods demonstrate the value of participant-specific representations and disentangled latent spaces, they generally optimize downstream prediction or personalization rather than explicitly modeling human skill as a persistent, interpretable construct.
+Our work differs by modeling
+human skill
+as a persistent participant-level representation that is explicitly optimized for construct validity, predictive utility, and interpretable subskill decomposition. By combining participant-specific embeddings, novice–expert basis blending, and counterfactual subskill supervision,
+SAIL
+learns representations that are stable across repeated observations, predictive across contexts, behaviorally interpretable, and useful for downstream personalization tasks.
+3
+Approach
+Problem Formulation:
+We aim to learn a latent representation of human
+skill
+from behavioral data.
+Let
+𝒟
+=
+{
+τ
+1
+,
+…
+,
+τ
+N
+}
+\mathcal{D}=\{\tau_{1},\dots,\tau_{N}\}
+denote a set of trajectories, where each
+τ
+i
+=
+{
+x
+i
+t
+}
+t
+=
+1
+T
+i
+\tau_{i}=\{x_{i}^{t}\}_{t=1}^{T_{i}}
+is a sequence of feature vectors
+x
+i
+t
+∈
+ℝ
+D
+x_{i}^{t}\in\mathbb{R}^{D}
+executed in a task context
+c
+∈
+𝒞
+c\in\mathcal{C}
+(e.g., racetrack or batting condition). We assume contexts
+c
+i
+c_{i}
+are observed at both train and test time and that an individual’s skill is transferable across contexts, while its behavioral expression depends on
+c
+c
+.
+Trajectories may include multimodal features such as vehicle telemetry, gaze, or body kinematics.
+Our goal is to infer an individual-specific skill embedding
+z
+s
+∈
+ℝ
+d
+z_{s}\in\mathbb{R}^{d}
+that is stable across trajectories and transferable across in-domain contexts (task instances drawn from the same domain).
+We distinguish
+skill
+, a persistent construct, from
+performance
+(
+Iso-Ahola 2024
+)
+, which reflects trial-specific outcomes and is sensitive to situational factors.
+We represent skill as
+compositional
+in which
+z
+s
+z_{s}
+decomposes into interpretable subcomponents
+z
+s
+(
+k
+)
+z_{s}^{(k)}
+corresponding to distinct subskills, consistent with motor learning theories that describe skill as arising from multiple interacting components
+(
+Newell 1991
+;
+Anderson 1982
+)
+.
+To connect subskills with behavior, we use
+skill metrics
+m
+∈
+ℳ
+m\in\mathcal{M}
+. Skill metrics provide noisy behavioral proxies. These metrics are derived from trajectories, expert annotations, or auxiliary tasks.
+Multiple metrics may map to the same subskill and they provide supervision for learning structured representations of
+z
+s
+z_{s}
+(described in Sec
+3.3
+).
+Our approach is detailed in Alg.
+1
+and described below.
+Figure 1:
+Overview of
+SAIL
+. Each participant is associated with a persistent skill embedding
+z
+s
+z_{s}
+learned across multiple behavioral observations. Rather than decoding trajectories directly,
+z
+s
+z_{s}
+predicts behavior by blending canonical novice and expert basis trajectories, encouraging the representation to capture stable skill-related variation instead of transient behavioral fluctuations. The embedding is partitioned into subskill-specific slices that are supervised using behaviorally grounded skill metrics and disentangled through counterfactual subskill swaps.
+3.1
+Participant-Specific Skill Embedding
+Human skill is a persistent characteristic of an individual rather than a single behavioral observation. Inferring skill independently from each trajectory therefore conflates stable ability with trial-specific factors such as fatigue, measurement noise, environmental variation, and strategy. Moreover, trajectory-level embeddings are not inherently tied to the individual who produced them.
+To model persistence,
+SAIL
+assigns each training participant a learnable skill embedding
+z
+s
+∈
+ℝ
+d
+z_{s}\in\mathbb{R}^{d}
+, optimized jointly with the model parameters (Alg.
+1
+, Line
+1
+). A single embedding is shared across all trajectories from the same participant, pooling evidence across repeated observations to capture stable behavioral tendencies despite trial-to-trial variability. This is conceptually similar to participant embeddings used in recommender systems and speaker recognition
+(
+Koren et al. 2009
+;
+Snyder et al. 2018
+)
+.
+However, persistence alone does not imply skill: a participant embedding could simply summarize average behavior. In the following section, we introduce an additional inductive bias by constraining behavior to be generated relative to canonical novice and expert behavior bases, encouraging
+z
+s
+z_{s}
+to encode expertise rather than arbitrary behavioral variation.
+At test time, the model parameters (
+g
+ϕ
+g_{\phi}
+,
+q
+θ
+q_{\theta}
+, and
+h
+ψ
+h_{\psi}
+) are frozen, and only the participant embedding is optimized using the trajectory reconstruction loss.
+To prevent collapse of the embedding, we introduce an auxiliary network
+q
+θ
+q_{\theta}
+that reconstructs
+z
+s
+z_{s}
+from generated trajectories. This provides a variational lower bound on the mutual information between
+z
+s
+z_{s}
+and predicted behavior and encourages the embedding to encode information that is both behaviorally meaningful and recoverable from observed trajectories
+(
+Kingma and Welling 2013
+;
+Chen et al. 2016
+)
+.
+Algorithm 1
+Training
+SAIL
+0:
+Trajectories
+τ
+i
+\tau_{i}
+, contexts
+c
+i
+c_{i}
+, subskill metrics
+m
+i
+m_{i}
+1:
+Initialize participant embeddings
+z
+s
+,
+i
+∼
+𝒩
+⁡
+(
+0
+,
+0.1
+)
+z_{s,i}\!\sim\!\mathcal{N}(0,0.1)
+2:
+for
+each training iteration
+do
+3:
+Sample batch of participants and trajectories
+4:
+Predict behavior
+τ
+^
+z
+s
+\hat{\tau}_{z_{s}}
+via expert–novice blending (Sec. 3.2)
+5:
+Decode predicted subskill metrics
+m
+^
+=
+h
+ψ
+​
+(
+τ
+^
+z
+s
+)
+\hat{m}=h_{\psi}(\hat{\tau}_{z_{s}})
+6:
+Compute total loss
+ℒ
+=
+λ
+traj
+​
+ℒ
+traj
++
+λ
+metric
+​
+ℒ
+metric
++
+λ
+MI
+​
+ℒ
+MI
+\mathcal{L}=\lambda_{\text{traj}}\mathcal{L}_{\text{traj}}+\lambda_{\text{metric}}\mathcal{L}_{\text{metric}}+\lambda_{\text{MI}}\mathcal{L}_{\text{MI}}
+7:
+if
+CF step (probability
+1
+−
+p
+1-p
+)
+then
+8:
+Swap
+(
+z
+orig
+(
+k
+)
+,
+m
+orig
+(
+k
+)
+)
+←
+(
+z
+donor
+(
+k
+)
+,
+m
+donor
+(
+k
+)
+)
+(z_{\text{orig}}^{(k)},m_{\text{orig}}^{(k)})\!\leftarrow\!(z_{\text{donor}}^{(k)},m_{\text{donor}}^{(k)})
+9:
+Reconstruct CF trajectory
+τ
+~
+orig
+\tilde{\tau}_{\text{orig}}
+from
+z
+~
+orig
+\tilde{z}_{\text{orig}}
+10:
+Skip trajectory reconstruction loss; apply metric loss only for swapped subskill
+k
+k
+11:
+end
+if
+12:
+Update model parameters and participant embeddings jointly via back-propagation
+13:
+end
+for
+3.2
+Skill Representation via Novice–Expert Basis Blending
+A participant-specific embedding provides a persistent representation of an individual, but persistence alone does not imply that the embedding represents
+skill
+. Without additional inductive structure, the embedding may instead encode an individual’s average behavior, preferred driving style, or other participant-specific characteristics unrelated to expertise. The challenge is therefore to constrain the representation so that it explains the stable behavioral variation associated with skill while remaining insensitive to transient performance fluctuations.
+A straightforward approach is to decode trajectories directly from the learned skill embedding. However, this requires the embedding to account for every aspect of the observed behavior, including variability arising from fatigue, measurement noise, environmental conditions, and idiosyncratic execution. Consequently, the learned representation is encouraged to memorize trajectories rather than isolate the latent factors responsible for expertise.
+Instead, we model behavior
+relative to canonical novice and expert behaviors
+. Rather than asking the embedding to generate a trajectory from scratch, we ask it to explain where an individual’s behavior lies relative to representative novice and expert executions for the task context. This imposes an inductive bias: the embedding need only encode deviations associated with expertise, while the basis trajectories explain common behavioral structure shared across participants. As a result, transient variation and stylistic differences are less likely to be absorbed into the skill representation.
+For each task context
+c
+c
+(e.g., a racetrack or batting condition), we define sets of canonical novice and expert basis trajectories,
+B
+exp
+​
+(
+c
+)
+=
+{
+B
+exp
+(
+i
+)
+​
+(
+c
+)
+}
+i
+=
+1
+M
+,
+B
+nov
+​
+(
+c
+)
+=
+{
+B
+nov
+(
+i
+)
+​
+(
+c
+)
+}
+i
+=
+1
+K
+,
+B_{\mathrm{exp}}(c)=\{B_{\mathrm{exp}}^{(i)}(c)\}_{i=1}^{M},\qquad B_{\mathrm{nov}}(c)=\{B_{\mathrm{nov}}^{(i)}(c)\}_{i=1}^{K},
+where each basis trajectory,
+B
+(
+i
+)
+∈
+ℝ
+T
+×
+D
+B^{(i)}\in\mathbb{R}^{T\times D}
+, represents a characteristic mode of behavior observed near the extremes of the skill distribution.
+The basis trajectories may be obtained from demonstrations, learned jointly with the model, or generated by an optimal controller. In our implementation, we define the expert basis using trajectories from the demonstrator with the strongest domain-specific performance measure and derive the novice basis by applying principal component analysis (PCA) to novice trajectories. The resulting novice bases capture the dominant modes of variation among inexperienced participants, while the expert basis provides a canonical target behavior.
+The participant embedding is mapped by
+g
+ϕ
+g_{\phi}
+to expert and novice basis weights,
+w
+exp
+​
+(
+z
+s
+,
+c
+)
+w_{\text{exp}}(z_{s},c)
+and
+w
+nov
+​
+(
+z
+s
+,
+c
+)
+w_{\text{nov}}(z_{s},c)
+, together with an interpolation coefficient
+α
+⁡
+(
+z
+s
+,
+c
+)
+∈
+[
+0
+,
+1
+]
+T
+×
+D
+\alpha(z_{s},c)\in[0,1]^{T\times D}
+. The basis weights are constrained to the simplex so that the predicted behavior is expressed as an element-wise convex interpolation of the expert and novice bases (Fig.
+1
+):
+B
+¯
+∙
+​
+(
+z
+s
+,
+c
+)
+\displaystyle\bar{B}_{\bullet}(z_{s},c)
+=
+∑
+j
+w
+∙
+(
+j
+)
+(
+z
+s
+,
+c
+)
+B
+∙
+(
+j
+)
+(
+c
+)
+,
+∙
+∈
+{
+exp
+,
+nov
+}
+,
+\displaystyle=\sum_{j}w_{\bullet}^{(j)}(z_{s},c)B_{\bullet}^{(j)}(c),\quad\bullet\in\{\mathrm{exp},\mathrm{nov}\},
+(1)
+τ
+^
+z
+s
+\displaystyle\hat{\tau}_{z_{s}}
+=
+α
+⊙
+B
+¯
+exp
+​
+(
+z
+s
+,
+c
+)
++
+(
+1
+−
+α
+)
+⊙
+B
+¯
+nov
+​
+(
+z
+s
+,
+c
+)
+.
+\displaystyle=\alpha\odot\bar{B}_{\mathrm{exp}}(z_{s},c)+(1-\alpha)\odot\bar{B}_{\mathrm{nov}}(z_{s},c).
+Although behavior is expressed as a blend of novice and expert bases, our formulation does not assume that skill lies on a single linear axis. Multiple novice bases capture diverse low-skill strategies (e.g., overcautious, inconsistent, or poorly timed behavior), while multiple expert bases can represent distinct high-skill styles. Furthermore, each subskill independently modulates its own blending coefficients, enabling complex, nonlinear representations of skill.
+Unlike direct trajectory decoding, this formulation encourages the embedding to explain behavior in terms of deviations from canonical novice and expert behaviors rather than memorizing every trajectory detail. Behavior prediction serves as a supervision signal that encourages the embedding to capture stable, skill-related structure while remaining predictive of behavior.
+3.3
+Counterfactual Training for Subskill Disentanglement
+Human skill is inherently
+compositional
+: coaches reason about performance in terms of multiple interacting subskills and design interventions that target individual deficiencies
+(
+Ericsson et al. 1993
+;
+Newell 1991
+;
+Wulf 2016
+;
+Anderson 1982
+)
+. Accordingly, we partition the latent representation into subskill-specific components that should independently influence the behaviors associated with each subskill. This requires both
+disentanglement
+(independent latent factors) and
+identifiability
+(each factor corresponds to a human-recognizable subskill).
+Existing disentanglement methods (e.g., InfoGAN,
+β
+\beta
+-VAE, FactorVAE) encourage statistical independence but do not ensure that latent dimensions correspond to meaningful subskills or support selective behavioral interventions
+(
+Higgins et al. 2017
+;
+Kim and Mnih 2018
+;
+Locatello et al. 2019
+)
+. Conditional supervision associates latent dimensions with labels
+(
+Kingma et al. 2014
+;
+Sohn et al. 2015
+)
+, but changing a supervised latent need not produce the expected behavioral change.
+To address this limitation, we explicitly partition the embedding into subskill-specific slices and train the representation using counterfactual interventions. During training, one subskill slice is replaced with that of another participant while the remaining slices are held fixed. The model is then required to produce behavior that reflects only the substituted subskill, encouraging both disentanglement and identifiability. The embedding space is partitioned as
+z
+s
+=
+[
+z
+s
+(
+1
+)
+,
+z
+s
+(
+2
+)
+,
+…
+,
+z
+s
+(
+K
+)
+]
+,
+z_{s}=\big[\,z_{s}^{(1)},\;z_{s}^{(2)},\;\dots,\;z_{s}^{(K)}\,\big],
+where each slice
+z
+s
+(
+k
+)
+∈
+ℝ
+d
+k
+z_{s}^{(k)}\in\mathbb{R}^{d_{k}}
+is intended to represent subskill
+k
+k
+, and
+∑
+k
+d
+k
+=
+d
+\sum_{k}d_{k}=d
+.
+Reconstructed trajectories
+τ
+^
+z
+s
+\hat{\tau}_{z_{s}}
+are passed through a predictor network
+h
+ψ
+h_{\psi}
+to produce subskill metrics
+m
+^
+\hat{m}
+(Fig.
+1
+) that serve as behaviorally grounded
+supervision signals during training. Each subskill metric is defined in collaboration with domain experts. Skill metrics reflect a measurable behavioral quantity that serves as a proxy for an underlying subskill (e.g., steering smoothness for control
+or gaze dispersion for visual attention). These metrics provide weak yet semantically meaningful supervision that anchors each subskill dimension to interpretable aspects of human behavior.
+To enforce CF consistency, we perform subskill swaps between a randomly chosen pair of training examples: an
+original
+sample (the one being modified) and a
+donor
+sample
+(the one borrowed from). For a subskill
+k
+k
+, we replace the
+k
+k
+-th
+slice of the original embedding with that of the donor:
+z
+~
+orig
+(
+k
+)
+=
+z
+donor
+(
+k
+)
+,
+z
+~
+orig
+(
+ℓ
+)
+=
+z
+orig
+(
+ℓ
+)
+​
+∀
+ℓ
+≠
+k
+,
+\tilde{z}_{\text{orig}}^{(k)}=z_{\text{donor}}^{(k)},\quad\tilde{z}_{\text{orig}}^{(\ell)}=z_{\text{orig}}^{(\ell)}\;\;\forall\ell\neq k,
+and apply the same operation to the associated skill metrics to ensure supervision remains consistent:
+m
+~
+orig
+(
+k
+)
+=
+m
+donor
+(
+k
+)
+,
+m
+~
+orig
+(
+ℓ
+)
+=
+m
+orig
+(
+ℓ
+)
+​
+∀
+ℓ
+≠
+k
+.
+\tilde{m}_{\text{orig}}^{(k)}=m_{\text{donor}}^{(k)},\quad\tilde{m}_{\text{orig}}^{(\ell)}=m_{\text{orig}}^{(\ell)}\;\;\forall\ell\neq k.
+In practice, we interleave CF and standard training. With probability
+p
+p
+, a batch is trained
+using the regular reconstruction and metric objectives, and with probability
+(
+1
+−
+p
+)
+(1-p)
+, a batch is trained
+with CF swaps (Alg.
+1
+, Lines
+7
+–
+8
+).
+This procedure creates CF examples where the original
+z
+s
+z_{s}
+retains all except one subskill slice which is borrowed from the donor. Doing so allows the model to learn how isolated subskills should influence predicted behavior and skill metrics.
+This approach encourages reconstruction fidelity while also promoting disentanglement.
+Since no ground-truth trajectory exists for this CF, we do not apply a reconstruction loss to
+τ
+^
+z
+s
+\hat{\tau}_{z_{s}}
+for the swapped items (Alg.
+1
+Line
+10
+). Instead, the predictor network,
+h
+ψ
+h_{\psi}
+, is required to output the swapped metric for subskill
+k
+k
+, thus forcing the model to adjust behavior in a way that matches the intervention.
+Unlike approaches that impose constraints directly on the latent space
+(
+Lin et al. 2020
+)
+, our method encourages disentanglement through behavior. By requiring reconstructed trajectories to predict subskill metrics during CF swaps, each latent slice is forced to encode its designated subskill.
+3.4
+Modeling Details and Losses
+The overall training objective encourages predictive accuracy, semantic alignment, and disentanglement:
+ℒ
+=
+λ
+traj
+​
+ℒ
+traj
++
+λ
+metric
+​
+ℒ
+metric
++
+λ
+MI
+​
+ℒ
+MI
+.
+\mathcal{L}=\lambda_{\text{traj}}\mathcal{L}_{\text{traj}}+\lambda_{\text{metric}}\mathcal{L}_{\text{metric}}+\lambda_{\text{MI}}\mathcal{L}_{\text{MI}}.
+(2)
+Here,
+ℒ
+traj
+​
+(
+τ
+^
+z
+s
+,
+τ
+)
+\mathcal{L}_{\text{traj}}(\hat{\tau}_{z_{s}},\tau)
+is a trajectory reconstruction loss between the predicted trajectory
+τ
+^
+z
+s
+\hat{\tau}_{z_{s}}
+and the observed trajectory
+τ
+\tau
+.
+ℒ
+metric
+​
+(
+h
+ψ
+​
+(
+τ
+^
+z
+s
+)
+,
+m
+)
+\mathcal{L}_{\text{metric}}(h_{\psi}(\hat{\tau}_{z_{s}}),m)
+supervises behaviorally grounded subskill metrics by comparing predicted metrics
+h
+ψ
+​
+(
+τ
+^
+z
+s
+)
+h_{\psi}(\hat{\tau}_{z_{s}})
+to targets
+m
+m
+.
+Finally,
+ℒ
+MI
+=
+−
+𝔼
+τ
+^
+∼
+p
+ϕ
+​
+(
+τ
+^
+∣
+z
+s
+,
+c
+)
+​
+[
+log
+⁡
+q
+θ
+​
+(
+z
+s
+∣
+τ
+^
+)
+]
+\mathcal{L}_{\mathrm{MI}}=-\mathbb{E}_{\hat{\tau}\sim p_{\phi}(\hat{\tau}\mid z_{s},c)}\left[\log q_{\theta}(z_{s}\mid\hat{\tau})\right]
+is a mutual-information objective. The mutual-information term is implemented by re-encoding the predicted trajectory
+τ
+^
+z
+s
+\hat{\tau}_{z_{s}}
+through
+q
+θ
+q_{\theta}
+to obtain
+z
+^
+s
+\hat{z}_{s}
+, and encourages the embedding
+z
+s
+z_{s}
+to be recoverable from generated behavior.
+During CF training steps,
+ℒ
+traj
+\mathcal{L}_{\text{traj}}
+is omitted since no ground-truth trajectory exists for the swapped embedding, and only the metric loss for the swapped subskill is applied.
+Our model integrates skill embeddings with trajectory and context encoders from established sequence architectures. The trajectories are predicted via two decoders, which produce elementwise blending weights for basis blending.
+h
+ψ
+h_{\psi}
+uses an LSTM to predict the skill metrics from
+τ
+^
+z
+s
+\hat{\tau}_{z_{s}}
+.
+4
+Domains and Datasets
+We evaluate
+SAIL
+in two domains with substantially different movement dynamics and subskill structure: high-performance racing and baseball batting. Both domains require coordinated mastery of multiple interacting subskills and provide measurable behavioral outcomes, making them suitable testbeds for evaluating human skill representations.
+1
+1
+1
+The human-subjects data collection protocol was approved by WCG IRB in June 2023.
+4.1
+High-Performance Racing
+High-performance racing is a compelling domain for studying skill because it requires the integration of multiple subskills to achieve mastery. We focus on six core subskills identified by expert coaches and prior work
+(
+Schrum et al. 2025
+)
+: (i) vehicle handling, (ii) gaze control, (iii) know-how, (iv) control inputs, (v) physical ability, and (vi) perceptual ability. These subskills correspond to how professional coaches diagnose driver weaknesses and training interventions.
+Each trajectory
+τ
+i
+\tau_{i}
+consists of vehicle pose, speed, and control signals downsampled to 100 points per track segment. The context
+c
+c
+for this dataset refers to the racetrack that the trajectory was performed on. We collected a dataset of racing trajectories from 95 participants spanning novices to experts, using a driving simulator. We collected data in two phases: 70 participants each completed at least ten laps on a single track modeled after a nearby raceway, and 25 participants completed four laps on each of four distinct tracks at the same venue. This design provided both breadth (a large participant pool) and depth (multiple laps and multiple contexts). In total we collected 1545 laps.
+To connect observed behavior to underlying subskills, we used a set of behaviorally grounded skill metrics
+m
+∈
+ℳ
+m\in\mathcal{M}
+, defined in collaboration with expert coaches in prior work
+(
+Schrum et al. 2025
+)
+. Each metric is derived from a task designed to probe a specific subskill. For example, peak lateral g-force in a skidpad drill reflects vehicle handling, gaze fixation during driving sessions reflects gaze policy, and written test scores reflect know-how of racing lines and other HPD techniques. These metrics (among others) provide partial, noisy evidence about latent subskills and provide the supervision signals necessary for learning disentangled representations of
+z
+s
+z_{s}
+.
+4.2
+Baseball Hitting
+We applied
+SAIL
+to a supplemental dataset of baseball hitting collected from 13 players on a competitive adult team in a semi-professional league. While all participants were experienced players, they were not at the level of an expert benchmark and thus exhibited
+substantial variation across subskills. In collaboration with a coach, one highly skilled participant was identified as an expert and used to define the canonical expert basis for blending, while the remaining players provided a diverse set of trajectories. In total, 74 batting trials were recorded, across both pitching machine sessions and tee batting conditions.
+Whole-body kinematics of swing motions were captured using an optical motion capture system. The coach identified three core subskills and associated metrics of hitting: (i) the
+kinematic chain
+, or the sequential transfer of momentum across body segments; (ii)
+pelvis pausing
+, or the ability to momentarily stabilize the pelvis to build rotational
+power; and (iii)
+thigh pausing
+, or the controlled deceleration of the lead thigh. The contexts
+c
+c
+are tee batting and machine-pitch batting.
+To address the limited size of the dataset, we generated synthetic participants by applying trajectory augmentations (time warping, noise injection, and scaling) to the data. For players with both tee and machine-pitch trials, we estimated a global offset between conditions and used it to synthesize additional regular swings. This produced artificial batting trials that preserved the underlying structure while introducing diversity.
+To our knowledge, there are no existing datasets that capture multimodal behavioral signals and skill metrics that are comparable in richness to our racing dataset. Unlike the racing dataset, the baseball dataset is smaller, narrower in subskill coverage, and augmented with synthetic trials. We therefore treat this baseball dataset as a supplemental, secondary domain to test the generality of
+SAIL
+.
+5
+Results
+Table 1:
+Results in Racing (R) and Baseball (B).
+Higher is better for
+↑
+\uparrow
+, lower is better for
+↓
+\downarrow
+. Bold = best. Values report mean (standard error) across evaluation folds.
+SAIL (ours)
+SAIL w/o CF
+SAIL w/o basis
+SimCLR
+β
+\beta
+-VAE
+AE
+AE-LC
+R
+B
+R
+B
+R
+B
+R
+B
+R
+B
+R
+B
+R
+B
+Construct Validity
+Silhouette (
+↑
+\uparrow
+)
+.72 (.08)
+.77 (.16)
+.67 (.07)
+.40 (.44)
+.74 (.16)
+.75 (.18)
+.67 (.18)
+Test–retest similarity (
+↑
+\uparrow
+)
+.995 (.003)
+1.000 (.003)
+.995 (.001)
+.998 (.001)
+.990 (.004)
+.995 (.003)
+.928 (.10)
+.958 (.119)
+.928 (.02)
+.498 (.330)
+.839 (.12)
+.979 (.090)
+.891 (.22)
+.998 (.001)
+Overall Construct Score
+(
+↑
+\uparrow
+)
+1.86
+1.00
+2.0
+.994
+1.69
+.992
+.57
+.919
+1.49
+0.00
+.95
+.961
+1.06
+.996
+Predictive Utility
+Behavior prediction (RMSE
+↓
+\downarrow
+)
+2.75 (.12)
+.161 (.070)
+2.75 (.12)
+.155 (.075)
+5.05 (.26)
+.176 (.088)
+4.15 (.99)
+.204 (.087)
+4.48 (.36)
+.479 (.158)
+4.61 (.38)
+.257 (.117)
+4.87 (.55)
+.191 (.093)
+OOC generalization (RMSE
+↓
+\downarrow
+)
+6.37 (3.0)
+.120 (.053)
+6.50 (3.1)
+.115 (.061)
+12.77 (3.1)
+.115 (.059)
+10.27 (5.0)
+.395 (.090)
+12.51 (3.5)
+.768 (.128)
+12.42 (3.1)
+.152 (.087)
+14.12 (2.8)
+.153 (.094)
+Overall Predictive Score
+(
+↑
+\uparrow
+)
+2.0
+1.94
+1.98
+2.00
+.17
+1.89
+.89
+.98
+.46
+0.00
+.41
+.81
+.08
+.95
+Disentanglement & Interpretability
+Alignment Ratio (AR
+↑
+\uparrow
+)
+3.25 (.79)
+0.758 (.025)
+1.24 (.083)
+0.416 (.023)
+1.11 (.21)
+0.301 (.057)
+1.73 (.78)
+0.087 (.074)
+1.12 (.11)
+0.046 (.052)
+1.05 (.14)
+0.387 (.030)
+2.40 (.17)
+0.724 (.029)
+Targeted Change Index (TCI
+↑
+\uparrow
+)
+.93 (.06)
+0.146 (.019)
+.89 (.10)
+0.139 (.013)
+.73 (.05)
+0.128 (.010)
+.45 (.10)
+0.132 (.011)
+.63 (.03)
+0.140 (.021)
+.78 (.06)
+0.134 (.022)
+.63 (.03)
+0.144 (.023)
+Relative Influence Ratio (RIR
+↑
+\uparrow
+)
+2.11 (.46)
+1.244 (.054)
+1.76 (.19)
+1.129 (.177)
+1.67 (.22)
+1.104 (.107)
+1.85 (1.14)
+1.101 (.076)
+1.86 (.23)
+0.731 (.267)
+1.61 (.32)
+1.203 (.049)
+1.56 (.28)
+1.122 (.072)
+Overall Interpretability Score
+(
+↑
+\uparrow
+)
+3.0
+2.85
+1.37
+1.82
+.81
+1.08
+.83
+.97
+.95
+1.00
+.78
+1.68
+1.20
+2.46
+Since our contribution is a representation learning method rather than a policy-learning or imitation-learning algorithm, we compare
+SAIL
+against established representation learning baselines designed to evaluate latent representations. Composite scores are shown for Racing (Fig.
+2
+), our primary domain, while Baseball results are reported in Table
+1
+as a supplemental domain.
+SimCLR (contrastive baseline).
+A self-supervised method that uses contrastive losses to encourage invariance within an individual. We adapt SimCLR to trajectory data to test whether a contrastive objective is sufficient for extracting skill-relevant embeddings
+(
+Chen et al. 2020
+)
+.
+β
+\beta
+-VAE (disentanglement baseline).
+An extension of the VAE with stronger KL regularization that encourages factorized latents. We include
+β
+\beta
+-VAE as a disentanglement method to test whether standard disentanglement approaches yield interpretable subskills
+(
+Higgins et al. 2017
+)
+.
+AE (autoencoder baseline).
+A standard trajectory
+autoencoder
+(
+Hinton and Salakhutdinov 2006
+)
+that captures per-trial
+variability but is not designed to model persistent skill or
+subskill structure.
+AE-LC (AE with linear constraints).
+An extension of the AE framework that incorporates linear constraints derived from subskill metrics to encourage semantically meaningful and identifiable latents. We include this method to test whether metric-based structure alone can recover interpretable subskills compared to
+SAIL
+(
+Lin et al. 2020
+)
+.
+Ablation: without CF training (SAIL w/o CF).
+This ablation removes the CF swap objective and trains only with behavioral prediction via expert–novice basis blending to isolate the contribution of CF supervision.
+Ablation: without expert–novice basis and CF training (SAIL w/o basis).
+This ablation decodes trajectories directly from the skill embedding without basis blending or CF supervision to test whether the basis decomposition is necessary for isolating skill-related variation from transient factors.
+Figure 2:
+Composite scores across the three desiderata in Racing. Bars show performance of (
+SAIL
+),
+ablations, and baselines.
+Higher is better for all desiderata.
+For all baselines that operate at the trial level (SimCLR, AE,
+β
+\beta
+-VAE, AE-LC), we extract embeddings per trajectory and pool across laps for each participant which produces a participant-level embedding comparable to our method.
+We evaluate our approach and baselines along the three desiderata introduced in Section
+1
+:
+(1) construct validity, (2) predictive utility , and (3) disentanglement and interpretability. For each desideratum, we compute a composite score by min–max normalizing each metric across methods, reversing lower-is-better metrics, and summing the normalized values. We also evaluate whether the learned representation improves a downstream AI coaching model and validate the representation against a professional coach’s ratings.
+5.1
+Construct Validity
+We evaluate
+construct validity
+by measuring whether the learned embedding captures stable, skill-relevant structure rather than transient fluctuations (Table
+1
+). We operationalize construct validity as stable within-participant and discriminative across-skill representations. Because no coaching occurred during data collection, we assume participants’ underlying skill remained approximately constant. We evaluate construct validity using silhouette score and test–retest similarity.
+•
+Silhouette score
+(
+↑
+)
+(\uparrow)
+: clustering quality by skill group.
+•
+Test–retest similarity
+(
+↑
+)
+(\uparrow)
+: stability of embeddings across repeated trials.
+Discussion:
+As shown in Figure
+2
+and Table
+1
+, among the evaluated methods,
+SAIL
+achieves strong overall construct validity across both racing and baseball.
+SAIL
+produces highly stable embeddings (test–retest similarity of 0.995 in racing and 1.000 in baseball), indicating that
+z
+s
+z_{s}
+captures persistent aspects of skill rather than trial-level variability. The no-CF ablation performs similarly, suggesting that counterfactual supervision preserves construct validity while primarily benefiting interpretability. In contrast, removing the novice–expert basis reduces clustering quality, likely because the embedding captures more trial-specific variation. Overall, these results suggest that participant-level embeddings and basis blending contribute to learning stable skill representations. We do not report silhouette scores for baseball because discrete skill labels are unavailable.
+5.2
+Predictive Utility
+We next investigate
+predictive utility
+by evaluating if the learned skill embeddings support accurate trajectory prediction within and across contexts. Predictive utility is a key desideratum, because it indicates whether
+SAIL
+can be used to anticipate behavior for a given skill and how behavior will change under novel conditions. We evaluate predictive utility using in-context (trained and tested on the same set of racetracks, with held-out trials) and out-of-context (trained on one racetrack, tested on different track) prediction metrics.
+•
+In-context prediction (RMSE
+↓
+\downarrow
+):
+trajectory accuracy within the same context.
+•
+Out-of-context prediction (RMSE
+↓
+\downarrow
+):
+generalization to novel contexts.
+Discussion:
+As shown in Figure
+2
+and Table
+1
+,
+SAIL
+achieves the best predictive performance in racing and remains competitive in baseball. Removing counterfactual (CF) supervision has little effect on prediction, indicating that CF primarily improves interpretability. In contrast, removing novice–expert basis blending nearly doubles prediction error in racing, suggesting that the basis is the primary source of predictive generalization by separating stable skill from transient variation. Together, these results indicate that participant-level embeddings and basis blending drive predictive utility, while CF selectively improves disentanglement.
+5.3
+Disentanglement and Interpretability
+Finally, we evaluate whether the representation decomposes into interpretable subcomponents that correspond to distinct subskills via alignment ratio, targeted change index, and relative influence ratio metrics (Table
+1
+): Together, these metrics evaluate disentanglement along three complementary axes: semantic alignment (AR), selective intervention effects (TCI), and relative influence on outputs (RIR).
+•
+Alignment Ratio (AR
+↑
+\uparrow
+):
+measures how well each subskill slice
+z
+s
+(
+k
+)
+z_{s}^{(k)}
+predicts its intended metrics compared to non-target ones, indicating subskill–metric correspondence
+(
+Eastwood and Williams 2018
+)
+.
+•
+Targeted Change Index (TCI
+↑
+\uparrow
+):
+operationalizes the idea of intervention selectivity described in
+Bengio et al. (2019)
+and
+Schölkopf et al. (2021)
+and quantifies the effect of CF swaps by checking whether trajectory changes are concentrated in the targeted features, with higher values reflecting more selective control.
+•
+Relative Influence Ratio (RIR
+↑
+\uparrow
+):
+complements TCI by perturbing one subskill at a time and measuring how much this changes an expected behavioral feature, relative to the change induced by perturbing other subskills.
+Discussion:
+Figure
+2
+and Table
+1
+show that
+SAIL
+consistently achieves the strongest disentanglement across both domains. Removing counterfactual (CF) supervision substantially reduces all interpretability metrics, demonstrating that CF training is the primary mechanism for learning semantically meaningful subskill representations. Although AE-LC incorporates explicit metric supervision, it consistently underperforms
+SAIL
+, indicating that supervision alone is insufficient to produce behaviorally grounded, selectively controllable representations.
+Table 2:
+Downstream coaching-instruction prediction (mean
+±
+\pm
+SE
+over 15 participant-held-out folds).
+SAIL
+significantly
+outperforms the trial-time baseline on weighted F1 (paired
+t
+⁡
+(
+14
+)
+=
+2.50
+t(14){=}2.50
+,
+p
+=
+.025
+p{=}.025
+) and accuracy (
+p
+=
+.028
+p{=}.028
+); on macro F1,
+SAIL
+is the only condition that significantly improves over
+no conditioning (
+p
+<
+.001
+p{<}.001
+).
+Conditioning
+Weighted F1
+↑
+\uparrow
+Macro F1
+↑
+\uparrow
+Acc.
+↑
+\uparrow
+None
+.541 (.015)
+.504 (.018)
+.538 (.014)
+Trial time
+.573 (.014)
+.520 (.020)
+.567 (.014)
+SAIL
+(ours)
+.595 (.014)
+.537 (.018)
+.589 (.013)
+5.4
+Skill-Informed Coaching
+Finally, we evaluate the downstream utility of
+SAIL
+by incorporating the learned skill representation into a previously proposed imitation-learning model for predicting instructor feedback
+(
+Gopinath et al. 2025
+)
+. We augment the original model with a frozen participant embedding computed from the participant’s previous four laps, and compare against conditioning on a scalar baseline (trial time) over the same window.
+We evaluate on two previously collected simulator coaching datasets comprising 38 participants
+(
+Sumner et al. 2026
+;
+Schrum et al. 2026
+)
+. As shown in Table
+2
+, conditioning on the
+SAIL
+embedding yields a 10.0% relative improvement in weighted F1 over the unconditioned model and significantly outperforms trial-time conditioning on weighted F1 and accuracy. Unlike trial time,
+SAIL
+also significantly improves macro F1, suggesting that the representation captures information beyond overall ability and improves prediction across both common and infrequent instruction categories. These results suggest that access to
+z
+s
+z_{s}
+enables more accurate prediction of both when and what instructors will coach.
+5.5
+External Validation by Professional Coach
+To assess whether the learned representation aligns with expert human
+judgment, we compare
+SAIL
+skill estimates against
+independent ratings from a professional driving coach who evaluated
+22 held-out participants over the course of a coaching study. These
+ratings were collected independently of the drill-based metrics used
+for training supervision. To obtain a scalar overall skill estimate from
+SAIL
+, we project each
+participant’s embedding onto the direction between the mean novice
+and expert embeddings and convert the resulting position to a
+percentile, where 0 and 100 correspond to the novice and expert
+reference points, respectively. The coach’s overall skill ratings agree
+strongly with
+SAIL
+’s overall skill estimate (Spearman
+ρ
+=
+0.81
+\rho=0.81
+,
+p
+<
+.001
+p<.001
+, 95% bootstrap CI
+[
+0.56
+,
+0.94
+]
+[0.56,0.94]
+,
+n
+=
+22
+n=22
+),
+indicating that the embedding aligns well with human expert judgments of skill. Because these coach ratings and downstream coaching labels were not used as supervision for learning the representation, these results provide evidence that SAIL captures information beyond the behaviorally grounded metrics used during training.
+6
+Limitations
+Our evaluation is limited by dataset scale and scope, particularly in the baseball domain where data are small and augmented.
+The method also depends on noisy, predefined subskill metrics, and assumes a smooth novice–expert continuum that may miss certain strategies. While metrics are defined in collaboration with domain experts, they may be incomplete or biased. Our evaluation focuses on practical properties of a useful skill representation—stability, predictive utility, interpretability, and agreement with expert judgment—rather than establishing a unique or complete computational definition of human skill. Future work should investigate additional forms of construct validation and longitudinal studies of skill acquisition.
+References
+Abbeel and Ng (2004)
+P. Abbeel and A. Y. Ng
+Apprenticeship learning via inverse reinforcement learning
+.
+In
+ICML
+,
+pp.
+1–8
+.
+Cited by:
+§2
+.
+Anderson (1982)
+J. R. Anderson
+Acquisition of cognitive skill
+.
+Psychological Review
+89
+(
+4
+),
+pp.
+369–406
+.
+Cited by:
+§3.3
+,
+§3
+.
+Anderson (2014)
+J. R. Anderson
+Learning and memory: an integrated approach
+.
+John Wiley & Sons
+.
+Cited by:
+§2
+.
+Argall
+et al.
+(2009)
+B. D. Argall, S. Chernova, M. Veloso, and B. Browning
+A survey of robot learning from demonstration
+.
+Foundations and Trends in Robotics
+1
+(
+4
+),
+pp.
+1–157
+.
+External Links:
+Document
+Cited by:
+§2
+.
+Bengio
+et al.
+(2019)
+Y. Bengio, T. Deleu, N. Rahaman, R. Ke, S. Lachapelle, O. Bilaniuk, A. Goyal, and C. Pal
+A meta-transfer objective for learning to disentangle causal mechanisms
+.
+arXiv preprint arXiv:1901.10912
+.
+Cited by:
+2nd item
+.
+Cakmak and Thomaz (2012)
+M. Cakmak and A. L. Thomaz
+Designing robot learners that ask good questions
+.
+In
+Proceedings of the 7th Annual ACM/IEEE International Conference on Human-Robot Interaction (HRI)
+,
+pp.
+17–24
+.
+External Links:
+Document
+Cited by:
+§2
+.
+Chen
+et al.
+(2020)
+T. Chen, S. Kornblith, M. Norouzi, and G. Hinton
+A simple framework for contrastive learning of visual representations
+.
+In
+International Conference on Machine Learning (ICML)
+,
+pp.
+1597–1607
+.
+Cited by:
+§5
+.
+Chen
+et al.
+(2016)
+X. Chen, Y. Duan, R. Houthooft, J. Schulman, I. Sutskever, and P. Abbeel
+InfoGAN: interpretable representation learning by information maximizing generative adversarial nets
+.
+In
+NeurIPS
+,
+Cited by:
+§2
+,
+§3.1
+.
+Corbett and Anderson (1994)
+A. T. Corbett and J. R. Anderson
+Knowledge tracing: modeling the acquisition of procedural knowledge
+.
+User Modeling and User-Adapted Interaction
+4
+,
+pp.
+253–278
+.
+Cited by:
+§2
+.
+Dave and Rueckert (2025)
+V. Dave and E. Rueckert
+Skill disentanglement in reproducing kernel hilbert space
+.
+In
+Proceedings of the AAAI Conference on Artificial Intelligence
+,
+Vol.
+39
+,
+pp.
+16153–16162
+.
+Cited by:
+§2
+.
+DeCastro
+et al.
+(2024)
+J. DeCastro, A. Silva, D. Gopinath, E. Sumner, T. M. Balch, L. Dees, and G. Rosman
+Dreaming to assist: learning to align with human objectives for shared control in high-speed racing
+.
+In
+Conference on Robot Learning (CoRL)
+,
+External Links:
+Link
+Cited by:
+§2
+.
+Eastwood and Williams (2018)
+C. Eastwood and C. K. I. Williams
+A framework for the quantitative evaluation of disentangled representations
+.
+In
+Proceedings of the International Conference on Learning Representations (ICLR)
+,
+External Links:
+Link
+Cited by:
+1st item
+.
+Embretson and Reise (2013)
+S. E. Embretson and S. P. Reise
+Item response theory for psychologists
+.
+Psychology Press
+.
+Cited by:
+§2
+.
+Ericsson
+et al.
+(1993)
+K. A. Ericsson, R. T. Krampe, and C. Tesch-Römer
+The role of deliberate practice in the acquisition of expert performance
+.
+Psychological Review
+100
+(
+3
+),
+pp.
+363–406
+.
+Cited by:
+§1
+,
+§2
+,
+§3.3
+.
+Fitts and Posner (1967)
+P. M. Fitts and M. I. Posner
+Human performance
+.
+Brooks/Cole
+.
+Cited by:
+§1
+,
+§2
+.
+Gopinath
+et al.
+(2025)
+D. Gopinath, X. Cui, J. DeCastro, E. Sumner, J. Costa, H. Yasuda, A. Morgan, L. Dees, S. Chau, J. Leonard, T. Chen, G. Rosman, and A. Balachandran
+Computational teaching for driving via multi-task imitation learning
+.
+In
+Proceedings of the IEEE International Conference on
+Robotics and Automation (ICRA)
+,
+pp.
+7019–7027
+.
+External Links:
+Document
+Cited by:
+§5.4
+.
+Gopinath
+et al.
+(2017)
+D. Gopinath, S. Jain, and B. Argall
+Human-in-the-loop optimization of shared autonomy in assistive robotics
+.
+In
+Proceedings of the IEEE International Conference on Robotics and Automation (ICRA)
+,
+pp.
+3925–3932
+.
+External Links:
+Document
+Cited by:
+§2
+.
+Hausman
+et al.
+(2018)
+K. Hausman, J. T. Springenberg, Z. Wang, N. Heess, and M. Riedmiller
+Learning an embedding space for transferable robot skills
+.
+External Links:
+Link
+Cited by:
+§2
+.
+Higgins
+et al.
+(2017)
+I. Higgins, L. Matthey, A. Pal, C. Burgess, X. Glorot, M. Botvinick, S. Mohamed, and A. Lerchner
+Beta-vae: learning basic visual concepts with a constrained variational framework
+.
+In
+ICLR
+,
+Cited by:
+§2
+,
+§3.3
+,
+§5
+.
+Hinton and Salakhutdinov (2006)
+G. E. Hinton and R. R. Salakhutdinov
+Reducing the dimensionality of data with neural networks
+.
+Science
+313
+(
+5786
+),
+pp.
+504–507
+.
+Cited by:
+§5
+.
+Iso-Ahola (2024)
+S. E. Iso-Ahola
+A theory of the skill-performance relationship
+.
+Frontiers in Psychology
+15
+,
+pp.
+1296014
+.
+Cited by:
+§1
+,
+§1
+,
+§3
+.
+Jacques
+et al.
+(2019)
+N. Jacques, A. Lazaridou, E. Hughes, C. Gulcehre, P. A. Ortega, D. Strouse, J. Z. Leibo, and N. de Freitas
+Social influence as intrinsic motivation for multi-agent deep reinforcement learning
+.
+In
+Proceedings of the 36th International Conference on Machine Learning (ICML)
+,
+pp.
+3040–3049
+.
+Cited by:
+§2
+.
+Jeon
+et al.
+(2020)
+H. J. Jeon, D. P. Losey, and D. Sadigh
+Shared autonomy with learned latent actions
+.
+arXiv preprint arXiv:2005.03210
+.
+Cited by:
+§2
+.
+Kim and Mnih (2018)
+H. Kim and A. Mnih
+Disentangling by factorising
+.
+arXiv preprint arXiv:1802.05983
+.
+Cited by:
+§2
+,
+§3.3
+.
+Kingma
+et al.
+(2014)
+D. P. Kingma, D. J. Rezende, S. Mohamed, and M. Welling
+Semi-supervised learning with deep generative models
+.
+Advances in neural information processing systems
+27
+.
+Cited by:
+§3.3
+.
+Kingma and Welling (2013)
+D. P. Kingma and M. Welling
+Auto-encoding variational bayes
+.
+arXiv preprint arXiv:1312.6114
+.
+Cited by:
+§2
+,
+§3.1
+.
+Koren
+et al.
+(2009)
+Y. Koren, R. Bell, and C. Volinsky
+Matrix factorization techniques for recommender systems
+.
+In
+Computer
+,
+Vol.
+42
+,
+pp.
+30–37
+.
+Cited by:
+§3.1
+.
+Langley
+et al.
+(2004)
+P. Langley, K. Cummings, and D. Shapiro
+Hierarchical skills and cognitive architectures
+.
+In
+Proceedings of the Annual Meeting of the Cognitive Science Society (CogSci)
+,
+pp.
+779–784
+.
+Cited by:
+§1
+.
+Lesort
+et al.
+(2018)
+T. Lesort, N. Díaz-Rodríguez, J. Goudou, and D. Filliat
+State representation learning for control: an overview
+.
+Neural Networks
+108
+,
+pp.
+379–392
+.
+Cited by:
+§1
+.
+Lin
+et al.
+(2020)
+X. Lin, K. K. Thekumparampil, G. Fanti, and S. Oh
+Learning semantically meaningful embeddings using linear constraints
+.
+In
+International Conference on Learning Representations (ICLR)
+,
+Cited by:
+§3.3
+,
+§5
+.
+Locatello
+et al.
+(2019)
+F. Locatello, S. Bauer, M. Lucic, G. Raetsch, S. Gelly, B. Schölkopf, and O. Bachem
+Challenging common assumptions in the unsupervised learning of disentangled representations
+.
+In
+ICML
+,
+pp.
+4114–4124
+.
+Cited by:
+§2
+,
+§3.3
+.
+Messick (1995)
+S. Messick
+Validity of psychological assessment: validation of inferences from persons’ responses and performances as scientific inquiry into score meaning
+.
+American Psychologist
+50
+(
+9
+),
+pp.
+741–749
+.
+Cited by:
+§1
+.
+Newell (1991)
+K. M. Newell
+Motor skill acquisition
+.
+Annual Review of Psychology
+42
+(
+1
+),
+pp.
+213–237
+.
+Cited by:
+§1
+,
+§2
+,
+§3.3
+,
+§3
+.
+Petangoda
+et al.
+(2019)
+J. C. Petangoda, H. Gammulle, S. Denman, C. Fookes, S. Sridharan,
+et al.
+Disentangled skill embeddings for reinforcement learning
+.
+arXiv preprint arXiv:1906.09223
+.
+Cited by:
+§2
+.
+Piech
+et al.
+(2015)
+C. Piech, J. Bassen, J. Huang, S. Ganguli, M. Sahami, L. Guibas, and J. Sohl-Dickstein
+Deep knowledge tracing
+.
+In
+Advances in Neural Information Processing Systems
+,
+Vol.
+28
+.
+Cited by:
+§2
+.
+Schmidt
+et al.
+(2018)
+R. A. Schmidt, T. D. Lee, C. Winstein, G. Wulf, and H. N. Zelaznik
+Motor learning and performance: from principles to application
+.
+Human Kinetics
+.
+Cited by:
+§2
+.
+Schölkopf
+et al.
+(2021)
+B. Schölkopf, F. Locatello, S. Bauer, N. R. Ke, N. Kalchbrenner, A. Goyal, and Y. Bengio
+Toward causal representation learning
+.
+Proceedings of the IEEE
+109
+(
+5
+),
+pp.
+612–634
+.
+Cited by:
+2nd item
+.
+Schrum
+et al.
+(2023)
+M. L. Schrum, E. Hedlund‐Botti, and M. Gombolay
+Reciprocal mind meld: improving learning from demonstration via personalized, reciprocal teaching
+.
+In
+Proceedings of the 6th Conference on Robot Learning
+,
+K. Liu, D. Kulic, and J. Ichnowski (Eds.)
+,
+Proceedings of Machine Learning Research
+, Vol.
+205
+,
+pp.
+956–966
+.
+External Links:
+Link
+Cited by:
+§2
+.
+Schrum
+et al.
+(2026)
+M. L. Schrum, S. Srivatsa, L. Dees, E. Dixon, P. Reyes Gomez, D. Gopinath, E. S. Sumner, G. Rosman, and T. L. Chen
+Skill modulates coaching language in embodied motor learning
+.
+In
+Proceedings of the Extended Abstracts of the 2026 CHI
+Conference on Human Factors in Computing Systems
+,
+CHI EA ’26
+,
+New York, NY, USA
+,
+pp.
+1–6
+.
+External Links:
+Document
+Cited by:
+§5.4
+.
+Schrum
+et al.
+(2025)
+M. Schrum, A. Morgan, D. Gopinath, J. Costa, E. Sumner, G. Rosman, and T. Chen
+A data-driven framework for skill representation
+.
+In
+Proceedings of the ACM/IEEE International Conference on Human-Robot Interaction (HRI) Workshops
+,
+Note:
+LEAP-HRI Workshop paper
+Cited by:
+§4.1
+,
+§4.1
+.
+Snyder
+et al.
+(2018)
+D. Snyder, D. Garcia-Romero, G. Sell, D. Povey, and S. Khudanpur
+X-vectors: robust dnn embeddings for speaker recognition
+.
+In
+2018 IEEE International Conference on Acoustics, Speech and Signal Processing (ICASSP)
+,
+pp.
+5329–5333
+.
+Cited by:
+§3.1
+.
+Sohn
+et al.
+(2015)
+K. Sohn, H. Lee, and X. Yan
+Learning structured output representation using deep conditional generative models
+.
+Advances in neural information processing systems
+28
+.
+Cited by:
+§3.3
+.
+Sumner
+et al.
+(2026)
+E. Sumner, D. E. Gopinath, L. Dees, P. Reyes Gomez, X. Cui, A. Silva, J. Costa, A. Morgan, M. Schrum, T. L. Chen, A. Balachandran, and G. Rosman
+SimCoachCorpus: a naturalistic dataset with language and trajectories for embodied teaching
+.
+In
+Proceedings of the 32nd ACM SIGKDD Conference on
+Knowledge Discovery and Data Mining V.2
+,
+External Links:
+Document
+Cited by:
+§5.4
+.
+van den Oord
+et al.
+(2018)
+A. van den Oord, Y. Li, and O. Vinyals
+Representation learning with contrastive predictive coding
+.
+arXiv preprint arXiv:1807.03748
+.
+Cited by:
+§2
+.
+Wulf (2016)
+G. Wulf
+Attentional focus and motor learning: a review of 15 years
+.
+International Review of Sport and Exercise Psychology
+9
+(
+1
+),
+pp.
+77–104
+.
+Cited by:
+§3.3
+.
+Zhang
+et al.
+(2019)
+S. Zhang, H. Li, H. Gan, L. Xu, and X. Zhang
+Self-supervised learning for human activity recognition using 700,000 accelerometer records
+.
+IEEE Transactions on Mobile Computing
+20
+(
+9
+),
+pp.
+2424–2437
+.
+Cited by:
+§2
+.
+Ziebart
+et al.
+(2008)
+B. D. Ziebart, A. Maas, J. A. Bagnell, and A. K. Dey
+Maximum entropy inverse reinforcement learning
+.
+In
+AAAI
+,
+pp.
+1433–1438
+.
+Cited by:
+§2
+.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

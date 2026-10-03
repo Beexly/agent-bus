@@ -1,0 +1,36 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0220-using-machine-learning-for-move-sequence.md
+## What it is (1-2 sentences)
+Rimbot, Jaggi & Barba (EPFL, arXiv:2503.00458v1, 2025): an exploratory student project attempting (a) animated humanoid-skeleton visualization of bouldering move sequences and (b) seq2seq/Transformer prediction of climbing move order ("beta") from unordered hold sets. File verdict: REJECT — all three prediction models fail (negative/inconclusive results) and climbing beta prediction has no transfer path to GSE's NFL product.
+
+## Key metrics/methods (formulas where given, else "not specified")
+- Visualization pipeline: MediaPipe pose extraction (33 landmarks × {x, y, visibility} = 99 features per frame) → static-extremity detection via frame-to-frame distance thresholds → DBSCAN clustering of static point clouds → hold positions drawn with OpenCV in temporal order. Synthesis: move sequence → interpolate extremity landmark coordinates between consecutive holds (~1,500 frames; speed weighted by hold distance and desired frame count) → predict remaining body landmarks from extremities with scikit-learn linear regression trained on recorded climber videos → draw skeleton via MediaPipe.
+- Prediction model 1 (seq2seq): PyTorch encoder–decoder with attention, 512-dim latent space; input words "xN_yN" (holds), output words "limb_xN_yN" (moves); teacher forcing; token-wise prediction; coordinates discretized to a 0.1 grid ({0, 0.1, …, 1.0}) due to Colab memory limits on vocabulary.
+- Prediction model 2 (autoregressive Transformer): encoder–decoder with linear decoder; input = concatenation of original + sorted sequences (input tokens plus all-but-last sorted tokens), output = shifted version; tokens = hold indices [0, N−1]; coordinate-adapted positional embedding (on (x, y) instead of word order); causal attention mask; cross-entropy + Adam; padding to fixed length with an imaginary hold.
+- Prediction model 3 (simplified Transformer): encoder layer + linear decoder, single forward pass, no positional embedding, no masking; Adam for 300 epochs.
+- Evaluation metric (Eq. 1): perplexity of fixed-length models: `PPL(x_0, x_1, …, x_t) = exp(−(1/t) Σ_i log(p_θ(x_i | x_{<i})))`.
+- Move-sequence template: (x_i, y_i, limb_i), i = 1…n in order of use.
+
+## Data sources named
+- Dataset A (move-sequence detection/seq2seq): competition videos from the Swiss Olympic Climbing team, reused from earlier EPFL student projects; move sequences via pose-estimation pipeline; hold sequences via DBSCAN clustering of move sequences. No sample size stated; videos "not very clean" with "big diversity of moves." Proprietary (no release).
+- Dataset B (Transformer holds-ordering): 20 videos of a single climber on a standardized Moonboard, manually annotated via authors' OpenCV selection interface; 50 random input permutations per video → 1,000 sequences for order-invariance. Public YouTube source (cited as reference [9]) but authors' annotations not shared.
+- Schema: holds as (x, y) coordinates normalized to [0,1] on a still boulder image; move words of form "limb_xN_yN" or hold-index tokens [0, N−1].
+- No code released; no dataset download link.
+
+## Findings (numbers and facts, not vibes)
+- Visualization: body-landmark linear regression achieves "more than 99%" accuracy claimed (author's claim, on a limited number of training videos, sufficient for visualization). Skeleton animations "definitely satisfactory" qualitatively BUT linear interpolation produces non-physical behavior — limb stretching, no simultaneous multi-extremity moves, no dynamic/jump moves — explicitly problematic for new-school bouldering.
+- Model 1 (seq2seq): trained 100 epochs (~2 hours on Google Colab GPU); training loss decreases (Fig. 4) but predictions "disappointing": "most of the predicted positions are not even holds" (Fig. 5). Attributed to (a) DBSCAN-constructed holds sequences, (b) noisy/imprecise move labels + diverse videos, (c) 0.1-grid vocabulary discretization destroying spatial resolution.
+- Model 2 (autoregressive Transformer): "disappointing" — the model "almost always outputs the padding token no matter which input is fed into it" because most sequences are shorter than max length and always predicting padding earns consistent accuracy. Classic padding-collapse failure.
+- Model 3 (simplified Transformer): improvement — no longer always predicts padding; on a validation sequence of length 14 (padded to 17), accuracy ≈35%, but "only 2 non-padding tokens have been accurately predicted"; remaining accuracy comes from correctly predicting the last 3 padding tokens. Authors conclude results "look pretty random."
+- Overall: all three prediction models fail; the paper's own conclusion is results "are not satisfying and would require more research." No baselines reported anywhere.
+- Leakage/circularity: holds sequences derived by DBSCAN-clustering the very move sequences being predicted (model 1) — circular construction injecting artifacts. No train/val/test split details stated (model 1).
+- Evaluation misleading as presented: model 3's 35% accuracy includes 3 padding tokens out of 17; only 2/14 non-padding tokens correct. Padding-collapse (model 2) and padding-inflated accuracy (model 3).
+- File's acceptance gate (notional): adopt only if non-padding token-order accuracy ≥60% on held-out boulders — the paper's best model (2/14 non-padding tokens correct) fails by an order of magnitude.
+- File's improvement experiment: manually annotate ≥500 Moonboard problems with exact hold order + limb assignments, train a pointer-network/permutation-invariant set Transformer on continuous coordinates (no 0.1 discretization), evaluate exact-match rate on non-padding tokens.
+
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER — anti-pattern library (all tags map here): this paper is valuable to GSE primarily as a catalog of failure modes to avoid in sequence-prediction work. Padding-token collapse (model 2), padding-inflated accuracy metrics (model 3's 35%), circular label construction (DBSCAN-clustering the prediction target, model 1), and vocabulary discretization destroying spatial resolution (model 1's 0.1 grid) are all traps the tracking lane's own trajectory-sequence models must be audited against — serves the calibration/sizing program as negative evidence for evaluation-hygiene checklists.
+- UNCERTAIN: the >99% linear-regression body-pose completion claim is on "a limited number of training videos" with no split details — treat as unverified; and even if true, the file notes it has no GSE use case (the standing video rule requires real game footage, never synthesized animation).
+- OTHER — no port: the ML plumbing (seq2seq, Transformers, teacher forcing, coordinate positional embeddings) is generic and better covered elsewhere in the corpus; the domain (climbing beta) maps to no GSE product. Rejection is clean and total.
+
+## Engine-actionable? (yes/no + one-line what)
+No — all prediction results are negative and climbing-specific; the only portable artifact is a set of sequence-modeling failure modes (padding collapse, padding-inflated accuracy, circular label construction) to add to the tracking lane's evaluation-hygiene checklist.

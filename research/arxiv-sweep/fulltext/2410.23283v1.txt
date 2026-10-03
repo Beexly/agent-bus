@@ -1,0 +1,4516 @@
+DisCo: Distributed Contact-Rich Trajectory Optimization for Forceful Multi-Robot Collaboration
+Ola Shorinwa
+Affiliation:
+Department of Aeronautics and Astronautics, Stanford University, Stanford, CA 94305, USA
+{shorinwa, schwager}@stanford.edu
+Matthew Devlin
+Affiliation:
+Department of Mechanical Engineering, University of California Santa Barbara, Santa Barbara, CA, USA.
+{matthewdevlin, ewhawkes}@ucsb.edu
+Elliot W. Hawkes
+Affiliation:
+Department of Mechanical Engineering, University of California Santa Barbara, Santa Barbara, CA, USA.
+{matthewdevlin, ewhawkes}@ucsb.edu
+Mac Schwager
+Thanks:
+*This project was funded in part by DARPA YFA award D18AP00064 and NSF NRI awards 1830402, 1925030, and 1925373.
+Affiliation:
+Department of Aeronautics and Astronautics, Stanford University, Stanford, CA 94305, USA
+{shorinwa, schwager}@stanford.edu
+Abstract
+We present DisCo, a distributed algorithm for contact-rich, multi-robot tasks. DisCo is a distributed contact-implicit trajectory optimization algorithm, which allows a group of robots to optimize a time sequence of forces to objects and to their environment to accomplish tasks such as collaborative manipulation, robot team sports, and modular robot locomotion. We build our algorithm on a variant of the Alternating Direction Method of Multipliers (ADMM), where each robot computes its own contact forces and contact-switching events from a smaller single-robot, contact-implicit trajectory optimization problem, while cooperating with other robots through dual variables, enforcing constraints between robots. Each robot iterates between solving its local problem, and communicating over a wireless mesh network to enforce these consistency constraints with its neighbors, ultimately converging to a coordinated plan for the group. The local problems solved by each robot are significantly less challenging than a centralized problem with all robots’ contact forces and switching events, improving the computational efficiency, while also preserving the privacy of some aspects of each robot’s operation.
+We demonstrate the effectiveness of our algorithm in simulations of collaborative manipulation, multi-robot team sports scenarios, and in modular robot locomotion, where
+DisCo
+achieves
+3
+3
+x higher success rates with a
+2.5
+2.5
+x to
+5
+5
+x faster computation time. Further, we provide results of hardware experiments on a modular truss robot, with three collaborating truss nodes planning individually while working together to produce a punctuated rolling-gate motion of the composite structure. Videos are available on the project page:
+https://disco-opt.github.io/.
+Index Terms:
+Trajectory optimization, distributed optimization, multi-robot systems, manipulation, multi-agent networks.
+I
+Introduction
+Many multi-robot problems, such as multi-robot manipulation, robot team sports, and modular robot locomotion, involve rich contact interactions between robots and objects or surfaces in their environment. However, these contact interactions are often ignored or abstracted away in existing distributed solution techniques (e.g., by assuming fixed, rigid grasp locations for multi-robot manipulation, or ignoring ground-robot forces in modular robot locomotion). Contact events are inherently discrete and combinatoric in nature, and contact forces (such as friction and normal forces) can be difficult to model accurately, and quite difficult to treat computationally. Although ignoring or abstracting away these challenges circumvents the complexity associated with contact planning, the resulting simplified model fails to exploit the rich space of contact interactions necessary for dexterous manipulation, e.g., manipulation of objects in constrained spaces, such as through doorways, windows, and hallways. We present a distributed trajectory planner amenable to a broad class of multi-robot problems involving contact, where each robot computes its local contact sequences and forces necessary to complete the task.
+Our algorithm,
+DisCo
+, enables Distributed Contact-rich Trajectory Optimization, endowing multi-robot teams with dexterous capabilities in many multi-robot problems. For example, in collaborative manipulation, DisCo enables multi-robot teams to make and break contact with the object or environment, e.g., in narrow corridors, while manipulating the object or locomoting collaboratively with other robots. In robot team sports such as robot soccer and robot hockey, DisCo enables intelligent tactics planning, with each robot in the team working cooperatively to score a point, e.g., by passing an object (or ball) into a goal area. Moreover, in locomotion problems involving modular robots, DisCo enables each module to compute the contact interactions between each module and the environment required for locomotion, in cooperation with other modules. In all of these examples, our method can find dynamic solutions, that include free-flying ballistic phases where the robots or objects are not in static or pseudo-static equilibrium (e.g., throwing or shooting a ball, or jumping a modular robot over an obstacle). Figure
+1
+visualizes our algorithm working with three different multi-robot scenarios.
+Fig. 1
+:
+Our algorithm, DisCo, is amenable to a broad class of collaborative multi-robot problems involving contact, such as: (Left) collaborative manipulation, e.g., of a table; (Center) robot team sports, e.g., robot soccer; and (Right) locomotion of modular robots, e.g.,
+[
+1
+]
+.
+In each scenario, each robot solves a smaller contact-implicit trajectory optimization problem to complete the task in collaboration with other robots.
+We first frame multi-robot, contact-rich collaboration as a centralized contact-implicit trajectory optimization problem, in which the contact sequence and contact forces are encoded with, so-called, complementarity constraints. This yields a large, nonconvex constrained optimization problem which is computationally difficult to solve, in general. Our key insight is to leverage structure in this optimization problem to distributed its solution among the robots. Specifically, we use the framework of the Alternating Direction Method of Multipliers (ADMM)
+[
+2
+]
+to transform the centralized problem into a collection of smaller local problems (one for each robot), with coupling constraints among neighboring pairs of robots to ensure a globally consistent solution. Surprisingly, the coupling constraints only apply to a small subset of shared global variables relevant to the task, making the distributed decomposition significantly more efficient to solve than the equivalent centralized version of the problem. Applying this decomposition to the centralized problem and applying an ADMM solution technique yields our algorithm, DisCo. We emphasize that our algorithm is a trajectory planner, giving a dynamically feasible open-loop action sequence for the robots to achieve a desired collaboration objective. In practice we re-plan as frequently as possible in an MPC outer-loop, while each robot tracks its planned trajectory with a faster low-level feedback controller. Moreover, our decomposition strategy enables trajectory optimization among heterogenous robots with different modalities. E.g., we may have pushing robots with no gripper, aerial robots towing with cables, mobile manipulators, and fixed-base manipulators all working together with the same algorithm.
+This paper extends our prior work in
+[
+3
+]
+, where we consider collaborative manipulation of objects by a group of robots. In this work, we extend our algorithm to a broader class of multi-robot problems, including multi-robot team sports and modular-robot locomotion. In addition, we apply our algorithm to plan locomotion gaits in hardware for a soft modular truss robot platform, described in
+[
+1
+]
+.
+In simulation, we show that DisCo outperforms centralized contact-implicit planners in a range of multi-robot manipulation tasks. DisCo improves the success rate of centralized through-contact planners by more than a factor of
+3
+3
+, while reducing the computation time by a factor greater than
+5
+5
+in a pushing task in
+SE
+⁡
+(
+2
+)
+\mathrm{SE}(2)
+and a factor greater than
+2.5
+2.5
+in
+SE
+⁡
+(
+3
+)
+\mathrm{SE}(3)
+manipulation. Further, we demonstrate the effectiveness of our algorithm in robot team sports, where the robots attempt to get a
+puck
+into a goal area to score a point with dynamic, ballistic passing and shooting maneuvers. Finally, we implement our algorithm on hardware, demonstrating its application to the locomotion of a soft modular truss robot platform.
+Our contributions are as follows:
+•
+We present DisCo, a distributed algorithm for solving contact-rich multi-robot trajectory optimization problems, which exploits the inherently separable structure of the optimization problem to give efficient local iterates for each robot using an ADMM framework.
+•
+DisCo achieves a
+150
+%
+150\%
+to
+400
+%
+400\%
+improvement in average solution time and more than
+200
+%
+200\%
+higher success rate in solving multi-robot contact-implicit trajectory optimization problems compared to a centralized solver.
+•
+We demonstrate DisCo in simulation studies of collaborative manipulation, robot team sports, and modular-robot locomotion. We also demonstrate DisCo in hardware to plan locomotion gaits for a modular soft truss robot.
+Our paper is organized as follows: In Section
+II
+, we survey related literature. In Section
+III
+, we formulate three classes of multi-robot problems with contact—namely (i) multi-robot collaborative manipulation, (ii) multi-robot team sports tactics, and (iii) locomotion of modular robots—as contact-implicit trajectory optimization problems. Subsequently, we derive our distributed algorithm DisCo, for solving these problems, in Section
+IV
+. We present simulation results in several case studies in
+V
+and results of hardware experiments on locomotion gait planning for a soft modular truss robot in Section
+VI
+. We conclude in Section
+VII
+.
+II
+Related Works
+II-A
+Trajectory Optimization with Contact
+Trajectory optimization methods with contact planning can be classified broadly into multi-phase approaches and contact-implicit approaches, depending on the procedure taken to encode the contact dynamics in the optimization problem. Multi-phase methods require the specification of the contact phases and contact points on the robot and introduce different constraints for each phase, reflecting the robot’s dynamics within each phase
+[
+4
+,
+5
+,
+6
+]
+. These methods do not optimize over the possible contact points on the robot. To allow for optimization over the contact points on the robot and the corresponding surfaces, some methods solve a mixed-integer convex program
+[
+7
+]
+with additional binary variables indicating the status of a contact point and its assignment to a contact surface. However, these methods require the specification of candidate convex contact surfaces in the environment, which might not be readily available. Moreover, mixed-integer optimization presents notable computation challenges. To reduce the computation difficulty, some of these methods relax the contact dynamics constraints by introducing them into the objective function, allowing for violations of the constraints. In general, these approaches are only feasible for systems with relatively simple dynamics where the contact phases and contact points can be specified.
+In contact-implicit approaches, the contact forces are incorporated as variables into the optimization problem, with an associated constraint describing the contact model. These methods introduce the contact dynamics constraints at every time instant within the optimization, and hence do not require specification of the contact phases. Many approaches represent the contact dynamics as a set of linear complementarity constraints
+[
+8
+,
+9
+,
+10
+,
+11
+]
+, representing the existence of contact forces only when the two surfaces have a non-zero gap. This approach for modeling the contact dynamics has been employed in simulation and trajectory optimization with promising results. However, the non-smooth contact dynamics makes numerical optimization notably challenging. Some other approaches consider a stochastic representation of the complementarity constraints to account for uncertainties in the physical properties of the colliding surfaces
+[
+12
+]
+.
+To reduce the computation difficulty, some methods utilize a smoothed contact model with virtual forces at contact points, removing the discontinuities in the contact force, and solve the resulting problem using trust-region-based sequential convex programming
+[
+13
+]
+or an iterative Linear-Quadratic Regulator (iLQR) approach
+[
+14
+,
+15
+]
+. Other methods take a bilevel optimization approach, where the upper-level problem involves computing the optimal trajectory of the problem which depend on the contact forces computed in the lower-level problem
+[
+16
+,
+17
+]
+. However, these approaches do not preclude the existence of contact forces at a distance and penetration of the colliding surfaces, producing unrealistic results. None of these existing methods for trajectory optimization with contact have considered distributed solution techniques for multiple collaborating robots, as we do here.
+Specifically, we employ distributed optimization for more-efficient through-contact optimization (see
+[
+18
+,
+19
+,
+20
+]
+for a review of distributed optimization in robotics).
+We model the contact dynamics between the robots and the object (or environment) using linear complementarity constraints. By distributing the complementarity constraints among the robots, each robot solves a contact-implicit trajectory optimization problem considering only its own contact dynamics, mitigating the challenges to numerical optimization posed by the non-smooth contact constraints. With this approach, our method does not require any explicit specification of the discrete contact phases between each robot and the object.
+II-B
+Collaborative Manipulation
+Now, we review relevant work in collaborative manipulation, noting that many of these works do not consider planning through contact events or contact sequences.
+Notable challenges arise in centralized approaches for collaborative manipulation from the need to communicate with a central agent for computation of all forces and torques required to manipulate an object
+[
+21
+,
+22
+,
+23
+]
+. Addressing these challenges, distributed approaches allow each robot to compute its forces and torques without communication with a central agent. Leader-follower methods designate a single robot as a leader which computes the forces and torques for all the robots within the group. In some of these methods, the robots communicate their dynamics models and problem constraints such as the feasible forces and torques which can be applied by the robots to the leader
+[
+24
+]
+. However, communication of the problem information between the leader and followers makes these methods unsuitable for problems involving varied communication topology and dynamics models. Other leader-follower methods attempt to resolve these challenges by enabling the followers to infer the motion of the leader using force or impedance sensors without communicating with the leader. The followers apply forces and torques to complement the forces applied by the leader using feedback controllers
+[
+25
+]
+, impedance controllers
+[
+26
+]
+, and adaptive control
+[
+27
+]
+. In these methods, the leader manipulates the object without any consideration of the limitations of the followers, possibly resulting in infeasible trajectories for the followers. Further, these approaches do not allow for trajectory planning and require the specification of a desired trajectory for the leaderby a human operator
+[
+28
+]
+.
+In caging approaches, the robots surround the object and move it to a desired location while keeping the object enclosed for the duration of the task using gradient-based control laws
+[
+29
+,
+30
+]
+. These approaches introduce significant limitations on the range of possible manipulation tasks as the robots must enclose the object during the task. Other methods take an optimization approach to collaborative manipulation
+[
+31
+]
+. In the distributed methods, each robot solves an optimization problem for its trajectory locally, enabling the robots to avoid collisions in their environments while considering the dynamics limitations of the robots
+[
+32
+,
+33
+]
+.
+All the above methods for collaborative manipulation assume each robot grasps the object before the beginning of the task and maintains the grasp for the duration of the task. This assumption can be overly restrictive in manipulation within complex environments where the manipulation task can only be achieved through a variety of distinct contact interactions between the robots and the object. These situations require discrete contact interactions or re-grasping maneuvers between the robots and the object to manipulate the object through narrow paths and around complex features within the environment. Requiring the robot to maintain its grasp for the entirety of the task can limit the range of feasible manipulation tasks. Our method overcomes these limitations, enabling a varied set of contact interactions between the robots and the object. With our approach, each robot makes and breaks contact with the object, as required, to complete the manipulation task.
+III
+Problem Formulation
+Notation.
+Before proceeding, we define mathematical notation used in this paper. We denote the gradient of a function
+f
+f
+as
+∇
+f
+\nabla f
+. We denote the matrix-weighted norm
+x
+𝖳
+​
+M
+​
+x
+𝖳
+\sqrt{x^{\mathsf{T}}Mx^{\mathsf{T}}}
+as
+‖
+x
+‖
+M
+\|x\|_{M}
+, where
+M
+M
+is positive semi-definite. The Special Orthogonal Group
+SO
+⁡
+(
+d
+)
+\mathrm{SO}(d)
+is the space of all rotations in dimension
+d
+d
+, consisting of orthogonal matrices with a determinant of
+1
+1
+, while the Special Euclidean Group
+SE
+⁡
+(
+d
+)
+\mathrm{SE}(d)
+is the space of all rigid-body transformations in dimension
+d
+d
+, comprising of all translations
+t
+∈
+ℝ
+d
+{t\in\mathbb{R}^{d}}
+and rotation
+R
+∈
+SO
+⁡
+(
+3
+)
+{R\in\mathrm{SO}(3)}
+.
+Communication Network.
+We represent the communication network among the robots as an undirected connected graph
+𝒢
+=
+(
+𝒱
+,
+ℰ
+)
+\mathcal{G}=(\mathcal{V},\mathcal{E})
+, with the set of vertices
+𝒱
+=
+{
+1
+,
+⋯
+,
+N
+}
+{\mathcal{V}=\{1,\cdots,N\}}
+representing the robots, and the set of edges
+ℰ
+⊆
+𝒱
+×
+𝒱
+{\mathcal{E}\subseteq\mathcal{V}\times\mathcal{V}}
+. An edge
+(
+i
+,
+j
+)
+(i,j)
+exists in
+ℰ
+\mathcal{E}
+if robots
+i
+i
+and
+j
+j
+share a communication link. We denote the set of robots that can communicate with robot
+i
+i
+, its neighbor set, as
+𝒩
+i
+=
+{
+j
+∣
+(
+i
+,
+j
+)
+∈
+ℰ
+}
+{\mathcal{N}_{i}=\{j\mid(i,j)\in\mathcal{E}\}}
+.
+Problem
+.
+We pose multi-robot collaborative manipulation, tactics planning in robot team sports, and locomotion gait planning of modular robots within the framework of contact-implicit trajectory optimization, presenting a unifying formulation of these problems. We assume the contact-implicit optimization problem involves
+N
+N
+robots. In the subsequent discussion, we extend the use of the term
+robot
+to encompass a module in a modular robot. In the following discussion, we denote the configuration of robot
+i
+i
+by
+x
+i
+∈
+ℝ
+n
+i
+{x_{i}\in\mathbb{R}^{n_{i}}}
+and the configuration of the contact surface (which could be the surface of the pertinent object in a manipulation context or the ground surface in a locomotion problem) by
+x
+cs
+∈
+ℝ
+b
+{x_{\text{cs}}\in\mathbb{R}^{b}}
+.
+III-A
+Rigid-Body Dynamics
+We derive the rigid-body dynamics equations of the composite system consisting of the robots and all relevant bodies in the problem (e.g., the object in a manipulation context). We denote the configuration of the composite system as
+𝒙
+=
+[
+x
+cs
+𝖳
+,
+x
+i
+𝖳
+,
+i
+=
+1
+,
+⋯
+,
+N
+]
+𝖳
+{\bm{x}=[x_{\text{cs}}^{\mathsf{T}},x_{i}^{\mathsf{T}},i=1,\cdots,N]^{\mathsf{T}}}
+, with
+𝒙
+∈
+ℝ
+n
+s
+{\bm{x}\in\mathbb{R}^{n_{s}}}
+; the concatenated generalized velocities as
+𝒙
+˙
+∈
+ℝ
+n
+s
+{\dot{\bm{x}}\in\mathbb{R}^{n_{s}}}
+, the concatenated torques applied by the robots as
+𝝉
+=
+[
+τ
+i
+𝖳
+,
+i
+=
+1
+,
+⋯
+,
+N
+]
+{\bm{\tau}=[\tau_{i}^{\mathsf{T}},i=1,\cdots,N]}
+, with
+𝝉
+∈
+ℝ
+n
+τ
+{\bm{\tau}\in\mathbb{R}^{n_{\tau}}}
+; and the concatenated contact forces as
+𝑭
+=
+[
+F
+i
+𝖳
+,
+i
+=
+1
+,
+⋯
+,
+N
+]
+{\bm{F}=[F_{i}^{\mathsf{T}},i=1,\cdots,N]}
+, with
+𝑭
+∈
+ℝ
+n
+f
+{\bm{F}\in\mathbb{R}^{n_{f}}}
+, where
+F
+i
+F_{i}
+denotes the contact force associated with robot
+i
+i
+. The rigid-body dynamics of the composite system is described by the manipulator equation
+𝑴
+⁡
+(
+𝒙
+)
+​
+𝒙
+¨
++
+𝑮
+⁡
+(
+𝒙
+˙
+,
+𝒙
+)
+=
+𝑽
+⁡
+(
+𝒙
+)
+​
+𝝉
++
+𝑾
+⁡
+(
+𝒙
+)
+​
+𝑭
+,
+\bm{M}(\bm{x})\ddot{\bm{x}}+\bm{G}(\dot{\bm{x}},\bm{x})=\bm{V}(\bm{x})\bm{\tau}+\bm{W}(\bm{x})\bm{F},
+(1)
+where
+𝑴
+:
+ℝ
+n
+s
+→
+ℝ
+n
+s
+×
+n
+s
+{\bm{M}:\mathbb{R}^{n_{s}}\rightarrow\mathbb{R}^{n_{s}\times n_{s}}}
+represents the composite inertia,
+𝑮
+⁡
+(
+⋅
+)
+\bm{G}(\cdot)
+represents the non-linear friction, Coriolis, and gravity terms influencing the dynamics of these bodies, and
+𝑾
+⁡
+(
+𝒙
+)
+∈
+ℝ
+n
+s
+×
+n
+f
+{\bm{W}(\bm{x})\in\mathbb{R}^{n_{s}\times n_{f}}}
+represents the Jacobian for the contact forces in the dynamics. The robots apply generalized torques (i.e., torques and forces)
+𝝉
+\bm{\tau}
+, and
+𝑽
+⁡
+(
+𝒙
+)
+∈
+ℝ
+n
+s
+×
+n
+τ
+{\bm{V}(\bm{x})\in\mathbb{R}^{n_{s}\times n_{\tau}}}
+maps the generalized torques of the system
+𝝉
+\bm{\tau}
+to the dynamics equation. The dynamics model in (
+1
+) applies equally to fully-actuated (
+rank
+​
+(
+𝑽
+)
+=
+n
+s
+\text{rank}(\bm{V})=n_{s}
+) or underactuated (
+rank
+​
+(
+𝑽
+)
+<
+n
+s
+\text{rank}(\bm{V})<n_{s}
+) robots. We assume that the dynamics constraint function in (
+1
+) is separable with respect to the generalized positions and velocities of the robots. This assumption is satisfied in many collaborative multi-robot problems where independently-actuated robots manipulate or interact with a common object, which is often the case in practice. For example, this assumption holds in many collaborative manipulation problems where each robot has separate end-effectors controlled independently, robot team sports and in modular-robot locomotion problems.
+III-B
+Contact Dynamics
+We derive the contact dynamics between a robot and a contact surface using impulses, for better numerical stability. This approach is standard in contact-implicit optimization, (we refer interested readers to
+[
+8
+]
+for additional details). We denote the contact impulse associated with robot
+i
+i
+by
+f
+i
+∈
+ℝ
+n
+f
+,
+i
+{f_{i}\in\mathbb{R}^{n_{f,i}}}
+consisting of a normal component
+c
+i
+c_{i}
+and tangential components
+α
+i
+∈
+ℝ
+m
+{\alpha_{i}\in\mathbb{R}^{m}}
+.
+A non-zero contact impulse exists when the distance between a robot and the contact surface equals zero, which we represent as the constraint
+c
+i
+⋅
+β
+i
+​
+(
+x
+i
+,
+x
+cs
+)
+=
+0
+c_{i}\cdot\beta_{i}(x_{i},x_{\text{cs}})=0
+(2)
+where
+c
+i
+∈
+ℝ
+{c_{i}\in\mathbb{R}}
+represents the magnitude of the normal contact impulse with
+c
+i
+≥
+0
+{c_{i}\geq 0}
+and
+β
+i
+​
+(
+x
+i
+,
+x
+cs
+)
+\beta_{i}(x_{i},x_{\text{cs}})
+represents the distance function between the closest point on the surface of robot
+i
+i
+and the contact surface. The normal component of the contact impulse
+f
+i
+,
+n
+f_{i,n}
+acts in the direction of the gradient of the distance function with respect to the configuration of the contact surface given by
+f
+i
+,
+n
+=
+c
+i
+⋅
+∇
+β
+i
+​
+(
+x
+i
+,
+x
+cs
+)
+‖
+∇
+β
+i
+​
+(
+x
+i
+,
+x
+cs
+)
+‖
+2
+,
+f_{i,n}=c_{i}\cdot\frac{\nabla\beta_{i}(x_{i},x_{\text{cs}})}{\|\nabla\beta_{i}(x_{i},x_{\text{cs}})\|_{2}},
+(3)
+with
+∇
+β
+i
+​
+(
+x
+i
+,
+x
+cs
+)
+∈
+ℝ
+b
+{\nabla\beta_{i}(x_{i},x_{\text{cs}})\in\mathbb{R}^{b}}
+.
+The relationships between the contact impulse and the distance function between robot
+i
+i
+and the contact surface are represented by the complementarity constraints:
+c
+i
+⋅
+β
+i
+​
+(
+x
+i
+,
+x
+cs
+)
+=
+0
+,
+\displaystyle c_{i}\cdot\beta_{i}(x_{i},x_{\text{cs}})=0,
+(4)
+β
+i
+(
+x
+i
+,
+x
+cs
+)
+≥
+0
+,
+c
+i
+≥
+0
+,
+\displaystyle\beta_{i}(x_{i},x_{\text{cs}})\geq 0,\quad c_{i}\geq 0,
+indicating the existence of non-zero contact impulses only when robot
+i
+i
+makes contact with the contact surface. We assume the object is manipulated by (potentially underactuated) robots, where each robot applies joint torques
+τ
+\tau
+to actuate a subset of its joints.
+We utilize the Coulomb friction model in formulating the contact dynamics constraints associated with the frictional impulse. We assume the tangential impulse generated by contact between the robot and the contact surface remains within the friction cone, given by the constraint
+‖
+α
+i
+‖
+2
+≤
+μ
+​
+c
+i
+\|\alpha_{i}\|_{2}\leq\mu c_{i}
+, where
+α
+i
+\alpha_{i}
+represents the tangential components of the contact impulse between robot
+i
+i
+and the contact surface,
+μ
+\mu
+represents the coefficient of friction at the contact surface, and
+c
+i
+c_{i}
+represents the normal component of the contact impulse. In our work, we utilize a polygonal cone approximation to the Coulomb friction cone,
+1
+1
+1
+One can also consider the exact friction cone, but this requires second order cone optimization tools that add complexity to the method without a significant practical benefit. We present the polygonal cone model here for simplicity.
+with
+m
+m
+tangential directions given by
+ν
+1
+,
+…
+,
+ν
+m
+{\nu_{1},\ldots,\nu_{m}}
+, with
+ν
+k
+∈
+ℝ
+d
+{\nu_{k}\in\mathbb{R}^{d}}
+, as depicted in Figure
+2
+. With this approximation, we denote the tangential contact impulse expressed in the basis of the tangential directions by
+α
+∈
+ℝ
+m
+{\alpha\in\mathbb{R}^{m}}
+.
+Fig. 2
+:
+The Coulomb friction cone and its polygonal approximation with
+m
+m
+tangential directions denoted by
+ν
+1
+,
+…
+,
+ν
+m
+\nu_{1},\ldots,\nu_{m}
+.
+We note that the tangential contact impulse maximizes dissipation over all feasible frictional impulses. Moreover, for sliding contact interactions, the frictional contact impulse
+α
+\alpha
+acts in a direction opposite that of the sliding velocity
+v
+v
+and minimizes the following optimization problem
+minimize
+𝛼
+\displaystyle\underset{\alpha}{\text{minimize}}
+v
+𝖳
+​
+D
+​
+α
+\displaystyle v^{\mathsf{T}}D\alpha
+(5)
+subject to
+\displaystyle\text{subject to}
+‖
+α
+‖
+1
+≤
+μ
+​
+c
+i
+\displaystyle\|\alpha\|_{1}\leq\mu c_{i}
+α
+≥
+0
+,
+\displaystyle\alpha\geq 0,
+where
+D
+=
+[
+ν
+1
+,
+⋯
+,
+ν
+m
+]
+∈
+ℝ
+d
+×
+m
+{D=[\nu_{1},\cdots,\nu_{m}]\in\mathbb{R}^{d\times m}}
+and
+α
+∈
+ℝ
+m
+{\alpha\in\mathbb{R}^{m}}
+. The optimality conditions of (
+5
+) are given by the set of complementarity constraints
+(
+λ
+​
+e
++
+D
+𝖳
+​
+v
+)
+⟂
+α
+,
+\displaystyle(\lambda e+D^{\mathsf{T}}v)\perp\alpha,
+(6)
+λ
+e
++
+D
+𝖳
+v
+≥
+0
+,
+α
+≥
+0
+,
+\displaystyle\lambda e+D^{\mathsf{T}}v\geq 0,\kern 5.0pt\alpha\geq 0,
+(
+μ
+​
+c
+i
+−
+e
+𝖳
+​
+α
+)
+⟂
+λ
+,
+\displaystyle(\mu c_{i}-e^{\mathsf{T}}\alpha)\perp\lambda,
+μ
+c
+i
+−
+e
+𝖳
+α
+≥
+0
+,
+λ
+≥
+0
+,
+\displaystyle\mu c_{i}-e^{\mathsf{T}}\alpha\geq 0,\kern 5.0pt\lambda\geq 0,
+where
+e
+∈
+ℝ
+m
+{e\in\mathbb{R}^{m}}
+denotes the all-ones vector, and
+λ
+∈
+ℝ
+{\lambda\in\mathbb{R}}
+denotes the Lagrange multiplier. We note that as the polygonal approximation approaches the Coulomb friction cone, the value of the Lagrange multiplier approaches the magnitude of the tangential sliding velocity.
+III-C
+Collision Avoidance
+In the classes of multi-robot problems considered in this paper, we desire some contact interactions (e.g., between the robots and an object or the ground surface to facilitate completion of the task), while we want to prohibit other contact interactions (e.g., between two robots, between robots and obstacles in the environment, and between the object being manipulated and the environment). We formulate these collision avoidance constraints as
+ψ
+⁡
+(
+x
+i
+,
+x
+j
+)
+≥
+κ
+i
+,
+j
+,
+\psi(x_{i},x_{j})\geq\kappa_{i,j},
+(7)
+using a collision function
+ψ
+⁡
+(
+x
+i
+,
+x
+j
+)
+\psi(x_{i},x_{j})
+specifying the distance between robots
+i
+i
+and
+j
+j
+with the minimum safe distance between the robots represented by
+κ
+i
+,
+j
+\kappa_{i,j}
+, and similarly
+ψ
+⁡
+(
+x
+i
+)
+≥
+κ
+i
+\psi(x_{i})\geq\kappa_{i}
+to prevent collision between a single robot or object and the environment. We abuse notation slightly by using the same symbol
+ψ
+\psi
+for all such functions to streamline the notation. The meaning should be clear from context.
+III-D
+Optimization Problem
+We consider a contact-implicit trajectory optimization problem with the objective function of robot
+i
+i
+given by
+∫
+0
+T
+ϕ
+i
+​
+(
+x
+i
+,
+τ
+i
+,
+𝑭
+)
+​
+dt
+,
+\int_{0}^{T}\phi_{i}(x_{i},\tau_{i},\bm{F})\ \text{dt},
+(8)
+where
+T
+T
+denotes the duration of the task and
+ϕ
+i
+​
+(
+⋅
+)
+\phi_{i}(\cdot)
+may depend on time
+t
+t
+, although we do not indicate its dependence explicitly in the problem. In many trajectory optimization problems,
+ϕ
+i
+​
+(
+⋅
+)
+\phi_{i}(\cdot)
+takes a quadratic form, including terms representing the energy expended by the actuators on the robots and the deviation of the configuration of the robots from desired values.
+Summing over all robots and including all constraints, we can express the continuous-time contact-implicit trajectory optimization problem as
+minimize
+𝒙
+,
+𝝉
+,
+𝒇
+\displaystyle\underset{\bm{x},\bm{\tau},\bm{f}}{\text{minimize}}
+∑
+i
+=
+1
+N
+∫
+0
+T
+ϕ
+i
+​
+(
+x
+i
+,
+τ
+i
+,
+𝑭
+)
+​
+dt
+\displaystyle\sum_{i=1}^{N}\int_{0}^{T}\phi_{i}(x_{i},\tau_{i},\bm{F})\ \text{dt}
+(9)
+subject to
+\displaystyle\text{subject to}
+𝑴
+⁡
+(
+𝒙
+)
+​
+𝒙
+¨
++
+𝒈
+⁡
+(
+𝒙
+˙
+,
+𝒙
+)
+=
+𝑽
+⁡
+(
+𝒙
+)
+​
+𝝉
++
+𝑾
+⁡
+(
+𝒙
+)
+​
+𝑭
+\displaystyle\bm{M}(\bm{x})\ddot{\bm{x}}+\bm{g}(\dot{\bm{x}},\bm{x})=\bm{V}(\bm{x})\bm{\tau}+\bm{W}(\bm{x})\bm{F}
+𝒉
+⁡
+(
+𝒙
+,
+𝒙
+˙
+)
+=
+0
+\displaystyle\bm{h}(\bm{x},\dot{\bm{x}})=0
+𝒓
+⁡
+(
+𝒙
+,
+𝝉
+,
+𝑭
+)
+≤
+0
+\displaystyle\bm{r}(\bm{x},\bm{\tau},\bm{F})\leq 0
+where
+𝒉
+⁡
+(
+⋅
+)
+\bm{h}(\cdot)
+represents constraints on the initial and desired configuration and velocities of the mobile bodies in the problem (e.g., robots) and
+𝒓
+⁡
+(
+⋅
+)
+\bm{r}(\cdot)
+represents the contact dynamics constraints as a function of
+𝒙
+,
+𝝉
+,
+{\bm{x},\bm{\tau},}
+and
+𝑭
+\bm{F}
+, in addition to the collision avoidance constraint in (
+7
+) and constraints on the torques applied by each robot. To simplify notation, we drop the subscript
+t
+t
+on
+𝒙
+⁡
+(
+t
+)
+\bm{x}(t)
+,
+𝒙
+˙
+​
+(
+t
+)
+\dot{\bm{x}}(t)
+, and
+𝒙
+¨
+​
+(
+t
+)
+\ddot{\bm{x}}(t)
+in (
+9
+) and note that the constraints are defined over
+t
+∈
+[
+0
+,
+T
+]
+{t\in[0,T]}
+.
+To compute the torques required by the robots, we discretize the continuous-time optimization problem in (
+9
+) for transcription to a numerical optimization problem using multiple shooting, with piecewise-constant control inputs over a time interval of
+Δ
+​
+t
+\Delta t
+seconds, which depends on the manipulation task. In line with our formulation of the contact dynamics at the impulse level, we discretize the dynamics model in (
+1
+) over each interval in the resulting grid, using a Backward Euler integration scheme to obtain the discrete-time dynamics model of the composite system at the impulse-momentum level,
+𝒎
+⁡
+(
+𝒙
+˙
+)
++
+𝒈
+⁡
+(
+𝒙
+˙
+,
+𝒙
+)
+=
+Δ
+​
+t
+⋅
+𝑽
+⁡
+(
+𝒙
+)
+​
+𝝉
++
+𝑾
+⁡
+(
+𝒙
+)
+​
+𝒇
+,
+\bm{m}(\dot{\bm{x}})+\bm{g}(\dot{\bm{x}},\bm{x})=\Delta t\cdot\bm{V}(\bm{x})\bm{\tau}+\bm{W}(\bm{x})\bm{f},
+(10)
+where
+𝒎
+⁡
+(
+𝒙
+˙
+)
+=
+𝑴
+⁡
+(
+⋅
+)
+​
+(
+𝒙
+˙
+k
++
+1
+−
+𝒙
+˙
+k
+)
+{\bm{m}(\dot{\bm{x}})=\bm{M}(\cdot)(\dot{\bm{x}}_{k+1}-\dot{\bm{x}}_{k})}
+and
+𝒈
+⁡
+(
+𝒙
+˙
+,
+𝒙
+)
+=
+Δ
+​
+t
+⋅
+𝑮
+⁡
+(
+⋅
+)
+{\bm{g}(\dot{\bm{x}},\bm{x})=\Delta t\cdot\bm{G}(\cdot)}
+at time step
+k
+k
+, with
+𝑴
+\bm{M}
+and
+𝑮
+\bm{G}
+evaluated at the end of the time interval. We note that
+𝒇
+{\bm{f}}
+denotes the concatenated contact impulses of all robots.
+The resulting discrete-time contact-implicit trajectory optimization problem is given by:
+minimize
+𝒙
+,
+𝒙
+˙
+,
+𝝉
+,
+𝒇
+\displaystyle\underset{\bm{x},\dot{\bm{x}},\bm{\tau},\bm{f}}{\text{minimize}}
+∑
+i
+=
+1
+N
+∑
+s
+=
+0
+T
+d
+ϕ
+^
+i
+​
+(
+x
+i
+,
+τ
+i
+,
+𝒇
+,
+s
+)
+\displaystyle\sum_{i=1}^{N}\sum_{s=0}^{T_{d}}\hat{\phi}_{i}(x_{i},\tau_{i},\bm{f},s)
+(11)
+subject to
+\displaystyle\text{subject to}
+𝒎
+⁡
+(
+𝒙
+˙
+)
++
+𝒈
+⁡
+(
+𝒙
+˙
+,
+𝒙
+)
+=
+Δ
+​
+t
+⋅
+𝑽
+⁡
+(
+𝒙
+)
+​
+𝝉
++
+𝑾
+⁡
+(
+𝒙
+)
+​
+𝒇
+\displaystyle\bm{m}(\dot{\bm{x}})+\bm{g}(\dot{\bm{x}},\bm{x})=\Delta t\cdot\bm{V}(\bm{x})\bm{\tau}+\bm{W}(\bm{x})\bm{f}
+𝒉
+⁡
+(
+𝒙
+,
+𝒙
+˙
+)
+=
+0
+\displaystyle\bm{h}(\bm{x},\dot{\bm{x}})=0
+𝒓
+⁡
+(
+𝒙
+,
+𝝉
+,
+𝒇
+)
+≤
+0
+,
+\displaystyle\bm{r}(\bm{x},\bm{\tau},\bm{f})\leq 0,
+where
+ϕ
+^
+i
+​
+(
+⋅
+)
+\hat{\phi}_{i}(\cdot)
+represents the objective function evaluated numerically over the interval
+[
+t
+s
+,
+t
+s
++
+1
+]
+[t_{s},t_{s+1}]
+using the corresponding values of
+x
+i
+x_{i}
+,
+τ
+i
+\tau_{i}
+, and
+𝒇
+\bm{f}
+, and
+T
+d
+T_{d}
+denotes the number of intervals in the grid. The constraint functions in (
+11
+) represent vector-valued functions applying across all time intervals. In addition,
+𝒓
+⁡
+(
+⋅
+)
+\bm{r}(\cdot)
+represents the contact dynamics constraints described by (
+3
+), (
+4
+), and (
+6
+). For notational convenience, we denote the finite-dimensional optimization variables for the generalized positions, velocities, torques, and contact impulses concatenated over all time intervals as
+𝒙
+\bm{x}
+,
+𝒙
+˙
+\dot{\bm{x}}
+,
+𝒙
+¨
+\ddot{\bm{x}}
+,
+𝝉
+\bm{\tau}
+, and
+𝒇
+\bm{f}
+, respectively.
+Figure
+3
+shows a robotic manipulator in an object manipulation task, with the inertial frame shown in the lower-left corner of the figure. The contact impulses arising in the problem, initially expressed in a local reference frame attached to the end-effector of the robot, are transformed into the inertial frame in (
+11
+). Non-zero normal and tangential contact impulses only exist when the robot is in contact with the object, as expressed by the complementarity constraints in (
+4
+).
+Fig. 3
+:
+The contact impulses
+c
+c
+and
+α
+\alpha
+, initially expressed in a local reference frame attached to the end-effector of the robot, are transformed to the inertial frame, displayed in the lower-left corner.
+We note that some previous approaches enforce the complementarity constraint between the contact forces and the distance function in (
+4
+) at the beginning of each time interval. This approach allows for the existence of non-zero contact forces even when contact between the robot and the object breaks away within the interval. To avoid this issue, other approaches enforce this constraint at the end of the interval, ensuring that contact forces only exist if the robot and object maintain contact at the end of the time interval. However, this approach only provides a partial remedy as non-zero contact forces can still exist within an interval when the robot does not remain in contact with the object as long as the robot contacts the object at the end of the interval. To preclude this situation, we introduce a constraint on the contact impulse and the relative velocity between robot
+i
+i
+and the object
+β
+˙
+i
+​
+(
+x
+i
+,
+x
+obj
+)
+\dot{\beta}_{i}(x_{i},x_{\text{obj}})
+given by
+c
+i
+⋅
+(
+β
+˙
+i
+​
+(
+t
++
+Δ
+​
+t
+)
++
+θ
+​
+β
+˙
+i
+​
+(
+t
+)
+)
+=
+0
+,
+c_{i}\cdot(\dot{\beta}_{i}(t+\Delta t)+\theta\dot{\beta}_{i}(t))=0,
+(12)
+where
+θ
+∈
+ℝ
+\theta\in\mathbb{R}
+represents the coefficient of restitution. For the manipulation tasks in this work, we focus on inelastic collisions between the robot and the object, described by the coefficient of restitution
+θ
+=
+0
+{\theta=0}
+. This constraint ensures that non-zero contact forces exist between the robot and the object only when the robot remains in contact with the object over the time interval, indicated by zero relative velocity between the robot and the object over this time interval.
+In Section
+VI
+, we provide concrete examples of the general contact-implicit trajectory optimization problems given by (
+9
+) and (
+11
+) in each class of multi-robot problems considered in this work.
+IV
+Distributed Trajectory Optimization
+We utilize a receding-horizon approach
+[
+34
+,
+35
+,
+36
+,
+37
+]
+in solving the numerical optimization problem in (
+11
+), where we solve the problem over a smaller time span of duration
+T
+r
+T_{r}
+. The robots apply the first set of torques from the resulting solution. Subsequently, we advance the time span by one interval which defines the next optimization problem. We repeat this process until the completion of the manipulation task, with each numerical optimization problem given by
+𝒫
+C
+:
+\displaystyle\mathcal{P}_{C}:
+minimize
+𝒙
+,
+𝒙
+˙
+,
+𝝉
+,
+𝒇
+\displaystyle\underset{\bm{x},\dot{\bm{x}},\bm{\tau},\bm{f}}{\text{minimize}}
+∑
+i
+=
+1
+N
+ℓ
+i
+​
+(
+x
+i
+,
+τ
+i
+,
+𝒇
+)
+\displaystyle\sum_{i=1}^{N}\ell_{i}(x_{i},\tau_{i},\bm{f})
+(13)
+subject to
+\displaystyle\text{subject to}
+𝒎
+⁡
+(
+𝒙
+˙
+)
++
+𝒈
+⁡
+(
+𝒙
+˙
+,
+𝒙
+)
+=
+𝑽
+⁡
+(
+𝒙
+)
+​
+𝝉
++
+𝑾
+⁡
+(
+𝒙
+)
+​
+𝒇
+\displaystyle\bm{m}(\dot{\bm{x}})+\bm{g}(\dot{\bm{x}},\bm{x})=\bm{V}(\bm{x})\bm{\tau}+\bm{W}(\bm{x})\bm{f}
+𝒉
+⁡
+(
+𝒙
+,
+𝒙
+˙
+)
+=
+0
+\displaystyle\bm{h}(\bm{x},\dot{\bm{x}})=0
+𝒓
+⁡
+(
+𝒙
+,
+𝝉
+,
+𝒇
+)
+≤
+0
+,
+\displaystyle\bm{r}(\bm{x},\bm{\tau},\bm{f})\leq 0,
+with
+ℓ
+i
+​
+(
+x
+i
+,
+τ
+i
+,
+𝒇
+)
+=
+∑
+s
+=
+0
+T
+r
+ϕ
+i
+​
+(
+x
+i
+,
+τ
+i
+,
+𝒇
+,
+s
+)
+.
+\ell_{i}(x_{i},\tau_{i},\bm{f})=\sum_{s=0}^{T_{r}}\phi_{i}(x_{i},\tau_{i},\bm{f},s).
+(14)
+The problem
+𝒫
+C
+\mathcal{P}_{C}
+consists of the objective function and local constraints of all robots, which is unavailable to any single robot, coupling the computation of the required torques of each robot. Utilizing a centralized approach would be inefficient, generally, as noted earlier. To overcome this challenge, we leverage distributed optimization. In particular, we utilize ADMM
+[
+38
+,
+2
+]
+, in contrast to distributed first-order methods
+[
+39
+,
+40
+,
+41
+]
+and distributed Newton or quasi-Newton methods
+[
+42
+,
+43
+,
+44
+]
+.
+We derive DisCo, our distributed algorithm for contact-rich trajectory optimization problems. In DisCo, each robot computes its torques from (
+13
+) without computing the torques of other robots, while collaborating with other robots to complete a specified task. To ease exposition of our algorithm, we present our algorithm in a setting where the robot and the contact body (object) is non-stationary, e.g., in collaborative manipulation and robot team sports. However, we note that the resulting algorithm applies to other collaborative multi-robot problems involving contact. We can decouple the composite rigid-body dynamics of the robots and contact body, expressing the dynamics constraint in the form:
+m
+i
+​
+(
+x
+˙
+i
+,
+x
+˙
+cs
+)
+\displaystyle m_{i}(\dot{x}_{i},\dot{x}_{\text{cs}})
++
+g
+i
+​
+(
+x
+˙
+i
+,
+x
+i
+,
+x
+˙
+cs
+,
+x
+cs
+)
+=
+\displaystyle+g_{i}(\dot{x}_{i},x_{i},\dot{x}_{\text{cs}},x_{\text{cs}})=
+(15)
+V
+i
+​
+(
+x
+i
+,
+x
+cs
+)
+​
+τ
+i
++
+W
+i
+​
+(
+x
+i
+,
+x
+cs
+)
+​
+𝒇
+,
+\displaystyle V_{i}(x_{i},x_{\text{cs}})\tau_{i}+W_{i}(x_{i},x_{\text{cs}})\bm{f},
+where
+m
+i
+​
+(
+⋅
+)
+m_{i}(\cdot)
+represents the inertia terms and
+g
+i
+​
+(
+⋅
+)
+g_{i}(\cdot)
+represents the non-linear friction, Coriolis, and gravity terms for the dynamics constraints involving robot
+i
+i
+, similar to (
+13
+). The dynamics constraint in (
+15
+) highlights the form of the coupling between the generalized positions and velocities of each robot. We note, however, that the resulting individual dynamics constraints depend on the contact body’s generalized positions and velocities. As a result, we refer to the contact body’s generalized positions and velocities as coupling variables.
+For distributed computation of the torques in (
+11
+), we introduce local copies of the optimization variables for the contact forces applied by the robots and the contact body’s configuration and velocity, resulting in the distributed optimization problem
+𝒫
+D
+:
+\displaystyle\mathcal{P}_{D}:
+minimize
+𝒙
+˘
+,
+𝒙
+˘
+˙
+,
+𝝉
+,
+𝒇
+˘
+\displaystyle\underset{\breve{\bm{x}},\dot{\breve{\bm{x}}},\bm{\tau},\breve{\bm{f}}}{\text{minimize}}
+∑
+i
+=
+1
+N
+ℓ
+i
+​
+(
+x
+i
+,
+τ
+i
+,
+𝒇
+i
+)
+\displaystyle\sum_{i=1}^{N}\ell_{i}(x_{i},\tau_{i},\bm{f}_{i})
+(16)
+subject to
+\displaystyle\text{subject to}
+𝒗
+i
+​
+(
+x
+˘
+i
+,
+x
+˘
+˙
+i
+,
+τ
+i
+,
+𝒇
+i
+)
+=
+0
+∀
+i
+∈
+𝒱
+\displaystyle\bm{v}_{i}(\breve{x}_{i},\dot{\breve{x}}_{i},\tau_{i},\bm{f}_{i})=0\quad\forall i\in\mathcal{V}
+h
+i
+​
+(
+x
+˘
+i
+,
+x
+˘
+˙
+i
+)
+=
+0
+∀
+i
+∈
+𝒱
+\displaystyle h_{i}(\breve{x}_{i},\dot{\breve{x}}_{i})=0\quad\forall i\in\mathcal{V}
+r
+i
+​
+(
+x
+˘
+i
+,
+x
+˘
+˙
+i
+,
+τ
+i
+,
+f
+i
+)
+≤
+0
+∀
+i
+∈
+𝒱
+\displaystyle r_{i}(\breve{x}_{i},\dot{\breve{x}}_{i},\tau_{i},f_{i})\leq 0\quad\forall i\in\mathcal{V}
+𝒇
+i
+=
+𝒇
+j
+∀
+j
+∈
+𝒩
+i
+,
+∀
+i
+∈
+𝒱
+\displaystyle\bm{f}_{i}=\bm{f}_{j}\quad\forall j\in\mathcal{N}_{i},\ \forall i\in\mathcal{V}
+x
+̊
+i
+=
+x
+̊
+j
+∀
+j
+∈
+𝒩
+i
+,
+∀
+i
+∈
+𝒱
+\displaystyle\mathring{x}_{i}=\mathring{x}_{j}\quad\forall j\in\mathcal{N}_{i},\ \forall i\in\mathcal{V}
+where
+x
+˘
+i
+=
+[
+x
+i
+𝖳
+,
+x
+cs
+,
+i
+𝖳
+]
+𝖳
+{\breve{x}_{i}=[x_{i}^{\mathsf{T}},x_{\text{cs},i}^{\mathsf{T}}]^{\mathsf{T}}}
+represents the configuration of robot
+i
+i
+and its local copy of the contact body’s configuration concatenated over all times steps,
+x
+˘
+˙
+i
+=
+[
+x
+˙
+i
+𝖳
+,
+x
+˙
+obj
+,
+i
+𝖳
+]
+𝖳
+{\dot{\breve{x}}_{i}=[\dot{x}_{i}^{\mathsf{T}},\dot{x}_{\text{obj},i}^{\mathsf{T}}]^{\mathsf{T}}}
+represents the corresponding velocities,
+𝒙
+˘
+=
+[
+x
+˘
+i
+𝖳
+,
+i
+=
+1
+,
+⋯
+,
+N
+]
+𝖳
+{\breve{\bm{x}}=[\breve{x}_{i}^{\mathsf{T}},\ i=1,\cdots,N]^{\mathsf{T}}}
+,
+𝒙
+˘
+˙
+=
+[
+x
+˘
+˙
+i
+𝖳
+,
+i
+=
+1
+,
+⋯
+,
+N
+]
+𝖳
+{\dot{\breve{\bm{x}}}=[\dot{\breve{x}}_{i}^{\mathsf{T}},\ i=1,\cdots,N]^{\mathsf{T}}}
+, and
+𝒇
+˘
+=
+[
+𝒇
+i
+𝖳
+,
+i
+=
+1
+,
+⋯
+,
+N
+]
+𝖳
+{\breve{\bm{f}}=[\bm{f}_{i}^{\mathsf{T}},\ i=1,\cdots,N]^{\mathsf{T}}}
+represents the concatenation of the local optimization variables of the contact body’s configuration and velocities and the contact forces applied by the robots. Further, we denote robot
+i
+i
+’s local variables of the contact body’s configuration and velocity as
+x
+̊
+i
+=
+[
+x
+cs
+,
+i
+𝖳
+,
+x
+˙
+cs
+,
+i
+𝖳
+]
+𝖳
+{\mathring{x}_{i}=[x_{\text{cs},i}^{\mathsf{T}},\dot{x}_{\text{cs},i}^{\mathsf{T}}]^{\mathsf{T}}}
+, with
+x
+̊
+i
+∈
+ℝ
+n
+o
+{\mathring{x}_{i}\in\mathbb{R}^{n_{o}}}
+. The constraint function
+𝒗
+i
+​
+(
+⋅
+)
+\bm{v}_{i}(\cdot)
+represents the dynamics constraints in (
+15
+) as a function of robot
+i
+i
+’s copy of the optimization variables associated with the contact body’s configuration and velocity.
+Proposition 1
+.
+The optimization problem
+𝒫
+D
+\mathcal{P}_{D}
+in (
+16
+) is equivalent to the optimization problem
+𝒫
+C
+\mathcal{P}_{C}
+in (
+13
+) with the same optimal solution and optimal objective value.
+Proof.
+All robots compute the same composite contact force from the equality constraints between
+𝒇
+i
+\bm{f}_{i}
+and
+𝒇
+j
+\bm{f}_{j}
+∀
+(
+i
+,
+j
+)
+∈
+ℰ
+{\forall(i,j)\in\mathcal{E}}
+in (
+16
+), noting that the communication graph
+𝒢
+\mathcal{G}
+is connected. Likewise, all robots compute the same trajectory for the contact body from the equality constraints on
+x
+̊
+\mathring{x}
+. Consequently, we can replace the local composite contact force along with the configuration and velocity of the contact body computed by each robot by common optimization variables
+𝒇
+~
+\bm{\tilde{f}}
+,
+x
+~
+cs
+\tilde{x}_{\text{cs}}
+, and
+x
+~
+˙
+cs
+\dot{\tilde{x}}_{\text{cs}}
+, respectively. With these variables, the optimization problem in (
+16
+) has the same feasible set with the problem in (
+13
+), in addition to having the same objective function. As such, the optimization problems in (
+16
+) and (
+13
+) have the same optimal solution and optimal objective value.
+∎
+Remark 1
+.
+In formulating the distributed trajectory optimization problem in (
+16
+), we assumed separability of the dynamics constraint in (
+13
+) with respect to the robots’ generalized positions and velocities. This assumption simplifies the discussion of our algorithm. In general, our algorithm is not reliant on this assumption. When this assumption fails to hold, the distributed trajectory optimization problem takes a slightly-different form. In particular, each robot would have to keep a local copy of each coupling variable, with additional consistency (equality) constraints between the corresponding optimization variables of the robot and its neighbors.
+To maximize the computational efficiency of our approach, we apply the SOVA optimization method in
+[
+2
+]
+to derive DisCo, a distributed method for (
+16
+). Using SOVA, each robot only computes variables relevant to its local objective and constraint functions rather than computing the entire set of optimization variables, as done in other distributed approaches. Our approach proves particularly efficient in solving the problem in (
+16
+), considering the computation challenges introduced by the non-smooth contact dynamics constraints.
+We distribute the problem variables among the robots based on the relevance of each variable to each robot. For example, each robot has no use of the torques applied by the other robots, rendering optimization over these variables unnecessary for each robot. Hence, robot
+i
+i
+computes its configuration and the contact body’s configuration
+x
+˘
+i
+\breve{x}_{i}
+, the corresponding velocities
+x
+˘
+˙
+i
+\dot{\breve{x}}_{i}
+, torques
+τ
+i
+\tau_{i}
+, and its local contact forces
+𝒇
+i
+\bm{f}_{i}
+.
+Upon distributing the problem variables among the robots, we derive update procedures for the optimization variables of each robot from the augmented Lagrangian of (
+16
+). In deriving DisCo, we modify the SOVA algorithm to improve the efficiency of the iterative, numerical optimization procedures. We introduce a positive-definite matrix-valued penalty parameter in the augmented term arising in the augmented Lagrangian. The corresponding augmented Lagrangian
+ℒ
+a
+\mathcal{L}_{a}
+is given by
+ℒ
+a
+​
+(
+⋅
+)
+\displaystyle\mathcal{L}_{a}(\cdot)
+=
+∑
+i
+=
+1
+N
+(
+ℓ
+i
+​
+(
+x
+i
+,
+τ
+i
+,
+𝒇
+i
+)
+CLOSE
+\displaystyle=\sum_{i=1}^{N}\Big(\ell_{i}(x_{i},\tau_{i},\bm{f}_{i})
+(17)
++
+∑
+j
+∈
+𝒩
+i
+ϕ
+i
+​
+j
+𝖳
+(
+𝒇
+i
+−
+a
+i
+​
+j
+)
++
+ν
+i
+​
+j
+𝖳
+(
+𝒇
+j
+−
+b
+i
+​
+j
+)
+\displaystyle+\sum_{j\in\mathcal{N}_{i}}\phi_{ij}^{\mathsf{T}}(\bm{f}_{i}-a_{ij})+\nu_{ij}^{\mathsf{T}}(\bm{f}_{j}-b_{ij})
++
+∑
+j
+∈
+𝒩
+i
+γ
+i
+​
+j
+𝖳
+(
+x
+̊
+i
+−
+u
+i
+​
+j
+)
++
+η
+i
+​
+j
+𝖳
+(
+x
+̊
+j
+−
+w
+i
+​
+j
+)
+\displaystyle+\sum_{j\in\mathcal{N}_{i}}\gamma_{ij}^{\mathsf{T}}(\mathring{x}_{i}-u_{ij})+\eta_{ij}^{\mathsf{T}}(\mathring{x}_{j}-w_{ij})
++
+1
+2
+∑
+j
+∈
+𝒩
+i
+∥
+𝒇
+i
+−
+a
+i
+​
+j
+∥
+W
+f
+2
++
+∥
+𝒇
+j
+−
+b
+i
+​
+j
+∥
+W
+f
+2
+\displaystyle+\frac{1}{2}\sum_{j\in\mathcal{N}_{i}}\|\bm{f}_{i}-a_{ij}\|_{W_{f}}^{2}+\|\bm{f}_{j}-b_{ij}\|_{W_{f}}^{2}
++
+1
+2
+∑
+j
+∈
+𝒩
+i
+∥
+x
+̊
+i
+−
+u
+i
+​
+j
+∥
+W
+x
+2
++
+∥
+x
+̊
+j
+−
+w
+i
+​
+j
+∥
+W
+x
+2
+)
+\displaystyle+\frac{1}{2}\sum_{j\in\mathcal{N}_{i}}\|\mathring{x}_{i}-u_{ij}\|_{W_{x}}^{2}+\|\mathring{x}_{j}-w_{ij}\|_{W_{x}}^{2}\Big)
+with the dual variables
+ϕ
+i
+​
+j
+∈
+ℝ
+n
+f
+{\phi_{ij}\in\mathbb{R}^{n_{f}}}
+,
+ν
+i
+​
+j
+∈
+ℝ
+n
+f
+{\nu_{ij}\in\mathbb{R}^{n_{f}}}
+,
+γ
+i
+​
+j
+∈
+ℝ
+n
+o
+{\gamma_{ij}\in\mathbb{R}^{n_{o}}}
+, and
+η
+i
+​
+j
+∈
+ℝ
+n
+o
+{\eta_{ij}\in\mathbb{R}^{n_{o}}}
+for the equality constraints between the contact forces and the contact body’s configuration and velocity of neighboring robots. In addition,
+W
+f
+∈
+ℝ
+n
+f
+×
+n
+f
+{W_{f}\in\mathbb{R}^{n_{f}\times n_{f}}}
+and
+W
+x
+∈
+ℝ
+n
+o
+×
+n
+o
+{W_{x}\in\mathbb{R}^{n_{o}\times n_{o}}}
+denote positive-definite penalty parameters associated with the contact force and the contact body’s configuration variables, respectively. Each robot updates its primal optimization variables as the minimizers of the augmented Lagrangian using its dual variables at the previous iteration, before subsequently updating its dual variables via gradient ascent. Robot
+i
+i
+solves the local optimization problem
+𝒫
+L
+:
+\displaystyle\mathcal{P}_{L}:
+minimize
+x
+˘
+i
+,
+x
+˘
+˙
+i
+,
+τ
+i
+,
+𝒇
+i
+\displaystyle\underset{\breve{x}_{i},\dot{\breve{x}}_{i},\tau_{i},\bm{f}_{i}}{\text{minimize}}
+𝒥
+i
+​
+(
+x
+i
+,
+τ
+i
+,
+𝒇
+i
+)
+\displaystyle\mathcal{J}_{i}(x_{i},\tau_{i},\bm{f}_{i})
+(18)
+subject to
+\displaystyle\text{subject to}
+𝒗
+i
+​
+(
+x
+˘
+i
+,
+x
+˘
+˙
+i
+,
+τ
+i
+,
+𝒇
+i
+)
+=
+0
+\displaystyle\bm{v}_{i}(\breve{x}_{i},\dot{\breve{x}}_{i},\tau_{i},\bm{f}_{i})=0
+h
+i
+​
+(
+x
+˘
+i
+,
+x
+˘
+˙
+i
+)
+=
+0
+\displaystyle h_{i}(\breve{x}_{i},\dot{\breve{x}}_{i})=0
+r
+i
+​
+(
+x
+˘
+i
+,
+x
+˘
+˙
+i
+,
+τ
+i
+,
+f
+i
+)
+≤
+0
+\displaystyle r_{i}(\breve{x}_{i},\dot{\breve{x}}_{i},\tau_{i},f_{i})\leq 0
+with
+𝒥
+i
+​
+(
+⋅
+)
+\displaystyle\mathcal{J}_{i}(\cdot)
+=
+ℓ
+i
+​
+(
+x
+i
+,
+τ
+i
+,
+𝒇
+i
+)
++
+p
+i
+k
+​
+𝖳
+​
+𝒇
+i
++
+q
+i
+k
+​
+𝖳
+​
+x
+̊
+i
+\displaystyle=\ell_{i}(x_{i},\tau_{i},\bm{f}_{i})+p_{i}^{k\mathsf{T}}\bm{f}_{i}+q_{i}^{k\mathsf{T}}\mathring{x}_{i}
+(19)
++
+∑
+j
+∈
+𝒩
+i
+∥
+𝒇
+i
+−
+𝒇
+i
+k
++
+𝒇
+j
+k
+2
+∥
+W
+f
+2
++
+∥
+x
+̊
+i
+−
+x
+̊
+i
+k
++
+x
+̊
+j
+k
+2
+∥
+W
+x
+2
+,
+\displaystyle+\sum_{j\in\mathcal{N}_{i}}\Big\|{\bm{f}_{i}-\frac{\bm{f}_{i}^{k}+\bm{f}_{j}^{k}}{2}}\Big\|_{W_{f}}^{2}+\Big\|{\mathring{x}_{i}-\frac{\mathring{x}_{i}^{k}+\mathring{x}_{j}^{k}}{2}}\Big\|_{W_{x}}^{2}\ ,
+to update its problem variables.
+Notably, the local contact-implicit trajectory optimization problem (
+𝒫
+L
+\mathcal{P}_{L}
+) solved by each robot in (
+18
+) consists of a
+single
+set of complementarity constraints for the non-smooth contact dynamics of the robot, reducing the numerical challenges to solving the global optimization problem (
+𝒫
+C
+\mathcal{P}_{C}
+) in (
+13
+). This approach enables the robots to compute a solution to (
+18
+) even in cases when solving (
+13
+) proves particularly difficult. Moreover, each robot does not require the dynamics models, objective functions, and constraints of other robots in (
+18
+). Since, in general, the optimization variable computed by each robot in (
+18
+) does not change as the number of robots increases, our method scales efficiently to multi-robot problems with large groups of collaborating robots.
+After computing its problem variables, robot
+i
+i
+shares its local contact body’s trajectory
+x
+̊
+i
+k
++
+1
+\mathring{x}_{i}^{k+1}
+and contact force
+𝒇
+i
+k
++
+1
+\bm{f}_{i}^{k+1}
+with its neighbors and updates its dual variables
+p
+i
+∈
+ℝ
+n
+f
+{p_{i}\in\mathbb{R}^{n_{f}}}
+and
+q
+i
+∈
+ℝ
+n
+o
+{q_{i}\in\mathbb{R}^{n_{o}}}
+using
+p
+i
+k
++
+1
+\displaystyle p_{i}^{k+1}
+=
+p
+i
+k
++
+W
+f
+​
+∑
+j
+∈
+𝒩
+i
+(
+𝒇
+i
+k
++
+1
+−
+𝒇
+j
+k
++
+1
+)
+\displaystyle=p_{i}^{k}+W_{f}\sum_{j\in\mathcal{N}_{i}}\big(\bm{f}_{i}^{k+1}-\bm{f}_{j}^{k+1}\big)
+(20)
+q
+i
+k
++
+1
+\displaystyle q_{i}^{k+1}
+=
+q
+i
+k
++
+W
+x
+​
+∑
+j
+∈
+𝒩
+i
+(
+x
+̊
+i
+k
++
+1
+−
+x
+̊
+j
+k
++
+1
+)
+,
+\displaystyle=q_{i}^{k}+W_{x}\sum_{j\in\mathcal{N}_{i}}\big(\mathring{x}_{i}^{k+1}-\mathring{x}_{j}^{k+1}\big),
+where the dual variables
+p
+i
+p_{i}
+and
+q
+i
+q_{i}
+represent composite dual variables for
+ϕ
+i
+​
+j
+\phi_{ij}
+,
+ν
+i
+​
+j
+\nu_{ij}
+,
+γ
+i
+​
+j
+\gamma_{ij}
+, and
+η
+i
+​
+j
+\eta_{ij}
+. The update procedure in (
+20
+) results from simplification of the dual update procedure described in
+[
+2
+]
+.
+Remark 2
+.
+Although each robot considers only its local constraints in (
+18
+), the resulting trajectories of the robots and contact body satisfy all the problem constraints in (
+16
+) since all the robots compute the same trajectory for the contact body and all the problem constraints are enforced by at least one robot.
+Theorem 1
+.
+Assuming the objective function of (
+16
+) has Lipschitz continuous gradients, the trajectories of the robots and the contact body converge to a locally optimal solution of (
+16
+).
+Proof.
+The theorem follows mostly from
+[
+45
+]
+. Here, we briefly highlight the salient points. If the objective function of (
+16
+) has Lipschitz continuous gradients, the augmented Lagrangian
+ℒ
+a
+​
+(
+⋅
+)
+\mathcal{L}_{a}(\cdot)
+of (
+17
+) decreases monotonically at every iteration until convergence
+[
+45
+]
+. In addition, the sequence
+{
+𝒙
+k
+,
+𝒙
+˙
+k
+,
+𝝉
+k
+,
+𝒇
+k
+,
+p
+k
+,
+q
+k
+}
+{\{\bm{x}^{k},\dot{\bm{x}}^{k},\bm{\tau}^{k},\bm{f}^{k},p^{k},q^{k}\}}
+converges to a stationary point
+{
+𝒙
+⋆
+,
+𝒙
+˙
+⋆
+,
+𝝉
+⋆
+,
+𝒇
+⋆
+,
+p
+⋆
+,
+q
+⋆
+}
+{\{\bm{x}^{\star},\dot{\bm{x}}^{\star},\bm{\tau}^{\star},\bm{f}^{\star},p^{\star},q^{\star}\}}
+of
+ℒ
+a
+​
+(
+⋅
+)
+\mathcal{L}_{a}(\cdot)
+, corresponding to a locally optimal solution of (
+16
+).
+∎
+do in parallel
+i
+=
+1
+,
+⋯
+,
+N
+i=1,\cdots,N
+(
+x
+˘
+i
+,
+x
+˘
+˙
+i
+,
+τ
+i
+,
+𝒇
+i
+)
+←
+(\breve{x}_{i},\dot{\breve{x}}_{i},\tau_{i},\bm{f}_{i})\leftarrow
+OptimizeTrajectory
+(
+x
+˘
+i
+​
+(
+t
+)
+,
+x
+˘
+˙
+i
+​
+(
+t
+)
+)
+(\breve{x}_{i}(t),\dot{\breve{x}}_{i}(t))
+τ
+i
+​
+(
+t
+)
+←
+τ
+i
+​
+(
+0
+)
+\tau_{i}(t)\leftarrow\tau_{i}(0)
+Apply torque
+τ
+i
+​
+(
+t
+)
+\tau_{i}(t)
+.
+while
+manipulation task is in progress
+;
+Algorithm 1
+Distributed Contact-Rich Trajectory Optimization (DisCo)
+Initialization:
+k
+←
+0
+k\leftarrow 0
+(
+p
+i
+,
+q
+i
+)
+0
+←
+(
+0
+,
+0
+)
+(p_{i},q_{i})^{0}\leftarrow(0,0)
+(
+x
+˘
+i
+,
+x
+˘
+˙
+i
+,
+τ
+i
+,
+𝒇
+i
+)
+0
+←
+(\breve{x}_{i},\dot{\breve{x}}_{i},\tau_{i},\bm{f}_{i})^{0}\leftarrow
+argminimize
+x
+˘
+i
+,
+x
+˘
+˙
+i
+,
+τ
+i
+,
+𝒇
+i
+{
+\underset{\breve{x}_{i},\dot{\breve{x}}_{i},\tau_{i},\bm{f}_{i}}{\mathrm{argminimize}}\big\{
+Problem (
+18
+)
+}
+\big\}
+do in parallel
+i
+=
+1
+,
+⋯
+,
+N
+i=1,\cdots,N
+(
+x
+˘
+i
+,
+x
+˘
+˙
+i
+,
+τ
+i
+,
+𝒇
+i
+)
+k
++
+1
+←
+(\breve{x}_{i},\dot{\breve{x}}_{i},\tau_{i},\bm{f}_{i})^{k+1}\leftarrow
+Problem (
+18
+)
+Communication Procedure
+:
+Robot
+i
+i
+shares
+(
+x
+̊
+i
+,
+𝒇
+i
+)
+(\mathring{x}_{i},\bm{f}_{i})
+with its neighbors.
+(
+p
+i
+,
+q
+i
+)
+k
++
+1
+←
+(p_{i},q_{i})^{k+1}\leftarrow
+Procedure (
+20
+)
+k
+←
+k
++
+1
+k\leftarrow k+1
+while
+not converged or stopping criterion is not met
+;
+return
+(
+x
+˘
+i
+,
+x
+˘
+˙
+i
+,
+τ
+i
+,
+𝐟
+i
+)
+(\breve{x}_{i},\dot{\breve{x}}_{i},\tau_{i},\bm{f}_{i})
+Algorithm 2
+OptimizeTrajectory(
+x
+˘
+i
+​
+(
+​
+t
+​
+)
+,
+x
+˘
+˙
+i
+​
+(
+​
+t
+​
+)
+\breve{x}_{i}\text{(}t\text{)},\dot{\breve{x}}_{i}\text{(}t\text{)}
+)
+Algorithm
+1
+outlines DisCo for distributed contact-rich trajectory optimization problems.
+The robots compute their torques from the
+OptimizeTrajectory
+procedure for dexterous interaction with the contact body at each time instant, repeating the procedure during the manipulation task, over a receding horizon. Each robot does not share its trajectory and torques with other robots, which reduces the communication bandwidth required for implementation of our method. We warmstart each subsequent instance of the trajectory optimization problem using the optimal solution from the previous instance of the optimization problem, which improves the convergence of the solution, especially in situations where the optimization problem changes slowly over time.
+V
+Simulations
+We evaluate our distributed contact-implicit trajectory optimization method DisCo in simulation across a range of multi-robot problems, including collaborative multi-robot object manipulation and tactics planning in robot team games. In the collaborative manipulation setting, we compare the performance of DisCo to centralized contact-implicit trajectory optimization methods
+[
+9
+,
+10
+]
+. We solve the resulting contact-implicit optimization problems on a consumer-grade laptop with an Intel i7 processor using IPOPT
+[
+46
+]
+, an interior-point optimization solver, and set the maximum number of iterations at
+5000
+5000
+. In each optimization problem, we use the MA-
+57
+57
+linear solver within IPOPT.
+V-A
+Multi-Robot Collaborative Manipulation
+We consider a manipulation problem where
+N
+N
+robots manipulate an object to a desired position and orientation, specified by a transformation
+𝕋
+∈
+SE
+⁡
+(
+d
+)
+{\mathbb{T}\in\mathrm{SE}(d)}
+, with
+d
+=
+2
+{d=2}
+or
+d
+=
+3
+{d=3}
+. The robots begin from arbitrary locations at the beginning of the manipulation task and apply contact forces on the object to complete the task. We assume the inertial properties of the object and robots are known, in addition to the coefficient of friction. Consequently, we can formulate the multi-robot collaborative manipulation problem in the form given in (
+11
+). We specify constraints on the initial and desired configurations of the robots and the object in the function
+𝒉
+⁡
+(
+⋅
+)
+\bm{h}(\cdot)
+. Further, the distance function
+β
+i
+​
+(
+⋅
+)
+\beta_{i}(\cdot)
+specifies the distance between robot
+i
+i
+and the object. In general, the objective function includes a penalty on the deviation of the configuration of the object from its desired configuration, and in general, the objective function is separable, in the sense that it can be expressed as a sum of individual components associated with each robot. Our formulation also includes the specification of collision avoidance constraints, which is often not considered by other algorithms for multi-robot collaborative manipulation in which robots are rigidly attached to the object.
+V-A
+1
+SE
+⁡
+(
+2
+)
+\mathrm{SE}(2)
+Manipulation
+In this problem, we consider a manipulation task with
+N
+N
+robots where the robots collaboratively manipulate a rod through contact, by sliding it along a surface with friction. We assume that the coefficient of friction is known. We represent the configuration of the rod as
+x
+obj
+∈
+SE
+⁡
+(
+2
+)
+{x_{\text{obj}}\in\mathrm{SE}(2)}
+, parameterized by the rod’s position
+x
+obj
+,
+pos
+∈
+ℝ
+2
+{x_{\text{obj},\text{pos}}\in\mathbb{R}^{2}}
+and orientation
+x
+obj
+,
+orn
+∈
+ℝ
+{x_{\text{obj},\text{orn}}\in\mathbb{R}}
+, with respect to an inertial frame. Further, we denote the velocity of the object as
+x
+˙
+obj
+∈
+ℝ
+3
+{\dot{x}_{\text{obj}}\in\mathbb{R}^{3}}
+(defined with respect to the parameters of its configuration) and the configuration of robot
+i
+i
+as
+x
+i
+∈
+ℝ
+2
+{x_{i}\in\mathbb{R}^{2}}
+. The robots manipulate the rod from its initial configuration to a desired position and orientation, given by the transformation
+𝕋
+des
+∈
+SE
+⁡
+(
+2
+)
+{\mathbb{T}_{\mathrm{des}}\in\mathrm{SE}(2)}
+, before bringing the rod to rest, with
+x
+˙
+obj
+​
+(
+T
+)
+=
+0
+{\dot{x}_{\text{obj}}(T)=0}
+at the end of the manipulation task, where
+T
+T
+denotes the duration of the task. Figure
+4
+illustrates the manipulation task performed by four robots.
+Fig. 4
+:
+A group of
+4
+4
+robots (in red) manipulate a rod (in blue) by sliding it along the ground to a desired position and orientation (in gray). The robots begin from arbitrary locations around the rod. (Center) They approach and contact the rod to form a stable grasp, sliding the rod along the ground. (Right) They bring the object to rest at the desired configuration.
+We consider omnidirectional robots and model the independent (decoupled) dynamics of these robots using a double-integrator dynamics model, given by:
+M
+i
+​
+x
+¨
+i
+=
+τ
+i
+,
+M_{i}\ddot{x}_{i}=\tau_{i},
+(21)
+where
+M
+i
+M_{i}
+denotes the mass matrix of robot
+i
+i
+, and
+τ
+i
+\tau_{i}
+denotes its torques. We discretize the dynamics model to obtain the discrete-time dynamics model in (
+10
+).
+We constrain the tangential (frictional) components of the contact force using (
+6
+). By representing the contact dynamics between each robot and the object using a set of complementarity constraints, the robots compute their torques from the local optimization problem (
+𝒫
+L
+\mathcal{P}_{L}
+) in (
+18
+),
+where:
+𝒗
+i
+​
+(
+⋅
+)
+\bm{v}_{i}(\cdot)
+represents the dynamics constraints of robot
+i
+i
+and the rod,
+h
+i
+​
+(
+⋅
+)
+h_{i}(\cdot)
+includes constraints on the initial and desired configuration and velocities of robot
+i
+i
+and the object, and
+r
+i
+​
+(
+⋅
+)
+r_{i}(\cdot)
+represents a single set of complementarity constraints describing the contact dynamics of robot
+i
+i
+in addition to constraints on its torques and collision-avoidance constraints.
+We consider a quadratic objective function given by
+ℓ
+i
+​
+(
+x
+i
+,
+τ
+i
+,
+𝒇
+)
+=
+τ
+i
+𝖳
+​
+H
+i
+​
+τ
+i
+\ell_{i}(x_{i},\tau_{i},\bm{f})=\tau_{i}^{\mathsf{T}}H_{i}\tau_{i}
+(22)
+where
+H
+i
+∈
+ℝ
+n
+τ
+,
+i
+×
+n
+τ
+,
+i
+{H_{i}\in\mathbb{R}^{n_{\tau,i}\times n_{\tau,i}}}
+denotes a positive definite matrix. The objective function encodes our desire for each robot to manipulate the object using minimal torques, to ultimately minimize energy consumption.
+We show the manipulation task in Figure
+4
+, where a group of four robots (in red colors) manipulate a blue rod by sliding it along the surface to a desired position and orientation, which is indicated by the gray rod. The robots move the rod through contact before bringing the rod to rest at the end of the manipulation task in Figure
+4
+. Videos of the manipulation task are available on the project page.
+We examine the success rate of the interior-point solver in solving the contact-implicit optimization problems in the centralized method and DisCo for the manipulation task with
+4
+4
+robots. We discretize the optimization problem over
+70
+70
+ms intervals, resulting in
+1954
+1954
+optimization variables in the centralized method, with
+1186
+1186
+variables per robot in
+DisCo
+. A problem is solved successfully if the interior-point solver finds a solution within
+5000
+5000
+iterations. We keep the initialization the same across both methods and evaluate the success rate in
+100
+100
+manipulation tasks. From Table
+I
+, the centralized method attains a
+28
+%
+28\%
+success rate, highlighting the difficulty in solving the global contact-implicit trajectory optimization problem (
+𝒫
+C
+\mathcal{P}_{C}
+). In contrast, DisCo achieves a higher success rate of
+88
+%
+88\%
+, resulting from the decomposition of the global problem into smaller local problems solved by each robot.
+TABLE I
+:
+Success Rate in Solving the
+SE
+⁡
+(
+2
+)
+\mathrm{SE}(2)
+Manipulation Problem
+Method
+Success Rate (
+%
+\%
+)
+Centralized
+28
+28
+DisCo (Ours)
+88
+88
+We provide the mean computation time along with the standard deviation using the centralized method and D-COPT in Table
+II
+, with the number of communication rounds in Algorithm
+2
+set at
+12
+12
+. In DisCo, each robot required a mean time of
+0.111
+0.111
+seconds for each iteration of Algorithm
+2
+, giving a total time of
+1.331
+1.331
+seconds to solve the distributed optimization problem. Meanwhile, the centralized method took a mean computation time of
+9.910
+9.910
+seconds to solve for the torques of all the robots, showing the difficulty in solving the global problem in (
+11
+) with all the non-smooth constraints present.
+TABLE II
+:
+Computation Time for the
+SE
+⁡
+(
+2
+)
+\mathrm{SE}(2)
+Manipulation Problem
+Method
+Time (sec)
+Centralized
+7.320
+±
+0.0385
+7.320\pm 0.0385
+DisCo (Ours)
+1.331
+±
+0.332
+1.331\pm 0.332
+In Figure
+5
+, we consider a larger-scale task with
+16
+16
+robots sliding the rod along a surface and show the normal and tangential components of the contact force applied by each robot. The magnitudes of the normal and tangential components of the contact force indicate the discrete contact interactions between each robot and the object, with non-zero contact forces existing only when the robot makes contact with the object. Further, Figure
+5
+reveals that only a few robots play a major role in bringing the object to rest at the end of the task, as expected.
+Fig. 5
+:
+The normal components (top) and tangential components (bottom) of the contact forces applied by each robot, as
+16
+16
+robots slide a rod to a desired position and orientation along a surface, showing the discrete contact interactions between each robot and the object as the object slides along its surface.
+V-A
+2
+SE
+⁡
+(
+3
+)
+\mathrm{SE}(3)
+Manipulation
+In this manipulation task,
+N
+N
+robots manipulate an object falling under gravity, through contact, after it has been dropped from an elevated platform, bringing the object to rest at a desired configuration, specified by a desired transformation
+𝕋
+des
+∈
+SE
+⁡
+(
+3
+)
+{\mathbb{T}_{\mathrm{des}}\in\mathrm{SE}(3)}
+. We represent the orientation of the object at time
+t
+t
+by a rotation matrix
+R
+⁡
+(
+t
+)
+∈
+SO
+⁡
+(
+3
+)
+{R(t)\in\mathrm{SO}(3)}
+and its angular velocity by
+ω
+∈
+ℝ
+3
+{\omega\in\mathbb{R}^{3}}
+. By applying an angular velocity
+ω
+\omega
+on the object through contact over a time interval of length
+Δ
+​
+t
+\Delta t
+, the object rotates through an angle
+ϕ
+∈
+ℝ
+{\phi\in\mathbb{R}}
+around the rotation axis
+u
+∈
+ℝ
+3
+{u\in\mathbb{R}^{3}}
+. With the assumption that the angular velocity remains constant over each time interval, the change in the rotation matrix representing the orientation of the object is described by Rodriques’ formula,
+R
+d
+​
+t
+=
+cos
+⁡
+(
+ϕ
+)
+​
+I
++
+(
+1
+−
+cos
+⁡
+(
+ϕ
+)
+)
+​
+u
+​
+u
+𝖳
++
+sin
+⁡
+(
+ϕ
+)
+​
+ω
+^
+R_{dt}=\cos(\phi)I+(1-\cos(\phi))uu^{\mathsf{T}}+\sin(\phi)\hat{\omega}
+(23)
+where
+I
+∈
+ℝ
+3
+×
+3
+{I\in\mathbb{R}^{3\times 3}}
+represents the identity matrix and
+ω
+^
+∈
+ℝ
+3
+×
+3
+{\hat{\omega}\in\mathbb{R}^{3\times 3}}
+represents a skew-symmetric matrix derived from
+ω
+\omega
+with
+ϕ
+=
+‖
+ω
+⋅
+Δ
+​
+t
+‖
+2
+{\phi=\|\omega\cdot\Delta t\|_{2}}
+and
+u
+=
+ω
+⋅
+Δ
+​
+t
+ϕ
+{u=\frac{\omega\cdot\Delta t}{\phi}}
+. The resulting dynamics for the rotation matrix is given by
+R
+⁡
+(
+t
++
+1
+)
+=
+R
+d
+​
+t
+​
+R
+​
+(
+t
+)
+,
+R(t+1)=R_{dt}R(t),
+(24)
+with
+R
+⁡
+(
+t
++
+1
+)
+∈
+SO
+⁡
+(
+3
+)
+{R(t+1)\in\mathrm{SO}(3)}
+, which remains a valid rotation matrix.
+Fig. 6
+:
+A group of
+3
+3
+quadrotors manipulate a spherical object (purple) released from a platform, as it falls under gravity, to a desired position and orientation on the pedestal. (Left) The quadrotors approach the falling object, (center) gently make contact, and decelerate its fall, and (right) bring the object to rest at its desired configuration on the pedestal.
+To compute the torques required to manipulate the object, each robot solves the local optimization problem in (
+18
+) where the configuration of the object
+x
+obj
+​
+(
+t
+)
+∈
+SE
+​
+(
+3
+)
+{x_{\text{obj}}(t)\in\mathrm{SE}(3)}
+is parameterized by its position
+x
+obj
+,
+pos
+∈
+ℝ
+3
+{x_{\text{obj},\text{pos}}\in\mathbb{R}^{3}}
+and orientation, represented with a rotation matrix
+x
+obj
+,
+orn
+∈
+SO
+⁡
+(
+3
+)
+{x_{\text{obj},\text{orn}}\in\mathrm{SO}(3)}
+, relative to a fixed inertial frame, and
+x
+˙
+obj
+​
+(
+t
+)
+∈
+ℝ
+6
+{\dot{x}_{\text{obj}}(t)\in\mathbb{R}^{6}}
+includes its linear and angular velocities at time
+t
+t
+with a single set of complementarity constraints for its contact dynamics. We specify the initial and desired configuration and velocities of robot
+i
+i
+and the object in
+h
+i
+​
+(
+⋅
+)
+h_{i}(\cdot)
+.
+In Figure
+6
+, a group of
+3
+3
+quadrotors manipulate an object as it falls under gravity after it has been released from an elevated platform. The quadrotors contact the object to support and manipulate it to its desired position and orientation, which can be observed from the orientation of the green cap on the object’s top. The quadrotors bring the object to rest on the wooden box in Figure
+6
+.
+We discretize the problem over
+70
+70
+ms intervals, resulting in
+2430
+2430
+optimization variables in the centralized method, with
+2082
+2082
+variables per robot in D-COPT. We provide the mean computation time, and its standard deviation, of DisCo and the centralized method in Table
+III
+. In DisCo, each robot took a mean time of
+17.510
+17.510
+seconds to compute its torques, with each of the
+12
+12
+iterations in Algorithm
+2
+requiring an average of
+1.459
+1.459
+seconds. This optimization problem is significantly larger than the problem in Section
+V-A1
+, therefore requiring more computation time. In contrast, the centralized method required
+49.782
+49.782
+seconds to solve for the torques of all robots, and repeatedly fails to find a solution in many instances of the problem, as noted in Section
+V-A1
+.
+TABLE III
+:
+Computation Time for the
+SE
+⁡
+(
+3
+)
+\mathrm{SE}(3)
+Manipulation Problem
+Method
+Time (sec)
+Centralized
+49.782
+±
+0.559
+49.782\pm 0.559
+DisCo (Ours)
+17.510
+±
+10.312
+17.510\pm 10.312
+In Figure
+7
+, we consider a larger-scale problem with
+12
+12
+robots manipulating an object released from an elevated platform. The normal and tangential components of the contact forces highlight the discrete contact interactions between each robot and the object. In contrast to the
+SE
+⁡
+(
+2
+)
+\mathrm{SE}(2)
+manipulation problem, all the robots involved in the task share relatively the same level of responsibility in bringing the object to rest on the wooden box, as expected in this task.
+Fig. 7
+:
+The normal components (top) and tangential components (bottom) of the contact forces applied by each quadrotor on the object as
+12
+12
+quadrotors manipulate an object released from an elevated platform, as it falls under gravity. Each quadrotor makes discrete contact interactions with the object to manipulate the object.
+Fig. 8
+:
+A team of robots (in purple) in a hit-and-catch robot team game, with the objective of getting the blue puck (with a yellow top) into the goal (designated by the white circle).
+(Left) A team of purple robots lineup in a hit-and-catch game before kickoff. (Center-left) A pair of robots complete a short pass to begin the game, after kickoff. (Center-right) A robot attempts a long pass to a teammate, who is close to the goal area. (Right) The teammate traps the puck within the goal area, scoring a point.
+V-B
+Tactics Plannings in Robot Team Sports
+We consider distributed tactics planning in a team of
+N
+N
+robots, where each robot passes an object (
+puck
+) to a teammate by applying an impulse to the object, while the teammate traps the puck by applying an impulse that arrests its motion.
+In general, in cooperative hit-and-catch robot team games, the robots move an object into the net in a time-optimal manner, which can be encoded in the objective or constraint function.
+We consider planar hit-and-catch games with omnidirectional robots in a 2D workspace and a puck constrained to the plane, but the methods we escribe can be directly extended to games in which the puck or ball moves in a 3D workspace (e.g., soccer). We denote the configuration of the puck as
+x
+obj
+∈
+ℝ
+2
+{x_{\text{obj}}\in\mathbb{R}^{2}}
+, representing its position, and in addition, denote the velocity of the puck as
+x
+˙
+obj
+∈
+ℝ
+2
+{\dot{x}_{\text{obj}}\in\mathbb{R}^{2}}
+. Likewise, we denote the configuration of robot
+i
+i
+as
+x
+i
+∈
+ℝ
+2
+{x_{i}\in\mathbb{R}^{2}}
+.
+As in Section
+V-A1
+, we model the independent (decoupled) dynamics of these robots using a double-integrator dynamics model, given by:
+M
+i
+​
+x
+¨
+i
+=
+τ
+i
+,
+M_{i}\ddot{x}_{i}=\tau_{i},
+(25)
+where
+M
+i
+M_{i}
+denotes the mass matrix of robot
+i
+i
+, and
+τ
+i
+\tau_{i}
+denotes its torques. Likewise, we discretize the dynamics model to obtain the discrete-time dynamics model in formulating the contact-implicit trajectory optimization problem in (
+11
+).
+We can represent the contact dynamics between the robots and the puck using the set of constraints in (
+3
+), (
+4
+), and (
+6
+), and subsequently, formulate a contact-implicit trajectory optimization problem for this task, taking the same form in (
+11
+). To compute the torques required to complete the task, each robot solves its local optimization problem, given by (
+18
+), consisting of a single set of complementarity constraints describing its contact dynamics as well as constraints on its initial and desired configurations and that of the puck, while communicating with its neighbors. In this task, we utilize an energy-minimization objective function, similar to that specified in Section
+V-A1
+.
+Figure
+8
+shows a hit-and-catch robot team game with six robots. The objective of the game is to get the blue puck with the yellow top into the goal area, designated by the white circle, which results in the robots scoring a point. After kickoff, a pair of robots begin the game with a short pass in Figure
+8
+(Left). The robots pass the puck among themselves to collaboratively get the puck into the goal area. In Figure
+8
+(Center), a robot makes a long pass to a teammate, who is close to the goal area. The teammate traps the puck within the goal area, completing the pass and scoring a point for the team, depicted in Figure
+8
+(Right).
+Figure
+9
+shows the normal components of the contact force applied by each robot to the puck during the game. The short-duration spikes in the normal contact force in Figure
+9
+results when a robot hits the puck to attempt a pass, or traps the puck to complete a pass.
+Fig. 9
+:
+The normal components of the contact forces applied by each robot on the puck in the hit-and-catch robot team game, shown in Figure
+8
+. A spike in the normal contact force occurs when a robot hits or traps the puck, when attempting or completing a pass.
+VI
+Hardware Experiments
+We evaluate DisCo in hardware experiments. Here, we consider a locomotion problem where we seek to compute the necessary torques to move a modular robot over a terrain, leveraging contact with its environment to accomplish the task. We assume the modular-robot consists of
+N
+N
+roller modules, where each module represents an individual agent, with each agent computing its torques locally, while collaborating with other modules. Within the framework of DisCo, we assume that each roller module represents an individual agent with onboard computation resources.
+Truss Robot.
+We utilize a truss-like soft robot that changes shape by the nodes of a constant-perimeter structure
+[
+1
+]
+; we refer to it here as the truss robot. The truss robot consists of a
+3.4
+3.4
+-meter long tube, inflated with air to a pressure of about
+40
+​
+kPa
+40~\mathrm{kPa}
+. The tube is made up of an outer fabric layer enclosing an air-tight bladder. In our experiments, we consider a truss robot with three nodes in the shape of a triangle, depicted in the Figure
+10
+. Each node consists of a roller module, two of each are actuated by an electric motor, which power the shape change of the robot.
+Fig. 10
+:
+A Truss robot, consisting of three roller modules at each vertex.
+Problem Formulation.
+Given this setup, we can formulate the contact dynamics using the set of constraints in (
+3
+), (
+4
+), and (
+6
+), where the contact surface represents the ground terrain. The contact-implicit trajectory optimization problem takes the same as form as (
+11
+), where the objective function is separable among the
+N
+N
+modules. Typically, the objective function consists of components relating to energy consumption, in addition to other components. Further, we note that for robotic locomotion problems, the constraint functions
+𝒉
+\bm{h}
+and
+𝒓
+\bm{r}
+include geometric constraints, specifying the geometry of the modular robot, including the connection between different modules.
+We represent the dynamics of the truss robot using the model:
+m
+i
+​
+x
+¨
+i
+=
+∑
+j
+∈
+𝒩
+i
+τ
+i
+,
+j
+​
+x
+i
+−
+x
+j
+‖
+x
+i
+−
+x
+j
+‖
++
+f
+c
+,
+i
++
+g
+i
+,
+m_{i}\ddot{x}_{i}=\sum_{j\in\mathcal{N}_{i}}\tau_{i,j}\frac{x_{i}-x_{j}}{\|x_{i}-x_{j}\|}+f_{c,i}+g_{i},
+(26)
+where
+m
+i
+∈
+ℝ
+{m_{i}\in\mathbb{R}}
+denotes the mass of the module,
+τ
+i
+,
+j
+∈
+ℝ
+{\tau_{i,j}\in\mathbb{R}}
+denotes the torque applied at the prismatic joint along edge
+e
+=
+(
+i
+,
+j
+)
+{e=(i,j)}
+connecting nodes
+i
+i
+and
+j
+j
+,
+f
+c
+,
+i
+{f_{c,i}}
+denotes the contact force applied to node
+i
+i
+, and
+g
+i
+g_{i}
+denotes its gravitational force. In this model, we assume that each edge represents a prismatic link, i.e., the truss robot changes the lengths of its edges by applying a torque in the direction of the associated edge.
+We execute DisCo to compute reference trajectories for the nodes of the truss robot for locomotion on a flat terrain from an initial location to a desired configuration. We express the desired configuration of the truss robot in terms of the location of its center-of-mass.
+Hardware Implementation.
+For locomotion on flat terrain, we selected a matte fiber-reinforced plastic sheet (Home Depot No. 63003) to create suitable visual contrast. Further, we reinforced the truss robot with aluminum angle extrusions in order to resist potential out-of-plane motion. Because only two of the three nodes contain motors, we added an additional
+1
+​
+kg
+1~\mathrm{kg}
+of mass to the motor-free node to equalize all three node weights.
+We communicate with the truss robot over an nRF24l01+ radio attached to a Microsoft Surface Book 2 laptop. Each of the truss robot nodes listens for commands from the laptop to rotate in order to lengthen or shorten edge lengths. The front camera of the laptop is used with Multitracker and OpenCV
+[
+47
+]
+computer vision libraries.
+We send commands at a frequency of
+2
+​
+Hz
+2~\mathrm{Hz}
+and compare the measured length between each of the three nodes of the truss robot and that of the optimized trajectory to determine the control commands.
+The truss robot motors are set to move at a constant speed until the node is measured within
+10
+%
+10\%
+of the optimized trajectory. Once two of the edges achieve their target length, the process loops to the next set of edge lengths as given by the optimized trajectory. All of these measured and targeted edge lengths are recorded in a time series through the script, and processed in MATLAB.
+We provide qualitative results in Figure
+11
+, where we show the truss robot in a rolling gait as it moves along a flat terrain from its initial configuration (with its center-of-mass position denoted in green) to a desired configuration (with its center-of-mass denoted in yellow). In the top row, we show the optimized trajectory of the truss robot, computed in simulation. We assign a unique color to each node and display each node’s estimate of the composite shape of the truss robot. From Figure
+11
+, we note that all nodes achieve consensus on the optimized trajectory of the truss robot, with the triangles (representing the truss) computed by each robot overlapping in each frame of the video. Further, in the bottom row in Figure
+11
+, we provide time-matched frames of the robot executing the reference trajectory in the real-world. The frames from the real-world experiment closely mirror the simulation results.
+In addition, we show the tracking results in Figure
+12
+. The truss robot exhibits good tracking performance while executing the rolling gait. The observed tracking errors may be due to drift from stretching of the soft inflated body or out-of-plane effects not captured by the single camera system used in computing the control commands. Future work will seek to address these challenges by implementing a higher-fidelity low-level tracking controller.
+Fig. 11
+:
+Deployment of DisCo on an inflatable truss robot for locomotion on a flat terrain. The top row shows the optimized simulation results, while the bottom row shows the time-matched real-world results.
+Fig. 12
+:
+Measurement of the truss robot’s edge lengths (solid line) compared to the optimized trajectory (dashed line), one node per row. Possible drift may have occurred from the slower high-torque motors, or out-of-plane affects not captured from the single camera system.
+VII
+Conclusion
+We present DisCo an distributed algorithm for contact-rich trajectory optimization problems, enabling a group of robots to leverage dexterous contact interactions to collaboratively perform multi-robot tasks, such as collaborative manipulation, tactics planning in robot team sports, and modular-robot locomotion. By separating the objective functions and non-smooth dynamics constraints among the robots, each robot solves a local optimization problem only considering a single set of complementarity constraints for its contact dynamics, overcoming the notable numerical optimization challenges to solving the global contact-implicit trajectory optimization problem. Particularly, our method improves the success rates of centralized contact-implicit trajectory optimization solvers, while requiring shorter computation times. Each robot communicates with its neighbors to compute its torques and contact forces, without computing the torques and contact forces of other robots, allowing our method to scale efficiently to larger-scale problems. Future work will seek to extend our proposed method to a broader class of contact-implicit problems where decoupling the dynamics might be infeasible, while improving its computation speed and scalability.
+References
+[1]
+N. S. Usevitch, Z. M. Hammond, M. Schwager, A. M. Okamura, E. W. Hawkes, and
+S. Follmer, “An untethered isoperimetric soft
+robot,”
+Science Robotics
+, vol. 5, no. 40,
+p. eaaz0492, Mar. 2020. [Online]. Available:
+https://robotics.sciencemag.org/lookup/doi/10.1126/scirobotics.aaz0492
+[2]
+O. Shorinwa, T. Halsted, and M. Schwager, “Scalable distributed optimization
+with separable variables in multi-agent networks,” in
+2020 American
+Control Conference (ACC)
+. IEEE, 2020,
+pp. 3619–3626.
+[3]
+O. Shorinwa and M. Schwager, “Distributed contact-implicit trajectory
+optimization for collaborative manipulation,” in
+2021 International
+Symposium on Multi-Robot and Multi-Agent Systems (MRS)
+. IEEE, 2021, pp. 56–65.
+[4]
+A. W. Winkler, C. D. Bellicoso, M. Hutter, and J. Buchli, “Gait and trajectory
+optimization for legged systems through phase-based end-effector
+parameterization,”
+IEEE Robotics and Automation Letters
+, vol. 3,
+no. 3, pp. 1560–1567, 2018.
+[5]
+I. Mordatch, E. Todorov, and Z. Popović, “Discovery of complex behaviors
+through contact-invariant optimization,”
+ACM Transactions on Graphics
+(TOG)
+, vol. 31, no. 4, pp. 1–8, 2012.
+[6]
+J. Carpentier and N. Mansard, “Multicontact locomotion of legged robots,”
+IEEE Transactions on Robotics
+, vol. 34, no. 6, pp. 1441–1460, 2018.
+[7]
+B. Aceituno-Cabezas, C. Mastalli, H. Dai, M. Focchi, A. Radulescu, D. G.
+Caldwell, J. Cappelletto, J. C. Grieco, G. Fernández-López, and
+C. Semini, “Simultaneous contact, gait, and motion planning for robust
+multilegged locomotion via mixed-integer convex optimization,”
+IEEE
+Robotics and Automation Letters
+, vol. 3, no. 3, pp. 2531–2538, 2017.
+[8]
+D. Stewart and J. C. Trinkle, “An implicit time-stepping scheme for rigid body
+dynamics with coulomb friction,” in
+Proceedings 2000 ICRA. Millennium
+Conference. IEEE International Conference on Robotics and Automation.
+Symposia Proceedings (Cat. No. 00CH37065)
+, vol. 1. IEEE, 2000, pp. 162–169.
+[9]
+J.-P. Sleiman, J. Carius, R. Grandia, M. Wermelinger, and M. Hutter,
+“Contact-implicit trajectory optimization for dynamic object manipulation,”
+in
+2019 IEEE/RSJ International Conference on Intelligent Robots and
+Systems (IROS)
+. IEEE, 2019, pp.
+6814–6821.
+[10]
+M. Posa, C. Cantu, and R. Tedrake, “A direct method for trajectory
+optimization of rigid bodies through contact,”
+The International
+Journal of Robotics Research
+, vol. 33, no. 1, pp. 69–81, 2014.
+[11]
+Z. Zhou and Y. Zhao, “Accelerated admm based trajectory optimization for
+legged locomotion with coupled rigid body dynamics,” in
+2020 American
+Control Conference (ACC)
+. IEEE, 2020,
+pp. 5082–5089.
+[12]
+L. Drnach and Y. Zhao, “Robust trajectory optimization over uncertain terrain
+with stochastic complementarity,”
+IEEE Robotics and Automation
+Letters
+, vol. 6, no. 2, pp. 1168–1175, 2021.
+[13]
+A. O. Onol, P. Long, and T. Padlr, “A comparative analysis of contact models
+in trajectory optimization for manipulation,” in
+2018 IEEE/RSJ
+International Conference on Intelligent Robots and Systems (IROS)
+. IEEE, 2018, pp. 1–9.
+[14]
+M. Neunert, F. Farshidian, A. W. Winkler, and J. Buchli, “Trajectory
+optimization through contacts and automatic gait discovery for quadrupeds,”
+IEEE Robotics and Automation Letters
+, vol. 2, no. 3, pp. 1502–1509,
+2017.
+[15]
+J. Carius, R. Ranftl, V. Koltun, and M. Hutter, “Trajectory optimization for
+legged robots with slipping motions,”
+IEEE Robotics and Automation
+Letters
+, vol. 4, no. 3, pp. 3013–3020, 2019.
+[16]
+——, “Trajectory optimization with implicit hard contacts,”
+IEEE
+Robotics and Automation Letters
+, vol. 3, no. 4, pp. 3316–3323, 2018.
+[17]
+I. Chatzinikolaidis, Y. You, and Z. Li, “Contact-implicit trajectory
+optimization using an analytically solvable contact model for locomotion on
+variable ground,”
+IEEE Robotics and Automation Letters
+, vol. 5,
+no. 4, pp. 6357–6364, 2020.
+[18]
+O. Shorinwa, T. Halsted, J. Yu, and M. Schwager, “Distributed optimization
+methods for multi-robot systems: Part 1—a tutorial,”
+IEEE Robotics
+& Automation Magazine
+, 2024.
+[19]
+——, “Distributed optimization methods for multi-robot systems: Part 2—a
+survey,”
+IEEE Robotics & Automation Magazine
+, 2024.
+[20]
+T. Halsted, O. Shorinwa, J. Yu, and M. Schwager, “A survey of distributed
+optimization methods for multi-robot systems,”
+arXiv preprint
+arXiv:2103.12840
+, 2021.
+[21]
+B. Hichri, L. Adouane, J.-C. Fauroux, Y. Mezouar, and I. Doroftei,
+“Cooperative mobile robot control architecture for lifting and
+transportation of any shape payload,” in
+Distributed Autonomous
+Robotic Systems
+. Springer, 2016, pp.
+177–191.
+[22]
+A. Z. Bais, S. Erhart, L. Zaccarian, and S. Hirche, “Dynamic load distribution
+in cooperative manipulation tasks,” in
+2015 IEEE/RSJ International
+Conference on Intelligent Robots and Systems (IROS)
+. IEEE, 2015, pp. 2380–2385.
+[23]
+D. Ortenzi, R. Muthusamy, A. Freddi, A. Monteriù, and V. Kyrki, “Dual-arm
+cooperative manipulation under joint limit constraints,”
+Robotics and
+Autonomous Systems
+, vol. 99, pp. 110–120, 2018.
+[24]
+A. Petitti, A. Franchi, D. Di Paola, and A. Rizzo, “Decentralized motion
+control for cooperative manipulation with a team of networked mobile
+manipulators,” in
+2016 IEEE International Conference on Robotics and
+Automation (ICRA)
+. IEEE, 2016, pp.
+441–446.
+[25]
+Z. Wang and M. Schwager, “Force-amplifying n-robot transport system
+(force-ants) for cooperative planar manipulation without communication,”
+The International Journal of Robotics Research
+, vol. 35, no. 13, pp.
+1564–1586, 2016.
+[26]
+A. Marino and F. Pierri, “A two stage approach for distributed cooperative
+manipulation of an unknown object without explicit communication and unknown
+number of robots,”
+Robotics and Autonomous Systems
+, vol. 103, pp.
+122–133, 2018.
+[27]
+P. Culbertson and M. Schwager, “Decentralized adaptive control for
+collaborative manipulation,” in
+2018 IEEE International Conference on
+Robotics and Automation (ICRA)
+. IEEE,
+2018, pp. 278–285.
+[28]
+I. Mas and C. Kitts, “Object manipulation using cooperative mobile multi-robot
+systems,” in
+Proceedings of the World Congress on Engineering and
+Computer Science
+, vol. 1, 2012.
+[29]
+W. Wan, R. Fukui, M. Shimosaka, T. Sato, and Y. Kuniyoshi, “Cooperative
+manipulation with least number of robots via robust caging,” in
+2012
+IEEE/ASME International Conference on Advanced Intelligent Mechatronics
+(AIM)
+. IEEE, 2012, pp. 896–903.
+[30]
+Y. Kobayashi and S. Hosoe, “Cooperative enclosing and grasping of an object by
+decentralized mobile robots using local observation,”
+International
+Journal of Social Robotics
+, vol. 4, no. 1, pp. 19–32, 2012.
+[31]
+T. Stouraitis, I. Chatzinikolaidis, M. Gienger, and S. Vijayakumar, “Online
+hybrid motion planning for dyadic collaborative manipulation via bilevel
+optimization,”
+IEEE Transactions on Robotics
+, vol. 36, no. 5, pp.
+1452–1471, 2020.
+[32]
+C. K. Verginis, A. Nikou, and D. V. Dimarogonas, “Communication-based
+decentralized cooperative object transportation using nonlinear model
+predictive control,” in
+2018 European control conference (ECC)
+. IEEE, 2018, pp. 733–738.
+[33]
+O. Shorinwa and M. Schwager, “Scalable collaborative manipulation with
+distributed trajectory planning,” in
+2020 Proceedings of IEEE/RSJ
+International Conference on Intelligent Robots and Systems (IROS)
+. IEEE, 2020, pp. 9108–9115.
+[34]
+C. E. Garcia, D. M. Prett, and M. Morari, “Model predictive control: Theory
+and practice—a survey,”
+Automatica
+, vol. 25, no. 3, pp. 335–348,
+1989.
+[35]
+M. Schwenzer, M. Ay, T. Bergs, and D. Abel, “Review on model predictive
+control: An engineering perspective,”
+The International Journal of
+Advanced Manufacturing Technology
+, vol. 117, no. 5, pp. 1327–1349, 2021.
+[36]
+T. P. Nascimento, C. E. Dórea, and L. M. G. Gonçalves, “Nonholonomic
+mobile robots’ trajectory tracking model predictive control: a survey,”
+Robotica
+, vol. 36, no. 5, pp. 676–696, 2018.
+[37]
+O. Shorinwa and M. Schwager, “Distributed model predictive control via
+separable optimization in multiagent networks,”
+IEEE Transactions on
+Automatic Control
+, vol. 69, no. 1, pp. 230–245, 2023.
+[38]
+G. Mateos, J. A. Bazerque, and G. B. Giannakis, “Distributed sparse linear
+regression,”
+IEEE Transactions on Signal Processing
+, vol. 58, no. 10,
+pp. 5262–5276, 2010.
+[39]
+A. Nedic, A. Olshevsky, and W. Shi, “Achieving geometric convergence for
+distributed optimization over time-varying graphs,”
+SIAM Journal on
+Optimization
+, vol. 27, no. 4, pp. 2597–2633, 2017.
+[40]
+W. Shi, Q. Ling, G. Wu, and W. Yin, “Extra: An exact first-order algorithm for
+decentralized consensus optimization,”
+SIAM Journal on Optimization
+,
+vol. 25, no. 2, pp. 944–966, 2015.
+[41]
+C. Xi, R. Xin, and U. A. Khan, “Add-opt: Accelerated distributed directed
+optimization,”
+IEEE Transactions on Automatic Control
+, vol. 63,
+no. 5, pp. 1329–1339, 2017.
+[42]
+M. Eisen, A. Mokhtari, and A. Ribeiro, “Decentralized quasi-newton methods,”
+IEEE Transactions on Signal Processing
+, vol. 65, no. 10, pp.
+2613–2628, 2017.
+[43]
+H. Liu, J. Zhang, A. M.-C. So, and Q. Ling, “A communication-efficient
+decentralized newton’s method with provably faster convergence,”
+IEEE
+Transactions on Signal and Information Processing over Networks
+, 2023.
+[44]
+O. Shorinwa and M. Schwager, “Distributed quasi-newton method for multi-agent
+optimization,”
+arXiv preprint arXiv:2402.06778
+, 2024.
+[45]
+Y. Wang, W. Yin, and J. Zeng, “Global convergence of admm in nonconvex
+nonsmooth optimization,”
+Journal of Scientific Computing
+, vol. 78,
+no. 1, pp. 29–63, 2019.
+[46]
+A. Wächter and L. T. Biegler, “On the implementation of an interior-point
+filter line-search algorithm for large-scale nonlinear programming,”
+Mathematical programming
+, vol. 106, no. 1, pp. 25–57, 2006.
+[47]
+G. Bradski, “The OpenCV Library,”
+Dr. Dobb’s Journal of Software
+Tools
+, 2000.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

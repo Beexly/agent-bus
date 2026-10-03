@@ -1,0 +1,42 @@
+# arxiv-deep/0451-adaptive-prediction-theory-combining-offline-and.md
+## What it is (1-2 sentences)
+Li & Guo (2025, arXiv:2512.00342v2) develop an end-to-end theory for a two-stage prediction protocol — offline nonlinear-least-squares base fitting followed by an online meta-LMS layer running N_2=500 parallel models with exponential weighting — proving the pipeline attains near-optimal average prediction error under correlated non-i.i.d. offline data, KL-quantified distribution shift, and bounded parameter drift, beating single-model online LMS and fixed-parameter baselines in simulation. No real data anywhere: the theory is control-theoretic with existential (non-computable) constants, so the GSE value is the meta-weighting mechanism for in-season regime drift, not the theorems.
+
+## Key metrics/methods (formulas where given, else "not specified")
+- Offline phase: approximate nonlinear-least-squares estimation of static parameters α from N_1 historical trajectories; Generalization Lemma (Lemmas 9–10) bounds error under temporal dependence (dependency matrix Γ_dep(P_T)) and distribution shift (KL divergence D(P_T‖P_T') between training and new-data distributions); covers bounded nonlinear mappings incl. a class of deep neural networks.
+- Target system rewritten (eq. 3, verbatim): y_{t+1} = β_t^τ φ_t(α̂,x_t) + ε_t + w_{t+1}, with ε_t ≜ β_t^τ φ(α*,x_t) − β_t^τ φ(α̂,x_t).
+- Meta-LMS (Algorithm 1): N_2 models in parallel; each produces y_{t+1,i}^{pred} = β̂_{t,i}^τ φ_t(α̂,x_t); aggregate y_{t+1}^{pred} = Σ_i w_{t,i} y_{t+1,i}^{pred}; squared losses l_t; exponential weights w_{t+1,i} = w_{t,i} exp(−λ l_t)/Σ_j w_{t,j} exp(−λ l_t) (verbatim).
+- Projected LMS per model: β̂_{t+1,i} = Π_D{β̂_{t,i} + φ_t/(d+m_t²)·(y_{t+1} − β̂_{t,i}^τ φ_t)} with discount accumulator m_{t+1} = γ·(…) (γ∈(0,1)); design constraints d > A²/(1−γ)², λ < 1/[2(M_f+AB+W_max)²].
+- Offline generalization bound (Lemma 10, verbatim): (1/T)Σ_{t=0}^{T−1} E|f_t(α*,β_0(t),x_t) − f_t(α̂,β_0(t),x_t)|² ≤ C_1 log(N_1 T)/(N_1 T^{1−b_2}) + 8 sup_α M_{T,N_1}(α) + 8 L²R_ℳ² b_1' D(P_T‖P_T')/T^{1−b_2'}.
+- Two-stage error (Theorem 18, verbatim): J_T ≤ J_mis + J_opt + J_est with J_mis ≜ N_d(L_1 C·D(P_T‖P_T')/T^{1−b_2'} + L_{0,T}); J_opt ≜ N_d L_1 ε*; J_est ≜ N_d(L_1 C log(N_1 T)/(N_1 T^{1−b_2}) + Bδ_T + δ_T² + B²/T) + (√C_d+1+1/d)²σ_T²; C_d ≜ (1+A²/d)²(1+A²/((1−γ)²d))(1+1/d) ≥ 1; N_d = O(d).
+- Optimality (Theorem 23): if δ_T², L_{0,T} → 0 and D(P_T‖P_T')/T^{1−b_2'} → 0, choosing ε* < ε/(320L_1) and d > max{A²/(1−γ)², 8A²W_max²/ε} yields J_T within ε of optimal.
+- Assumptions 2.1–2.6: compact parameter set; bounded nonlinear maps; bounded drifting parameters; dependency-matrix-controlled temporal correlation; bounded martingale-difference noise; Lipschitz conditions. No i.i.d. requirement.
+- §3.4 comparative analysis: shows necessity of online adaptation and the fundamental role of offline learning vs. purely offline/online baselines.
+
+## Data sources named
+- No real dataset. Pure simulation study (§5): target system y_{t+1} = a_t σ_t(b x_t+c) + d_t + w_{t+1} with σ_t(x) = 1/(t+e^{−x}); drift parameters a_t = −50σ_t(t) + 1/t², d_t = 15σ_t(t) + 2/log(t+1); fixed unknowns b=1.5, c=−0.5; regressor dynamics x_{t+1} = 100σ_t(x_t) + w'_{t+1}, x_0 ∼ N(10,1); w_t, w'_t ∼ i.i.d. N(0,1).
+- Offline: grid search over (b,c) on ℳ = [−3.5, 6.5] × [−5.5, 4.5] with 50 segments/dimension, least squares on multi-trajectory data (Matlab per text).
+- Online: N_2 = 500 parallel models, λ = 10^{−3}, d = 10³, projection set D = {(a,d) | a²+d² ≤ 10⁷}, w_{0,i} = 1/500, β̂_{0,1} = [10,−10]^τ, β̂_{0,i} ∼ N(−3,1) for i ≥ 2.
+
+## Findings (numbers and facts, not vibes)
+- Figure 1: meta-LMS average prediction error lies strictly below single-model LMS and fixed-parameter curves across the horizon, even though the offline estimate (b̂,ĉ) "fails to converge" (Figure 2) — poor initialization causes large initial transient error, but online adaptation eventually beats no-adaptation.
+- Figures report no numbers: no exact error values, no CIs, no sample sizes, no statistical significance — the "superior performance" claim is visual only.
+- Theory constants (C, N_d, b_1, b_2, L) are existential, not computable — qualitative rates log(N_1T)/(N_1T^{1−b_2}) and KL/T^{1−b_2'} only; no usable finite-sample numbers for GSE's regime.
+- External-validity gaps to NFL: (a) no real data — all guarantees and demos on synthetic systems built to satisfy the assumptions; (b) NFL "distribution shift" (rule changes, roster turnover) doesn't map onto D(P_T‖P_T') without major modeling work; (c) Assumption 2.6 (bounded drifting parameters) does heavy lifting while real team-strength drift is abrupt (injuries, QB changes), not smooth bounded drift; (d) N_2=500 models is cheap for a scalar system but 500× inference cost in GSE's feature space without a probe-style design.
+- GSE overlap: NEW capability with partial overlap. Map has state-space team strength via Lopez/Baumer (1701.05976) and Kalman/particle filters, and market-relative learning; the 2026-09-18 ML brief commissioned "online learning"/"continuous learning loop" topics (results not yet in repo). No corpus paper gives a concrete offline→online two-stage protocol with multi-model meta-weighting. GSE v5.2.7 (daily generation) is effectively offline/batch; in-season drift (injuries, scheme changes, weather regimes) is handled heuristically.
+
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- **OTHER — in-season recalibration mechanism (core connection):** the GSE engine is offline/batch (v5.2.7, daily generation); the meta-LMS mechanism — maintain N=8–16 low-dimensional drift probes (recent-form residuals: last-4-week EPA differential, injury-adjusted roster-strength delta, market-move direction), aggregate weekly with exponential weights w_i ∝ exp(−λ·recent Brier/log-loss) on trailing-8-week fits — is a genuinely new in-season adaptation mechanism for handling injuries, scheme changes, and weather regimes that are currently handled heuristically. Serves the calibration/sizing program directly.
+- **OTHER — regime-conditional weighting improvement:** the file's improvement experiment goes beyond the paper's one global weight vector: learn separate meta weights for regimes defined by market-volatility and injury-load indicators (high QB-injury weeks vs. stable weeks), switching via a small pre-week classifier — this attacks the paper's weakest link (smooth bounded drift) and matches NFL's abrupt drift (QB changes). Serves calibration/sizing.
+- **COACHING — scheme-change detection:** the drift probes on recent-form residuals would pick up mid-season scheme shifts (new coordinator tendencies, role changes) as systematic residual patterns — a coaching-change detection signal. Complements file 0431's weekly-refit HMM (which is the simple single-model version of this meta layer).
+- **SCHEME — weather-regime adaptation:** the mechanism naturally absorbs weather regimes as drift — weather-conditioned probes gain weight when weather-driven games arrive, without retraining the offline base.
+- UNCERTAIN: all performance claims are visual simulation curves with no numbers; the GSE walk-forward test (2022–2025, weekly, vs. frozen baseline / best probe / simple average; metrics Brier, MAE vs. close, CLV) is the only evidence that counts. CONTRADICTION-adjacent caution: the paper's smooth-drift assumption conflicts with NFL's abrupt injury-driven drift — hence the regime-conditional improvement experiment is not optional, it's the fix.
+
+## Engine-actionable? (yes/no + one-line what)
+Yes — ADOPT the meta layer IF, over the 2022–2025 weekly walk-forward, meta-weighted forecasts beat the frozen offline baseline by ≥0.005 Brier (win prob) or ≥0.15 points MAE vs. close, improvement concentrated in weeks 6–18, with no week's Brier increasing >0.02 vs. baseline; else keep batch recalibration. Effort ~1 week (probe features + weighting harness + backtest); weekly inference cost negligible.
+
+## References named in file
+- Li, H. & Guo, L. (2025). arXiv:2512.00342v2 — the paper itself.
+- Lopez/Baumer (1701.05976) — state-space team strength (corpus overlap reference).
+- Kalman/particle filters (corpus overlap); conformal calibration lane (complementary); CEPT/MOVE-37 (non-duplicates).
+- Internal: GSE v5.2.7 engine; nflverse; odds API closes; 2026-09-18 ML research brief (commissioned online-learning topics).

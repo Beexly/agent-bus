@@ -1,0 +1,18 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/2187-frans-automatic-feature-extraction-time-series-forecasting.md
+## What it is (1-2 sentences)
+A full-paper research note (ledger 2187, ADAPT verdict) on Chernikov et al. 2022 (arXiv:2209.07018): FRANS, a self-supervised 1D-CNN that extracts 16 static per-series features by treating each time series as its own classification class, then replaces the 42 handcrafted tsfeatures inside the FFORMA meta-learner — beating it on 8/10 forecasting datasets. The note maps FRANS to a GSE use: learned static embeddings of team-season trajectories feeding the engine's model-combination meta-learner.
+## Key metrics/methods (formulas where given, else "not specified")
+- sMAPE = (200/n) Σ_t |y_t - ŷ_t| / (|y_t| + |ŷ_t|) (Eq. 1, evaluation metric).
+- FRANS recipe: sliding windows of each series → label each window by its source series ID ("each series is a class", no external labels) → train 1D-CNN classifier (Fawaz et al. 2019 TSC architecture + feature layer of dim 16) with sparse categorical cross-entropy → strip output layer, take penultimate layer → per-window features aggregated by mean/medoid → final static vector per series.
+- FFORMA integration: swap the 42 tsfeatures for the 16 deep features as input to the XGBoost meta-learner predicting combination weights over base forecasters (Naïve, AutoARIMA, Theta, ETS, STLM, TBATS, NNETAR, etc.).
+## Data sources named
+M4 competition (100K series: Yearly 23000, Quarterly 24000, Monthly 48000, Daily 4227, Hourly 414; M4-specified train/test splits), CIF2016_Monthly (72 series), NN5 (111 daily ATM series), Ausgrid_Weekly (299 weekly solar-home series), Traffic_Weekly (862 weekly Caltrans PeMS freeway series). Code not released; reimplementable from the Fawaz et al. 2019 reference.
+## Findings (numbers and facts, not vibes)
+- sMAPE, FRANS (16 features) vs FFORMA_orig (42 tsfeatures): M4_Daily 3.020 vs 3.060 | M4_Hourly 11.622 vs 11.670 | M4_Monthly 12.806 vs 12.741 (orig wins) | M4_Quarterly 9.846 vs 9.848 | M4_Weekly 6.729 vs 6.838 | M4_Yearly 12.950 vs 13.011 | NN5 21.084 vs 21.083 (orig wins by 0.001) | Traffic 12.208 vs 12.350 | Ausgrid 24.410 vs 24.601 | CIF2016 6.556 vs 6.688. Wins 8/10; beats all individual base models on all datasets.
+- The two losses are marginal (+0.065 monthly, +0.001 NN5). Margins are small in absolute terms.
+- Robustness bonus: on M4_Yearly, the full tsfeatures set fails to compute on ~4,000/23,000 series (>25%, short-series dominated); FRANS has no minimum-length constraint beyond window size.
+- Leakage caveat noted in the ledger: the series-as-class classifier trains on windows from the full series including the test block (no train-only windowing cutoff stated), so the 8/10 wins may be partly leakage-contaminated.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: automatic feature engineering for forecasting — maps to learned team-trajectory embeddings for GSE's ensemble combination layer; the static-vs-dynamic feature distinction applies to GSE's rolling-window (dynamic) vs season-identity (static, missing) representations. Note also touches COACHING-adjacent trajectory similarity ("this team's trajectory resembles 2019 49ers") as a narrative use.
+## Engine-actionable? (yes/no + one-line what)
+Yes — train leakage-safe FRANS-style static embeddings (each team-season = one class, windows cut before the prediction week) as matchup features for the engine's model-combination meta-learner; the note pre-registers an adopt gate of ≥0.004 log-loss improvement on 2024–2025 walk-forward vs handcrafted features.

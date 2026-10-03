@@ -1,0 +1,37 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0350-silent-impact-tracking-tennis-shots-from.md
+
+## What it is (1-2 sentences)
+A deep-read ledger note on Park, Yang & Jo (Proc. UIST 2024, arXiv:2507.23215v1), which detects and classifies tennis shots from IMU data on the *passive* (non-dominant) wrist — where there is no impact jerk to key on — using Fourier frequency-band attention atop a 1D-conv classifier, plus MS-TCN shot detection, validated in a user study (N=10) showing reduced mental/physical burden vs dominant-arm wear. Verdict recorded: **REJECT** — recreational-wearable tennis shot tracking has no transfer path to NFL prediction or analytics; GSE has no wearable lane and builds no wearable products.
+
+## Key metrics/methods (formulas where given, else "not specified")
+- Classification: 1D-conv backbone (inspired by Ganser et al. 2021 FCN): three 1D conv blocks (kernel 11, channels 128 → 256 → 128), batch norm + Mish; global average pooling; FC + softmax. Passive-arm modification: Fourier transform splits input into three bands — low 0–4 Hz (whole-body motion), medium 5–20 Hz (upper-body/arm swing), high >20 Hz (impact vibration) (bands per Ji & Pachi 2005; Khusainov et al. 2013). First conv block partitioned into four reduced-channel blocks; each band passes through an **Attention Block** (1D conv kernel 11 + sigmoid → temporal attention vector, channel size 1) multiplied into conv outputs; each attention feature also feeds an **Attention Classifier** (conv re-expand to 16 channels + ReLU + FC + softmax) producing auxiliary class predictions. Cross-entropy on all outputs. Training: 100 epochs, batch 64, LR 1e-4, Adam; inputs normalized [0,1] with separate accel/gyro scalers; RTX 3090 (PyTorch).
+- Detection: MS-TCN (Farha & Gall 2019): 3 stages × 4 layers, hidden dim 64; frame-wise binary classification; cross-entropy with 5:1 class weighting; 500 epochs, batch 1, LR 1e-3, Adam. Post-processing: ≥k consecutive true frames → 180-frame window centered at midpoint; overlapping windows merged at mean of centers (F1 gain from refinement only ~0.2%).
+- Prototype: Samsung Galaxy Watch 4 (accel + gyro at max 100 Hz, up-sampled to 120 Hz via linear interpolation, axes aligned to Xsens DOT) → Amazon S3 streaming → server-side detection/classification → phone-app shot timeline.
+- Formulas: not stated (losses named but not written out). Metrics: classification accuracy; detection frame-wise accuracy + F1 on positives.
+
+## Data sources named
+- 20 recreational tennis players (min 6 months experience; diverse age/gender/skill), KAIST tennis clubs; preliminary survey of 40 players; user study of 10 participants.
+- Xsens DOT IMUs on both wrists, synchronized, 120 Hz, 3-axis linear acceleration (m/s²) + 3-axis angular velocity (deg/s); left-handers' Y-axis accel and X/Z gyro ×(−1).
+- Shot classification: 6,000 shot sequences (50 × 6 shots × 20 participants); 6 classes: serve, smash, forehand stroke, backhand stroke, forehand volley, backhand volley (ball-fed; one-hand/two-hand backhands merged; serves from a box of balls). Windows: 1.5 s (180 frames) = 1.0 s pre-impact + 0.5 s post; impact labeled via dominant-arm accel jerk threshold + video verification.
+- Shot detection: 368 minutes of rallies/casual matches from 10 participants, 2,259 shots; frame-wise labels; incidental racket actions (picking up balls, stopping balls) as non-shot frames.
+- Released: https://github.com/jyp0802/Silent-Impact (models + dataset, stated). Watch app not necessarily released.
+
+## Findings (numbers and facts, not vibes)
+- Classification (5-fold inter-subject CV, mean ± SD): their model — passive arm **88.2 ± 2.0%**, dominant arm 90.1 ± 3.0% (gap only **1.9%**). Ganser FCN baseline — passive 81.4%, dominant 90.5% (gap 9.1%). Frequency-band attention added **+6.8%** on passive arm; on dominant arm it added nothing (−0.4%). Parameter-matched wider backbone gave only +0.4% → the attention modules (53K of 340K params), not size, drive the gain.
+- Confusion (Fig. 7): forehand stroke 98.9% dominant vs 72.1% passive (passive-arm motion varies); serve vs smash: passive 82.8% vs dominant 74.1% (passive arm catches the ball-toss before a serve, disambiguating the overhead swing).
+- Detection (Table 2): their MS-TCN — passive arm accuracy 95.6%, F1 **86.0%**; dominant arm 98.5%, F1 94.8%. Threshold peak detection — passive arm accuracy 77.8%, F1 **37.6%**; dominant arm 97.2%, F1 90.1%. Model beats the dominant-arm-specific threshold baseline by +48.4 F1 points on the passive arm, but trails the dominant-arm neural model by 8.8 F1 points. False negatives on passive arm concentrate in volleys (subtle net motion) — the shots that decide points at net.
+- Ball-feed → rally/match transfer: 1,826 rally/match shots classified at **86.0%** (only 2.2 pp below feed-data CV accuracy).
+- Segment length: 1 s → 79.4%; 2 s (impact at 1.0 s) → 85.9%; 2 s (impact at 1.5 s) → 87.3%; chosen 1.5 s → 88.2%.
+- Accel-only 81.8% vs gyro-only 77.2%; forehand much better from accel (72.2% vs 51.6%), volleys better from gyro (94.4% vs 87.2% avg).
+- Fine-tuning (10% of user's data, 5 shots/class, LR 1e-6): +4.7% per user, ~94% overall.
+- Downsampling to 30/60 Hz: <0.5% degradation.
+- Inference cost: 0.2 s per 100 classification instances (incl. FFT), 0.3 s per 10 min of detection — on Xeon 4310 + RTX 3090, server-side (not on-watch; acknowledged future work).
+- User study (N=10, within-subject, NASA-TLX): passive arm significantly less mentally demanding (U=79, p=0.02; during play U=83, p=0.01) and physically demanding (setup U=78, p=0.03; play U=85, p=0.07) than dominant-arm wear; perceived performance difference not significant (U=31, p=0.12).
+- Limitations flagged: tiny pool (20/10 participants, all KAIST recreational, mean age ~26, one left-hander); label pipeline depends on the dominant arm's impact jerk (the modality the paper argues against); 6 coarse classes only (no spin/power/direction/outcome; drop shots/slices/lobs excluded); server-side compute, not on-device; comfort finding conflates placement with device size; **zero external validity to NFL** — no mapping to NFL prediction, game modeling, analytics, betting signals, or transferable features.
+
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- **OTHER**: None for any current GSE lane. The corpus has no wearable-sensor lane at all (closest: NGS/tracking from video/tracking or play-by-play, never IMU). The one portable idea the reader records — Fourier frequency-band attention (0–4 / 5–20 / >20 Hz bands) as a motion-signal feature extractor, which closed a 9.1 pp passive/dominant gap to 1.9 pp at +53K params — applies to wearable consumer products, a lane GSE does not operate in and which the traffic-first operating rule (1,000 visitors before new product) excludes.
+- No QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, or SCHEME connection. The transferable signal-processing idea (frequency-band attention on time-series motion) could in principle be an INFERENCE for any future time-series motion work, but no GSE data source (nflverse, FTN charting, odds APIs) produces IMU signals, so this is speculative and not engine-relevant today.
+
+## Engine-actionable? (yes/no + one-line what)
+No — rejected by the ledger reader; no mapping to any GSE lane (NFL prediction, DFS, props, NGS analytics, betting markets). Explicit non-build; the only conceivable adopt path (a consumer wearable product) is outside every existing lane and the operating rule.

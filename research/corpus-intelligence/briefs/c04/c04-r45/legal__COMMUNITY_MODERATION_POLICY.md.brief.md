@@ -1,0 +1,19 @@
+# docs/legal/COMMUNITY_MODERATION_POLICY.md
+## What it is (1-2 sentences)
+The adopted v1 moderation policy for GSE's user-generated-content surfaces (Stage-2 live rooms The Sunday Couch, Brotherhood Table, No-Shame Room), which passed only the written-policy gate; rooms stay closed until moderation tooling and a privacy review also complete.
+## Key metrics/methods (formulas where given, else "not specified")
+Not specified. Moderation uses a 5-step graduated ladder: Nudge (no penalty) → Remove (reason shown to author) → Mute (24h / 7d ladder, room-level) → Suspend (account-level, time-boxed, appealable) → Ban (permanent; reserved for hate, threats, doxxing, repeat touting, self-exclusion circumvention). Appeals: one appeal per suspend/ban, decided by a reviewer different from the original actor, within 7 days.
+## Data sources named
+Doctrine source `docs/design/NFL_HOUSE_DOCTRINE.md` (Stage 2). Moderation coverage plan at `docs/ops/MODERATOR_COVERAGE_PLAN.md` (adopted 2026-06-13). Distress-signal detection law built 2026-06-13 at `lib/community/distress-signals.ts`. Moderation tooling data layer + queue built 2026-06-12.
+## Findings (numbers and facts, not vibes)
+- Status: adopted as written policy (Stage-2 written-policy gate). Live rooms require two further gates before launch: (1) moderation tooling built and tested, (2) privacy review of profiles/presence.
+- Three founder protections: no harassment; "Learning football" is a first-class identity (mocking a beginner question is a moderation event); passing on a slate is a respected decision and pressuring anyone to bet is a violation.
+- Hard rules: zero tolerance for harassment/hate/threats/doxxing; no tout behavior (selling picks, DM "locks", outside paid groups); no "guaranteed winner"/"can't-lose" language — the same standard the platform's own copy is held to ("analyst voice law"); no pressuring others to bet, mocking sitting out, or loss-shaming; no chasing-losses encouragement ("double up", "make it back tonight"); no underage participation or self-exclusion circumvention; no pirated streams, credential sharing, or scraped paid content; no others' PII; no spam/referral flooding.
+- Responsible-play law: distress signals in chat (chasing language, panic, "rent money") trigger support nudges and cool-down resources — never offers, never upsells. Self-excluded users are excluded from rooms too. The platform never uses room activity to market higher tiers.
+- The platform itself is held to the desk voice in rooms (no hype, no "locks", uncertainty stated plainly); picks in rooms carry the same calibration/freshness laws as pick surfaces; no member-only "secret" picks that dodge the public track record. Moderator identity always disclosed; no pseudonymous staff posting.
+- Launch checklist as of writing: written policy done; tooling data layer + queue done (UI hooks land with rooms); privacy review NOT done (profiles, presence indicators, message retention schedule, data-deletion path); responsible-play signal wiring NOT done (nudges live before rooms do); moderator coverage plan done (Sunday slate minimum).
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: Platform community governance, responsible-play law, and brand-safety rules. Tangential to engine work only via the "calibration/freshness laws" cross-reference for picks discussed in rooms (COACHING: no — this is content governance, not coaching analysis).
+- OTHER (TRUST-adjacent, platform-level): the policy encodes the same honesty constraints as the product voice (no "locks" language, uncertainty stated plainly) — relevant to how engine outputs are presented, not to modeling.
+## Engine-actionable? (yes/no + one-line what)
+No — product governance, not engine/modeling content; only use is enforcing honest calibration language on public pick surfaces.

@@ -1,0 +1,10624 @@
+Finding the Signal in the Spam: Jointly Learning
+Rewards and Worker Reliability from Pairwise Comparisons
+Kaustubh Shivshankar Shejole
+Affiliation:
+Equal contribution
+Affiliation:
+IIT Bombay
+Mumbai, India – 400076
+Tanish Agarwal
+Affiliation:
+Equal contribution
+Affiliation:
+IIT Bombay
+Mumbai, India – 400076
+Arpit Agarwal
+Affiliation:
+IIT Bombay
+Mumbai, India – 400076
+Avishek Ghosh
+Affiliation:
+IIT Bombay
+Mumbai, India – 400076
+Abstract
+The problem of learning from pairwise comparisons has been widely studied across many domains such as recommendation systems, social choice, and more recently, fine-tuning large language models. In this problem, the goal is to learn item rewards based on pairwise comparisons between them.
+In many scenarios, these comparisons are elicited from crowdworkers using platforms such as Amazon Mechanical Turk, Scale AI, etc.
+However, crowdworkers are often unreliable
+due to limited
+domain knowledge or revenue-maximizing (spamming) behavior.
+In this work,
+our goal is to understand
+whether worker reliability (competency) can be learned jointly with item rewards.
+To this end, we adopt the Boltzmann-rational model for pairwise comparisons, which extends the Bradley–Terry–Luce model by incorporating worker competencies.
+We derive an EM-based algorithm for learning under this model by introducing Polya-Gamma latent variables
+to transform the logistic likelihood into a conditionally Gaussian form, enabling tractable optimization and leading to a simplified
+Q
+Q
+function in the E-step of the algorithm. This technique allows us to reduce our formulation to a matrix sensing problem, using which we establish theoretical convergence guarantees for our algorithm.
+We conduct extensive experiments on real-world and synthetic datasets.
+These experiments demonstrate the advantages of using our algorithm over several baselines and confirm its strong robustness to both spammers and adversarial workers, highlighting its practical effectiveness in realistic crowdsourcing and reward learning settings.
+1
+1
+1
+The code and data is publicly available at
+https://github.com/KaustubhShejole/BoRa_EM
+.
+1
+Introduction
+Reward learning from pairwise comparisons is a widely studied problem in machine learning, with applications in recommendation systems, information retrieval, social choice, and, more recently, fine-tuning of large language models.
+In this problem, given pairwise comparisons between
+K
+K
+items,
+the goal is to learn a reward for each item that is “consistent” with the observed comparisons.
+For example, in recommendation systems, one observes the choices of users over recommended items and the goal is to learn a score for each item
+[
+Kalloori et al., 2018
+]
+;
+in social choice, one observes preferences of individuals over various policy alternatives and the goal is to aggregate
+the preferences into a single ranked list
+[
+List, 2022
+]
+; and in fine-tuning large language models, one observes pairwise comparisons between different model responses and the goal is to learn a reward for each response
+[
+Bakker et al., 2022
+,
+Stiennon et al., 2020
+]
+.
+Given the large-scale requirement of preference data in these applications, comparisons between items are often elicited using human crowdworkers
+[
+Velayati et al., 2025
+,
+Chen et al., 2013
+]
+.
+Due to this, many crowdsourcing marketplaces such as Amazon Mechanical Turk, Scale AI, Figure Eight, and Yandex Toloka have gained prominence in recent years.
+However, it has been observed that crowdworkers often exhibit large variability in the quality of labels
+[
+Gadiraju et al., 2015
+,
+Ding et al., 2022
+]
+. There may be several factors leading to this variability such as insufficient knowledge of the domain, lack of time/effort devoted to the tasks, and revenue maximizing/spamming behavior. The default approach adopted by many platforms is to identify a gold-standard dataset and evaluate worker competency on it
+[
+Chen et al., 2013
+]
+. However, in many scenarios such datasets are not available, and requiring workers to answer gold-standard questions can be inefficient and costly.
+In this work, we study the problem of jointly estimating item rewards and worker competencies from pairwise comparison data, without requiring a gold-standard dataset. We adopt the Boltzmann-rational model, in which each item
+j
+∈
+[
+K
+]
+j\in[K]
+has a latent reward
+r
+j
+r_{j}
+and each worker
+s
+∈
+[
+M
+]
+s\in[M]
+has a competency parameter
+β
+s
+∈
+[
+−
+1
+,
+1
+]
+\beta_{s}\in[-1,1]
+. The probability that worker
+s
+s
+prefers item
+w
+w
+over item
+l
+l
+is given by
+P
+⁡
+[
+w
+≻
+l
+∣
+s
+]
+=
+σ
+⁡
+(
+β
+s
+​
+(
+r
+w
+−
+r
+l
+)
+)
+,
+P[w\succ l\mid s]=\sigma\!\bigl(\beta_{s}(r_{w}-r_{l})\bigr),
+where
+σ
+\sigma
+denotes the logistic function. This model captures a spectrum of worker behaviors:
+β
+s
+=
+1
+\beta_{s}=1
+corresponds to an ideal annotator,
+β
+s
+=
+0
+\beta_{s}=0
+to a random spammer, and
+β
+s
+=
+−
+1
+\beta_{s}=-1
+to an adversarial worker. Given a dataset
+𝒟
+=
+{
+(
+w
+i
+,
+l
+i
+,
+s
+i
+)
+}
+i
+=
+1
+N
+\mathcal{D}=\{(w_{i},l_{i},s_{i})\}_{i=1}^{N}
+of
+N
+N
+pairwise comparisons, the goal is to jointly estimate the reward vector
+𝐫
+∈
+ℝ
+K
+\mathbf{r}\in\mathbb{R}^{K}
+and the competency vector
+𝜷
+∈
+[
+−
+1
+,
+1
+]
+M
+\bm{\beta}\in[-1,1]^{M}
+.
+We derive an expectation-maximization (EM) algorithm for inference under this model. To derive the EM algorithm, we use a Pólya-Gamma augmentation
+[
+Polson et al., 2013
+]
+, which introduces auxiliary variables to transform the logistic likelihood into a conditionally Gaussian form. This leads to a quadratic objective for the M-step which enables efficient alternating maximization over
+𝜷
+\bm{\beta}
+and
+𝐫
+\mathbf{r}
+in closed form (Section
+4
+).
+While this alternating minimization can be solved efficiently, it is not guaranteed to converge to a global optimum.
+To address this, we show that the M-step optimization can be cast as a rank-1 matrix sensing problem. Specifically, defining
+X
+=
+𝜷
+​
+𝐫
+⊤
+∈
+ℝ
+M
+×
+K
+X=\bm{\beta}\mathbf{r}^{\top}\in\mathbb{R}^{M\times K}
+and a linear operator
+𝒜
+:
+ℝ
+M
+×
+K
+→
+ℝ
+N
+\mathcal{A}:\mathbb{R}^{M\times K}\to\mathbb{R}^{N}
+, the M-step reduces to minimizing
+‖
+𝒜
+⁡
+(
+𝜷
+​
+𝐫
+⊤
+)
+−
+𝐮
+‖
+2
+2
+\|\mathcal{A}(\bm{\beta}\mathbf{r}^{\top})-\mathbf{u}\|_{2}^{2}
+. We establish that
+𝒜
+\mathcal{A}
+satisfies the Restricted Isometry Property (RIP) given a sufficient number of samples. Leveraging results from non-convex low-rank matrix recovery
+[
+Park et al., 2017
+]
+, we prove that under the RIP condition, at each iteration of the EM algorithm, every local minimum of the M-step objective is near-global minimum. Using standard results for EM, we are able to show that the likelihood increases monotonically and converges to a stationary point of the likelihood function.
+We conduct extensive experiments on both real-world and synthetic datasets. The experimental results demonstrate that our algorithm outperforms baseline methods, and more importantly, it remains robust in scenarios with large numbers of spammers of various types and achieves significant performance gains over other existing approaches in this case. Thus, we provide a unified framework capable of handling diverse spammer behaviors—from random clickers to malicious adversaries—offering a practical and theoretically grounded alternative for real-world crowdsourcing platforms where worker quality is heterogeneous and unknown
+a priori
+.
+2
+Related Work
+Learning rewards from pairwise comparisons has been widely used across many domains such as economics, operations research and machine learning. The classical Bradley-Terry-Luce (BTL) model
+[
+Bradley and Terry, 1952
+]
+assumes that each item
+is associated with an underlying reward, and pairwise comparisons between items are drawn by taking into account the reward difference between them.
+Specifically, the probability that
+item
+w
+w
+is preferred over item
+l
+l
+is given as
+P
+⁡
+(
+w
+≻
+l
+)
+=
+σ
+⁡
+(
+r
+w
+−
+r
+l
+)
+,
+P(w\succ l)=\sigma(r_{w}-r_{l}),
+where
+σ
+⁡
+(
+⋅
+)
+\sigma(\cdot)
+denotes the sigmoid function, and
+𝐫
+=
+{
+r
+j
+}
+j
+=
+1
+K
+\mathbf{r}=\{r_{j}\}_{j=1}^{K}
+represents the latent reward or score associated with each of the
+K
+K
+items.
+The BTL model, however, does not capture the heterogeneity in the rewards observed by different crowdworkers.
+Negahban et al. [2012]
+proposed RankCentrality (
+RC
+), which interprets pairwise comparisons as a directed graph, where nodes represent items and directed edges represent comparison outcomes. This formulation enables the use of random-walk–based methods for ranking items.
+The closest to our work is Crowd-BT model
+[
+Chen et al., 2013
+]
+which extends the
+BTL
+model by incorporating worker reliability. For a worker
+s
+s
+, the probability of preferring item
+i
+i
+over
+j
+j
+is modeled as
+Pr
+⁡
+(
+i
+≻
+j
+∣
+s
+)
+=
+β
+s
+​
+σ
+​
+(
+r
+i
+−
+r
+j
+)
++
+(
+1
+−
+β
+s
+)
+​
+σ
+​
+(
+r
+j
+−
+r
+i
+)
+\Pr(i\succ j\mid s)=\beta_{s}\,\sigma(r_{i}-r_{j})+(1-\beta_{s})\,\sigma(r_{j}-r_{i})
+, where
+r
+i
+,
+r
+j
+r_{i},r_{j}
+are item rewards and
+β
+s
+\beta_{s}
+captures the worker’s competency.
+This model is effectively a mixture of two
+BTL
+models – one with reward
+𝐫
+\mathbf{r}
+and the other with negative reward i.e.,
+−
+𝐫
+-\mathbf{r}
+.
+The mixture weight represents the competency of the crowdworker, with
+β
+s
+=
+1
+/
+2
+\beta_{s}=1/2
+representing a worker that labels uniformly at random.
+Crowd-BT is an alternating minimization approach to jointly learn the rewards and competencies.
+However,
+Chen et al. [2013]
+do not provide any theoretical guarantees, and they require a gold standard dataset to initialize worker competencies, which is not always available.
+On the other hand, our work adopts the Boltzmann rational choice model, which provides a more natural and theoretically grounded formulation for preference-based reward learning and alignment, and allows us to prove theoretical convergence results.
+Another related work is
+Bugakova et al. [2019]
+, which introduced the Factor-BT model to explicitly capture systematic biases present in crowdsourced pairwise comparisons.
+Unlike prior models, which treat task-related biases as noise or ignore them altogether,
+FactorBT
+explicitly models these biases by incorporating known but irrelevant task features (e.g., item position on screen, background design) that may influence worker decisions.
+For a comparison between items
+d
+i
+d_{i}
+and
+d
+j
+d_{j}
+by worker
+s
+s
+, described by a feature vector
+𝐱
+s
+​
+i
+​
+j
+∈
+ℝ
+M
+\mathbf{x}_{sij}\in\mathbb{R}^{M}
+, where
+M
+M
+is the feature dimension. The probability that
+d
+i
+d_{i}
+is preferred over
+d
+j
+d_{j}
+is given as follows
+Pr
+(
+d
+i
+≻
+s
+d
+j
+)
+=
+σ
+(
+γ
+s
+)
+⋅
+σ
+(
+r
+i
+−
+r
+j
+)
++
+(
+1
+−
+σ
+(
+γ
+s
+)
+)
+⋅
+σ
+(
+⟨
+𝒃
+s
+,
+𝐱
+s
+​
+i
+​
+j
+⟩
+)
+,
+\Pr(d_{i}\succ_{s}d_{j})=\sigma(\gamma_{s})\cdot\sigma(r_{i}-r_{j})+(1-\sigma(\gamma_{s}))\cdot\sigma(\langle\bm{b}_{s},\mathbf{x}_{sij}\rangle),
+where
+r
+i
+,
+r
+j
+r_{i},r_{j}
+are the latent scores of items
+d
+i
+d_{i}
+and
+d
+j
+d_{j}
+,
+γ
+s
+\gamma_{s}
+controls the susceptibility of worker
+s
+s
+to bias and
+σ
+⁡
+(
+γ
+s
+)
+\sigma(\gamma_{s})
+can be considered as the the skill of the worker same as that of
+β
+s
+\beta_{s}
+in our formulation,
+𝒃
+s
+\bm{b}_{s}
+encodes the worker-specific sensitivity to task features,
+σ
+⁡
+(
+⋅
+)
+\sigma(\cdot)
+is the sigmoid function. The model estimates parameters
+{
+r
+i
+}
+\{r_{i}\}
+,
+{
+γ
+s
+}
+\{\gamma_{s}\}
+, and
+{
+𝒃
+s
+}
+\{\bm{b}_{s}\}
+by maximizing the regularized log-likelihood of the observed pairwise comparisons.
+Unlike
+FactorBT
+[
+Bugakova et al., 2019
+]
+, we do not explicitly model the influence of task-irrelevant factors such as item position, and we instead focus on learning worker competency jointly with rewards.
+Jin et al. [2020]
+proposed two models that explicitly account for annotator
+competence: the Heterogeneous
+Bradley-Terry-Luce
+(HBTL) model and
+the Heterogeneous
+Thurstone Case V
+(HTCV) model. The HBTL model is based on the Boltzmann-Rational formulation given in Equation (
+2
+). In contrast, the HTCV model assumes that the probability of item
+w
+w
+being preferred over item
+l
+l
+by annotator
+s
+s
+is given by
+P
+⁡
+(
+w
+≻
+l
+,
+s
+)
+=
+Φ
+⁡
+(
+β
+s
+​
+(
+r
+w
+−
+r
+l
+)
+2
+)
+,
+P(w\succ l;s)=\Phi\left(\frac{\beta_{s}(r_{w}-r_{l})}{\sqrt{2}}\right),
+(1)
+where
+Φ
+⁡
+(
+⋅
+)
+\Phi(\cdot)
+denotes the cumulative distribution function (CDF) of the standard normal distribution, and
+β
+s
+\beta_{s}
+captures the competence of annotator
+s
+s
+. They perform alternating gradient descent for both these methods and provide theoretical convergence guarantees.
+Bias-Aware Ranking from Pairwise comparisons (BARP)
+[
+Ferrara et al., 2024
+]
+extends the classic BTL model to account for evaluator biases in pairwise comparisons. Each evaluator is assigned a bias parameter that distorts the latent quality scores of items based on the group membership of items. By explicitly modeling the log-likelihood over items’ latent scores and evaluators’ biases,
+BARP
+uses an alternating optimization approach to jointly estimate both. In
+BARP
+, the probability that evaluator
+s
+s
+prefers item
+i
+i
+over
+j
+j
+is modeled as
+P
+(
+i
+≻
+s
+j
+)
+=
+σ
+(
+(
+r
+i
+−
+r
+j
+)
++
+θ
+s
+(
+δ
+i
+​
+g
+−
+δ
+j
+​
+g
+)
+)
+,
+P(i\succ_{s}j)\;=\;\sigma\!\left((r_{i}-r_{j})+\theta_{s}\,(\delta_{ig}-\delta_{jg})\right),
+where
+r
+i
+,
+r
+j
+r_{i},r_{j}
+are the latent item scores and
+θ
+s
+​
+δ
+i
+​
+g
+\theta_{s}\delta_{ig}
+represents the bias of evaluator
+s
+s
+for the group
+g
+g
+of item
+i
+i
+. Unlike the standard BTL model, this formulation accounts for biased perception of item scores rather than true latent scores.
+Organization
+Section
+3
+introduces the problem of jointly learning rewards and worker competence from pairwise comparisons. Section
+4
+presents the derivation of our proposed method (
+BoRaEM
+) for the
+Bo
+ltzmann
+Ra
+tional Model using Expectation–Maximization (
+EM
+), while Section
+5
+establishes theoretical guarantees for its convergence. Section
+6
+reports experimental results and analysis. Finally, Section
+7
+concludes with a discussion of future research directions.
+3
+PROBLEM FORMULATION
+We consider a setting where there is a set of
+K
+K
+items, and one observes outcomes of pairwise comparisons
+between these items, elicited from a set of
+M
+M
+crowdworkers.
+Specifically, we are given a dataset
+𝒟
+=
+{
+(
+w
+i
+,
+l
+i
+,
+s
+i
+)
+}
+i
+=
+1
+N
+\mathcal{D}=\{(w_{i},l_{i},s_{i})\}_{i=1}^{N}
+where there are
+N
+N
+pairwise comparisons; the
+i
+i
+-th comparison is performed by worker
+s
+i
+∈
+[
+M
+]
+s_{i}\in[M]
+where
+w
+i
+∈
+[
+K
+]
+w_{i}\in[K]
+is the winning item and
+l
+i
+∈
+[
+K
+]
+l_{i}\in[K]
+is the losing item such that
+l
+i
+l_{i}
+is not equal to
+w
+i
+w_{i}
+.
+We assume that the outcomes of these comparisons are generated according to the Boltzmann-rational model
+which is an extension of the
+BTL
+model and has received a lot of attention recently
+[
+Daniels-Koch and Freedman, 2022
+,
+Jeon et al., 2020
+,
+Ziebart et al., 2010
+]
+.
+Similar to the
+BTL
+model, each item
+j
+∈
+[
+K
+]
+j\in[K]
+is associated with a reward
+r
+j
+r_{j}
+,
+and the probability of winning a comparison is governed by pairwise reward differences.
+This model also considers the heterogeneity of human decision-making.
+Specifically, humans are considered rational decision-makers, where the quality of their decisions is modulated by a “rationality” parameter
+β
+∈
+[
+−
+1
+,
+1
+]
+\beta\in[-1,1]
+[
+Daniels-Koch and Freedman, 2022
+,
+Jeon et al., 2020
+,
+Ziebart et al., 2010
+]
+.
+Formally, the probability that item
+w
+w
+beats item
+l
+l
+given worker
+s
+s
+is given by
+P
+⁡
+[
+w
+≻
+l
+;
+s
+]
+=
+exp
+⁡
+(
+β
+s
+​
+r
+w
+)
+exp
+⁡
+(
+β
+s
+​
+r
+w
+)
++
+exp
+⁡
+(
+β
+s
+​
+r
+l
+)
+=
+1
+1
++
+exp
+⁡
+(
+−
+β
+s
+​
+(
+r
+w
+−
+r
+l
+)
+)
+=
+σ
+⁡
+(
+β
+s
+​
+(
+r
+w
+−
+r
+l
+)
+)
+.
+P[w\succ l;s]=\frac{\exp(\beta_{s}r_{w})}{\exp(\beta_{s}r_{w})+\exp(\beta_{s}r_{l})}=\frac{1}{1+\exp(-\beta_{s}(r_{w}-r_{l}))}=\sigma(\beta_{s}(r_{w}-r_{l})).
+(2)
+The case
+β
+s
+=
+1
+\beta_{s}=1
+corresponds to a perfect annotator who makes decisions according to the underlying
+BTL
+model,
+β
+s
+=
+−
+1
+\beta_{s}=-1
+for an “adversarial” worker, and
+β
+s
+=
+0
+\beta_{s}=0
+for a “spammer” who labels uniformly at random.
+Given a dataset of pairwise comparisons
+𝒟
+=
+{
+(
+w
+i
+,
+l
+i
+,
+s
+i
+)
+}
+i
+=
+1
+N
+\mathcal{D}=\{(w_{i},l_{i},s_{i})\}_{i=1}^{N}
+that is drawn according to the
+Boltzmann-rational model with reward vector
+𝐫
+=
+{
+r
+j
+}
+j
+=
+1
+K
+\mathbf{r}=\{r_{j}\}_{j=1}^{K}
+and worker competency vector
+𝜷
+=
+{
+β
+s
+}
+s
+=
+1
+M
+\bm{\beta}=\{\beta_{s}\}_{s=1}^{M}
+,
+the goal is to jointly estimate
+𝐫
+\mathbf{r}
+and
+𝜷
+\bm{\beta}
+.
+Since the reward model is invariant to both additive shifts and scaling, as the likelihood depends only on the product
+β
+s
+​
+(
+r
+w
+−
+r
+l
+)
+\beta_{s}(r_{w}-r_{l})
+, the transformations
+r
+→
+r
++
+c
+r\rightarrow r+c
+and
+r
+→
+c
+​
+r
+r\rightarrow cr
+,
+β
+s
+→
+β
+s
+/
+c
+\beta_{s}\rightarrow\beta_{s}/c
+leave the likelihood unchanged, resulting in non-identifiability.
+To address this, we enforce identifiability by centering the rewards to remove translation invariance and normalizing them to unit root-mean-square after each EM iteration, with a compensatory rescaling of worker competencies. This fixes the latent scale and selects a unique representative solution. Additionally, mild
+ℓ
+2
+\ell_{2}
+regularization on rewards and a Gaussian prior on competencies improve numerical stability and prevent degenerate scaling. More details about implementation are provided in Appendix
+E
+.
+4
+BoRaEM Algorithm
+In order to solve this problem, one can formulate a log-likelihood objective based on the underlying model.
+Specifically, following Equation (
+2
+) for the probability that a worker
+s
+i
+s_{i}
+favors
+w
+i
+w_{i}
+over
+l
+i
+l_{i}
+:
+p
+⁡
+(
+w
+i
+≻
+l
+i
+∣
+s
+i
+)
+=
+σ
+⁡
+(
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+)
+p(w_{i}\succ l_{i}\mid s_{i})=\sigma(\beta_{s_{i}}(r_{w_{i}}-r_{l_{i}}))
+(3)
+Let
+𝜽
+=
+𝐫
+,
+𝜷
+\bm{\theta}=\mathbf{r},\bm{\beta}
+.
+The associated complete-data likelihood is
+ℒ
+complete
+​
+(
+𝜽
+,
+𝒟
+)
+=
+∏
+(
+w
+i
+,
+l
+i
+,
+s
+i
+)
+∈
+𝒟
+σ
+⁡
+(
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+)
+\mathcal{L_{\text{complete}}}(\bm{\theta};\mathcal{D})=\prod_{({w_{i}},{l_{i}},s_{i})\in\mathcal{D}}\sigma\left(\beta_{s_{i}}(r_{w_{i}}-r_{l_{i}})\right)
+(4)
+where
+𝒟
+\mathcal{D}
+refers to the comparisons data.
+However, direct maximum likelihood estimation (MLE) of the parameter vectors
+𝐫
+\mathbf{r}
+and
+𝜷
+\bm{\beta}
+is challenging as the objective is non-concave.
+This complicates both optimization and theoretical analysis.
+To circumvent this issue, we adopt the
+Pólya-Gamma (PG) augmentation
+framework
+[
+Polson et al., 2013
+]
+2
+2
+2
+We encourage readers to also refer to a useful blog on Pólya-Gamma (PG) augmentation at
+https://gregorygundersen.com/blog/2019/09/20/polya-gamma/
+.
+. For a latent variable
+ω
+∼
+PG
+​
+(
+b
+,
+0
+)
+\omega\sim\text{PG}(b,0)
+where
+b
+>
+0
+b>0
+, and any
+ψ
+∈
+ℝ
+\psi\in\mathbb{R}
+, the logistic likelihood admits the
+integral representation:
+(
+e
+ψ
+)
+a
+(
+1
++
+e
+ψ
+)
+b
+=
+e
+κ
+​
+ψ
+2
+b
+​
+∫
+0
+∞
+exp
+⁡
+(
+−
+ω
+​
+ψ
+2
+2
+)
+​
+p
+​
+(
+ω
+∣
+b
+,
+0
+)
+​
+𝑑
+ω
+,
+\frac{(e^{\psi})^{a}}{(1+e^{\psi})^{b}}=\frac{e^{\kappa\psi}}{2^{b}}\int_{0}^{\infty}\exp\left(-\frac{\omega\psi^{2}}{2}\right)p(\omega\mid b,0)\,d\omega,
+(5)
+with
+κ
+=
+a
+−
+b
+/
+2
+\kappa=a-b/2
+, where
+p
+⁡
+(
+⋅
+)
+p(\cdot)
+is the density of
+ω
+\omega
+.
+We apply this identity to our model by setting
+a
+=
+1
+a=1
+,
+b
+=
+1
+b=1
+, and
+ψ
+=
+η
+i
+\psi=\eta_{i}
+where
+η
+i
+:=
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+\eta_{i}:=\beta_{s_{i}}(r_{w_{i}}-r_{l_{i}})
+.
+Thus, the probability of the
+i
+t
+​
+h
+i^{th}
+pairwise comparison can be written as:
+p
+⁡
+(
+w
+i
+,
+l
+i
+,
+s
+i
+|
+𝜽
+)
+\displaystyle p(w_{i},l_{i},s_{i}|\bm{\theta})
+=
+σ
+⁡
+(
+η
+i
+)
+\displaystyle=\sigma(\eta_{i})
+=
+1
+2
+​
+e
+η
+i
+/
+2
+​
+∫
+0
+∞
+exp
+⁡
+(
+−
+ω
+i
+​
+η
+i
+2
+2
+)
+​
+p
+​
+(
+ω
+i
+)
+​
+d
+​
+ω
+i
+,
+\displaystyle=\frac{1}{2}e^{\eta_{i}/2}\int_{0}^{\infty}\!\exp\left(-\frac{\omega_{i}\eta_{i}^{2}}{2}\right)p(\omega_{i})d\omega_{i},
+(6)
+where
+ω
+i
+∼
+PG
+​
+(
+1
+,
+0
+)
+\omega_{i}\sim\text{PG}(1,0)
+is a latent Pólya-Gamma variable introduced for each
+i
+th
+i^{\text{th}}
+comparison.
+So,
+the joint density
+p
+⁡
+(
+w
+i
+,
+l
+i
+,
+s
+i
+,
+ω
+i
+|
+𝜽
+)
+p(w_{i},l_{i},s_{i},\omega_{i}|\bm{\theta})
+is given by
+p
+⁡
+(
+w
+i
+,
+l
+i
+,
+s
+i
+,
+ω
+i
+|
+𝜽
+)
+∝
+exp
+⁡
+(
+−
+ω
+i
+​
+η
+i
+2
+2
++
+η
+i
+2
+)
+​
+p
+​
+(
+ω
+i
+)
+p(w_{i},l_{i},s_{i},\omega_{i}|\bm{\theta})\propto\exp\left(-\frac{\omega_{i}\eta_{i}^{2}}{2}+\frac{\eta_{i}}{2}\right)p(\omega_{i})
+(7)
+which takes an exponential form.
+Expectation Maximization.
+Using Equation (
+7
+), and given all
+ω
+i
+\omega_{i}
+, the log-likelihood objective over
+𝜽
+=
+(
+{
+r
+j
+}
+j
+=
+1
+K
+,
+{
+β
+l
+}
+l
+=
+1
+M
+)
+,
+\bm{\theta}\;=\;\bigl(\{\,r_{j}\}_{j=1}^{K},\;\{\,\beta_{l}\}_{l=1}^{M}\bigr),
+simplifies to the following form upto additive constant that do not depend on
+𝜽
+\bm{\theta}
+(more details in Appendix
+A.2
+).
+ℓ
+⁡
+(
+𝜽
+)
+\displaystyle\ell(\bm{\theta})
+=
+∑
+(
+w
+i
+,
+l
+i
+,
+s
+i
+)
+∈
+𝒟
+[
+1
+2
+β
+s
+i
+(
+r
+w
+i
+−
+r
+l
+i
+)
+\displaystyle=\sum_{(w_{i},l_{i},s_{i})\in\mathcal{D}}\Bigl[\tfrac{1}{2}\,\beta_{s_{i}}\,(r_{w_{i}}-r_{l_{i}})\Bigr.
+−
+1
+2
+ω
+i
+β
+s
+i
+2
+(
+r
+w
+i
+−
+r
+l
+i
+)
+2
+]
+\displaystyle\quad\Bigl.-\tfrac{1}{2}\,\omega_{i}\,\beta_{s_{i}}^{2}\,(r_{w_{i}}-r_{l_{i}})^{2}\Bigr]
+(8)
+Hence, this gives an EM algorithm that iteratively estimates the latent variables
+ω
+i
+\omega_{i}
+followed by log-likelihood maximization steps.
+Algorithm
+1
+describes this EM Algorithm. The Expectation step (E-step) and Maximization step (M-step) are as follows (details in Appendix
+A.3
+):
+4.1
+E-step
+At iteration
+t
+t
+, given the current estimates
+𝜽
+(
+t
+)
+\bm{\theta}^{(t)}
+we have
+η
+i
+(
+t
+)
+=
+β
+s
+i
+(
+t
+)
+​
+(
+r
+w
+i
+(
+t
+)
+−
+r
+l
+i
+(
+t
+)
+)
+,
+∀
+i
+∈
+[
+N
+]
+\eta_{i}^{(t)}\;=\;\beta_{\,s_{i}}^{(t)}\,\bigl(r_{\,w_{i}}^{(t)}-r_{\,l_{i}}^{(t)}\bigr),\quad\forall i\in[N]
+(9)
+Given
+η
+i
+(
+t
+)
+\eta_{i}^{(t)}
+, the Pólya–Gamma random variable
+ω
+i
+\omega_{i}
+follows the distribution
+PG
+⁡
+(
+1
+,
+η
+i
+(
+t
+)
+)
+\mathrm{PG}(1,\;\eta_{i}^{(t)})
+.
+Hence, we can evaluate the expectation of
+ω
+i
+\omega_{i}
+given the current parameters. Let
+κ
+i
+(
+t
+)
+=
+𝐄
+⁡
+[
+ω
+i
+|
+η
+i
+(
+t
+)
+]
+\kappa_{i}^{(t)}=\mathbf{E}[\omega_{i}\penalty\ |\penalty\ \eta_{i}^{(t)}]
+. We show that
+(Appendix
+A.3.1
+)
+κ
+i
+(
+t
+)
+=
+{
+1
+2
+​
+η
+i
+(
+t
+)
+​
+tanh
+⁡
+(
+η
+i
+(
+t
+)
+2
+)
+,
+η
+i
+(
+t
+)
+≠
+0
+1
+4
+,
+η
+i
+(
+t
+)
+=
+0
+\kappa_{i}^{(t)}=\begin{cases}\frac{1}{2\,\eta_{i}^{(t)}}\,\tanh\left(\frac{\eta_{i}^{(t)}}{2}\right),&\eta_{i}^{(t)}\neq 0\\[8.0pt]
+\frac{1}{4},&\eta_{i}^{(t)}=0\end{cases}
+(10)
+This gives the formulation for the
+Q
+Q
+function:
+Q
+⁡
+(
+𝜽
+∣
+𝜽
+(
+t
+)
+)
+\displaystyle Q\bigl(\bm{\theta}\mid\bm{\theta}^{(t)}\bigr)
+=
+∑
+(
+w
+i
+,
+l
+i
+,
+s
+i
+)
+∈
+𝒟
+[
+1
+2
+β
+s
+i
+(
+r
+w
+i
+−
+r
+l
+i
+)
+\displaystyle=\sum_{(w_{i},l_{i},s_{i})\in\mathcal{D}}\Bigl[\tfrac{1}{2}\,\beta_{s_{i}}\,(r_{w_{i}}-r_{l_{i}})\Bigr.
+−
+1
+2
+κ
+i
+(
+t
+)
+β
+s
+i
+2
+(
+r
+w
+i
+−
+r
+l
+i
+)
+2
+]
+\displaystyle\quad\Bigl.-\tfrac{1}{2}\,\kappa_{i}^{(t)}\,\beta_{s_{i}}^{2}\,(r_{w_{i}}-r_{l_{i}})^{2}\Bigr]
+(11)
+Algorithm 1
+BoRaEM Algorithm
+1:
+Dataset of pairwise comparisons
+𝒟
+\mathcal{D}
+2:
+Parameter estimates
+𝜽
+=
+(
+𝜷
+,
+𝒓
+)
+\bm{\theta}=(\bm{\beta},\bm{r})
+3:
+Initialize
+𝜽
+(
+0
+)
+\bm{\theta}^{(0)}
+4:
+t
+←
+0
+t\leftarrow 0
+5:
+repeat
+6:
+E-step:
+7:
+Q
+⁡
+(
+𝜽
+∣
+𝜽
+(
+t
+)
+)
+←
+𝔼
+ω
+|
+𝒟
+,
+𝜽
+(
+t
+)
+​
+[
+ℓ
+⁡
+(
+𝜽
+,
+𝒟
+,
+ω
+)
+]
+Q(\bm{\theta}\mid\bm{\theta}^{(t)})\leftarrow\mathbb{E}_{\omega\mid\mathcal{D},\bm{\theta}^{(t)}}[\ell(\bm{\theta};\mathcal{D},\omega)]
+⊳
+\triangleright
+See (
+11
+)
+8:
+M-step (using AM):
+9:
+Initialize
+(
+𝜷
+(
+0
+)
+,
+𝒓
+(
+0
+)
+)
+←
+θ
+(
+t
+)
+(\bm{\beta}^{(0)},\bm{r}^{(0)})\leftarrow\theta^{(t)}
+,
+k
+←
+0
+k\leftarrow 0
+10:
+repeat
+11:
+𝜷
+(
+k
++
+1
+)
+←
+arg
+⁡
+max
+𝜷
+⁡
+Q
+⁡
+(
+𝜷
+,
+𝒓
+(
+k
+)
+∣
+𝜽
+(
+t
+)
+)
+\bm{\beta}^{(k+1)}\leftarrow\arg\max_{\bm{\beta}}Q(\bm{\beta},\bm{r}^{(k)}\mid\bm{\theta}^{(t)})
+12:
+𝒓
+(
+k
++
+1
+)
+←
+arg
+⁡
+max
+𝒓
+⁡
+Q
+⁡
+(
+𝜷
+(
+k
++
+1
+)
+,
+𝒓
+∣
+𝜽
+(
+t
+)
+)
+\bm{r}^{(k+1)}\leftarrow\arg\max_{\bm{r}}Q(\bm{\beta}^{(k+1)},\bm{r}\mid\bm{\theta}^{(t)})
+13:
+𝒓
+(
+k
++
+1
+)
+←
+𝒓
+(
+k
++
+1
+)
+−
+𝟏
+T
+​
+𝒓
+(
+k
++
+1
+)
+n
+\bm{r}^{(k+1)}\leftarrow\bm{r}^{(k+1)}-\frac{\bm{1}^{T}\bm{r}^{(k+1)}}{n}
+14:
+k
+←
+k
++
+1
+k\leftarrow k+1
+15:
+until
+convergence
+16:
+𝜽
+(
+t
++
+1
+)
+←
+(
+𝜷
+(
+k
+−
+1
+)
+,
+𝒓
+(
+k
+−
+1
+)
+)
+\bm{\theta}^{(t+1)}\leftarrow(\bm{\beta}^{(k-1)},\bm{r}^{(k-1)})
+17:
+t
+←
+t
++
+1
+t\leftarrow t+1
+18:
+until
+convergence
+19:
+return
+𝜽
+(
+t
++
+1
+)
+\bm{\theta}^{(t+1)}
+4.2
+M-step
+In order to maximize the
+Q
+⁡
+(
+𝜽
+∣
+𝜽
+(
+t
+)
+)
+Q\bigl(\bm{\theta}\mid\bm{\theta}^{(t)}\bigr)
+function in terms of
+𝜽
+=
+(
+𝜷
+,
+𝒓
+)
+\bm{\theta}=(\bm{\beta},\bm{r})
+, we use the Alternating Maximization (AM) algorithm.
+We first initialize
+𝜽
+\bm{\theta}
+to
+𝜽
+(
+t
+)
+\bm{\theta}^{(t)}
+. We update
+𝜷
+\bm{\beta}
+corresponding to Step
+11
+of Algorithm
+1
+as follows (Appendix
+A.3.2
+) (Let
+d
+i
+=
+r
+w
+i
+−
+r
+l
+i
+d_{i}=r_{w_{i}}-r_{l_{i}}
+denote the reward difference between the preferred item
+w
+i
+w_{i}
+and the losing item
+l
+i
+l_{i}
+, evaluated at the current item reward estimates within the inner iterations of the M-step.)
+β
+s
+=
+1
+2
+​
+∑
+i
+∈
+I
+s
+d
+i
+∑
+i
+∈
+I
+s
+κ
+i
+(
+t
+)
+​
+d
+i
+2
+=
+∑
+i
+∈
+I
+s
+d
+i
+2
+​
+∑
+i
+∈
+I
+s
+κ
+i
+(
+t
+)
+​
+d
+i
+2
+\beta_{s}=\;\frac{\tfrac{1}{2}\sum_{\,i\in I_{s}}d_{i}}{\sum_{\,i\in I_{s}}\kappa_{i}^{(t)}\,d_{i}^{2}}\;=\;\frac{\sum_{\,i\in I_{s}}d_{i}}{2\,\sum_{\,i\in I_{s}}\kappa_{i}^{(t)}\,d_{i}^{2}}
+(12)
+where
+I
+s
+=
+{
+i
+∈
+[
+N
+]
+:
+s
+i
+=
+s
+}
+I_{s}\;=\;\bigl\{\,i\in[N]:s_{i}=s\bigr\}
+as the index set of comparisons for worker
+s
+s
+.
+The reward vector
+𝐫
+\mathbf{r}
+can be obtained uniquely by solving the linear system
+𝐇𝐫
+=
+𝐛
+,
+\mathbf{H}\mathbf{r}=\mathbf{b},
+and imposing the constraint
+∑
+j
+=
+1
+K
+r
+j
+=
+0
+\sum_{j=1}^{K}r_{j}=0
+,
+where the matrix
+𝐇
+\mathbf{H}
+is defined as:
+H
+j
+​
+j
+\displaystyle H_{jj}
+=
+∑
+i
+∈
+W
+j
+β
+s
+i
+2
+​
+κ
+i
+(
+t
+)
++
+∑
+i
+∈
+L
+j
+β
+s
+i
+2
+​
+κ
+i
+(
+t
+)
+,
+\displaystyle=\sum_{i\in W_{j}}\beta_{s_{i}}^{2}\kappa_{i}^{(t)}+\sum_{i\in L_{j}}\beta_{s_{i}}^{2}\kappa_{i}^{(t)},
+H
+j
+​
+l
+\displaystyle H_{jl}
+=
+∑
+i
+∈
+𝒟
+j
+​
+l
+−
+β
+s
+i
+2
+κ
+i
+(
+t
+)
+,
+j
+≠
+l
+,
+\displaystyle=\sum_{i\in\mathcal{D}_{jl}}-\beta_{s_{i}}^{2}\kappa_{i}^{(t)},\quad j\neq l,
+and, the vector
+𝐛
+\mathbf{b}
+is defined as:
+b
+j
+=
+∑
+i
+∈
+W
+j
+1
+2
+​
+β
+s
+i
++
+∑
+i
+∈
+L
+j
+(
+−
+1
+2
+​
+β
+s
+i
+)
+,
+b_{j}=\sum_{i\in W_{j}}\frac{1}{2}\beta_{s_{i}}+\sum_{i\in L_{j}}\left(-\frac{1}{2}\beta_{s_{i}}\right),
+where
+W
+j
+W_{j}
+and
+L
+j
+L_{j}
+denote the sets of comparisons in which item
+j
+j
+won and lost, respectively, and
+𝒟
+j
+​
+l
+\mathcal{D}_{jl}
+is the set of comparisons between items
+j
+j
+and
+l
+l
+. This corresponds to Steps
+12
+and
+13
+of Algorithm
+1
+. The linear system has a unique solution (Appendix
+A.3.2
+) and can be solved efficiently using conjugate gradient descent. The implementation details are provided in Appendix
+E
+.
+5
+Convergence Analysis
+In this section we show that the M-step objective can be written as a matrix sensing problem with a rank-1 parameter matrix
+X
+=
+𝜷
+​
+𝒓
+⊤
+X=\bm{\beta}\bm{r}^{\top}
+. This allows us to leverage standard results from low-rank matrix recovery to analyze the geometry of the Q-function and the behavior of EM.
+Formally, Equation (
+11
+) can be stated in the following form.
+min
+𝜷
+,
+𝒓
+⁡
+‖
+𝒜
+⁡
+(
+𝜷
+​
+𝒓
+T
+)
+−
+𝐮
+‖
+2
+2
+,
+\min_{\bm{\beta},\bm{r}}\|\mathcal{A}(\bm{\beta}\bm{r}^{T})-\mathbf{u}\|_{2}^{2}\,,
+where
+𝐮
+∈
+ℝ
+N
+\mathbf{u}\in\mathbb{R}^{N}
+and the linear operator
+𝒜
+:
+ℝ
+M
+×
+K
+→
+ℝ
+N
+\mathcal{A}\colon\mathbb{R}^{M\times K}\to\mathbb{R}^{N}
+as
+𝒜
+⁡
+(
+X
+)
+=
+(
+⟨
+A
+1
+,
+X
+⟩
+,
+…
+,
+⟨
+A
+N
+,
+X
+⟩
+)
+⊤
+\mathcal{A}(X)=(\langle A_{1},X\rangle,\dots,\langle A_{N},X\rangle)^{\top}
+with matrices
+A
+i
+=
+2
+​
+c
+i
+​
+α
+​
+𝒆
+𝒔
+𝒊
+​
+(
+𝒆
+𝒘
+𝒊
+−
+𝒆
+𝒍
+𝒊
+)
+⊤
+A_{i}=2c_{i}\alpha\ \bm{e_{s_{i}}}(\bm{e_{w_{i}}}-\bm{e_{l_{i}}})^{\top}
+where
+α
+=
+M
+​
+K
+/
+2
+​
+N
+\alpha=\sqrt{MK/2N}
+,
+c
+i
+2
+=
+κ
+i
+(
+t
+)
+c_{i}^{2}=\kappa_{i}^{(t)}
+for iteration t,
+e
+x
+e_{x}
+denotes a unit vector having value as
+1
+1
+at index
+x
+x
+. More details are in Appendix
+B
+.
+We assume that the worker index and the two item indices (denoted by random variables
+B
+,
+W
+,
+B,W,
+and
+L
+L
+, respectively) are independent and uniformly distributed,
+B
+∼
+Unif
+​
+{
+1
+,
+2
+,
+…
+,
+M
+}
+B\sim\text{Unif}\{1,2,\ldots,M\}
+and
+W
+,
+L
+∼
+Unif
+​
+{
+1
+,
+2
+,
+…
+,
+K
+}
+W,L\sim\text{Unif}\{1,2,\ldots,K\}
+. The comparison outcome is then generated according to
+2
+. Further, we assume that
+β
+∈
+[
+−
+1
+,
+1
+]
+\beta\in[-1,1]
+and
+r
+∈
+[
+−
+R
+,
+R
+]
+r\in[-R,R]
+for some constant
+R
+>
+0
+R>0
+.
+Under mild assumptions detailed in Appendix
+B
+, the linear operator
+𝒜
+\mathcal{A}
+satisfies the Restricted Isometry Property, according to the following definition
+[
+Candes and Plan, 2010
+]
+.
+Definition
+(Restricted Isometry Property (RIP))
+.
+A linear operator
+𝒜
+:
+ℝ
+M
+×
+K
+→
+ℝ
+N
+\mathcal{A}:\mathbb{R}^{M\times K}\rightarrow\mathbb{R}^{N}
+with
+(
+𝒜
+⁡
+(
+X
+)
+)
+i
+=
+⟨
+A
+i
+,
+X
+⟩
+(\mathcal{A}(X))_{i}=\langle A_{i},X\rangle
+satisfies the restricted isometry property on rank-
+r
+r
+matrices, with parameter
+δ
+r
+\delta_{r}
+, if the following set of inequalities hold for all rank-
+r
+r
+matrices
+X
+X
+:
+(
+1
+−
+δ
+r
+)
+​
+‖
+X
+‖
+F
+2
+≤
+‖
+𝒜
+⁡
+(
+X
+)
+‖
+2
+2
+≤
+(
+1
++
+δ
+r
+)
+​
+‖
+X
+‖
+F
+2
+.
+(1-\delta_{r})\|X\|_{F}^{2}\leq\|\mathcal{A}(X)\|_{2}^{2}\leq(1+\delta_{r})\|X\|_{F}^{2}.
+This gives us the following lemma.
+Lemma 1
+.
+Define matrix operators
+A
+i
+∈
+ℝ
+M
+×
+K
+A_{i}\in\mathbb{R}^{M\times K}
+as
+A
+i
+=
+2
+​
+c
+i
+​
+α
+​
+𝐞
+𝐬
+𝐢
+​
+(
+𝐞
+𝐰
+𝐢
+−
+𝐞
+𝐥
+𝐢
+)
+⊤
+A_{i}=2c_{i}\alpha\ \bm{e_{s_{i}}}(\bm{e_{w_{i}}}-\bm{e_{l_{i}}})^{\top}
+, where
+α
+=
+M
+​
+K
+/
+2
+​
+N
+\alpha=\sqrt{MK/2N}
+. Let
+X
+∈
+ℝ
+M
+×
+K
+X\in\mathbb{R}^{M\times K}
+be any matrix of arbitrary rank
+r
+r
+with
+X
+​
+𝟏
+=
+𝟎
+X\bm{1}=\bm{0}
+, where
+𝟏
+\bm{1}
+and
+𝟎
+\bm{0}
+denote the all-ones and all-zeros vectors, respectively. Define the linear operator
+𝒜
+:
+ℝ
+M
+×
+K
+→
+ℝ
+N
+\mathcal{A}\colon\mathbb{R}^{M\times K}\to\mathbb{R}^{N}
+as
+𝒜
+⁡
+(
+X
+)
+=
+(
+⟨
+A
+1
+,
+X
+⟩
+,
+…
+,
+⟨
+A
+N
+,
+X
+⟩
+)
+⊤
+\mathcal{A}(X)=(\langle A_{1},X\rangle,\dots,\langle A_{N},X\rangle)^{\top}
+. Then, for any
+η
+>
+0
+\eta>0
+, there exists
+μ
+>
+0
+\mu>0
+and
+δ
+>
+0
+\delta>0
+such that with probability at least
+1
+−
+η
+1-\eta
+:
+(
+1
+−
+μ
+)
+​
+‖
+X
+‖
+F
+2
+≤
+‖
+𝒜
+⁡
+(
+X
+)
+‖
+2
+2
+≤
+(
+1
++
+μ
+)
+​
+‖
+X
+‖
+F
+2
+,
+(1-\mu)\|X\|_{F}^{2}\leq\|\mathcal{A}(X)\|_{2}^{2}\leq(1+\mu)\|X\|_{F}^{2}\,,
+provided that
+N
+≥
+C
+​
+M
+​
+K
+δ
+2
+​
+ln
+⁡
+(
+2
+η
+)
+,
+N\geq C\;\frac{MK}{\delta^{2}}\ln\left(\frac{2}{\eta}\right),
+where
+C
+>
+0
+C>0
+is some constant.
+Then, invoking Remark 3 from
+Park et al. [2017]
+, we can state the following theorem.
+Theorem 1
+.
+Let
+{
+𝛃
+(
+t
+)
+,
+𝐫
+(
+t
+)
+}
+t
+≥
+0
+\{\bm{\beta}^{(t)},\bm{r}^{(t)}\}_{t\geq 0}
+be the sequence of iterates generated by the EM algorithm. Suppose the M-step at each iteration
+t
+t
+solves the optimization problem:
+(
+𝜷
+(
+t
++
+1
+)
+,
+𝒓
+(
+t
++
+1
+)
+)
+=
+arg
+⁡
+min
+𝜷
+,
+𝒓
+⁡
+‖
+𝒜
+⁡
+(
+𝜷
+​
+𝒓
+⊤
+)
+−
+𝐮
+(
+t
+)
+‖
+2
+2
+(\bm{\beta}^{(t+1)},\bm{r}^{(t+1)})=\arg\min_{\bm{\beta},\bm{r}}\|\mathcal{A}(\bm{\beta}\bm{r}^{\top})-\mathbf{u}^{(t)}\|_{2}^{2}
+having global minimum
+(
+𝛉
+∗
+)
+(
+t
++
+1
+)
+(\bm{\theta}^{*})^{{(t+1)}}
+, where
+u
+i
+(
+t
+)
+=
+α
+c
+i
+u_{i}^{(t)}=\frac{\alpha}{c_{i}}
+. If
+R
+=
+0.1
+R=0.1
+, the operator
+𝒜
+\mathcal{A}
+satisfies Restricted Isometry Property with
+μ
+2
+=
+μ
+4
+=
+0.005
+\mu_{2}=\mu_{4}=0.005
+, and every local minimum
+𝛉
+(
+t
++
+1
+)
+=
+(
+𝛃
+(
+t
++
+1
+)
+;
+𝐫
+(
+t
++
+1
+)
+)
+\bm{\theta}^{(t+1)}=\left(\bm{\beta}^{(t+1)};\bm{r}^{(t+1)}\right)
+satisfies:
+DIST
+​
+(
+𝜽
+(
+t
++
+1
+)
+,
+(
+𝜽
+∗
+)
+(
+t
++
+1
+)
+)
+≤
+1250
+3
+​
+σ
+1
+​
+(
+X
+t
+∗
+)
+⋅
+‖
+𝒜
+⁡
+(
+X
+t
+∗
+−
+X
+1
+,
+t
+∗
+)
+‖
+2
+\text{DIST}(\bm{\theta}^{(t+1)},(\bm{\theta}^{*})^{{(t+1)}})\leq\frac{1250}{3\sigma_{1}(X^{*}_{t})}\cdot\|\mathcal{A}(X^{*}_{t}-X_{1,t}^{*})\|_{2}
+where
+X
+t
+∗
+​
+𝟏
+=
+𝟎
+X^{*}_{t}\bm{1}=\bm{0}
+and
+X
+1
+,
+t
+∗
+X_{1,t}^{*}
+is the best rank-1 approximation of the true high-rank matrix
+X
+t
+∗
+X^{*}_{t}
+.
+Therefore, each EM update computes a solution
+whose distance to the global optimum of the corresponding M-step objective is bounded by the intrinsic rank-one approximation error of the corresponding M-step objective.
+Thus, the estimation error at each iteration is controlled by
+‖
+𝒜
+⁡
+(
+X
+t
+∗
+−
+X
+1
+,
+t
+∗
+)
+‖
+2
+\|\mathcal{A}(X^{*}_{t}-X_{1,t}^{*})\|_{2}
+. At iteration
+t
+t
+, if
+X
+t
+∗
+X_{t}^{*}
+is exactly rank-1, the algorithm recovers the global minimum of the function
+Q
+⁡
+(
+𝜽
+∣
+𝜽
+t
+)
+Q(\bm{\theta}\mid\bm{\theta}^{t})
+.
+Following Proposition 2.7.1 from
+Bertsekas [1997]
+, we can say the alternating minimization (AM) procedure used to solve the M-step converges to a stationary point, since our
+Q
+⁡
+(
+𝜽
+∣
+𝜽
+t
+)
+Q(\bm{\theta}\mid\bm{\theta}^{t})
+function is differentiable and marginally convex.
+In our case, in each iteration of AM, we solve for
+𝜷
+\bm{\beta}
+and
+𝐫
+\mathbf{r}
+exactly. Therefore, Theorem 4.3 from
+Park et al. [2017]
+implies that alternating minimization escapes saddle points and converges to a local minimum with high probability, which, by Theorem
+1
+, is close to the global minimum.
+Finally, since the M-step at each iteration is solved using AM, which is a monotonic procedure
+[
+Jain and Kar, 2017
+]
+, each EM iteration monotonically increases the likelihood. Standard convergence results for EM therefore imply that the sequence of iterates converges to a stationary point of the likelihood.
+6
+EXPERIMENTAL ANALYSIS
+6.1
+Evaluation Metrics
+To quantitatively evaluate the performance of the proposed methods, we employ Kendall’s Tau (
+τ
+\tau
+), Accuracy (
+a
+​
+c
+​
+c
+acc
+), and Weighted Accuracy (
+w
+​
+a
+​
+c
+​
+c
+wacc
+). These metrics focus on the relative ordering of items rather than absolute value errors.
+Kendall’s Tau is a standardized rank correlation that is robust to outliers, but it treats all pairwise swaps equally. Accuracy measures the probability of correctly ordering item pairs and is easy to interpret, though it ignores the magnitude of score differences. Weighted Accuracy penalizes larger ranking errors more strongly, but its value depends on the distribution of the scores.
+The definitions, including their respective advantages and limitations, are summarized in Table
+3
+in Appendix
+C
+. we evaluate all the representative crowdsourcing methods discussed in Section
+2
+. More details are given in
+D
+.
+(a)
+Varying
+N
+N
+.
+K
+=
+100
+,
+M
+=
+500
+K=100,\,M=500
+.
+(b)
+Varying
+M
+M
+.
+K
+=
+200
+,
+N
+=
+25000
+K=200,\,N=25000
+.
+(c)
+Varying
+K
+K
+.
+M
+=
+20000
+,
+N
+=
+1000
+M=20000,\,N=1000
+.
+Figure 1
+:
+Varying
+N
+N
+,
+K
+K
+,
+M
+M
+individually when
+β
+∈
+[
+−
+1
+,
+1
+]
+\beta\in[-1,1]
+.
+6.2
+Synthetic Datasets
+We will sample data (having
+N
+N
+measurements) from the distribution given in Eq. (
+3
+), with
+K
+K
+(number of items) and
+M
+M
+(number of workers) to study their effect and we sample
+β
+\beta
+uniformly from
+[
+−
+1
+,
+1
+]
+[-1,1]
+.
+We use 10 random seeds for data sampling.
+Let
+k
+k
+denote 1000 for specifying number of measurements, workers, or items.
+To study the effect of each variable, we vary
+N
+N
+,
+K
+K
+,
+M
+M
+individually keeping the other two variables constant as follows:
+1.
+Varying N, Keeping K and M constant:
+We conduct an experiment with fixed values of the number of items
+K
+=
+100
+K=100
+and the number of workers
+M
+=
+500
+M=500
+, while varying the number of measurements
+N
+∈
+{
+2
+​
+k
+,
+2.5
+​
+k
+,
+3
+​
+k
+,
+3.5
+​
+k
+,
+4
+​
+k
+,
+4.5
+​
+k
+,
+5
+​
+k
+,
+10
+​
+k
+,
+25
+​
+k
+,
+50
+​
+k
+,
+100
+​
+k
+}
+N\in\{2k,\allowbreak 2.5k,\allowbreak 3k,\allowbreak 3.5k,\allowbreak 4k,\allowbreak 4.5k,\allowbreak 5k,\allowbreak 10k,\allowbreak 25k,\allowbreak 50k,\allowbreak 100k\}
+to examine the effect of measurement volume on various techniques.
+As seen in Figure
+1(a)
+, irrespective of number of measurements the performance of methods not modeling the annotator competence remains low, whereas the methods that model annotator competence while predicting rewards i.e., BoRaEM, HBTL and CrowdBT remains high. BoRaEM seems to be robust than CrowdBT in sparse measurements setting (i.e, for measurements less than 4000).
+2.
+Varying M, Keeping N and K constant:
+We vary the number of workers
+M
+∈
+{
+500
+,
+1
+​
+k
+,
+2
+​
+k
+,
+3
+​
+k
+,
+4
+​
+k
+,
+5
+​
+k
+,
+5.5
+​
+k
+,
+6
+​
+k
+,
+8
+​
+k
+}
+M\in\{500,\allowbreak 1k,\allowbreak 2k,\allowbreak 3k,\allowbreak 4k,\allowbreak 5k,\allowbreak 5.5k,\allowbreak 6k,\allowbreak 8k\}
+while fixing the number of items at
+K
+=
+200
+K=200
+and the number of measurements at
+N
+=
+25
+​
+k
+N=25k
+, to analyze the impact of worker scale.
+As seen in Figure
+1(b)
+, all methods suffers as the number of workers are increased (or the comparisons per worker get decreased). The performance decay of CrowdBT is seen to be much higher than BoRaEM and BoRaEM is quite stable.
+3.
+Varying K, Keeping N and M constant:
+We vary the number of items
+K
+∈
+{
+50,100,250,500
+,
+1000
+,
+1250
+,
+1500
+,
+1750
+,
+2250
+,
+2500
+}
+K\in\{50,\allowbreak 100,\allowbreak 250,\allowbreak 500,\allowbreak 1000,\allowbreak 1250,\allowbreak 1500,\allowbreak 1750,\allowbreak 2250,\allowbreak 2500\}
+while fixing the number of workers at
+M
+=
+20
+​
+k
+M=20k
+and the number of measurements at
+N
+=
+1
+​
+k
+N=1k
+, in order to study the effect of item scale.
+As seen in Figure
+1(c)
+, all methods suffers as the number of items are increased. The performance of BoRaEM, HBTL and CrowdBT decays after
+K
+=
+1000
+K=1000
+, HBTL and BoRaEM seem to degrade slower than CrowdBT under larger N regimes.
+Methods such as
+BT
+,
+BARP
+, and
+RC
+, which do not explicitly model annotator competence or susceptibility to bias, exhibit consistently poor performance in the presence of adversarial workers. Appendix
+F
+presents results for the regime
+β
+∈
+[
+0
+,
+1
+]
+\beta\in[0,1]
+, which contains no adversarial annotators.
+In this setting, these methods perform comparatively better
+due to
+absence adversaries.
+In contrast,
+BoRaEM
+,
+HBTL
+, and
+CrowdBT
+, which explicitly model annotator competence, achieve superior performance in denser regimes where sufficient observations are available to reliably estimate the additional parameters. However, their performance exhibits a modest decline in sparse regimes, where limited data constrains accurate parameter estimation and increases susceptibility to estimation noise. Hardware details are in Appendix
+J
+.
+6.3
+Real Datasets
+Table 1
+:
+Summary statistics of the evaluation datasets.
+Attribute
+FaceAge Dataset
+Reading Difficulty or Passage Dataset
+Items (
+K
+K
+)
+9,150
+472
+Workers (
+M
+M
+)
+4,091
+624
+Comparisons (
+N
+N
+)
+250,249
+11,763
+Description
+Comparison of two face images to identify the older individual.
+Pairwise difficulty assessment of reading passages.
+Ground Truth
+Chronological age (years)
+Standardized reading levels
+Spammer Handling
+Removal based on performance on “gold" instances (large age gaps).
+Not specified in original study.
+Table 2
+:
+Benchmark results on FaceAge and Passage datasets. Accuracy and Weighted Accuracy are reported as percentages, while Kendall’s Tau is reported as a decimal. Best overall results are shown in
+bold
+.
+Method
+Accuracy (%)
+Weighted Accuracy (%)
+Kendall’s Tau
+Runtime (s)
+FaceAge Dataset
+Simple
+BT
+79.01
+87.20
+0.5754
+0.89
+±
+0.05
+0.89\pm 0.05
+RC
+78.04
+86.44
+0.5582
+0.07
+±
+0.03
+0.07\pm 0.03
+FactorBT
+79.16
+87.30
+0.5785
+169.41
+±
+1.16
+169.41\pm 1.16
+BARP
+79.08
+87.26
+0.5769
+51.08
+±
+2.85
+51.08\pm 2.85
+CrowdBT
+79.17
+87.31
+0.5787
+138.16
+±
+3.86
+138.16\pm 3.86
+HTCV
+79.17
+87.33
+0.5786
+41.31
+±
+1.41
+41.31\pm 1.41
+HBTL
+79.20
+87.35
+0.5793
+83.10
+±
+3.32
+83.10\pm 3.32
+BoRaEM (Ours)
+79.21
+87.36
+0.5795
+6.55
+±
+0.43
+6.55\pm 0.43
+Passage Dataset
+Simple
+BT
+68.04
+74.33
+0.3407
+1.39
+±
+0.13
+1.39\pm 0.13
+RC
+65.22
+71.30
+0.2892
+0.02
+±
+0.04
+0.02\pm 0.04
+FactorBT
+69.47
+75.58
+0.3676
+100.85
+±
+2.82
+100.85\pm 2.82
+BARP
+68.19
+74.51
+0.3435
+32.05
+±
+2.38
+32.05\pm 2.38
+CrowdBT
+70.02
+75.96
+0.3779
+84.25
+±
+1.84
+84.25\pm 1.84
+HTCV
+69.30
+75.30
+0.3643
+46.19
+±
+1.83
+46.19\pm 1.83
+HBTL
+69.53
+75.46
+0.3688
+77.72
+±
+2.85
+77.72\pm 2.85
+BoRaEM (Ours)
+69.59
+75.56
+0.3698
+8.28
+±
+0.71
+8.28\pm 0.71
+Figure 2
+:
+Kendall’s Tau (
+τ
+\tau
+) of different ranking methods under varying proportions of spammers for
+FaceAge
+dataset.
+For evaluating crowdsourcing methods on real-world data, we use two datasets: the FaceAge dataset (IMDB-WIKI-SbS)
+3
+3
+3
+http://www-personal.umich.edu/~kevynct/datasets/wsdm_rankagg_2013_readability_crowdflower_data.csv
+[
+Pavlichenko and Ustalov, 2021
+]
+and the Reading Difficulty (Passage) dataset
+4
+4
+4
+https://github.com/Toloka/IMDB-WIKI-SbS/tree/main
+[
+Chen et al., 2013
+]
+. The dataset statistics are summarized in Table
+1
+.
+The FaceAge dataset
+[
+Pavlichenko and Ustalov, 2021
+]
+is specifically tailored for large scale evaluation of various crowdsourcing methods and is a widely adopted benchmark for crowdsourced pairwise comparison experiments
+[
+Ferrara et al., 2024
+]
+. On the FaceAge dataset,
+BoRaEM
+achieves the best performance, followed by
+HBTL
+and
+CrowdBT
+.
+The Passage dataset is comparatively much smaller.
+On the
+Passage
+dataset, we observe that all methods achieve relatively low performance, with Kendall’s tau values ranging from 0.29 to 0.38.
+This can be attributed to the small size of the dataset and the inherent difficulty of modeling preferences in reading difficulty, which is a cognitively complex and subjective task. On this dataset,
+CrowdBT
+achieves the highest performance, followed by
+HBTL
+and
+BoRaEM
+.
+Table
+2
+presents the results on the FaceAge and Passage datasets.
+BoRaEM
+,
+HBTL
+,
+HTCV
+,
+FactorBT
+and
+CrowdBT
+remain competitive across both datasets. These results highlight the importance of jointly modeling worker competence and item rewards.
+6.4
+Spammer Addition Analysis
+We evaluate robustness under adversarial conditions by injecting synthetic spammers commonly studied in the crowdsourcing literature. Specifically, we consider four archetypes: (i)
+random choosers
+, who respond uniformly at random without regard to item quality
+[
+Vuurens et al., 2011
+]
+; (ii)
+position-biased
+spammers, who systematically favor one side of the comparison (e.g., always selecting the left or right option), also referred to as uniform spammers in prior work
+[
+Day, 1969
+,
+Xu et al., 2016
+,
+Vuurens et al., 2011
+]
+; (iii)
+malicious adversaries
+, who intentionally provide inverted or misleading responses to degrade aggregation quality
+[
+Kleindessner and Awasthi, 2018
+,
+Steinhardt et al., 2016
+]
+; and (iv) a
+combined
+setting, where all aforementioned spammer types are present in equal proportion, reflecting a more realistic and heterogeneous adversarial environment. For fairness, each injected spammer is assigned the same expected number of comparisons as an original worker, ensuring performance differences arise from behavioral characteristics rather than annotation volume.
+6.4.1
+Results
+We mainly focus on the FaceAge dataset, as it is a widely adopted benchmark for crowdsourcing
+[
+Pavlichenko and Ustalov, 2021
+,
+Ferrara et al., 2024
+]
+. Results on the Passage dataset are provided in Appendix
+H
+.
+Figure
+2
+presents the performance of different crowdsourcing methods in terms of Kendall’s tau (
+τ
+\tau
+) as the proportion of various types of spammers in the FaceAge dataset is varied.
+The results are averaged over 10 random seeds for generating spammers and 10 random seeds for random initializations.
+Similar trends are observed in terms of accuracy (
+a
+​
+c
+​
+c
+acc
+) and weighted accuracy (
+w
+​
+a
+​
+c
+​
+c
+wacc
+) (see Appendix
+G
+).
+We add spammers following the procedure of
+Bugakova et al. [2019]
+.
+Specifically, if there are originally
+M
+M
+annotators, we add
+0.1
+​
+M
+0.1M
+,
+0.2
+​
+M
+0.2M
+,
+0.4
+​
+M
+0.4M
+,
+0.6
+​
+M
+0.6M
+, and
+0.8
+​
+M
+0.8M
+spammers according to the specified proportions.
+As the spammer proportion increases from 0% to 44.4%,
+BoRaEM
+,
+HBTL
+,
+HTCV
+consistently perform the best, followed by
+CrowdBT
+and
+FactorBT
+, while
+BARP
+,
+BT
+, and
+RC
+exhibit substantial performance drops.
+These results highlight the importance of explicitly modeling annotator competencies in crowdsourcing. Further, we have performed ablations over intialization and hyperparameters, and the results are detailed in Appendix
+I
+.
+7
+CONCLUSION
+In this work, we addressed the problem of rank aggregation from pairwise comparisons in the presence of workers with varying competencies. We adapt the Boltzmann-rational model for modeling each pairwise comparison. We then use the Polya-Gamma random variable augmentation to simplify the logistic function to an exponential form enabling a simple and efficient EM formulation. We achieve tractable inference with theoretical convergence guarantees by treating this problem as a matrix sensing problem.
+Extensive experiments on both synthetic and real-world datasets demonstrate the advantages of
+using our algorithm over several baselines and the algorithm remains robust even in the presence of a large fraction of spammers, highlighting its effectiveness for reliable rank aggregation in crowdsourced settings.
+Future work includes designing models for robust RLHF that can jointly predict item feature importance vectors while effectively identifying and mitigating the influence of spammers.
+{contributions}
+Arpit Agarwal conceived the idea of modeling annotator competence using the Boltzmann Rational Model, identified its connection to the matrix sensing problem, and led the manuscript preparation.
+Kaustubh Shivshankar Shejole proposed the use of Pólya-Gamma augmentation, developed the method, conducted empirical studies, and generated the experimental visualizations.
+Tanish Agarwal developed the theoretical foundations of the proposed approach under the guidance of Arpit Agarwal and Avishek Ghosh.
+Acknowledgements.
+We would like to thank the Organizing Committee, Area Chairs, Senior Area Chairs, Meta-Reviewer, and the anonymous reviewers of UAI 2026 for their valuable feedback, constructive suggestions, and insightful comments, which helped improve the quality and presentation of this work.
+The first author gratefully acknowledges Kush Mangukiya for contributions during the early stages of this research and Pratham Shah, Manish Kumar for their continuous support and encouragement.
+References
+Bakker
+et al.
+(2022)
+M. Bakker, M. Chadwick, H. Sheahan, M. Tessler, L. Campbell-Gillingham, J. Balaguer, N. McAleese, A. Glaese, J. Aslanides, M. Botvinick, and C. Summerfield
+Fine-tuning language models to find agreement among humans with diverse preferences
+.
+In
+Advances in Neural Information Processing Systems
+,
+S. Koyejo, S. Mohamed, A. Agarwal, D. Belgrave, K. Cho, and A. Oh (Eds.)
+,
+Vol.
+35
+,
+pp. 38176–38189
+.
+External Links:
+Link
+Cited by:
+§1
+.
+Bertsekas (1997)
+D. P. Bertsekas
+Nonlinear programming
+.
+Journal of the Operational Research Society
+48
+(
+3
+),
+pp. 334–334
+.
+External Links:
+ISSN 1476-9360
+,
+Document
+,
+Link
+Cited by:
+§5
+.
+Bradley and Terry (1952)
+R. A. Bradley and M. E. Terry
+Rank analysis of incomplete block designs: i. the method of paired comparisons
+.
+Biometrika
+39
+(
+3/4
+),
+pp. 324–345
+.
+Cited by:
+Appendix D
+,
+§2
+.
+Bugakova
+et al.
+(2019)
+N. Bugakova, V. Fedorova, G. Gusev, and A. Drutsa
+Aggregation of pairwise comparisons with reduction of biases
+.
+arXiv preprint arXiv:1906.03711
+.
+Cited by:
+Appendix D
+,
+§2
+,
+§6.4.1
+.
+Candes and Plan (2010)
+E. J. Candes and Y. Plan
+Tight oracle bounds for low-rank matrix recovery from a minimal number of random measurements
+.
+arXiv preprint arXiv:1001.0339
+.
+Cited by:
+§5
+.
+Chen
+et al.
+(2013)
+X. Chen, P. N. Bennett, K. Collins-Thompson, and E. Horvitz
+Pairwise ranking aggregation in a crowdsourced setting
+.
+In
+Proceedings of the sixth ACM international conference on Web search and data mining
+,
+pp. 193–202
+.
+Cited by:
+Appendix D
+,
+Appendix E
+,
+§1
+,
+§2
+,
+§6.3
+.
+Daniels-Koch and Freedman (2022)
+O. Daniels-Koch and R. Freedman
+The expertise problem: learning from specialized feedback
+.
+In
+NeurIPS ML Safety Workshop
+,
+External Links:
+Link
+Cited by:
+§3
+.
+Day (1969)
+R. L. Day
+Position bias in paired product tests
+.
+SAGE Publications Sage CA: Los Angeles, CA
+.
+Cited by:
+§6.4
+.
+Ding
+et al.
+(2022)
+X. Ding, Z. Zhang, Z. Yuan, T. Han, H. Gu, and Y. Fang
+Effectiveness of malicious behavior and its impact on crowdsourcing
+.
+In
+CCF Conference on Computer Supported Cooperative Work and Social Computing
+,
+pp. 118–132
+.
+Cited by:
+§1
+.
+Ferrara
+et al.
+(2024)
+A. Ferrara, F. Bonchi, F. Fabbri, F. Karimi, and C. Wagner
+Bias-aware ranking from pairwise comparisons
+.
+Data Mining and Knowledge Discovery
+38
+(
+4
+),
+pp. 2062–2086
+.
+External Links:
+Document
+Cited by:
+Appendix D
+,
+Appendix D
+,
+§I.1
+,
+§2
+,
+§6.3
+,
+§6.4.1
+.
+Gadiraju
+et al.
+(2015)
+U. Gadiraju, R. Kawase, S. Dietze, and G. Demartini
+Understanding malicious behavior in crowdsourcing platforms: the case of online surveys
+.
+In
+Proceedings of the 33rd annual ACM conference on human factors in computing systems
+,
+pp. 1631–1640
+.
+Cited by:
+§1
+.
+Jain and Kar (2017)
+P. Jain and P. Kar
+Non-convex optimization for machine learning
+.
+External Links:
+ISBN 9781680833690
+,
+Document
+Cited by:
+§5
+.
+Jeon
+et al.
+(2020)
+H. J. Jeon, S. Milli, and A. Dragan
+Reward-rational (implicit) choice: a unifying formalism for reward learning
+.
+In
+Advances in Neural Information Processing Systems
+,
+H. Larochelle, M. Ranzato, R. Hadsell, M.F. Balcan, and H. Lin (Eds.)
+,
+Vol.
+33
+,
+pp. 4415–4426
+.
+External Links:
+Link
+Cited by:
+§3
+.
+Jin
+et al.
+(2020)
+T. Jin, P. Xu, Q. Gu, and F. Farnoud
+Rank aggregation via heterogeneous thurstone preference models
+.
+In
+Proceedings of the AAAI Conference on Artificial Intelligence
+,
+Vol.
+34
+,
+pp. 4353–4360
+.
+External Links:
+Document
+Cited by:
+§2
+.
+Kalloori
+et al.
+(2018)
+S. Kalloori, F. Ricci, and R. Gennari
+Eliciting pairwise preferences in recommender systems
+.
+In
+Proceedings of the 12th acm conference on recommender systems
+,
+pp. 329–337
+.
+Cited by:
+§1
+.
+Kleindessner and Awasthi (2018)
+M. Kleindessner and P. Awasthi
+Crowdsourcing with arbitrary adversaries
+.
+In
+Proceedings of the 35th International Conference on Machine Learning
+,
+J. Dy and A. Krause (Eds.)
+,
+Proceedings of Machine Learning Research
+, Vol.
+80
+,
+pp. 2708–2717
+.
+External Links:
+Link
+Cited by:
+§6.4
+.
+List (2022)
+C. List
+Social Choice Theory
+.
+In
+The Stanford Encyclopedia of Philosophy
+,
+E. N. Zalta and U. Nodelman (Eds.)
+,
+Note:
+https://plato.stanford.edu/archives/win2022/entries/social-choice/
+Cited by:
+§1
+.
+Negahban
+et al.
+(2012)
+S. Negahban, S. Oh, and D. Shah
+Iterative ranking from pair-wise comparisons
+.
+In
+Advances in Neural Information Processing Systems
+,
+F. Pereira, C.J. Burges, L. Bottou, and K. Weinberger (Eds.)
+,
+Vol.
+25
+,
+pp.
+.
+External Links:
+Link
+Cited by:
+Appendix D
+,
+§2
+.
+Park
+et al.
+(2017)
+D. Park, A. Kyrillidis, C. Carmanis, and S. Sanghavi
+Non-square matrix sensing without spurious local minima via the Burer-Monteiro approach
+.
+In
+Proceedings of the 20th International Conference on Artificial Intelligence and Statistics
+,
+A. Singh and J. Zhu (Eds.)
+,
+Proceedings of Machine Learning Research
+, Vol.
+54
+,
+pp. 65–74
+.
+External Links:
+Link
+Cited by:
+Appendix B
+,
+§1
+,
+§5
+,
+§5
+.
+Pavlichenko and Ustalov (2021)
+N. Pavlichenko and D. Ustalov
+IMDB-wiki-sbs: an evaluation dataset for crowdsourced pairwise comparisons
+.
+arXiv preprint arXiv:2110.14990
+.
+Cited by:
+§I.1
+,
+§6.3
+,
+§6.3
+,
+§6.4.1
+.
+Polson
+et al.
+(2013)
+N. G. Polson, J. G. Scott, and J. Windle
+Bayesian inference for logistic models using pólya–gamma latent variables
+.
+Journal of the American statistical Association
+108
+(
+504
+),
+pp. 1339–1349
+.
+Cited by:
+§A.1
+,
+§A.1
+,
+§1
+,
+§4
+.
+Steinhardt
+et al.
+(2016)
+J. Steinhardt, G. Valiant, and M. Charikar
+Avoiding imposters and delinquents: adversarial crowdsourcing and peer prediction
+.
+In
+Advances in Neural Information Processing Systems
+,
+D. Lee, M. Sugiyama, U. Luxburg, I. Guyon, and R. Garnett (Eds.)
+,
+Vol.
+29
+,
+pp.
+.
+External Links:
+Link
+Cited by:
+§6.4
+.
+Stiennon
+et al.
+(2020)
+N. Stiennon, L. Ouyang, J. Wu, D. M. Ziegler, R. Lowe, C. Voss, A. Radford, D. Amodei, and P. Christiano
+Learning to summarize from human feedback
+.
+In
+Proceedings of the 34th International Conference on Neural Information Processing Systems
+,
+NIPS ’20
+,
+Red Hook, NY, USA
+.
+External Links:
+ISBN 9781713829546
+Cited by:
+§1
+.
+Velayati
+et al.
+(2025)
+R. Velayati, A. Gurca, M. Bagherzadeh, and W. Vanhaverbeke
+Crowdsourcing effectiveness at a problem level: a meta-synthesis
+.
+In
+Academy of Management Proceedings
+,
+Vol.
+2025
+,
+pp. 19087
+.
+Cited by:
+§1
+.
+Vuurens
+et al.
+(2011)
+J. Vuurens, A. P. de Vries, and C. Eickhoff
+How much spam can you take? an analysis of crowdsourcing results to increase accuracy
+.
+In
+Proc. ACM SIGIR Workshop on Crowdsourcing for Information Retrieval (CIR’11)
+,
+pp. 21–26
+.
+Cited by:
+§6.4
+.
+Xu
+et al.
+(2016)
+Q. Xu, J. Xiong, X. Cao, and Y. Yao
+False discovery rate control and statistical quality assessment of annotators in crowdsourced ranking
+.
+In
+International conference on machine learning
+,
+pp. 1282–1291
+.
+Cited by:
+§6.4
+.
+Ziebart
+et al.
+(2010)
+B. D. Ziebart, J. A. Bagnell, and A. K. Dey
+Modeling interaction via the principle of maximum causal entropy
+.
+In
+Proceedings of the 27th International Conference on Machine Learning (ICML)
+,
+External Links:
+Link
+Cited by:
+§3
+.
+Finding the Signal in the Spam (Supplementary Material)
+Appendix A
+More Details on BoRaEM Derivation
+A.1
+Pólya-Gamma Random Variables
+Following
+Polson et al. [2013]
+, if
+ω
+\omega
+is a Pólya-Gamma distributed random variable with parameters
+b
+>
+0
+b>0
+and
+c
+∈
+ℝ
+c\in\mathbb{R}
+, denoted
+ω
+∼
+PG
+⁡
+(
+b
+,
+c
+)
+\omega\sim\mathrm{PG}(b,c)
+, then it is equal in distribution to an infinite weighted sum of gamma random variables:
+ω
+=
+d
+1
+2
+​
+π
+2
+​
+∑
+k
+=
+1
+∞
+g
+k
+(
+k
+−
+1
+2
+)
+2
++
+c
+2
+4
+​
+π
+2
+,
+g
+k
+∼
+Gamma
+⁡
+(
+b
+,
+1
+)
+.
+\omega\stackrel{{\scriptstyle d}}{{=}}\frac{1}{2\pi^{2}}\,\sum_{k=1}^{\infty}\frac{g_{k}}{\left(k-\frac{1}{2}\right)^{2}+\frac{c^{2}}{4\pi^{2}}}\,,\quad g_{k}\sim\mathrm{Gamma}(b,1).
+Here, “
+=
+d
+\stackrel{{\scriptstyle d}}{{=}}
+” denotes equality in distribution, and
+g
+k
+∼
+Gamma
+​
+(
+b
+,
+1
+)
+g_{k}\sim\text{Gamma}(b,1)
+are independent Gamma random variables. Note that this is not the density function. Instead, equality in distribution means that the PG random variable on the left-hand side has the same cumulative distribution function as the random variable on the right-hand side.
+Polson et al. [2013]
+showed that all finite moments of
+ω
+\omega
+admit closed form expressions; in particular,
+𝔼
+⁡
+[
+ω
+]
+=
+b
+2
+​
+c
+​
+tanh
+⁡
+(
+c
+2
+)
+.
+\mathbb{E}[\omega]=\frac{b}{2c}\,\tanh\left(\frac{c}{2}\right).
+(13)
+They further proved the following two identities for
+ω
+∼
+PG
+⁡
+(
+b
+,
+0
+)
+\omega\sim\mathrm{PG}(b,0)
+, which are central to Pólya-Gamma data augmentation for logistic models:
+1.
+For any real
+ψ
+\psi
+, one has
+(
+e
+ψ
+)
+a
+(
+1
++
+e
+ψ
+)
+b
+=
+2
+−
+b
+e
+κ
+​
+ψ
+∫
+0
+∞
+e
+−
+ω
+ψ
+2
+/
+2
+p
+(
+ω
+∣
+b
+,
+0
+)
+d
+ω
+,
+\frac{(e^{\psi})^{a}}{(1+e^{\psi})^{b}}=2^{-b}e^{\kappa\psi}\int_{0}^{\infty}e^{-\omega\psi^{2}/2}\,p(\omega\mid b,0)\,d\omega,
+(14)
+where
+κ
+=
+a
+−
+b
+2
+\kappa=a-\frac{b}{2}
+, and
+p
+⁡
+(
+ω
+∣
+b
+,
+0
+)
+p(\omega\mid b,0)
+is the density of a
+PG
+⁡
+(
+b
+,
+0
+)
+\mathrm{PG}(b,0)
+random variable.
+2.
+The conditional density of
+ω
+\omega
+given
+ψ
+\psi
+is again Pólya–Gamma with parameters
+b
+b
+and
+ψ
+\psi
+, that is,
+(
+ω
+∣
+ψ
+)
+∼
+PG
+⁡
+(
+b
+,
+ψ
+)
+.
+(\omega\mid\psi)\sim\mathrm{PG}(b,\psi).
+(15)
+A.2
+Log Likelihood Derivation
+Let us consider the problem formulation given in Section
+3
+, where there is a set of
+K
+K
+items, and one observes outcomes of pairwise comparisons
+between these items, elicited from a set of
+M
+M
+crowdworkers.
+Specifically, we are given a dataset
+𝒟
+=
+{
+(
+w
+i
+,
+l
+i
+,
+s
+i
+)
+}
+i
+=
+1
+N
+\mathcal{D}=\{(w_{i},l_{i},s_{i})\}_{i=1}^{N}
+where there are
+N
+N
+pairwise comparisons; the
+i
+i
+-th comparison is performed by worker
+s
+i
+∈
+[
+M
+]
+s_{i}\in[M]
+where
+w
+i
+∈
+[
+K
+]
+w_{i}\in[K]
+is the winning item and
+l
+i
+∈
+[
+K
+]
+l_{i}\in[K]
+is the losing item such that
+l
+i
+l_{i}
+is not equal to
+w
+i
+w_{i}
+.
+Consider Equation (
+14
+). Let
+η
+i
+=
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+\eta_{i}=\beta_{s_{i}}(r_{w_{i}}-r_{l_{i}})
+. For
+a
+=
+1
+a=1
+,
+b
+=
+1
+b=1
+, and
+ψ
+=
+η
+i
+\psi=\eta_{i}
+, we have
+κ
+=
+1
+2
+\kappa=\frac{1}{2}
+and
+p
+⁡
+(
+ω
+i
+)
+=
+PG
+⁡
+(
+ω
+i
+∣
+1
+,
+0
+)
+p(\omega_{i})=\mathrm{PG}(\omega_{i}\mid 1,0)
+, which allows us to write
+1
+1
++
+e
+−
+η
+i
+=
+e
+η
+i
+1
++
+e
+η
+i
+=
+1
+2
+​
+e
+η
+i
+/
+2
+​
+∫
+0
+∞
+exp
+⁡
+(
+−
+ω
+i
+​
+η
+i
+2
+2
+)
+​
+p
+​
+(
+ω
+i
+)
+​
+d
+​
+ω
+i
+\frac{1}{1+e^{-\eta_{i}}}=\frac{e^{\eta_{i}}}{1+e^{\eta_{i}}}=\frac{1}{2}e^{\eta_{i}/2}\int_{0}^{\infty}\exp\left(-\frac{\omega_{i}\,\eta_{i}^{2}}{2}\right)\,p(\omega_{i})\,d\omega_{i}
+(16)
+Let
+𝜽
+=
+{
+r
+,
+𝜷
+}
+\bm{\theta}=\{\textbf{r},\bm{\beta}\}
+.
+Therefore, referring to Equation (
+9
+) and  (
+16
+), we can write each term of the likelihood as
+p
+⁡
+(
+w
+i
+,
+l
+i
+,
+s
+i
+|
+𝜽
+)
+\displaystyle p(w_{i},l_{i},s_{i}|\bm{\theta})
+=
+1
+1
++
+exp
+⁡
+{
+−
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+}
+\displaystyle=\frac{1}{1+\exp{\left\{-\beta_{s_{i}}(r_{w_{i}}-r_{l_{i}})\right\}}}
+(17)
+=
+1
+2
+​
+e
+η
+i
+/
+2
+​
+∫
+0
+∞
+exp
+⁡
+(
+−
+ω
+i
+​
+η
+i
+2
+2
+)
+​
+p
+​
+(
+ω
+i
+)
+​
+d
+​
+ω
+i
+\displaystyle=\frac{1}{2}e^{\eta_{i}/2}\int_{0}^{\infty}\exp\left(-\frac{\omega_{i}\eta_{i}^{2}}{2}\right)\,p(\omega_{i})\,d\omega_{i}
+=
+1
+2
+​
+∫
+0
+∞
+exp
+⁡
+(
+η
+i
+2
+−
+ω
+i
+​
+η
+i
+2
+2
+)
+​
+p
+​
+(
+ω
+i
+)
+​
+d
+​
+ω
+i
+\displaystyle=\frac{1}{2}\int_{0}^{\infty}\exp\left(\frac{\eta_{i}}{2}-\frac{\omega_{i}\eta_{i}^{2}}{2}\right)p(\omega_{i})\,d\omega_{i}
+which induces the augmented joint density
+p
+⁡
+(
+w
+i
+,
+l
+i
+,
+s
+i
+,
+ω
+i
+|
+𝜽
+)
+\displaystyle p(w_{i},l_{i},s_{i},\omega_{i}|\bm{\theta})
+∝
+exp
+⁡
+(
+−
+ω
+i
+​
+η
+i
+2
+2
++
+η
+i
+2
+)
+​
+p
+​
+(
+ω
+i
+)
+,
+\displaystyle\propto\exp\left(-\frac{\omega_{i}\eta_{i}^{2}}{2}+\frac{\eta_{i}}{2}\right)p(\omega_{i}),
+Taking the logarithm and ignoring additive constants that do not depend on
+𝜽
+\bm{\theta}
+, we get the log-likelihood for the
+i
+t
+​
+h
+i^{th}
+comparison as
+log
+⁡
+(
+p
+⁡
+(
+w
+i
+,
+l
+i
+,
+s
+i
+,
+ω
+i
+|
+𝜽
+)
+)
+\displaystyle\log(p(w_{i},l_{i},s_{i},\omega_{i}|\bm{\theta}))
+∝
+log
+⁡
+[
+exp
+⁡
+(
+1
+2
+​
+η
+i
+−
+ω
+i
+2
+​
+η
+i
+2
+)
+​
+p
+​
+(
+ω
+i
+)
+]
++
+const
+\displaystyle\propto\log\left[\exp\left(\frac{1}{2}\eta_{i}-\frac{\omega_{i}}{2}\,\eta_{i}^{2}\right)\,p(\omega_{i})\right]+\text{const}
+(19)
+=
+−
+ω
+i
+​
+η
+i
+2
+2
++
+η
+i
+2
+,
+\displaystyle=-\frac{\omega_{i}\eta_{i}^{2}}{2}+\frac{\eta_{i}}{2},
+=
+1
+2
+​
+(
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+)
+−
+ω
+i
+2
+​
+(
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+)
+2
+.
+\displaystyle=\frac{1}{2}\,\left(\beta_{s_{i}}(r_{w_{i}}-r_{l_{i}})\right)-\frac{\omega_{i}}{2}\,\left(\beta_{s_{i}}(r_{w_{i}}-r_{l_{i}})\right)^{2}.
+(20)
+Summing over all
+N
+N
+comparisons in
+𝒟
+\mathcal{D}
+gives the
+complete data
+log-likelihood, given all
+ω
+i
+\omega_{i}
+,
+ℓ
+⁡
+(
+𝜽
+,
+ω
+i
+,
+𝒟
+)
+=
+1
+2
+​
+∑
+i
+∈
+[
+N
+]
+[
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+−
+ω
+i
+​
+(
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+)
+2
+]
+,
+\ell(\bm{\theta},\omega_{i};\mathcal{D})=\frac{1}{2}\sum_{i\in[N]}\left[\,\beta_{s_{i}}(r_{w_{i}}-r_{l_{i}})-\omega_{i}\,\left(\beta_{s_{i}}(r_{w_{i}}-r_{l_{i}})\right)^{2}\right],
+(21)
+up to additive constants independent of
+𝜽
+\bm{\theta}
+.
+A.3
+Expectation-Maximization
+A.3.1
+E-Step
+Given the current parameter estimate
+θ
+(
+t
+)
+\theta^{(t)}
+and let
+𝝎
+\bm{\omega}
+denote the set of all
+w
+i
+w_{i}
+for
+i
+=
+1
+i=1
+to
+N
+N
+comparisons, we compute
+Q
+⁡
+(
+θ
+∣
+θ
+(
+t
+)
+)
+=
+𝔼
+ω
+|
+𝒟
+,
+θ
+(
+t
+)
+​
+[
+ℓ
+⁡
+(
+𝜽
+,
+𝝎
+,
+𝒟
+)
+]
+=
+1
+2
+​
+∑
+(
+w
+i
+,
+l
+i
+,
+s
+i
+)
+∈
+𝒟
+𝔼
+ω
+i
+|
+θ
+(
+t
+)
+​
+[
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+−
+ω
+i
+​
+β
+s
+i
+2
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+2
+]
+.
+Q\left(\theta\mid\theta^{(t)}\right)=\mathbb{E}_{\,\omega\mid\mathcal{D},\,\theta^{(t)}}\left[\,\ell(\bm{\theta},\bm{\omega};\mathcal{D})\right]=\frac{1}{2}\sum_{(w_{i},l_{i},s_{i})\in\mathcal{D}}\mathbb{E}_{\,\omega_{i}\mid\theta^{(t)}}\left[\,\beta_{s_{i}}\,(r_{w_{i}}-r_{l_{i}})-\omega_{i}\,\beta_{s_{i}}^{2}\,(r_{w_{i}}-r_{l_{i}})^{2}\right].
+Noting that the only term depending on
+ω
+i
+\omega_{i}
+is
+ω
+i
+​
+β
+s
+i
+2
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+2
+\omega_{i}\,\beta_{s_{i}}^{2}\,(r_{w_{i}}-r_{l_{i}})^{2}
+, we define
+κ
+i
+(
+t
+)
+=
+𝔼
+⁡
+[
+ω
+i
+∣
+θ
+(
+t
+)
+]
+.
+\kappa_{i}^{(t)}=\mathbb{E}\left[\omega_{i}\mid\theta^{(t)}\right].
+Then,
+Q
+⁡
+(
+θ
+∣
+θ
+(
+t
+)
+)
+=
+1
+2
+​
+∑
+(
+w
+i
+,
+l
+i
+,
+s
+i
+)
+∈
+𝒟
+[
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+−
+κ
+i
+(
+t
+)
+​
+β
+s
+i
+2
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+2
+]
+.
+Q\left(\theta\mid\theta^{(t)}\right)=\frac{1}{2}\sum_{(w_{i},l_{i},s_{i})\in\mathcal{D}}\left[\beta_{s_{i}}\,\left(r_{w_{i}}-r_{l_{i}}\right)-\kappa_{i}^{(t)}\,\beta_{s_{i}}^{2}\,\left(r_{w_{i}}-r_{l_{i}}\right)^{2}\right].
+(22)
+Computing
+κ
+i
+(
+t
+)
+\kappa_{i}^{(t)}
+.
+At iteration
+t
+t
+, we compute the conditional expectation
+κ
+i
+(
+t
+)
+=
+𝔼
+⁡
+[
+ω
+i
+∣
+η
+i
+(
+t
+)
+]
+\kappa_{i}^{(t)}=\mathbb{E}[\omega_{i}\mid\eta_{i}^{(t)}]
+for the latent
+variables
+ω
+i
+∼
+PG
+⁡
+(
+1
+,
+η
+i
+(
+t
+)
+)
+\omega_{i}\sim\mathrm{PG}(1,\eta_{i}^{(t)})
+, where
+η
+i
+(
+t
+)
+=
+β
+s
+i
+(
+t
+)
+​
+(
+r
+w
+i
+(
+t
+)
+−
+r
+l
+i
+(
+t
+)
+)
+\eta_{i}^{(t)}=\beta_{s_{i}}^{(t)}(r_{w_{i}}^{(t)}-r_{l_{i}}^{(t)})
+.
+Invoking Eq. (
+13
+) yields:
+κ
+i
+(
+t
+)
+=
+𝕀
+⁡
+(
+η
+i
+(
+t
+)
+≠
+0
+)
+​
+tanh
+⁡
+(
+η
+i
+(
+t
+)
+/
+2
+)
+2
+​
+η
+i
+(
+t
+)
++
+𝕀
+⁡
+(
+η
+i
+(
+t
+)
+=
+0
+)
+​
+1
+4
+.
+\kappa_{i}^{(t)}=\mathbb{I}\left(\eta_{i}^{(t)}\neq 0\right)\frac{\tanh\left(\eta_{i}^{(t)}/2\right)}{2\eta_{i}^{(t)}}+\mathbb{I}\left(\eta_{i}^{(t)}=0\right)\frac{1}{4}.
+(23)
+A.3.2
+M-Step
+Note that while updating
+β
+\beta
+,
+r
+is kept fixed and vice-versa.
+Updating
+β
+\beta
+Q
+⁡
+(
+θ
+∣
+θ
+(
+t
+)
+)
+=
+∑
+(
+w
+i
+,
+l
+i
+,
+s
+i
+)
+∈
+𝒟
+[
+1
+2
+​
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+−
+1
+2
+​
+κ
+i
+(
+t
+)
+​
+β
+s
+i
+2
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+2
+]
+,
+Q\left(\theta\mid\theta^{(t)}\right)=\sum_{(w_{i},l_{i},s_{i})\in\mathcal{D}}\left[\,\tfrac{1}{2}\,\beta_{s_{i}}\,(r_{w_{i}}-r_{l_{i}})-\tfrac{1}{2}\,\kappa_{i}^{(t)}\,\beta_{s_{i}}^{2}\,(r_{w_{i}}-r_{l_{i}})^{2}\right],
+where
+κ
+i
+(
+t
+)
+=
+𝔼
+⁡
+[
+ω
+i
+∣
+θ
+(
+t
+)
+]
+\kappa_{i}^{(t)}=\mathbb{E}\left[\omega_{i}\mid\theta^{(t)}\right]
+. We first maximize
+Q
+Q
+with respect to each
+β
+s
+\beta_{s}
+.
+Let
+I
+s
+=
+{
+i
+:
+s
+i
+=
+s
+}
+I_{s}=\left\{\,i:s_{i}=s\right\}
+denote the index set of comparisons done by worker
+s
+s
+. Let
+d
+i
+=
+r
+w
+i
+−
+r
+l
+i
+d_{i}=r_{w_{i}}-r_{l_{i}}
+denote the reward difference between the preferred item
+w
+i
+w_{i}
+and the losing item
+l
+i
+l_{i}
+, evaluated at the current item reward estimates within the inner iterations of the M-step for all
+i
+∈
+I
+s
+i\in I_{s}
+. Then,
+the fraction of
+Q
+Q
+depending on
+β
+s
+\beta_{s}
+is
+Q
+k
+​
+(
+β
+s
+)
+=
+∑
+i
+∈
+I
+s
+[
+1
+2
+​
+β
+s
+​
+d
+i
+−
+1
+2
+​
+κ
+i
+(
+t
+)
+​
+β
+s
+2
+​
+d
+i
+2
+]
+.
+Q_{k}\left(\beta_{s}\right)=\sum_{\,i\in I_{s}}\left[\tfrac{1}{2}\,\beta_{s}\,d_{i}-\tfrac{1}{2}\,\kappa_{i}^{(t)}\,\beta_{s}^{2}\,d_{i}^{2}\right].
+(24)
+For maximization, we require
+∂
+Q
+k
+∂
+β
+s
+=
+0
+\frac{\partial Q_{k}}{\partial\beta_{s}}=0
+, that is,
+∂
+Q
+k
+∂
+β
+s
+\displaystyle\frac{\partial Q_{k}}{\partial\beta_{s}}
+=
+∑
+i
+∈
+I
+s
+[
+1
+2
+​
+d
+i
+−
+κ
+i
+(
+t
+)
+​
+β
+s
+​
+d
+i
+2
+]
+=
+0
+,
+\displaystyle=\sum_{\,i\in I_{s}}\left[\tfrac{1}{2}\,d_{i}-\kappa_{i}^{(t)}\,\beta_{s}\,d_{i}^{2}\right]=0,
+(25)
+which on rearranging gives
+1
+2
+​
+∑
+i
+∈
+I
+s
+d
+i
+−
+β
+s
+​
+∑
+i
+∈
+I
+s
+κ
+i
+(
+t
+)
+​
+d
+i
+2
+=
+0
+⟹
+β
+s
+=
+1
+2
+​
+∑
+i
+∈
+I
+s
+d
+i
+∑
+i
+∈
+I
+s
+κ
+i
+(
+t
+)
+​
+d
+i
+2
+=
+∑
+i
+∈
+I
+s
+d
+i
+2
+​
+∑
+i
+∈
+I
+s
+κ
+i
+(
+t
+)
+​
+d
+i
+2
+.
+\tfrac{1}{2}\sum_{\,i\in I_{s}}d_{i}-\beta_{s}\sum_{\,i\in I_{s}}\kappa_{i}^{(t)}\,d_{i}^{2}=0\Longrightarrow\beta_{s}=\frac{\tfrac{1}{2}\sum_{\,i\in I_{s}}d_{i}}{\sum_{\,i\in I_{s}}\kappa_{i}^{(t)}\,d_{i}^{2}}=\frac{\sum_{\,i\in I_{s}}d_{i}}{2\,\sum_{\,i\in I_{s}}\kappa_{i}^{(t)}\,d_{i}^{2}}.
+Updating
+r
+r
+We now maximize
+Q
+Q
+with respect to each
+r
+k
+r_{k}
+.
+Define the index sets
+W
+j
+=
+{
+i
+:
+w
+i
+=
+j
+}
+​
+and
+​
+L
+j
+=
+{
+i
+:
+l
+i
+=
+j
+}
+W_{j}=\{\,i:w_{i}=j\}\text{ and }L_{j}=\{\,i:l_{i}=j\}
+where
+W
+j
+W_{j}
+denotes the set of comparisons where item
+j
+j
+won, and
+L
+j
+L_{j}
+denotes the set of comparisons where item
+j
+j
+lost. Then,
+∂
+Q
+∂
+r
+k
+=
+[
+∑
+i
+∈
+W
+j
+[
+1
+2
+​
+β
+s
+i
+−
+β
+s
+i
+2
+​
+κ
+i
+(
+t
+)
+​
+(
+r
+k
+−
+r
+l
+i
+)
+]
++
+∑
+i
+∈
+L
+j
+[
+−
+1
+2
+​
+β
+s
+i
++
+β
+s
+i
+2
+​
+κ
+i
+(
+t
+)
+​
+(
+r
+w
+i
+−
+r
+k
+)
+]
+]
+=
+0
+.
+\frac{\partial Q}{\partial r_{k}}=\left[\sum_{\,i\in W_{j}}\left[\,\tfrac{1}{2}\,\beta_{s_{i}}-\beta_{s_{i}}^{2}\,\kappa_{i}^{(t)}\,\left(r_{k}-r_{l_{i}}\right)\right]+\sum_{\,i\in L_{j}}\left[\,-\tfrac{1}{2}\,\beta_{s_{i}}+\beta_{s_{i}}^{2}\,\kappa_{i}^{(t)}\,\left(r_{w_{i}}-r_{k}\right)\right]\right]=0.
+(26)
+which on rearranging gives
+r
+k
+=
+A
+k
+B
+k
+r_{k}=\frac{A_{k}}{B_{k}}
+where
+A
+k
+\displaystyle A_{k}
+=
+∑
+i
+∈
+W
+j
+[
+1
+2
+​
+β
+s
+i
++
+β
+s
+i
+2
+​
+κ
+i
+(
+t
+)
+​
+r
+l
+i
+]
++
+∑
+i
+∈
+L
+j
+[
+−
+1
+2
+​
+β
+s
+i
++
+β
+s
+i
+2
+​
+κ
+i
+(
+t
+)
+​
+r
+w
+i
+]
+​
+, and,
+\displaystyle=\sum_{\,i\in W_{j}}\left[\tfrac{1}{2}\,\beta_{s_{i}}+\beta_{s_{i}}^{2}\,\kappa_{i}^{(t)}\,r_{l_{i}}\right]+\sum_{\,i\in L_{j}}\left[-\tfrac{1}{2}\,\beta_{s_{i}}+\beta_{s_{i}}^{2}\,\kappa_{i}^{(t)}\,r_{w_{i}}\right]\text{, and,}
+B
+k
+\displaystyle B_{k}
+=
+∑
+i
+∈
+W
+j
+β
+s
+i
+2
+​
+κ
+i
+(
+t
+)
++
+∑
+i
+∈
+L
+j
+β
+s
+i
+2
+​
+κ
+i
+(
+t
+)
+.
+\displaystyle=\sum_{\,i\in W_{j}}\beta_{s_{i}}^{2}\,\kappa_{i}^{(t)}+\sum_{\,i\in L_{j}}\beta_{s_{i}}^{2}\,\kappa_{i}^{(t)}.
+Observe that for fixed
+𝜷
+\bm{\beta}
+, these update equations can be written as a linear system
+H
+​
+𝒓
+=
+𝐛
+H\bm{r}=\mathbf{b}
+as follows.
+B
+k
+​
+r
+k
+−
+∑
+i
+∈
+W
+j
+β
+s
+i
+2
+​
+κ
+i
+​
+r
+l
+i
+−
+∑
+i
+∈
+L
+j
+β
+s
+i
+2
+​
+κ
+i
+​
+r
+w
+i
+=
+∑
+i
+∈
+W
+j
+(
+1
+2
+​
+β
+s
+i
+)
++
+∑
+i
+∈
+L
+j
+(
+−
+1
+2
+​
+β
+s
+i
+)
+B_{k}r_{k}-\sum_{i\in W_{j}}\beta_{s_{i}}^{2}\kappa_{i}r_{l_{i}}-\sum_{i\in L_{j}}\beta_{s_{i}}^{2}\kappa_{i}r_{w_{i}}=\sum_{i\in W_{j}}\left(\frac{1}{2}\beta_{s_{i}}\right)+\sum_{i\in L_{j}}\left(-\frac{1}{2}\beta_{s_{i}}\right)
+The coefficient matrix
+H
+H
+and vector
+𝐛
+\mathbf{b}
+are given by
+H
+j
+​
+l
+=
+{
+∑
+i
+∈
+𝒟
+j
+​
+l
+−
+β
+s
+i
+2
+κ
+i
+(
+t
+)
+,
+j
+≠
+l
+B
+j
+,
+j
+=
+l
+H_{jl}=\begin{cases}\sum_{i\in\mathcal{D}_{jl}}-\beta_{s_{i}}^{2}\kappa_{i}^{(t)},\quad j\neq l\\
+B_{j},\quad j=l\\
+\end{cases}
+and
+b
+j
+=
+∑
+i
+∈
+W
+j
+1
+2
+​
+β
+s
+i
++
+∑
+i
+∈
+L
+j
+(
+−
+1
+2
+​
+β
+s
+i
+)
+b_{j}=\sum_{i\in W_{j}}\frac{1}{2}\beta_{s_{i}}+\sum_{i\in L_{j}}\left(-\frac{1}{2}\beta_{s_{i}}\right)
+By construction,
+H
+H
+is symmetric,
+H
+j
+​
+l
+≤
+0
+H_{jl}\leq 0
+for
+j
+≠
+l
+j\neq l
+, and
+H
+j
+​
+j
+=
+∑
+l
+≠
+j
+|
+H
+j
+​
+l
+|
+H_{jj}=\sum_{l\neq j}|H_{jl}|
+. Thus,
+H
+H
+is diagonally dominant with non-negative diagonal entries, and it is positive semidefinite.
+We can further observe that
+H
+​
+𝟏
+=
+𝟎
+H\bm{1}=\bm{0}
+. Now, suppose
+𝐱
+\mathbf{x}
+satisfies
+H
+​
+𝐱
+=
+𝟎
+H\mathbf{x}=\bm{0}
+and let
+j
+j
+be such that
+x
+j
+=
+max
+i
+⁡
+x
+i
+x_{j}=\max_{i}x_{i}
+. Using the zero row sum property, we get that
+0
+=
+(
+H
+​
+𝐱
+)
+j
+=
+∑
+l
+≠
+j
+H
+j
+​
+l
+​
+(
+x
+l
+−
+x
+j
+)
+0=(H\mathbf{x})_{j}=\sum_{l\neq j}H_{jl}(x_{l}-x_{j})
+Since
+H
+j
+​
+l
+≤
+0
+H_{jl}\leq 0
+and
+x
+l
+−
+x
+j
+≤
+0
+x_{l}-x_{j}\leq 0
+, each term is nonnegative, hence each term must be zero. Therefore,
+x
+j
+=
+x
+l
+x_{j}=x_{l}
+whenever
+H
+j
+​
+l
+≠
+0
+H_{jl}\neq 0
+. If the comparison graph induced by the nonzero off-diagonal entries of
+H
+H
+is connected, all entries of
+𝐱
+\mathbf{x}
+are equal, hence
+𝐱
+=
+c
+​
+𝟏
+\mathbf{x}=c\bm{1}
+. The centering constraint
+𝟏
+⊤
+​
+𝐱
+=
+0
+\bm{1}^{\top}\mathbf{x}=0
+forces
+c
+=
+0
+c=0
+, so
+𝐱
+=
+𝟎
+\mathbf{x}=\bm{0}
+. Therefore,
+H
+H
+is positive definite on the mean-zero subspace, and the constrained linear system admits a unique solution.
+Appendix B
+Convergence Analysis
+Let
+𝒟
+\mathcal{D}
+be the dataset of pairwise comparisons,
+N
+=
+|
+𝒟
+|
+N=|\mathcal{D}|
+denotes the number of datapoints,
+K
+=
+|
+𝒓
+|
+K=|\bm{r}|
+the number of items, and
+M
+=
+|
+𝜷
+|
+M=|\bm{\beta}|
+the number of workers. For each worker
+j
+∈
+[
+M
+]
+j\in[M]
+, we constrain
+β
+j
+∈
+[
+−
+1
+,
+1
+]
+\beta_{j}\in[-1,1]
+. We assume that the rewards are bounded as
+r
+i
+∈
+[
+−
+R
+,
+R
+]
+r_{i}\in[-R,R]
+for all items
+l
+∈
+[
+K
+]
+l\in[K]
+for some fixed constant
+R
+>
+0
+R>0
+.
+In each iteration
+t
+t
+of the EM algorithm, we independently set
+c
+i
+2
+=
+κ
+i
+(
+t
+)
+=
+1
+2
+​
+η
+i
+(
+t
+)
+​
+tanh
+⁡
+(
+η
+i
+(
+t
+)
+2
+)
+,
+where
+​
+η
+i
+(
+t
+)
+=
+β
+s
+i
+(
+t
+)
+​
+(
+r
+w
+i
+(
+t
+)
+−
+r
+l
+i
+(
+t
+)
+)
+.
+c_{i}^{2}=\kappa_{i}^{(t)}=\frac{1}{2\eta_{i}^{(t)}}\tanh\left(\frac{\eta_{i}^{(t)}}{2}\right),\quad\text{where }\eta_{i}^{(t)}=\beta_{s_{i}}^{(t)}\left(r_{w_{i}}^{(t)}-r_{l_{i}}^{(t)}\right).
+Since
+β
+s
+i
+∈
+[
+−
+1
+,
+1
+]
+\beta_{s_{i}}\in[-1,1]
+and
+r
+w
+i
+,
+r
+l
+i
+∈
+[
+−
+R
+,
+R
+]
+r_{w_{i}},r_{l_{i}}\in[-R,R]
+, it follows that
+|
+η
+i
+|
+≤
+2
+​
+R
+\left|\eta_{i}\right|\leq 2R
+.
+The function
+f
+⁡
+(
+x
+)
+=
+tanh
+⁡
+(
+x
+/
+2
+)
+2
+​
+x
+f(x)=\frac{\tanh(x/2)}{2x}
+is positive, even, and monotonically decreasing for
+x
+>
+0
+x>0
+. Therefore, there exists a constant
+ζ
+=
+1
+4
+​
+R
+​
+tanh
+⁡
+(
+R
+)
+>
+0
+\zeta=\frac{1}{4R}\tanh(R)>0
+such that
+c
+i
+2
+∈
+[
+ζ
+,
+1
+/
+4
+]
+c_{i}^{2}\in[\zeta,1/4]
+for all
+i
+i
+.
+For each worker
+s
+s
+, let
+G
+s
+G_{s}
+denote the comparison graph induced by the worker’s pairwise comparisons
+𝒟
+s
+\mathcal{D}_{s}
+. We assume that
+G
+s
+G_{s}
+is acyclic.
+Finally, we assume that the worker index and the two item indices (denoted by random variables
+B
+,
+W
+,
+B,W,
+and
+L
+L
+, respectively) are independent and uniformly distributed as
+B
+∼
+Uniform
+​
+(
+[
+M
+]
+)
+,
+W
+,
+L
+∼
+Uniform
+​
+(
+[
+K
+]
+)
+B\sim\text{Uniform}([M]),W,L\sim\text{Uniform}([K])
+. The comparison outcome is then generated according to
+2
+. Under this model, we can show the following lemma.
+Lemma 1
+.
+Define matrix operators
+A
+i
+∈
+ℝ
+M
+×
+K
+A_{i}\in\mathbb{R}^{M\times K}
+for each
+i
+∈
+[
+N
+]
+i\in[N]
+as follows:
+A
+i
+⊤
+=
+2
+​
+c
+i
+​
+α
+​
+s
+i
+[
+0
+0
+⋯
+0
+⋯
+0
+0
+0
+⋯
++
+1
+⋯
+0
+0
+0
+⋯
+−
+1
+⋯
+0
+0
+0
+⋯
+0
+⋯
+0
+]
+​
+⋮
+w
+i
+⋮
+l
+i
+⋮
+A_{i}^{\top}=2c_{i}\alpha\begin{array}[]{c@{}c}&\begin{array}[]{c c c c c}&&s_{i}&&\end{array}\\
+&\begin{bmatrix}0&0&\cdots&0&\cdots&0\\
+\vdots&\vdots&&\vdots&&\vdots\\
+0&0&\cdots&+1&\cdots&0\\
+\vdots&\vdots&&\vdots&&\vdots\\
+0&0&\cdots&-1&\cdots&0\\
+\vdots&\vdots&&\vdots&&\vdots\\
+0&0&\cdots&0&\cdots&0\end{bmatrix}\begin{array}[]{c}\\[-8.61108pt]
+\vdots\\
+w_{i}\\
+\vdots\\
+l_{i}\\
+\vdots\end{array}\end{array}
+where
++
+1
++1
+appears at position
+(
+w
+i
+,
+s
+i
+)
+(w_{i},s_{i})
+,
+−
+1
+-1
+at position
+(
+l
+i
+,
+s
+i
+)
+(l_{i},s_{i})
+, with all other entries equal to
+0
+0
+, and
+α
+=
+M
+​
+K
+/
+2
+​
+N
+\alpha=\sqrt{MK/2N}
+. Equivalently,
+A
+i
+=
+2
+​
+c
+i
+​
+α
+​
+𝐞
+𝐬
+𝐢
+​
+(
+𝐞
+𝐰
+𝐢
+−
+𝐞
+𝐥
+𝐢
+)
+⊤
+A_{i}=2c_{i}\alpha\ \bm{e_{s_{i}}}(\bm{e_{w_{i}}}-\bm{e_{l_{i}}})^{\top}
+. Let
+X
+∈
+ℝ
+M
+×
+K
+X\in\mathbb{R}^{M\times K}
+be any matrix of arbitrary rank
+r
+r
+with
+X
+​
+𝟏
+=
+𝟎
+X\bm{1}=\bm{0}
+, where
+𝟏
+\bm{1}
+and
+𝟎
+\bm{0}
+denote the all-ones and all-zeros vectors, respectively. Define the linear operator
+𝒜
+:
+ℝ
+M
+×
+K
+→
+ℝ
+N
+\mathcal{A}\colon\mathbb{R}^{M\times K}\to\mathbb{R}^{N}
+as
+𝒜
+⁡
+(
+X
+)
+=
+(
+⟨
+A
+1
+,
+X
+⟩
+,
+…
+,
+⟨
+A
+N
+,
+X
+⟩
+)
+⊤
+\mathcal{A}(X)=(\langle A_{1},X\rangle,\dots,\langle A_{N},X\rangle)^{\top}
+. Then, for any
+η
+>
+0
+\eta>0
+, there exists
+μ
+>
+0
+\mu>0
+and
+δ
+>
+0
+\delta>0
+such that with probability at least
+1
+−
+η
+1-\eta
+:
+(
+1
+−
+μ
+)
+​
+‖
+X
+‖
+F
+2
+≤
+‖
+𝒜
+⁡
+(
+X
+)
+‖
+2
+2
+≤
+(
+1
++
+μ
+)
+​
+‖
+X
+‖
+F
+2
+,
+(1-\mu)\|X\|_{F}^{2}\leq\|\mathcal{A}(X)\|_{2}^{2}\leq(1+\mu)\|X\|_{F}^{2}\,,
+provided that
+N
+≥
+C
+​
+M
+​
+K
+δ
+2
+​
+ln
+⁡
+(
+2
+η
+)
+,
+N\geq C\;\frac{MK}{\delta^{2}}\ln\left(\frac{2}{\eta}\right),
+where
+C
+>
+0
+C>0
+is some constant.
+Proof.
+We first show that
+𝒜
+\mathcal{A}
+satisfies RIP in expectation, and we subsequently bound the deviation of
+‖
+𝒜
+⁡
+(
+X
+)
+‖
+2
+2
+\|\mathcal{A}(X)\|_{2}^{2}
+from its expectation to achieve the desired result.
+Consider
+⟨
+A
+i
+,
+X
+⟩
+2
+=
+4
+​
+c
+i
+2
+​
+α
+2
+​
+(
+X
+s
+i
+,
+w
+i
+−
+X
+s
+i
+,
+l
+i
+)
+2
+\langle A_{i},X\rangle^{2}={4c_{i}^{2}\alpha^{2}}(X_{s_{i},w_{i}}-X_{s_{i},l_{i}})^{2}
+. Under uniform sampling of
+B
+,
+W
+,
+L
+B,W,L
+and the assumption
+X
+​
+𝟏
+=
+𝟎
+X\bm{1}=\bm{0}
+, we have that
+𝔼
+B
+,
+W
+,
+L
+​
+⟨
+A
+i
+,
+X
+⟩
+2
+=
+𝔼
+B
+​
+[
+𝔼
+W
+,
+L
+​
+[
+⟨
+A
+i
+,
+X
+⟩
+2
+|
+B
+=
+s
+i
+]
+]
+\mathbb{E}_{B,W,L}\langle A_{i},X\rangle^{2}=\mathbb{E}_{B}\left[\mathbb{E}_{W,L}\left[\langle A_{i},X\rangle^{2}|B=s_{i}\right]\right]
+Conditioned on
+B
+=
+s
+i
+B=s_{i}
+, we get the following expression.
+𝔼
+W
+,
+L
+​
+[
+⟨
+A
+i
+,
+X
+⟩
+2
+]
+\displaystyle\mathbb{E}_{W,L}\left[\langle A_{i},X\rangle^{2}\right]
+=
+4
+​
+c
+i
+2
+​
+α
+2
+​
+𝔼
+W
+,
+L
+​
+[
+(
+X
+s
+i
+,
+w
+i
+−
+X
+s
+i
+,
+l
+i
+)
+2
+]
+\displaystyle={4c_{i}^{2}\alpha^{2}}\mathbb{E}_{W,L}\left[(X_{s_{i},w_{i}}-X_{s_{i},l_{i}})^{2}\right]
+=
+4
+​
+c
+i
+2
+​
+α
+2
+​
+(
+𝔼
+W
+,
+L
+​
+X
+s
+i
+,
+w
+i
+2
++
+𝔼
+W
+,
+L
+​
+X
+s
+i
+,
+l
+i
+2
+−
+2
+​
+𝔼
+W
+,
+L
+​
+X
+s
+i
+,
+w
+i
+​
+X
+s
+i
+,
+l
+i
+)
+\displaystyle=4c_{i}^{2}\alpha^{2}\left(\mathbb{E}_{W,L}X_{s_{i},w_{i}}^{2}+\mathbb{E}_{W,L}X_{s_{i},l_{i}}^{2}-2\mathbb{E}_{W,L}X_{s_{i},w_{i}}X_{s_{i},l_{i}}\right)
+=
+8
+​
+c
+i
+2
+​
+α
+2
+​
+(
+𝔼
+W
+,
+L
+​
+X
+s
+i
+,
+w
+i
+2
+−
+(
+𝔼
+W
+,
+L
+​
+X
+s
+i
+,
+w
+i
+)
+2
+)
+\displaystyle=8c_{i}^{2}\alpha^{2}\left(\mathbb{E}_{W,L}X_{s_{i},w_{i}}^{2}-\left(\mathbb{E}_{W,L}X_{s_{i},w_{i}}\right)^{2}\right)
+Now, note that
+𝔼
+W
+,
+L
+​
+X
+s
+i
+,
+w
+i
+2
+=
+1
+K
+​
+∑
+j
+=
+1
+K
+X
+s
+i
+,
+j
+2
+and
+𝔼
+W
+,
+L
+​
+X
+s
+i
+,
+w
+i
+=
+1
+K
+​
+∑
+j
+=
+1
+K
+X
+s
+i
+,
+j
+,
+\mathbb{E}_{W,L}X_{s_{i},w_{i}}^{2}=\frac{1}{K}\sum_{j=1}^{K}X_{s_{i},j}^{2}\quad\text{and}\quad\mathbb{E}_{W,L}X_{s_{i},w_{i}}=\frac{1}{K}\sum_{j=1}^{K}X_{s_{i},j},
+and define
+S
+b
+=
+∑
+j
+=
+1
+K
+X
+b
+,
+j
+S_{b}=\sum_{j=1}^{K}X_{b,j}
+and
+T
+b
+=
+∑
+j
+=
+1
+K
+X
+b
+,
+j
+2
+T_{b}=\sum_{j=1}^{K}X_{b,j}^{2}
+. Observe that
+S
+b
+=
+0
+S_{b}=0
+for every
+b
+∈
+[
+M
+]
+b\in[M]
+since
+X
+​
+𝟏
+=
+𝟎
+X\bm{1}=\bm{0}
+, which implies that
+𝔼
+W
+,
+L
+​
+X
+s
+i
+,
+w
+i
+=
+0
+,
+and
+​
+𝔼
+W
+,
+L
+​
+[
+⟨
+A
+i
+,
+X
+⟩
+2
+]
+=
+4
+​
+c
+i
+2
+​
+α
+2
+​
+(
+2
+K
+​
+T
+s
+i
+)
+\mathbb{E}_{W,L}X_{s_{i},w_{i}}=0,\text{and }\mathbb{E}_{W,L}[\langle A_{i},X\rangle^{2}]={4c_{i}^{2}\alpha^{2}}(\frac{2}{K}T_{s_{i}})
+. Finally,
+𝔼
+B
+,
+W
+,
+L
+⟨
+A
+i
+,
+X
+⟩
+2
+=
+1
+M
+(
+4
+c
+i
+2
+α
+2
+⋅
+2
+K
+∑
+j
+=
+1
+M
+T
+s
+j
+)
+=
+1
+M
+(
+4
+c
+i
+2
+α
+2
+⋅
+2
+K
+∑
+j
+=
+1
+M
+∑
+i
+=
+1
+K
+X
+j
+​
+i
+2
+)
+=
+1
+M
+4
+c
+i
+2
+α
+2
+2
+K
+∥
+X
+∥
+F
+2
+=
+4
+​
+c
+i
+2
+N
+∥
+X
+∥
+F
+2
+,
+\mathbb{E}_{B,W,L}\langle A_{i},X\rangle^{2}=\frac{1}{M}\left({4c_{i}^{2}\alpha^{2}}\cdot\frac{2}{K}\sum_{j=1}^{M}T_{s_{j}}\right)=\frac{1}{M}\left({4c_{i}^{2}\alpha^{2}}\cdot\frac{2}{K}\sum_{j=1}^{M}\sum_{i=1}^{K}X_{ji}^{2}\right)=\frac{1}{M}{4c_{i}^{2}\alpha^{2}}\frac{2}{K}\|X\|_{F}^{2}=\frac{4c_{i}^{2}}{N}\|X\|_{F}^{2},
+(27)
+where the last equality follows from the definition of
+α
+\alpha
+. Summing over all
+N
+N
+datapoints, we obtain:
+𝔼
+B
+,
+W
+,
+L
+​
+‖
+𝒜
+⁡
+(
+X
+)
+‖
+2
+2
+=
+∑
+i
+=
+1
+N
+𝔼
+B
+,
+W
+,
+L
+​
+⟨
+A
+i
+,
+X
+⟩
+2
+=
+‖
+X
+‖
+F
+2
+​
+∑
+i
+=
+1
+N
+4
+​
+c
+i
+2
+N
+\mathbb{E}_{B,W,L}\|\mathcal{A}(X)\|_{2}^{2}=\sum_{i=1}^{N}\mathbb{E}_{B,W,L}\langle A_{i},X\rangle^{2}=\|X\|_{F}^{2}\sum_{i=1}^{N}\frac{4c_{i}^{2}}{N}
+Note that
+4
+​
+ζ
+≤
+4
+​
+c
+i
+2
+≤
+1
+4\zeta\leq 4c_{i}^{2}\leq 1
+. Take
+ϵ
+=
+1
+−
+4
+​
+ζ
+>
+0
+\epsilon=1-4\zeta>0
+, such that
+(
+1
+−
+ϵ
+)
+​
+‖
+X
+‖
+F
+2
+≤
+4
+​
+ζ
+​
+‖
+X
+‖
+F
+2
+≤
+𝔼
+B
+,
+W
+,
+L
+​
+‖
+𝒜
+⁡
+(
+X
+)
+‖
+2
+2
+≤
+‖
+X
+‖
+F
+2
+≤
+(
+1
++
+ϵ
+)
+​
+‖
+X
+‖
+F
+2
+.
+(1-\epsilon)\|X\|_{F}^{2}\leq 4\zeta\|X\|_{F}^{2}\leq\mathbb{E}_{B,W,L}\|\mathcal{A}(X)\|_{2}^{2}\leq\|X\|_{F}^{2}\leq(1+\epsilon)\|X\|_{F}^{2}.
+(28)
+Now, we will bound the deviation of
+‖
+𝒜
+⁡
+(
+X
+)
+‖
+2
+2
+\|\mathcal{A}(X)\|_{2}^{2}
+from its expectation.
+Define random variables
+Y
+i
+=
+⟨
+A
+i
+,
+X
+⟩
+2
+Y_{i}=\langle A_{i},X\rangle^{2}
+; then
+∑
+i
+=
+1
+N
+Y
+i
+=
+‖
+𝒜
+⁡
+(
+X
+)
+‖
+2
+2
+\sum_{i=1}^{N}Y_{i}=\|\mathcal{A}(X)\|_{2}^{2}
+. We will first bound
+Y
+i
+Y_{i}
+. Note that
+Y
+i
+≥
+0
+Y_{i}\geq 0
+. Further,
+Y
+i
+=
+⟨
+A
+i
+,
+X
+⟩
+2
+=
+4
+​
+c
+i
+2
+​
+α
+2
+​
+(
+X
+s
+i
+,
+w
+i
+−
+X
+s
+i
+,
+l
+i
+)
+2
+≤
+4
+​
+c
+i
+2
+​
+α
+2
+​
+(
+|
+X
+s
+i
+,
+w
+i
+|
++
+|
+X
+s
+i
+,
+l
+i
+|
+)
+2
+.
+Y_{i}=\langle A_{i},X\rangle^{2}={4c_{i}^{2}\alpha^{2}}(X_{s_{i},w_{i}}-X_{s_{i},l_{i}})^{2}\leq{4c_{i}^{2}\alpha^{2}}(|X_{s_{i},w_{i}}|+|X_{s_{i},l_{i}}|)^{2}.
+Since each
+X
+i
+​
+j
+2
+≤
+‖
+X
+‖
+F
+2
+X_{ij}^{2}\leq\|X\|_{F}^{2}
+, we have that
+|
+X
+i
+​
+j
+|
+≤
+‖
+X
+‖
+F
+|X_{ij}|\leq\|X\|_{F}
+, and consequently,
+0
+≤
+Y
+i
+≤
+16
+​
+c
+i
+2
+​
+α
+2
+​
+‖
+X
+‖
+F
+2
+0\leq Y_{i}\leq{16c_{i}^{2}\alpha^{2}}\|X\|_{F}^{2}
+(29)
+Similarly,
+𝔼
+​
+Y
+i
+2
+≤
+max
+⁡
+Y
+i
+⋅
+𝔼
+​
+Y
+i
+\mathbb{E}Y_{i}^{2}\leq\max{Y_{i}}\,\cdot\,\mathbb{E}Y_{i}
+. We know from Equation (
+27
+) that
+𝔼
+​
+Y
+i
+=
+𝔼
+​
+⟨
+A
+i
+,
+X
+⟩
+2
+=
+4
+​
+c
+i
+2
+N
+​
+‖
+X
+‖
+F
+2
+\mathbb{E}Y_{i}=\mathbb{E}\langle A_{i},X\rangle^{2}=\frac{4c_{i}^{2}}{N}\|X\|_{F}^{2}
+, which gives
+𝔼
+​
+Y
+i
+2
+≤
+16
+​
+c
+i
+2
+​
+α
+2
+​
+‖
+X
+‖
+F
+2
+⋅
+4
+​
+c
+i
+2
+N
+​
+‖
+X
+‖
+F
+2
+=
+64
+​
+c
+i
+4
+​
+α
+2
+N
+​
+‖
+X
+‖
+F
+4
+≤
+64
+​
+c
+i
+2
+​
+α
+2
+N
+​
+‖
+X
+‖
+F
+4
+,
+\mathbb{E}Y_{i}^{2}\leq{16c_{i}^{2}\alpha^{2}}\|X\|_{F}^{2}\ \cdot\ \frac{4c_{i}^{2}}{N}\|X\|_{F}^{2}=\frac{64c_{i}^{4}\alpha^{2}}{N}\|X\|_{F}^{4}\leq\frac{64c_{i}^{2}\alpha^{2}}{N}\|X\|_{F}^{4}\;,
+(30)
+where the final inequality follows from the fact that
+c
+i
+<
+1
+c_{i}<1
+. Define random variables
+Z
+i
+=
+Y
+i
+−
+E
+​
+Y
+i
+Z_{i}=Y_{i}-\ EY_{i}
+. Then,
+Z
+i
+Z_{i}
+are independent and zero-mean,
+|
+Z
+i
+|
+≤
+|
+Y
+i
+|
++
+|
+𝔼
+​
+Y
+i
+|
+≤
+2
+​
+|
+Y
+i
+|
+≤
+32
+​
+c
+i
+2
+​
+α
+2
+​
+‖
+X
+‖
+F
+2
+|Z_{i}|\leq|Y_{i}|+|\mathbb{E}Y_{i}|\leq 2|Y_{i}|\leq{32c_{i}^{2}\alpha^{2}}\|X\|_{F}^{2}
+, and,
+𝔼
+​
+Z
+i
+2
+≤
+𝔼
+​
+Y
+i
+2
+≤
+64
+​
+c
+i
+2
+​
+α
+2
+N
+​
+‖
+X
+‖
+F
+4
+\mathbb{E}Z_{i}^{2}\leq\mathbb{E}Y_{i}^{2}\leq\frac{64c_{i}^{2}\alpha^{2}}{N}\|X\|_{F}^{4}
+.
+Then, using Bernstein’s inequality on
+Z
+i
+Z_{i}
+, we get,
+Pr
+⁡
+(
+|
+∑
+i
+=
+1
+N
+Z
+i
+|
+>
+δ
+​
+‖
+X
+‖
+F
+2
+)
+≤
+2
+​
+exp
+⁡
+(
+−
+δ
+2
+​
+‖
+X
+‖
+F
+4
+/
+2
+N
+⋅
+64
+​
+c
+i
+2
+​
+α
+2
+N
+​
+‖
+X
+‖
+F
+4
++
+1
+3
+⋅
+16
+​
+δ
+​
+c
+i
+2
+​
+α
+2
+​
+‖
+X
+‖
+F
+4
+)
+\displaystyle\Pr{\left(\left|\sum_{i=1}^{N}Z_{i}\right|>\delta\|X\|_{F}^{2}\right)}\leq 2\exp{\left(-\frac{\delta^{2}\|X\|_{F}^{4}/2}{N\cdot\frac{64c_{i}^{2}\alpha^{2}}{N}\|X\|_{F}^{4}+\frac{1}{3}\cdot 16\delta c_{i}^{2}\alpha^{2}\|X\|_{F}^{4}}\right)}
+≤
+2
+​
+exp
+⁡
+(
+−
+δ
+2
+​
+‖
+X
+‖
+F
+4
+80
+​
+c
+i
+2
+​
+α
+2
+​
+‖
+X
+‖
+F
+4
+)
+\displaystyle\leq 2\exp{\left(-\frac{\delta^{2}\|X\|_{F}^{4}}{{80c_{i}^{2}\alpha^{2}}\|X\|_{F}^{4}}\right)}
+=
+2
+​
+exp
+⁡
+(
+−
+δ
+2
+80
+​
+c
+i
+2
+​
+α
+2
+)
+.
+\displaystyle=2\exp{\left(-\frac{\delta^{2}}{80c_{i}^{2}\alpha^{2}}\right)}.
+For this to be bounded above by
+η
+\eta
+, we need
+2
+​
+exp
+⁡
+(
+−
+δ
+2
+80
+​
+c
+i
+2
+​
+α
+2
+)
+=
+2
+​
+exp
+⁡
+(
+−
+δ
+2
+​
+N
+40
+​
+c
+i
+2
+​
+M
+​
+K
+)
+≤
+η
+⟹
+N
+≥
+C
+​
+M
+​
+K
+δ
+2
+​
+log
+⁡
+(
+2
+η
+)
+,
+2\exp{\left(-\frac{\delta^{2}}{80c_{i}^{2}\alpha^{2}}\right)}=2\exp{\left(-\frac{\delta^{2}N}{40c_{i}^{2}MK}\right)}\leq\eta\implies N\geq C\frac{MK}{\delta^{2}}\log{\left(\frac{2}{\eta}\right)},
+for some constant
+C
+>
+0
+C>0
+. Therefore, with probability at least
+1
+−
+η
+1-\eta
+, we get that
+|
+∑
+i
+=
+1
+N
+Z
+i
+|
+≤
+δ
+​
+‖
+X
+‖
+F
+2
+\displaystyle\left|\sum_{i=1}^{N}Z_{i}\right|\leq\delta\|X\|_{F}^{2}
+⟹
+|
+∑
+i
+=
+1
+N
+⟨
+A
+i
+,
+X
+⟩
+2
+−
+∑
+i
+=
+1
+N
+𝔼
+​
+⟨
+A
+i
+,
+X
+⟩
+2
+|
+≤
+δ
+​
+‖
+X
+‖
+F
+2
+\displaystyle\implies\left|\sum_{i=1}^{N}\langle A_{i},X\rangle^{2}-\sum_{i=1}^{N}\mathbb{E}\langle A_{i},X\rangle^{2}\right|\leq\delta\|X\|_{F}^{2}
+⟹
+|
+‖
+𝒜
+⁡
+(
+X
+)
+‖
+2
+2
+−
+𝔼
+​
+‖
+𝒜
+⁡
+(
+X
+)
+‖
+2
+2
+|
+≤
+δ
+​
+‖
+X
+‖
+F
+2
+\displaystyle\implies\left|\|\mathcal{A}(X)\|_{2}^{2}-\mathbb{E}\|\mathcal{A}(X)\|_{2}^{2}\right|\leq\delta\|X\|_{F}^{2}
+⟹
+(
+1
+−
+μ
+)
+​
+‖
+X
+‖
+F
+2
+≤
+‖
+𝒜
+⁡
+(
+X
+)
+‖
+2
+2
+≤
+(
+1
++
+μ
+)
+​
+‖
+X
+‖
+F
+2
+\displaystyle\implies(1-\mu)\|X\|_{F}^{2}\leq\|\mathcal{A}(X)\|_{2}^{2}\leq(1+\mu)\|X\|_{F}^{2}
+with
+μ
+=
+ϵ
++
+δ
+\mu=\epsilon+\delta
+.
+∎
+We now show that the M-step optimization problem can be written as a matrix sensing problem. Recall that the M-step at iteration
+t
+t
+maximizes
+Q
+⁡
+(
+𝜽
+∣
+𝜽
+t
+)
+\displaystyle Q(\bm{\theta}\mid\bm{\theta}^{t})
+=
+1
+2
+​
+∑
+i
+=
+1
+N
+(
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+−
+c
+i
+2
+​
+β
+s
+i
+2
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+2
+)
+\displaystyle=\frac{1}{2}\sum_{i=1}^{N}\left(\beta_{s_{i}}\left(r_{w_{i}}-r_{l_{i}}\right)-c_{i}^{2}\beta_{s_{i}}^{2}\left(r_{w_{i}}-r_{l_{i}}\right)^{2}\right)
+=
+−
+1
+2
+∑
+i
+=
+1
+N
+(
+c
+i
+2
+β
+s
+i
+2
+(
+r
+w
+i
+−
+r
+l
+i
+)
+2
+−
+2
+(
+1
+2
+​
+c
+i
+)
+c
+i
+β
+s
+i
+(
+r
+w
+i
+−
+r
+l
+i
+)
++
+1
+4
+​
+c
+i
+2
+−
+1
+4
+​
+c
+i
+2
+)
+\displaystyle=-\frac{1}{2}\sum_{i=1}^{N}\left(c_{i}^{2}\beta_{s_{i}}^{2}\left(r_{w_{i}}-r_{l_{i}}\right)^{2}-2\left(\frac{1}{2c_{i}}\right)c_{i}\beta_{s_{i}}\left(r_{w_{i}}-r_{l_{i}}\right)+\frac{1}{4c_{i}^{2}}-\frac{1}{4c_{i}^{2}}\right)
+=
+−
+1
+2
+∑
+i
+=
+1
+N
+(
+c
+i
+β
+s
+i
+(
+r
+w
+i
+−
+r
+l
+i
+)
+−
+1
+2
+​
+c
+i
+)
+2
++
+∑
+i
+=
+1
+N
+1
+8
+​
+c
+i
+2
+\displaystyle=-\frac{1}{2}\sum_{i=1}^{N}\left(c_{i}\beta_{s_{i}}\left(r_{w_{i}}-r_{l_{i}}\right)-\frac{1}{2c_{i}}\right)^{2}+\sum_{i=1}^{N}\frac{1}{8c_{i}^{2}}
+Therefore,
+arg
+⁡
+max
+𝜽
+⁡
+Q
+⁡
+(
+𝜽
+∣
+𝜽
+t
+)
+\displaystyle\arg\max_{\bm{\theta}}Q(\bm{\theta}\mid\bm{\theta}^{t})
+=
+arg
+max
+𝜽
+(
+−
+1
+2
+∑
+i
+=
+1
+N
+(
+c
+i
+β
+s
+i
+(
+r
+w
+i
+−
+r
+l
+i
+)
+−
+1
+2
+​
+c
+i
+)
+2
++
+∑
+i
+=
+1
+N
+1
+8
+​
+c
+i
+2
+)
+\displaystyle=\arg\max_{\bm{\theta}}\left(-\frac{1}{2}\sum_{i=1}^{N}\left(c_{i}\beta_{s_{i}}\left(r_{w_{i}}-r_{l_{i}}\right)-\frac{1}{2c_{i}}\right)^{2}+\sum_{i=1}^{N}\frac{1}{8c_{i}^{2}}\right)
+=
+arg
+⁡
+min
+⁡
+∑
+i
+=
+1
+N
+𝜽
+⁡
+(
+c
+i
+​
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+−
+1
+2
+​
+c
+i
+)
+2
+\displaystyle=\arg\min_{\bm{\theta}}\sum_{i=1}^{N}\left(c_{i}\beta_{s_{i}}\left(r_{w_{i}}-r_{l_{i}}\right)-\frac{1}{2c_{i}}\right)^{2}
+=
+arg
+⁡
+min
+⁡
+∑
+i
+=
+1
+N
+𝜽
+⁡
+(
+2
+​
+c
+i
+​
+α
+​
+β
+s
+i
+​
+(
+r
+w
+i
+−
+r
+l
+i
+)
+−
+α
+c
+i
+)
+2
+\displaystyle=\arg\min_{\bm{\theta}}\sum_{i=1}^{N}\left(2c_{i}\alpha\,\beta_{s_{i}}\left(r_{w_{i}}-r_{l_{i}}\right)-\frac{\alpha}{c_{i}}\right)^{2}
+=
+arg
+⁡
+min
+⁡
+∑
+i
+=
+1
+N
+𝜽
+⁡
+(
+⟨
+A
+i
+,
+𝜷
+​
+𝒓
+⊤
+⟩
+−
+α
+c
+i
+)
+2
+\displaystyle=\arg\min_{\bm{\theta}}\sum_{i=1}^{N}\left(\langle A_{i},\bm{\beta}\bm{r}^{\top}\rangle-\frac{\alpha}{c_{i}}\right)^{2}
+where the second equality follows from the fact that
+c
+i
+c_{i}
+are constants, and the fourth equality follows from the definition of matrices
+A
+i
+A_{i}
+. Define the vector
+𝐮
+(
+t
+)
+∈
+ℝ
+N
+\mathbf{u}^{(t)}\in\mathbb{R}^{N}
+with
+u
+i
+(
+t
+)
+=
+α
+c
+i
+u_{i}^{(t)}=\frac{\alpha}{c_{i}}
+. Then,
+arg
+⁡
+max
+𝜽
+⁡
+Q
+⁡
+(
+𝜽
+∣
+𝜽
+t
+)
+=
+arg
+⁡
+min
+𝜽
+​
+‖
+𝒜
+⁡
+(
+𝜷
+​
+𝒓
+⊤
+)
+−
+𝐮
+(
+t
+)
+‖
+2
+2
+,
+\arg\max_{\bm{\theta}}Q(\bm{\theta}\mid\bm{\theta}^{t})=\arg\min_{\bm{\theta}}\left\|\mathcal{A}(\bm{\beta}\bm{r}^{\top})-\mathbf{u}^{(t)}\right\|_{2}^{2},
+We now invoke existing matrix sensing guarantees.
+Let
+X
+t
+∗
+∈
+ℝ
+M
+×
+K
+X^{*}_{t}\in\mathbb{R}^{M\times K}
+denote the underlying true matrix and
+X
+1
+,
+t
+∗
+X_{1,t}^{*}
+denote its best rank-1 approximation. Define the distance between a factorization
+(
+𝜷
+,
+𝒓
+)
+(\bm{\beta},\bm{r})
+and
+X
+1
+,
+t
+∗
+X_{1,t}^{*}
+as
+DIST
+​
+(
+𝜷
+,
+𝒓
+,
+X
+1
+,
+t
+∗
+)
+=
+min
+(
+𝜷
+∗
+,
+𝒓
+∗
+)
+∈
+𝒳
+1
+∗
+⁡
+‖
+[
+𝜷
+𝒓
+]
+−
+[
+𝜷
+∗
+𝒓
+∗
+]
+‖
+F
+\text{DIST}(\bm{\beta},\bm{r};X_{1,t}^{*})=\min_{(\bm{\beta}^{*},\bm{r}^{*})\in\mathcal{X}_{1}^{*}}\left\|\begin{bmatrix}\bm{\beta}\\
+\bm{r}\end{bmatrix}-\begin{bmatrix}\bm{\beta}^{*}\\
+\bm{r}^{*}\end{bmatrix}\right\|_{F}
+where
+𝒳
+1
+∗
+\mathcal{X}_{1}^{*}
+is the set of balanced rank-one factorizations for
+X
+1
+,
+t
+∗
+X_{1,t}^{*}
+, defined as
+𝒳
+1
+∗
+=
+{
+(
+𝜷
+∗
+,
+𝒓
+∗
+)
+:
+𝜷
+∗
+∈
+ℝ
+M
+,
+𝒓
+∗
+∈
+ℝ
+K
+,
+𝜷
+∗
+𝒓
+∗
+⁣
+⊤
+=
+X
+1
+,
+t
+∗
+,
+σ
+1
+(
+𝜷
+∗
+)
+=
+σ
+1
+(
+𝒓
+∗
+)
+=
+σ
+1
+(
+X
+1
+,
+t
+∗
+)
+1
+/
+2
+,
+}
+.
+\mathcal{X}_{1}^{*}=\left\{(\bm{\beta}^{*},\bm{r}^{*}):\bm{\beta}^{*}\in\mathbb{R}^{M},\bm{r}^{*}\in\mathbb{R}^{K},\bm{\beta}^{*}\bm{r}^{*\top}=X_{1,t}^{*},\sigma_{1}(\bm{\beta}^{*})=\sigma_{1}(\bm{r}^{*})=\sigma_{1}(X_{1,t}^{*})^{1/2},\right\}.
+Then, restating Remark 3 from
+Park et al. [2017]
+,
+Remark 1
+.
+(High-rank matrix sensing)
+Suppose that
+X
+t
+∗
+X^{*}_{t}
+is of arbitrary rank, and let
+X
+1
+,
+t
+∗
+X_{1,t}^{*}
+denote its best rank-1 approximation. Let
+𝐛
+=
+𝒜
+⁡
+(
+X
+∗
+)
+\mathbf{b}=\mathcal{A}(X^{*})
+and let
+(
+𝛃
+∗
+,
+𝐫
+∗
+)
+(\bm{\beta}^{*},\bm{r}^{*})
+be a balanced factorization of
+X
+1
+,
+t
+∗
+X_{1,t}^{*}
+. If
+0
+≤
+δ
+2
+≤
+δ
+4
+<
+0.005
+0\leq\delta_{2}\leq\delta_{4}<0.005
+, then, for any local minimum
+(
+𝛃
+,
+𝐫
+)
+(\bm{\beta},\bm{r})
+the distance to
+(
+𝛃
+∗
+,
+𝐫
+∗
+)
+(\bm{\beta}^{*},\bm{r}^{*})
+is bounded by
+DIST
+​
+(
+𝜷
+,
+𝒓
+,
+X
+t
+∗
+)
+≤
+1250
+3
+​
+σ
+1
+​
+(
+X
+t
+∗
+)
+⋅
+‖
+𝒜
+⁡
+(
+X
+t
+∗
+−
+X
+1
+,
+t
+∗
+)
+‖
+2
+.
+\textsc{DIST}(\bm{\beta},\bm{r};X^{*}_{t})\leq\frac{1250}{3\sigma_{1}(X^{*}_{t})}\cdot\|\mathcal{A}(X^{*}_{t}-X_{1,t}^{*})\|_{2}.
+Using this, we can give the following theorem.
+See
+1
+Proof.
+Define
+X
+t
+∗
+∈
+ℝ
+M
+×
+K
+X^{*}_{t}\in\mathbb{R}^{M\times K}
+as any matrix consistent with the equations
+[
+𝒜
+⁡
+(
+X
+t
+∗
+)
+]
+i
+=
+u
+i
+(
+t
+)
+[\mathcal{A}(X^{*}_{t})]_{i}=u_{i}^{(t)}
+. From the definition of the sensing matrices
+A
+i
+A_{i}
+, this implies
+u
+i
+(
+t
+)
+=
+α
+c
+i
+=
+2
+​
+c
+i
+​
+α
+​
+(
+X
+t
+,
+{
+s
+i
+,
+w
+i
+}
+∗
+−
+X
+t
+,
+{
+s
+i
+,
+l
+i
+}
+∗
+)
+⟹
+X
+t
+,
+{
+s
+i
+,
+w
+i
+}
+∗
+−
+X
+t
+,
+{
+s
+i
+,
+l
+i
+}
+∗
+=
+1
+2
+​
+c
+i
+2
+u_{i}^{(t)}=\frac{\alpha}{c_{i}}=2c_{i}\alpha(X^{*}_{t,\{s_{i},w_{i}\}}-X^{*}_{t,\{s_{i},l_{i}\}})\implies X^{*}_{t,\{s_{i},w_{i}\}}-X^{*}_{t,\{s_{i},l_{i}\}}=\frac{1}{2c_{i}^{2}}
+Under the assumption that for each worker
+s
+s
+, the comparison graph is acyclic, and with the additional constraint that
+∑
+l
+∈
+[
+K
+]
+X
+t
+,
+{
+s
+i
+,
+l
+}
+∗
+=
+0
+\sum_{l\in[K]}X^{*}_{t,\{s_{i},l\}}=0
+, this linear system is always consistent. Thus, a solution
+X
+t
+∗
+X^{*}_{t}
+exists.
+Now, our operator
+𝒜
+\mathcal{A}
+satisfies RIP on matrices
+X
+X
+of arbitrary rank
+r
+r
+with
+X
+​
+𝟏
+=
+𝟎
+X\bm{1}=\bm{0}
+. Because the coefficients
+c
+i
+2
+∈
+[
+ζ
+,
+1
+/
+4
+]
+c_{i}^{2}\in[\zeta,1/4]
+, we can define
+R
+=
+0.1
+R=0.1
+, such that
+ζ
+>
+0.249
+\zeta>0.249
+and
+ε
+<
+0.004
+\varepsilon<0.004
+and the RIP constants
+μ
+r
+<
+0.005
+\mu_{r}<0.005
+, independent of
+r
+r
+.
+Note that
+X
+t
+∗
+X^{*}_{t}
+may not be rank-1. So, we denote by
+X
+1
+,
+t
+∗
+X_{1,t}^{*}
+its best rank-1 approximation. Then, by Remark
+1
+, any local minimum of the objective
+min
+𝜷
+,
+𝒓
+⁡
+‖
+𝒜
+⁡
+(
+𝜷
+​
+𝒓
+⊤
+)
+−
+𝐮
+(
+t
+)
+‖
+2
+2
+\min_{\bm{\beta},\bm{r}}\left\|\mathcal{A}(\bm{\beta}\bm{r}^{\top})-\mathbf{u}^{(t)}\right\|_{2}^{2}
+satisfies
+DIST
+​
+(
+𝜷
+,
+𝒓
+,
+X
+t
+∗
+)
+≤
+1250
+3
+​
+σ
+1
+​
+(
+X
+t
+∗
+)
+​
+‖
+𝒜
+⁡
+(
+X
+t
+∗
+−
+X
+1
+,
+t
+∗
+)
+‖
+2
+.
+\text{DIST}(\bm{\beta},\bm{r};X^{*}_{t})\leq\frac{1250}{3\sigma_{1}(X^{*}_{t})}\|\mathcal{A}(X^{*}_{t}-X_{1,t}^{*})\|_{2}.
+∎
+Appendix C
+Evaluation Metrics: More details
+Table 3
+:
+Summary of Quantitative Metrics. Here,
+g
+i
+g_{i}
+and
+s
+i
+s_{i}
+denote the ground truth and predicted quality scores for item
+i
+∈
+D
+g
+i\in D_{g}
+, respectively.
+Metric
+Formulation
+Pros
+Cons
+Kendall’s Tau
+C
+−
+D
+1
+2
+​
+k
+​
+(
+k
+−
+1
+)
+\dfrac{C-D}{\frac{1}{2}k(k-1)}
+Standardized rank correlation range; robust to outliers.
+Treats all pairwise swaps with equal importance.
+Accuracy
+∑
+𝕀
+⁡
+(
+g
+i
+>
+g
+j
+∧
+s
+i
+>
+s
+j
+)
+∑
+𝕀
+⁡
+(
+g
+i
+>
+g
+j
+)
+\dfrac{\sum\mathbb{I}(g_{i}>g_{j}\land s_{i}>s_{j})}{\sum\mathbb{I}(g_{i}>g_{j})}
+Highly interpretable; measures correct ordering probability.
+Does not account for the magnitude of score gaps.
+Weighted Acc.
+∑
+w
+i
+​
+j
+​
+𝕀
+​
+(
+g
+i
+>
+g
+j
+∧
+s
+i
+>
+s
+j
+)
+∑
+w
+i
+​
+j
+​
+𝕀
+​
+(
+g
+i
+>
+g
+j
+)
+\dfrac{\sum w_{ij}\,\mathbb{I}(g_{i}>g_{j}\land s_{i}>s_{j})}{\sum w_{ij}\,\mathbb{I}(g_{i}>g_{j})}
+Penalizes significant ranking errors more heavily.
+Metric value depends on the score distribution.
+Note:
+C
+C
+and
+D
+D
+are concordant and discordant pairs;
+k
+=
+|
+D
+g
+|
+k=|D_{g}|
+is the number of items; and
+w
+i
+​
+j
+=
+|
+g
+i
+−
+g
+j
+|
+w_{ij}=|g_{i}-g_{j}|
+represents the weight of the difference between ground truth scores.
+Table
+3
+summarizes the quantitative metrics used to evaluate the predicted item rewards against the ground truth. Kendall’s Tau measures the rank correlation between item pairs, providing a standardized indication of agreement while treating all swaps equally. Accuracy computes the probability of correctly ordering item pairs, offering intuitive interpretability but ignoring the magnitude of differences. Weighted Accuracy extends this by penalizing larger ranking errors more heavily, making it sensitive to the score gaps between items. Together, these metrics provide complementary perspectives on ranking performance.
+Appendix D
+Crowdsourcing Methods Considered
+In this section, we evaluate all the representative crowdsourcing methods discussed in Section
+2
+. These include classical approaches such as the Bradley–Terry–Luce (BT) model
+Bradley and Terry [1952]
+, RankCentrality (RC)
+Negahban et al. [2012]
+, CrowdBT
+Chen et al. [2013]
+, FactorBT
+Bugakova et al. [2019]
+, and BARP
+Ferrara et al. [2024]
+.
+The implementations of RC, CrowdBT, and BARP are obtained from the publicly available repository released by
+Ferrara et al. [2024]
+5
+5
+5
+https://github.com/Ambress92/Bias-Aware-Ranker-from-Pairwise-comparisons
+, while BT
+6
+6
+6
+https://github.com/lucasmaystre/choix
+and FactorBT
+7
+7
+7
+https://github.com/Toloka/crowd-kit
+are sourced from their respective open-source repositories.
+These methods differ in how they model pairwise comparisons and annotator reliability. All methods were adapted to PyTorch and optimized for time efficiency.
+Appendix E
+Implementation Details of BoRaEM
+We implement BoRaEM in PyTorch with full GPU support and deterministic seeding for reproducibility.
+Item rewards are initialized to zero, ensuring symmetry across items at the start of optimization. Like CrowdBT
+[
+Chen et al., 2013
+]
+, we initialize worker competencies to a constant positive value (0.8), corresponding to a neutral reliability assumption. This avoids early instability while allowing competency differences to emerge purely from observed comparisons.
+Worker competencies are updated via closed-form aggregated statistics using vectorized accumulation. A Gaussian prior with fixed variance is incorporated as ridge regularization by adding prior precision to the denominator of each worker update. This shrinks poorly observed workers toward zero and prevents degeneracy.
+Within each EM iteration, reward and competency updates are alternated multiple times to accelerate convergence.
+After each outer iteration, identifiability constraints are enforced: rewards are centered to zero mean and normalized to unit root-mean-square magnitude, with worker competencies rescaled accordingly to preserve the likelihood.
+The competency prior variance
+σ
+β
+2
+\sigma_{\beta}^{2}
+imposes a Gaussian prior on worker competencies
+β
+w
+\beta_{w}
+, which appears as an additional ridge term in the update:
+β
+s
+←
+∑
+(
+w
+,
+l
+)
+∈
+ℐ
+s
+1
+2
+​
+(
+r
+w
+−
+r
+l
+)
+∑
+(
+w
+,
+l
+)
+∈
+ℐ
+s
+κ
+w
+​
+l
+​
+(
+r
+w
+−
+r
+l
+)
+2
++
+σ
+β
+−
+2
+,
+\beta_{s}\leftarrow\frac{\sum_{(w,l)\in\mathcal{I}_{s}}\frac{1}{2}(r_{w}-r_{l})}{\sum_{(w,l)\in\mathcal{I}_{s}}\kappa_{wl}(r_{w}-r_{l})^{2}+\sigma_{\beta}^{-2}},
+where
+ℐ
+s
+\mathcal{I}_{s}
+is the set of comparisons performed by worker
+s
+s
+, and
+κ
+w
+​
+l
+\kappa_{wl}
+are the Polya-Gamma expectations defined in Equation (
+10
+).
+A smaller
+σ
+β
+\sigma_{\beta}
+increases the prior precision
+σ
+β
+−
+2
+\sigma_{\beta}^{-2}
+, shrinking
+β
+w
+\beta_{w}
+toward
+0
+0
+(strong regularization), whereas a larger
+σ
+β
+\sigma_{\beta}
+reduces the prior influence, allowing
+β
+w
+\beta_{w}
+to vary more freely. We set the default value of
+σ
+β
+\sigma_{\beta}
+as 1.0.
+The reward updates solve a linear system
+(
+H
++
+λ
+r
+​
+I
+)
+​
+r
+=
+b
+(H+\lambda_{r}I)r=b
+, where
+H
+H
+depends on the worker competencies and Polya-Gamma expectations.
+The regularization coefficient
+λ
+r
+\lambda_{r}
+is scaled with the mean of
+κ
+w
+​
+l
+\kappa_{wl}
+to ensure numerical stability and prevent overfitting to sparse comparisons:
+λ
+r
+=
+λ
+r
+,
+base
+⋅
+max
+⁡
+(
+κ
+¯
+,
+10
+−
+12
+)
+,
+\lambda_{r}=\lambda_{r,\mathrm{base}}\cdot\max(\bar{\kappa},10^{-12}),
+where
+κ
+¯
+=
+1
+|
+𝒟
+|
+​
+∑
+(
+w
+,
+l
+)
+∈
+𝒟
+κ
+w
+​
+l
+\bar{\kappa}=\frac{1}{|\mathcal{D}|}\sum_{(w,l)\in\mathcal{D}}\kappa_{wl}
+is the mean Polya-Gamma expectation over all comparisons,
+and
+λ
+r
+,
+base
+\lambda_{r,\mathrm{base}}
+is a small constant (default
+10
+−
+2
+10^{-2}
+).
+This acts as a data-dependent ridge, shrinking rewards slightly toward zero, improving convergence stability.
+Convergence is monitored via the mean log-likelihood, and optimization terminates when its improvement falls below a fixed tolerance (
+10
+−
+6
+10^{-6}
+).
+Similar to BoRaEM, for HBTL, we set worker competencies to 0.8. Ablation studies are provided in Appendix
+I
+.
+(a)
+Varying
+N
+N
+.
+K
+=
+100
+,
+M
+=
+500
+K=100,\,M=500
+.
+(b)
+Varying
+M
+M
+.
+K
+=
+200
+,
+N
+=
+25000
+K=200,\,N=25000
+.
+(c)
+Varying
+K
+K
+.
+M
+=
+20000
+,
+N
+=
+1000
+M=20000,\,N=1000
+.
+Figure 3
+:
+Varying
+N
+N
+,
+K
+K
+,
+M
+M
+individually when
+β
+∈
+[
+0
+,
+1
+]
+\beta\in[0,1]
+.
+Appendix F
+Synthetic Dataset Experiments:
+β
+∈
+[
+0
+,
+1
+]
+\beta\in[0,1]
+In this regime
+β
+∈
+[
+0
+,
+1
+]
+\beta\in[0,1]
+, we do not consider malicious workers (
+β
+∈
+[
+−
+1
+,
+0
+]
+\beta\in[-1,0]
+). Figure
+3
+shows the results when we individually vary each parameter. The details are as follows:
+1.
+Varying N, Keeping K and M constant:
+We conduct an experiment with fixed values of the number of items
+K
+=
+100
+K=100
+and the number of workers
+M
+=
+500
+M=500
+, while varying the number of measurements
+N
+∈
+{
+2
+​
+k
+,
+2.5
+​
+k
+,
+3
+​
+k
+,
+3.5
+​
+k
+,
+4
+​
+k
+,
+4.5
+​
+k
+,
+5
+​
+k
+,
+10
+​
+k
+,
+25
+​
+k
+,
+50
+​
+k
+,
+100
+​
+k
+}
+N\in\{2k,2.5k,3k,3.5k,4k,4.5k,5k,10k,25k,50k,100k\}
+to examine the effect of measurement volume on various techniques.
+As seen in Figure
+3(a)
+, with less measurements the accuracy of methods such as BoRaEM, HBTL and CrowdBT is lower than other methods because more parameters need to be estimated from less number of measurements. Amongst, BoRaEM, HBTL and CrowdBT, we see that BoRaEM and HBTL consistently perform better than CrowdBT in sparser settimngs (e.g. till N = 10000).
+2.
+Varying M, Keeping N and K constant:
+We vary the number of workers
+M
+∈
+{
+500
+,
+1
+​
+k
+,
+2
+​
+k
+,
+3
+​
+k
+,
+4
+​
+k
+,
+5
+​
+k
+,
+5.5
+​
+k
+,
+6
+​
+k
+,
+8
+​
+k
+}
+M\in\{500,1k,2k,3k,4k,5k,5.5k,6k,8k\}
+while fixing the number of items at
+K
+=
+200
+K=200
+and the number of measurements at
+N
+=
+25
+​
+k
+N=25k
+, to analyze the impact of worker scale.
+As seen in Figure
+3(b)
+, HTCV seems to be the most stable alogrithm as compared to BoRaEM, HBTL and CrowdBT.
+3.
+Varying K, Keeping N and M constant:
+We vary the number of items
+K
+∈
+{
+50,100,250,500
+,
+1000
+,
+1250
+,
+1500
+,
+1750
+,
+2250
+,
+2500
+}
+K\in\{50,100,250,500,1000,1250,1500,1750,2250,2500\}
+while fixing the number of workers at
+M
+=
+20
+​
+k
+M=20k
+and the number of measurements at
+N
+=
+1
+​
+k
+N=1k
+, in order to study the effect of item scale.
+Similar to varying
+N
+N
+and
+M
+M
+, by varying
+K
+K
+(Figure
+3(c)
+), we observe the same trend where the performance of BoRaEM, HBTL, HTCV and CrowdBT get affected when number of item increases whereas BoRaEM and HTCV seem to be more robust than CrowdBT.
+Although Figure
+3
+suggests that methods such as
+BTL
+and Rank Centrality (
+RC
+) are better than BoRaEM, HBTL, HTCV, FactorBT and CrowdBT in sparser settings for
+β
+∈
+[
+0
+,
+1
+]
+\beta\in[0,1]
+, Section
+6
+(Figure
+1
+) demonstrates how methods that do not model annotator competence can suffer significantly in the presence of adversaries. Section
+6.4
+further shows how these methods degrade with the addition of spammers and adversaries in real-world datasets.
+Appendix G
+Spammer Addition in FaceAge Dataset: More details
+(a)
+Accuracy (
+a
+​
+c
+​
+c
+acc
+)
+(b)
+Weighted Accuracy (
+w
+​
+a
+​
+c
+​
+c
+wacc
+)
+Figure 4
+:
+Performance of different ranking methods under varying proportions of spammers introduced into the
+FaceAge
+dataset.
+In Section
+6.4
+, we showed that results based on Kendall’s tau demonstrate how methods such as
+FactorBT
+,
+BT
+,
+BARP
+, and
+RC
+degrade under spammer addition, whereas
+BoRaEM
+,
+HBTL
+, and
+CrowdBT
+remain robust due to their explicit modeling of annotator competence. Figures
+4(a)
+and
+4(b)
+present the results in terms of accuracy and weighted accuracy when various types of spammers are added to the FaceAge dataset. A similar performance pattern to that observed with Kendall’s tau is evident for these metrics as well.
+(a)
+Kendall’s tau (
+τ
+\tau
+)
+Figure 5
+:
+Performance of different ranking methods under varying proportions of spammers introduced into the
+Passage
+dataset, measured using Kendall’s tau (
+τ
+\tau
+).
+(a)
+Accuracy (
+a
+​
+c
+​
+c
+acc
+)
+(b)
+Weighted Accuracy (
+w
+​
+a
+​
+c
+​
+c
+wacc
+)
+Figure 6
+:
+Performance of different ranking methods under varying proportions of spammers introduced into the
+Passage
+dataset, measured using Accuracy (
+a
+​
+c
+​
+c
+acc
+) and Weighted Accuracy (
+w
+​
+a
+​
+c
+​
+c
+wacc
+).
+Appendix H
+Spammer Addition in Passage Dataset
+In this section, we present the experimental results of spammer addition on the Passage dataset. Figures
+5
+and
+6
+shows the results using Kendall’s tau as the evaluation metric.
+CrowdBT
+,
+HBTL
+,
+HTCV
+,
+FactorBT
+and
+BoRaEM
+exhibit robustness to spammers, whereas the remaining methods suffer substantially in their presence.
+Similar trends are observed in Figures
+6(a)
+and
+6(b)
+, which report results in terms of accuracy and weighted accuracy, respectively.
+Models such as BT, FactorBT, Rank Centrality, BARP suffer heavily in presence of spammers and malicious adversaries.
+These findings further emphasize the importance of modeling annotator competence or susceptibility to bias in crowdsourced settings.
+Appendix I
+Ablation Study
+I.1
+Initialization of Worker Competencies
+As discussed in Appendix
+E
+, we initialize all worker competency values to a fixed positive value (0.8) in case of BoRaEM and HBTL, corresponding to a neutral reliability assumption
+to avoid early instability and allowing competency differences to emerge purely from observed comparisons.
+Similarly, for CrowdBT, we follow
+Ferrara et al. [2024]
+and initialize worker competencies to 0.7.
+In Section
+2
+, we discussed about the objective function for FactorBT.
+For a comparison between items
+d
+i
+d_{i}
+and
+d
+j
+d_{j}
+by worker
+s
+s
+, described by a feature vector
+𝐱
+s
+​
+i
+​
+j
+∈
+ℝ
+M
+\mathbf{x}_{sij}\in\mathbb{R}^{M}
+, where
+M
+M
+is the feature dimension. The probability that
+d
+i
+d_{i}
+is preferred over
+d
+j
+d_{j}
+is given as follows
+Pr
+(
+d
+i
+≻
+s
+d
+j
+)
+=
+σ
+(
+γ
+s
+)
+⋅
+σ
+(
+r
+i
+−
+r
+j
+)
++
+(
+1
+−
+σ
+(
+γ
+s
+)
+)
+⋅
+σ
+(
+⟨
+𝒃
+s
+,
+𝐱
+s
+​
+i
+​
+j
+⟩
+)
+\Pr(d_{i}\succ_{s}d_{j})=\sigma(\gamma_{s})\cdot\sigma(r_{i}-r_{j})+(1-\sigma(\gamma_{s}))\cdot\sigma(\langle\bm{b}_{s},\mathbf{x}_{sij}\rangle)
+(31)
+where
+r
+i
+,
+r
+j
+r_{i},r_{j}
+are the latent scores of items
+d
+i
+d_{i}
+and
+d
+j
+d_{j}
+,
+γ
+s
+\gamma_{s}
+controls the susceptibility of worker
+s
+s
+to bias and
+σ
+⁡
+(
+γ
+s
+)
+\sigma(\gamma_{s})
+can be considered as the the skill of the worker same as that of
+β
+s
+\beta_{s}
+in our formulation,
+𝒃
+s
+\bm{b}_{s}
+encodes the worker-specific sensitivity to task features,
+σ
+⁡
+(
+⋅
+)
+\sigma(\cdot)
+is the sigmoid function. The model estimates parameters
+{
+r
+i
+}
+\{r_{i}\}
+,
+{
+γ
+s
+}
+\{\gamma_{s}\}
+, and
+{
+𝒃
+s
+}
+\{\bm{b}_{s}\}
+by maximizing the regularized log-likelihood of the observed pairwise comparisons.
+For FactorBT, we uniformly initialize the worker logits (
+γ
+s
+\gamma_{s}
+) to
+0.7
+0.7
+, which corresponds to initializing worker competencies as
+σ
+⁡
+(
+0.7
+)
+≈
+0.668
+\sigma(0.7)\approx 0.668
+.
+Effect of initialization.
+In this ablation study, we analyze the effect of initialization on the performance of BoRaEM, HBTL, and CrowdBT on the FaceAge dataset
+[
+Pavlichenko and Ustalov, 2021
+]
+. The initialization parameter represents annotator competency, denoted by
+β
+\beta
+.
+For BoRaEM and HBTL, we vary
+β
+\beta
+from
+−
+1
+-1
+to
+1
+1
+in increments of
+0.1
+0.1
+. For CrowdBT, we vary
+β
+\beta
+from
+0
+0
+to
+1
+1
+in increments of
+0.1
+0.1
+, consistent with its probabilistic interpretation.
+Figure 7
+:
+Effect of initialization on BoRaEM and HBTL. Both methods exhibit symmetry around
+β
+=
+0
+\beta=0
+, indicating that initializing with competency
+β
+\beta
+or
+−
+β
+-\beta
+leads to identical performance. This symmetry arises because their likelihood depends on the term
+σ
+⁡
+(
+β
+s
+​
+(
+r
+w
+−
+r
+l
+)
+)
+\sigma(\beta_{s}(r_{w}-r_{l}))
+, which is invariant under simultaneous sign reversal of competency and score differences.
+Figure 8
+:
+Effect of initialization on CrowdBT. The method exhibits symmetry around
+β
+=
+0.5
+\beta=0.5
+, meaning that initialization with
+β
+\beta
+or
+1
+−
+β
+1-\beta
+produces identical results. This follows from the model structure, where
+β
+\beta
+and
+1
+−
+β
+1-\beta
+represent complementary competency assumptions in the likelihood formulation.
+Figure 9
+:
+Effect of initialization for FactorBT by varying the initial worker competency,
+β
+s
+=
+σ
+⁡
+(
+γ
+s
+)
+\beta_{s}=\sigma(\gamma_{s})
+.
+Figures
+7
+and
+8
+present ablation studies on the effect of initialization for BoRaEM and HBTL, CrowdBT respectively.
+Figure
+9
+presents an ablation study on the effect of initialization for FactorBT by varying the initial worker competency,
+β
+s
+=
+σ
+⁡
+(
+γ
+s
+)
+\beta_{s}=\sigma(\gamma_{s})
+. When
+β
+s
+\beta_{s}
+is initialized to
+0
+0
+, the component of
+β
+s
+​
+σ
+​
+(
+r
+i
+−
+r
+j
+)
+\beta_{s}\sigma(r_{i}-r_{j})
+in Equation (
+31
+) is completely disabled, reducing the model to a pure worker-bias model that cannot learn meaningful item scores. Conversely, when
+β
+s
+\beta_{s}
+is initialized to
+1
+1
+, the worker-bias component,
+σ
+⁡
+(
+⟨
+𝐛
+s
+,
+𝐱
+s
+​
+i
+​
+j
+⟩
+)
+\sigma(\langle\mathbf{b}_{s},\mathbf{x}_{sij}\rangle)
+, is effectively disabled at initialization, causing the model to behave as the standard Bradley–Terry model. Since
+γ
+s
+=
+logit
+⁡
+(
+β
+s
+)
+\gamma_{s}=\operatorname{logit}(\beta_{s})
+, initializing
+β
+s
+\beta_{s}
+to
+1
+1
+yields
+γ
+s
+→
+∞
+\gamma_{s}\rightarrow\infty
+, for which the skill gradients vanish because
+σ
+′
+​
+(
+γ
+s
+)
+=
+σ
+⁡
+(
+γ
+s
+)
+​
+(
+1
+−
+σ
+⁡
+(
+γ
+s
+)
+)
+=
+0
+\sigma^{\prime}(\gamma_{s})=\sigma(\gamma_{s})(1-\sigma(\gamma_{s}))=0
+. For intermediate initializations, the model’s performance remains stable, indicating that its performance is largely insensitive to the choice of initialization.
+This study demonstrates the robustness of all methods to uniform initialization, where all workers are assigned the same initial competency value, with performance remaining largely stable across the initialization range.
+Figure 10
+:
+Impact of the mean log-likelihood convergence tolerance (
+ϵ
+\epsilon
+) on the performance of BoRaEM, HBTL, HTCV, CrowdBT, and FactorBT. The x-axis is shown in decreasing order, from loose to strict convergence. Both methods remain largely stable across the tested range of
+ϵ
+\epsilon
+, with minor improvements in Accuracy and Kendall’s Tau observed for smaller values (stricter convergence). These results demonstrate that the EM updates converge reliably and are not overly sensitive to the choice of stopping criterion, confirming that the default setting of
+ϵ
+=
+10
+−
+6
+\epsilon=10^{-6}
+is within the optimal regime.
+I.2
+Sensitivity to Mean Log-Likelihood Convergence Tolerance
+As described in Appendix
+E
+, we set the mean log-likelihood convergence tolerance parameter (
+ϵ
+\epsilon
+) to
+10
+−
+6
+10^{-6}
+.
+Figure
+10
+illustrates the sensitivity of BoRaEM, HBTL, HTCV, CrowdBT and FactorBT to different values of the convergence tolerance
+ϵ
+\epsilon
+. The results show that both methods maintain stable performance across the range, with only minor gains in Accuracy and Kendall’s Tau for stricter convergence, supporting the choice of
+ϵ
+=
+10
+−
+6
+\epsilon=10^{-6}
+as a robust default.
+I.3
+BoRaEM-Specific Ablation Studies
+I.3.1
+Sensitivity to Competency Prior Variance (
+σ
+β
+\sigma_{\beta}
+)
+As described in Appendix
+E
+, we set the Competency Prior Variance parameter (
+σ
+β
+\sigma_{\beta}
+) to
+1.0
+1.0
+.
+Figure 11
+:
+Effect of the competency prior variance (
+σ
+β
+\sigma_{\beta}
+) on BoRaEM. This hyperparameter controls the strength of the Gaussian prior over worker competencies (
+β
+\beta
+), where smaller values shrink competencies closer to zero and larger values allow more variability. The results show that both methods are largely stable across a wide range of
+σ
+β
+\sigma_{\beta}
+, with minor improvements in Accuracy and Kendall’s Tau when the prior is moderately loose. This indicates that the EM updates are robust to the choice of
+σ
+β
+\sigma_{\beta}
+, and the default setting (
+σ
+β
+=
+1.0
+\sigma_{\beta}=1.0
+) provides a reasonable balance between regularization and flexibility.
+The competency prior variance (
+σ
+β
+2
+\sigma_{\beta}^{2}
+) controls the strength of the Gaussian prior on worker competencies
+β
+w
+\beta_{w}
+in the EM updates.
+A smaller
+σ
+β
+\sigma_{\beta}
+increases the prior precision
+σ
+β
+−
+2
+\sigma_{\beta}^{-2}
+, which shrinks
+β
+w
+\beta_{w}
+toward
+0
+0
+(strong regularization), while a larger
+σ
+β
+\sigma_{\beta}
+reduces the prior influence, allowing
+β
+w
+\beta_{w}
+to vary more freely. In the extreme case of
+σ
+β
+→
+∞
+\sigma_{\beta}\to\infty
+, the prior is effectively removed, which can lead to overfitting and slightly lower stability in the estimates. The results above reflect this trade-off: moderate
+σ
+β
+\sigma_{\beta}
+(e.g.,
+1.0
+1.0
+) balances regularization and flexibility, producing optimal Accuracy and Kendall’s Tau.
+I.3.2
+Sensitivity to Reward Regularization Coefficient (
+λ
+r
+,
+base
+\lambda_{r,\mathrm{base}}
+)
+As described in Appendix
+E
+, we set the Reward Regularization Coefficient Parameter (
+λ
+r
+,
+base
+\lambda_{r,\mathrm{base}}
+) to
+10
+−
+2
+10^{-2}
+.
+BoRaEM demonstrates remarkable robustness to the choice of
+λ
+r
+,
+base
+\lambda_{r,\mathrm{base}}
+except at extreme values. This relative insensitivity suggests that while the regularization is essential for numerical conditioning in the linear system, the model’s primary predictive power is driven by the underlying Pólya-Gamma latent variable framework rather than sensitive hyperparameter tuning.
+Figure 12
+:
+Effect of the reward regularization coefficient
+λ
+r
+,
+base
+\lambda_{r,\mathrm{base}}
+on BoRaEM performance.
+Appendix J
+Hardware Details
+The experiments were conducted on a server with dual-socket Intel Xeon Gold 6348 CPUs (28 cores / 56 threads per socket, 2.6 GHz base, 3.5 GHz turbo, AVX-512), 503 GiB RAM, and 4 NVIDIA A100 GPUs. The L1, L2, and L3 caches are 2.6 MiB, 70 MiB, and 84 MiB, respectively, across 2 NUMA nodes. The system runs Ubuntu 22.04 LTS.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

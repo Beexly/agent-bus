@@ -1,0 +1,23 @@
+# docs/arxiv-program/research/2026-09-21/arxiv-deep/1477-betting-markets-better-than-polling.md
+## What it is (1-2 sentences)
+A 2025 arXiv paper (Cutting et al., arXiv:2507.08921v1) asking whether Polymarket predicted the 2024 US election better than polls, using Bayesian Structural Time Series (BSTS) models; ledger verdict is ADAPT strictly for the transferable BSTS signal-vs-noise methodology (steam-vs-noise classification of line moves), not the n=1 election result.
+## Key metrics/methods (formulas where given, else "not specified")
+- BSTS (Brodersen et al. 2015; Scott & Varian 2013): y_t = Z_t'α_t + ε_t, ε_t~N(0,H_t); α_{t+1} = T_t α_t + R_t η_t, η_t~N(0,Q_t).
+- Driver model: y_t = μ_t + β'x_t + ε_t, ε_t~N(0,σ²); μ_{t+1} = μ_t + η_t, η_t~N(0,τ²); x_t = 50 state-level Polymarket Trump-win odds; spike-and-slab priors on β for sparse regressor selection.
+- Variance-ratio interpretation: τ²=0 → mean-reverting Gaussian noise; σ²→0 → random walk. (TRANSFERABLE CORE: per-game τ²/σ² ratio as steam-vs-noise classifier)
+- Forecasting: regressor-free local-level models trained on data up to 8 cutoff dates (Jun 28, Jul 14, Jul 22, Sep 11, Oct 5, Oct 18, Oct 29, Nov 4 2024), projected to election day with 95% predictive intervals — genuine rolling-origin design.
+## Data sources named
+Polymarket daily closing prices on "Trump wins presidency" (national + 50 states), Apr 2024–Nov 4 2024, via Kaggle (Andrade 2024); ~$3.7B wagered on the 2024 presidential election. Polling: FiveThirtyEight aggregator (shut down March 2025), national + state, daily mean ± SD; intermittent sampling. Swing states: AZ, GA, NC, PA, MI, NV, WI.
+## Findings (numbers and facts, not vibes)
+- Descriptive: Polymarket favored Trump at all but 2 time points (May, Sep 2024); Trump win prob peaked ~67% in October, stayed >55% until election day; diverged from polling ±1 SD from October. Polling hovered ~45% Trump nationally. Polymarket hit 95% (per X posts) before midnight election day. (OTHER: n=1 election, not sports-transferable)
+- Swing states: Polymarket superior in AZ, GA, NC (GA/NC rarely below 55%, often 60–80%); NV, PA clear for Trump from mid-October; WI/MI ~chance in both sources. (OTHER)
+- Forecasting: from Oct 18 onward, Polymarket's 95% PI no longer crossed the 50% line; polling mean never favored Trump and its PI always straddled 0.5; on election day polling predicted Harris. 5/7 swing-state Polymarket PIs above 50% by mid-to-late October. (OTHER)
+- Dynamics: Polymarket series random-walk-like (τ²>0, predictive intervals fan out); polling Gaussian noise about a mean (σ²>0, τ²≈0, flat intervals). Polymarket reacted to events (jump after Jul 13 attempt; drop after Jul 21 Harris entry); polling barely moved. (OTHER: money-at-stake markets react to events, stated-opinion polls don't)
+- Drivers: PA and MI highest spike-and-slab inclusion probabilities for the national market. (OTHER)
+- Caveats (author-flagged): n=1 election; manipulation confound — October Trump surge coincides with a single actor's ~$30M in bets across multiple accounts (Osipovich/WSJ 2024) plus wash-trading accusations (Fortune, Oct 2024); sample bias (crypto-only, 17–20% of Americans, officially non-US with VPN circumvention); IEM predicted Harris (single-market cherry-picking); no de-vigging/calibration; bounded [0,1] probabilities modeled with Gaussian BSTS without logit transform. (TRUST-SIGNAL: headline "markets beat polls" may partly be a whale's thumb on the scale)
+## Intelligence connections (tag each finding: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- BSTS τ²/σ² ratio as steam-vs-noise classifier: OTHER (market/betting intel) — fit BSTS local-level per NFL game on de-vigged implied-probability series from open to close (Odds API, already in stack); high τ² = informed money/steam, low τ² = public churn; only bet/fade informed-classified moves in the existing CLV lane.
+- Manipulation caveat ($30M single actor, wash trading): TRUST-SIGNAL — improvement experiment adds a jump/outlier component so whale dumps are classified as jumps rather than informed drift.
+- Markets-react-to-events vs polls-don't: OTHER — event-reactivity analysis: align line moves to news timestamps (injury reports, weather) to measure which events actually move NFL markets.
+## Engine-actionable? (yes/no + one-line what)
+yes — Fit BSTS local-level per game on hourly de-vigged moneyline-implied probabilities (open→kickoff, NFL 2023–2024), classify moves by τ²/σ²; gate: ADOPT iff top-quartile τ²/σ² "informed steam" moves (net move ≥2%) achieve mean CLV ≥ +1.5% vs ≤ +0.3% for unflagged, n ≥ 200 flagged moves; then add jump/outlier component for whale-move robustness.

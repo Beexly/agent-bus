@@ -1,0 +1,1009 @@
+From Score Matrices to Football-Aware Match-State Simulation:
+An Auditable LLM Harness for Exact-Score Reranking
+Shaopeng Liang
+Affiliation:
+Independent Researcher
+5 August 2026
+Abstract
+Football score forecasting has a useful statistical core and a difficult contextual edge. Dynamic Poisson-family models understand statistical regularities: they estimate current strength, expected goals, and coherent score probabilities. They do not, by themselves, understand football in the semantic sense of roles, tactical matchups, motivation, or the way a first goal changes behaviour. Large language models (LLMs) can reason about those concepts, yet they are neither calibrated probability engines nor guaranteed elite football experts. We therefore treat complementarity, rather than replacement, as the modeling premise. This paper documents four major system iterations. V1 is a dynamic score-driven Dixon–Coles baseline. V2 inserts an LLM residual between two mathematical layers and maps contextual ratings back into
+λ
+\lambda
+. V3 replaces scalar correction with three explicit goal-by-goal simulations over a frozen score-candidate set. V4 adds shared first-breakthrough and post-goal cascade judgments, time-aware stopping, and deterministic tail candidates. The information harness defines every input field, supplies pre-match evidence, and constrains the LLM to an auditable reasoning route.
+On an interim chronological replay of the first 150 matches of the 2025–26 English Premier League, V1 score-matrix ordering achieved 10.0% Top-1 and 26.7% Top-3 exact-score accuracy. V3 reached 12.0% and 30.0%; V4 reached 14.7% and 30.7%. V4 increased candidate coverage from 77.3% to 84.7%, but no newly added tail candidate became an exact Top-3 hit. The LLM ranking versions did not emit normalized probabilities, so proper scoring rules cannot be computed for them; V1’s native 1X2 distribution achieved 0.9878 log loss, 0.5870 Brier score, 0.2095 ranked probability score, and 53.3% argmax accuracy on the same slice. These results are exploratory rather than a claim of state-of-the-art performance: the slice informed model development, and input isolation cannot rule out outcome knowledge in a closed-weight LLM. The main contribution is therefore an auditable architecture, four clearly separated design iterations, and negative findings that clarify where football simulation does and does not improve score selection.
+1
+Introduction
+Association-football forecasts have unusually high outcome entropy. A small number of goals, correlated low-score outcomes, and match-state feedback make exact-score prediction especially brittle. Poisson and Dixon–Coles models remain attractive because they produce a complete, internally consistent score distribution rather than only a label
+[
+1
+]
+. Dynamic weighting and time depreciation help those models reflect current team strength
+[
+4
+]
+. Recent distribution-first work similarly argues for predicting the mechanisms that generate scores—for example shot quantity and quality—before simulating outcomes
+[
+5
+]
+.
+The missing layer is often not another generic tabular model. Shortly before kickoff, an analyst wants to interpret whether a reported absence is structurally important, whether a replacement changes ball progression or rest defence, whether a particular winger-fullback matchup is repeatable, and whether the match incentives favour risk or control. These are relational, contextual judgments. An LLM has broad football knowledge and general reasoning ability, but it should not be presumed to possess the consistent specialist judgment of an elite coach, scout, or analyst. The harness is therefore not a passive prompt wrapper: it supplies definitions, reference frames, structured team and player evidence, uncertainty cues, and a required reasoning route. It turns two incomplete components into a new system-level forecaster. A new generation of football benchmarks has begun evaluating LLMs and research agents under pre-match evidence constraints
+[
+6
+]
+. However, letting an LLM freely predict a score introduces three problems: numerical priors can be ignored, explanations can be post-hoc, and historical simulations can leak results.
+This work asks a narrower question:
+Can an LLM add useful, auditable match-mechanism reasoning while remaining subordinate to a frozen probabilistic score prior?
+The project reached its current form through four major iterations and two interface changes. V1 was purely mathematical. V2 used a “mathematics + LLM + mathematics” sandwich: the base model produced
+λ
+\lambda
+, the LLM scored football information, and a learned numerical bridge converted that signal back into
+λ
+\lambda
+. The global residual produced only small, temporally unstable gains. V3 therefore changed the LLM’s job from parameter correction to explicit match simulation. V4 retained that interface and made the shared first-goal, stopping, and cascade judgments observable. In V3 and V4, the mathematical model provides the probabilistic prior and candidate geometry; the LLM reads that prior through the harness, constructs causal score paths, and returns a ranking without another formula overwriting its reasoning.
+Our contributions are:
+•
+an auditable hybrid architecture separating probabilistic state estimation, evidence packaging, LLM reasoning, and deterministic validation;
+•
+a documented evolution from feature extraction and scalar residuals to explicit match-state paths, shared root adjudication, and cascade depth;
+•
+a chronological replay protocol that freezes prompts and responses before outcome scoring, with per-match input/output archives and hashes; and
+•
+an honest interim benchmark including proper-score baselines, paired comparisons, failure slices, and limitations of historical LLM evaluation.
+2
+Related Work
+Classical score models estimate team attack and defence effects and construct a joint distribution for home and away goals. Dixon and Coles introduced a dynamic Poisson-regression framework and a low-score correction for the cells most affected by independence assumptions
+[
+1
+]
+. Ley et al. compared strength-based models under match-importance and time-depreciation weights and found independent and bivariate Poisson formulations competitive under ranked probability score (RPS) evaluation
+[
+4
+]
+. More recent comparisons report that changing the machine-learning family or feature set often yields only modest improvements over careful Poisson baselines
+[
+2
+]
+.
+Distribution forecasting is important because a single exact score hides uncertainty. Mendes-Neves et al. combine Elo information, learned shot distributions, and Monte Carlo simulation to obtain match distributions
+[
+5
+]
+. Proper scoring rules reward an honest predictive distribution rather than a fortunate hard label
+[
+3
+]
+. We report log loss, Brier score, and RPS for V1, while noting that the relative suitability of RPS and local ignorance/log scores for football remains debated
+[
+7
+]
+.
+WorldCupArena evaluates LLMs and deep-research agents using evidence available before kickoff and reports result, exact-score, and graded scoreline metrics
+[
+6
+]
+. Our focus is complementary: instead of benchmarking unconstrained model knowledge, we study how an LLM can be inserted after a score-distribution model under a fixed interface, and we preserve its complete inputs, outputs, and validation decisions.
+3
+System Architecture
+Figure
+1
+shows the separation of responsibilities. V1 owns numerical probability. The harness owns evidence provenance and semantics. V4 owns structured match simulation. A deterministic validator owns schema compliance and ensures that the returned scores belong to the allowed candidate pool.
+Past match results
+chronological state
+V1 statistical prior
+λ
+H
+,
+λ
+A
+\lambda_{H},\lambda_{A}
+Score matrix
+frozen candidates
+Annotated pre-match
+evidence harness
+V4 match simulation
+root, cascade, paths
+Validated ranking
+Top-1 / Top-3
+Freeze prediction
+prompt, output, hashes
+Reveal outcome
+and evaluate
+Probability owner
+No result fields
+No post-hoc formula
+Figure 1:
+The V4 pipeline. The forward path is strictly one-way: predictions are frozen before a separate evaluator reads outcomes. Temporal input isolation does not exclude outcome memory inside a closed LLM.
+3.1
+V1: dynamic probabilistic prior
+V1 is a score-driven (generalized autoregressive score, GAS) attack–defence model. For team
+i
+i
+, the pre-match attack and vulnerability states decay toward zero as
+a
+i
+,
+t
+−
+\displaystyle a^{-}_{i,t}
+=
+a
+i
+,
+t
+−
+​
+exp
+⁡
+(
+−
+log
+⁡
+2
+​
+Δ
+​
+t
+h
+)
+,
+\displaystyle=a_{i,t^{-}}\exp\!\left(-\log 2\,\frac{\Delta t}{h}\right),
+(1)
+v
+i
+,
+t
+−
+\displaystyle v^{-}_{i,t}
+=
+v
+i
+,
+t
+−
+​
+exp
+⁡
+(
+−
+log
+⁡
+2
+​
+Δ
+​
+t
+h
+)
+.
+\displaystyle=v_{i,t^{-}}\exp\!\left(-\log 2\,\frac{\Delta t}{h}\right).
+(2)
+where
+h
+=
+1440
+h=1440
+days in the selected V1 configuration. For home team
+H
+H
+and away team
+A
+A
+,
+λ
+H
+=
+μ
+H
+​
+exp
+⁡
+(
+a
+H
+−
++
+v
+A
+−
+)
+,
+λ
+A
+=
+μ
+A
+​
+exp
+⁡
+(
+a
+A
+−
++
+v
+H
+−
+)
+.
+\lambda_{H}=\mu_{H}\exp(a^{-}_{H}+v^{-}_{A}),\qquad\lambda_{A}=\mu_{A}\exp(a^{-}_{A}+v^{-}_{H}).
+(3)
+The states are updated after each date-batch using clipped, standardized score innovations. The selected gains are
+g
+a
+=
+0.04
+g_{a}=0.04
+for attack and
+g
+v
+=
+0.02
+g_{v}=0.02
+for vulnerability. This combines gradual forgetting with rapid online reaction to surprising goals; the half-life alone does not determine responsiveness.
+Independent Poisson masses are multiplied by the Dixon–Coles low-score correction
+τ
+x
+​
+y
+​
+(
+λ
+H
+,
+λ
+A
+,
+ρ
+)
+\tau_{xy}(\lambda_{H},\lambda_{A},\rho)
+, with
+ρ
+=
+−
+0.05
+\rho=-0.05
+, and renormalized:
+p
+⁡
+(
+x
+,
+y
+)
+=
+Pois
+⁡
+(
+x
+;
+λ
+H
+)
+​
+Pois
+⁡
+(
+y
+;
+λ
+A
+)
+​
+τ
+x
+​
+y
+Z
+.
+p(x,y)=\frac{\operatorname{Pois}(x;\lambda_{H})\operatorname{Pois}(y;\lambda_{A})\tau_{xy}}{Z}.
+(4)
+Aggregating matrix cells gives native home/draw/away probabilities. Sorting cells gives exact-score candidates. These are different decision problems: the modal score’s match result need not equal the largest aggregate 1X2 class.
+V1 was selected using 18,665 matches from 2015–16 through 2024–25, covering five top domestic leagues and the UEFA Champions League, Europa League, and Conference League. Seasons through 2021–22 formed the training window; 2022–23 through 2024–25 formed validation. The selected configuration achieved 0.9855 1X2 log loss, 0.5876 Brier score, 0.2004 RPS, and 52.8% accuracy on 5,330 domestic validation matches. The 2025–26 season was not used in V1 parameter selection, but it is used in the retrospective LLM development described below.
+3.2
+The pre-match evidence harness
+Each match packet explains both values and their meanings. It contains:
+•
+kickoff and evidence cutoff; home/away identity and competition context;
+•
+V1
+λ
+H
+\lambda_{H}
+,
+λ
+A
+\lambda_{A}
+, full matrix semantics, and ranked candidates;
+•
+table position, season objective, recent form, goals, formations, rest, and schedule congestion;
+•
+player starts, minutes, role, position, expected lineup, rotation, replacement, and availability information;
+•
+pre-match reporting and one or more key tactical matchups; and
+•
+explicit reminders that reporting is uncertain evidence rather than ground truth.
+The LLM must use football reasoning, including source authority and contextual plausibility, rather than literal keyword matching. The harness does not ask the LLM to prove whether a report was ultimately correct. Its task is to judge the information available at prediction time and explain how much it should matter. Appendix
+A
+documents the prompt contracts and representative success and failure cases.
+4
+Why the Model Changed
+Table
+1
+summarizes four major research iterations. Internal engineering builds are intentionally collapsed into these public model versions; the paper studies changes of representation rather than a sequence of prompt patches.
+1.
+V1: mathematics alone.
+A dynamic score model learns team strength and produces a coherent probability matrix, but football meaning enters only indirectly through past goals.
+2.
+V2: mathematics + LLM + mathematics.
+The LLM interprets current football information; one residual adapter compresses that judgment and pushes it back into
+λ
+\lambda
+.
+3.
+V3: mathematics + LLM path simulation.
+The statistical model supplies the prior and candidate geometry; the LLM explicitly simulates three goal-by-goal paths and reranks candidates without changing
+λ
+\lambda
+.
+4.
+V4: shared-root and cascade simulation.
+The path model adds a common first-breakthrough decision, time-aware stopping, post-goal response and expansion, and controlled tail candidates.
+The later iterations do not claim that the LLM is a top football expert. They make broad football knowledge operational by supplying missing specialist context and forcing the reasoning through auditable states. In this sense, the harness is part of the predictive model itself.
+Version
+LLM’s job
+Hypothesis
+What the experiment taught us
+V1
+None
+Dynamic team states plus a corrected score matrix form a stable probabilistic backbone.
+Retained as the numerical baseline and probability owner.
+V2
+Produce four relative attack/defence ratings; one learned
+κ
+\kappa
+maps them back into
+λ
+\lambda
+.
+A compact numerical adapter can connect contextual football judgment to the probability model.
+Pooled gains were tiny and temporally unstable. One residual cannot express evidence whose value is asymmetric or state-dependent.
+V3
+Build three explicit goal-by-goal paths from 0–0 and rerank a frozen Top-10.
+Causal match simulation can discipline score selection without editing
+λ
+\lambda
+.
+Interpretability improved, but candidate coverage became a hard ceiling and stopping assumptions were exposed as failure modes.
+V4
+Judge first breakthrough, remaining-time stopping, and post-goal cascade over an expanded candidate pool.
+Repeatable scoring channels and the trailing side’s response capacity should control score depth.
+Top-3 improved descriptively, but 0–0 remained unsolved and added tail candidates contributed no new exact hit.
+Table 1:
+Four public research versions and the design reasoning behind each transition. Internal mappings are V1/V3.2, V2/V5.3, V3/V7.25, and V4/V7.28.
+4.1
+V2: a clean scalar residual was too uniform
+V2 assigns four LLM values—home attack, home defence, away attack, and away defence—relative to each team’s own mathematical baseline centred at 10. A single learned
+κ
+\kappa
+maps rating differences into capped log-
+λ
+\lambda
+adjustments. This architecture preserves a normalized probability distribution and is easy to evaluate, but it compresses a conditional football story into one scalar bridge.
+The final V2 review combined three chronological segments totalling 320 matches. Pooled 1X2 log loss improved by 0.1365%, but the last 99-match segment regressed by 0.2387% and lost three hard 1X2 picks. The result suggested that a global
+κ
+\kappa
+was trying to do incompatible jobs. Ordinary evidence should produce almost no movement; decisive absences or tactical mismatches may deserve more; and a first goal can change the sign or magnitude of later effects. These are conditional transitions, not one residual.
+4.2
+V3: from parameter correction to explicit paths
+V3 changes the interface rather than adding scalar features. The LLM receives V1’s
+λ
+\lambda
+values, score-matrix semantics, frozen Top-10, and annotated pre-match evidence. It must construct three distinct paths from 0–0. Each transition is one home goal, one away goal, or a stop. After every goal, it reassesses the leader’s risk reduction, the trailer’s pressure and actual response capacity, newly exposed space, fatigue, substitutions, and key matchups. The three terminal scores become the returned Top-3. The LLM cannot edit
+λ
+\lambda
+, invent an arbitrary score, or apply a post-output weighting formula.
+4.3
+V4: shared root, stopping, and cascade
+V4 retains V3’s explicit paths and adds the state variables needed to control their depth. Before the paths diverge, one shared root judges whether the 0–0 equilibrium is likely to break. Each node records score, estimated time band, remaining time, and stop-versus-continue evidence. After the first goal, one shared cascade assessment asks whether the scoring mechanism is repeatable, whether the trailing side can actually respond, and whether the leading side can exploit newly opened space. The cascade may close the game, leave openness roughly unchanged, or open it bilaterally or asymmetrically.
+The deterministic builder also appends up to five matrix-derived tail anchors: a high-scoring draw, high-scoring home and away wins, and home and away runaway scores. These are optional candidates rather than mandatory selections. V4 still cannot alter
+λ
+\lambda
+or invent scores outside the frozen pool.
+5
+Experimental Protocol
+5.1
+Interim development benchmark
+The reported V4 benchmark is the first 150 chronological fixtures of the 2025–26 English Premier League, grouped into 15 league rounds of 10 matches. The slice is deliberately presented as an
+interim development benchmark
+. The first 100 matches informed V4’s design, so the 150-match result is not an untouched final test. Although later fixtures were also replayed during development, they are outside the main benchmark requested for this draft and cannot be retroactively recovered as unseen data. A credible generalization claim requires a new future season or competition frozen before outcomes.
+For each round, up to 10 matches were processed concurrently but independently. Each match used a fresh LLM context. Prompt, source packet, structured response, schema version, model identifier, and content hashes were written and synchronized before a separate evaluator opened the result file. The same date-batch was then supplied to V1’s online update before the following round. This prevents target-result fields from entering the prompt and prevents within-round updates.
+This protocol is
+temporal input isolation
+, not a proof of full non-contamination. The closed-weight reasoning model was executed after the historical season; its unknown pretraining or retrieval history could contain match outcomes. The experiment did not probe parametric memorization. Consequently, the benchmark validates the software and reasoning interface more strongly than it validates an unbiased LLM forecasting edge.
+5.2
+Metrics
+We report exact-score Top-1 and Top-3 accuracy. We also map the Top-1 score to home/draw/away, denoted
+score-derived 1X2 accuracy
+. For V1 we separately report
+native 1X2 argmax accuracy
+, obtained by summing the whole score matrix by outcome before taking the maximum.
+For a three-class probability vector
+p
+=
+(
+p
+H
+,
+p
+D
+,
+p
+A
+)
+p=(p_{H},p_{D},p_{A})
+and observed one-hot vector
+o
+o
+, we use
+LogLoss
+=
+−
+log
+⁡
+p
+y
+,
+\displaystyle=-\log p_{y},
+(5)
+Brier
+=
+∑
+k
+∈
+{
+H
+,
+D
+,
+A
+}
+(
+p
+k
+−
+o
+k
+)
+2
+,
+\displaystyle=\sum_{k\in\{H,D,A\}}(p_{k}-o_{k})^{2},
+(6)
+RPS
+=
+1
+2
+​
+∑
+j
+=
+1
+2
+(
+∑
+k
+=
+1
+j
+p
+k
+−
+∑
+k
+=
+1
+j
+o
+k
+)
+2
+.
+\displaystyle=\frac{1}{2}\sum_{j=1}^{2}\left(\sum_{k=1}^{j}p_{k}-\sum_{k=1}^{j}o_{k}\right)^{2}.
+(7)
+Lower is better. V3 and V4 return only an ordering, not a normalized posterior, so assigning them arbitrary rank weights would not produce valid proper scores.
+6
+Results
+6.1
+First-150 comparison
+Table
+2
+gives the central benchmark. V4 improves Top-1 exact score by 4.7 percentage points over V1’s score-cell mode and Top-3 by 4.0 points. Its score-derived 1X2 accuracy is 18 points higher. Paired exact McNemar tests are not significant for Top-1 (
+p
+=
+0.2295
+p=0.2295
+) or Top-3 (
+p
+=
+0.3075
+p=0.3075
+); the score-derived 1X2 difference is significant (
+p
+=
+0.0024
+p=0.0024
+). This last comparison must not be confused with V1’s native 1X2 decision, which reaches 53.3% and remains above V4’s score-derived 50.0%.
+Model
+Top-1
+Top-3
+Score-1X2
+V1 score order
+15 (10.0)
+40 (26.7)
+48 (32.0)
+V3 path simulation
+18 (12.0)
+45 (30.0)
+71 (47.3)
+V4 cascade simulation
+22 (14.7)
+46 (30.7)
+75 (50.0)
+Table 2:
+First 150 EPL matches. Counts are followed by percentages in parentheses. “Score-1X2” is the result implied by the Top-1 exact score.
+V1 native probability metric
+Value
+1X2 argmax accuracy
+80/150 (53.33%)
+Log loss
+0.987803
+Brier score
+0.586970
+Normalized RPS
+0.209451
+Mean included matrix mass
+0.996674
+Table 3:
+Proper-probability evaluation of V1 on the same first-150 slice. The truncated score matrix was renormalized per match.
+The contrast between 32.0% score-derived and 53.3% native 1X2 accuracy is not a bug in matrix aggregation. The most likely individual score cell is often 1–1 or a narrow result, while the sum of many home-win cells can exceed the diagonal. A single modal score is therefore a poor substitute for a categorical probability decision.
+6.2
+First-100 V3-to-V4 comparison
+The first-100 slice provides a common descriptive comparison, although it is also the slice that motivated V4. Relative to V3, V4 added one Top-1 hit, three Top-3 hits, and two score-derived 1X2 hits. These counts are descriptive development results rather than independent evidence.
+Model
+Top-1
+Top-3
+Score-1X2
+V3
+13
+29
+47
+V4
+14
+32
+49
+Table 4:
+Hits out of 100 matches on the shared development slice.
+6.3
+Candidate ceiling and tail failure
+The true score appeared in V1’s Top-10 for 116 of 150 matches (77.3%). V4’s deterministic anchors expanded theoretical coverage to 127 matches (84.7%), an increase of 11. Yet an added anchor entered the final Top-3 in only 3 matches, and none was an exact hit. Thus V4 improved the
+availability
+of tail scores but did not learn how to promote them.
+There were 43 matches with at least four total goals and 24 with a margin of at least three goals. V4’s Top-3 exactly matched 4 and 3 of these, respectively. By contrast, among 14 actual 1–1 results, V4 placed 1–1 first four times and inside Top-3 ten times. None of the eight 0–0 results appeared in Top-3. The model is much better at choosing among central low-score outcomes than recognizing a genuine no-breakthrough state or a far tail.
+6.4
+Reasoning-node diagnostics
+V4 required an explicit root verdict, but all 150 cases selected
+first_goal_more_likely
+. This is a useful negative result: exposing an implicit decision creates an auditable variable, but does not create calibration. In the first 100 matches, V4 labelled 72 cascades as
+opens_game
+, 21 as neutral, and only 7 as closing the game. The open-game group had lower Top-3 accuracy than the two other groups combined, suggesting a generic simulation bias toward escalation.
+The large-margin adjustment was more promising. In the first 100 matches, four fixtures received a value of at least 2.0; three truly ended with a margin of at least three goals. This is high precision but low recall (3 of 15 tail events) and was not yet mapped into a trained ranking rule. It should be treated as a candidate signal, not evidence of a solved tail problem.
+7
+Discussion
+7.1
+What the LLM appears to add
+The strongest empirical case is not that the LLM replaces the probability model. V1’s native 1X2 probability decision remains stronger than V4’s score-derived result. Rather, the combined system changes which
+specific score cells
+are made visible to a human and supplies a structured causal simulation for that ordering. Relative to V1’s score-cell mode, Top-1 and Top-3 exact-score rates improve descriptively. The explicit tree also makes errors inspectable: one can distinguish an incorrect first-breakthrough judgment, an incorrect reaction to a lead, a correct mechanism with insufficient candidate depth, and a candidate-generation failure.
+The result supports a division of epistemic labour. V1 is strong where the task is aggregation: many historical observations, time decay, coherent probabilities, and repeatable arithmetic. It is weak where the task is semantic: why a nominal replacement changes build-up, why a matchup creates a repeatable channel, or why league position changes risk appetite. The LLM has the opposite profile. It can connect those concepts and simulate conditional consequences, but its knowledge is broad rather than consistently expert, and its raw numerical confidence is not calibrated. The harness is the engineered bridge that constrains each component to the work it performs best.
+The evolution also supports a broader modeling principle. Context value is heterogeneous. A routine availability report should not receive the same global residual weight as the loss of a unique ball-progressor, nor should a first-half absence have the same effect after a game state changes. V2 treated context too much like a fixed tabular feature. V3 and V4 represent it as conditional evidence attached to transitions.
+7.2
+What remains unresolved
+First, V3 and V4 produce rankings, not probabilities. They cannot yet improve or even be compared on proper scoring rules. A future version should output a normalized posterior over the candidate set and reserved tail mass, then be calibrated on a development window and frozen before a true forward test.
+Second, V4’s root and cascade fields are semantically rich but poorly calibrated. The all-positive first-goal verdict cannot identify 0–0; the frequent open-game label does not reliably select high totals. These signals need an empirical mapping, but returning to one global
+κ
+\kappa
+would repeat the V2 error. A hierarchical calibration layer should condition on signal type, confidence, information value, game state, and remaining time, with shrinkage toward no adjustment.
+Third, candidate expansion alone is insufficient. Tail candidates existed but were rarely ranked. The next experiment should separate two questions: whether the candidate generator covers the outcome and whether the reasoner promotes it. Coverage and ranking should be scored independently.
+Fourth, exact score is intrinsically noisy. Future reports should add a graded scoreline distance metric, total-goal and goal-difference distributions, calibration plots, and decision-quality measures alongside exact hits. WorldCupArena’s fine-grained scoreline evaluation offers one relevant direction
+[
+6
+]
+.
+8
+Validity, Reproducibility, and Responsible Use
+Development reuse.
+The first 100 matches influenced V4. The first-150 benchmark is therefore an engineering benchmark, not confirmatory evidence. Statistical
+p
+p
+-values are descriptive and do not repair adaptive model selection.
+Model-memory contamination.
+The LLM was run after the target season. Inputs exclude target scores and are frozen before scoring, but a closed model may have memorized outcomes. The current audit cannot rule this out. A future live, preregistered evaluation is mandatory.
+Stochasticity.
+LLM ranking can vary across runs. The present benchmark reports one archived run per version. Replicated inference with fixed sampling metadata and paired uncertainty intervals is needed.
+Evidence quality.
+Pre-match reports can be incomplete, revised, strategically misleading, or wrong. The method intentionally asks the LLM to reason under uncertainty, but source reliability remains a model input rather than verified truth.
+Reproducibility.
+Code, version contracts, prompts, structured outputs, and review logs are anchored at Git tag
+football-forecast-v7.28-frozen-2026-08-04
+. The internal LLM run identifier is
+gpt-5.6-sol
+with high reasoning effort. Because this is a closed-weight service model, exact external reproduction is not guaranteed even with identical prompts.
+Responsible use.
+This research studies football forecasting and human-readable AI reasoning. It does not provide wagering recommendations. Exact-score outputs are uncertain hypotheses, and reported historical accuracy should not be interpreted as expected financial return.
+9
+Conclusion
+This project began with a purely statistical model and then moved to a conventional hybrid idea: estimate two scoring rates, let an LLM interpret context, and convert that interpretation back into a small mathematical correction. The experiments showed why that “mathematics + LLM + mathematics” sandwich was incomplete. LLM player-state judgments could be useful while their aggregate
+λ
+\lambda
+effect was wrong; a global
+κ
+\kappa
+could show a tiny pooled gain while failing temporally; and a richer prompt could make reasoning easier to inspect without making the root decision more discriminative.
+V4 therefore represents a different model class from V2’s residual sandwich: “mathematics + LLM”. The statistical component keeps ownership of probability and candidate generation. The LLM contributes football semantics and conditional simulation. The harness supplies the domain scaffolding neither component has alone and makes the joined reasoning executable and auditable. On the first-150 development replay, V4 reaches 14.7% Top-1 and 30.7% Top-3 exact-score accuracy, but does not outperform V1’s native 1X2 probability decision, solve 0–0, or convert new tail coverage into tail hits.
+The main result is a methodology for disciplined hybridization, not a headline accuracy claim. The next scientifically meaningful step is a preregistered, live forward test in which the LLM outputs a calibrated posterior and neither developers nor model services have access to outcomes at prediction time.
+Acknowledgments
+The author used an LLM-based coding and reasoning assistant to help implement experiments, audit artifacts, and draft this manuscript. The human author is responsible for all claims, numerical results, citations, and the final submitted text.
+References
+[1]
+M. J. Dixon and S. G. Coles
+(1997)
+Modelling association football scores and inefficiencies in the football betting market
+.
+Journal of the Royal Statistical Society: Series C (Applied Statistics)
+46
+(
+2
+),
+pp. 265–280
+.
+External Links:
+Document
+Cited by:
+§1
+,
+§2
+.
+[2]
+M. Fischer and A. Heuer
+(2024)
+Match predictions in soccer: machine learning vs. poisson approaches
+.
+arXiv preprint
+.
+External Links:
+2408.08331
+Cited by:
+§2
+.
+[3]
+T. Gneiting and A. E. Raftery
+(2007)
+Strictly proper scoring rules, prediction, and estimation
+.
+Journal of the American Statistical Association
+102
+(
+477
+),
+pp. 359–378
+.
+External Links:
+Document
+Cited by:
+§2
+.
+[4]
+C. Ley, T. Van de Wiele, and H. Van Eetvelde
+(2019)
+Ranking soccer teams on basis of their current strength: a comparison of maximum likelihood approaches
+.
+Statistical Modelling
+19
+(
+1
+),
+pp. 55–73
+.
+External Links:
+1705.09575
+,
+Document
+Cited by:
+§1
+,
+§2
+.
+[5]
+T. Mendes-Neves, Y. Baghoussi, L. Meireles, C. Soares, and J. Mendes-Moreira
+(2025)
+Forecasting soccer matches through distributions
+.
+arXiv preprint
+.
+External Links:
+2501.05873
+Cited by:
+§1
+,
+§2
+.
+[6]
+Z. Wang, T. Gui, J. Rao, S. Di, Y. Tang, and D. Liang
+(2026)
+WorldCupArena: fine-grained evaluation of language models and deep-research agents on football forecasting
+.
+arXiv preprint
+.
+External Links:
+2607.18084
+Cited by:
+§1
+,
+§2
+,
+§7.2
+.
+[7]
+E. Wheatcroft
+(2020)
+Evaluating probabilistic forecasts of football matches: the case against the ranked probability score
+.
+Journal of the Royal Statistical Society: Series A (Statistics in Society)
+183
+(
+4
+),
+pp. 1683–1702
+.
+External Links:
+1908.08980
+,
+Document
+Cited by:
+§2
+.
+Appendix A
+Prompt Design and Representative Cases
+This appendix explains what the LLM was actually asked to do at each stage. The production prompts were written in Chinese and are archived with the code. To keep the paper readable, the boxes below are faithful English contract summaries rather than full verbatim copies. Each case reproduces values from an archived input/output artifact; the result is mentioned only in the post-hoc case review. Several cases come from development splits and therefore illustrate behaviour rather than independent performance.
+A.1
+Prompt design across versions
+The prompt evolved along four axes: the object being predicted, the numerical authority granted to the LLM, the explicitness of the reasoning route, and the output that deterministic code could validate. Table
+5
+makes those changes explicit.
+Version
+Prediction object
+Required reasoning
+Structured output
+Hard constraint
+V1
+Score distribution; no LLM
+Chronological team-state update
+→
+\rightarrow
+λ
+H
+,
+λ
+A
+\lambda_{H},\lambda_{A}
+→
+\rightarrow
+corrected score matrix
+Normalized score and 1X2 probabilities
+Target match cannot update its own prior
+V2
+Match-day residual relative to V1
+Baseline
+→
+\rightarrow
+lineup and roles
+→
+\rightarrow
+matchup, schedule, motivation
+→
+\rightarrow
+four relative ratings
+Four attack/defence ratings, confidence, causal rationale
+Ratings are centred at each team’s own 10.0 baseline; deterministic
+κ
+\kappa
+alone changes
+λ
+\lambda
+V3
+Three causal terminal scores and full candidate ordering
+Three paths from 0–0; after each goal reassess risk, response capacity, space, fatigue, substitutes, and matchup effects
+Three score paths, mechanisms, and a Top-10 permutation
+Terminals must equal Top-3; no arbitrary score,
+λ
+\lambda
+edit, or post-output formula
+V4
+Shared root and cascade plus timed paths over an expanded pool
+First breakthrough
+→
+\rightarrow
+score/time stopping
+→
+\rightarrow
+repeatability, trailing response, leading expansion, and cascade depth
+Root verdict, cascade class, tail-risk signals, timed paths, and full-pool permutation
+All paths share root and cascade; tail anchors are optional and require match-specific support
+Table 5:
+Executable contracts for the four public versions. The principal change is from estimating context as a static residual to simulating conditional match states.
+The public versions map to the frozen internal implementations V3.2, V5.3, V7.25, and V7.28. Raw prompt sources, response schemas, validators, and complete match-level inputs and outputs are archived independently; the public naming keeps the scientific argument readable without changing those immutable artifacts.
+A.2
+V2: relative ratings and a numerical bridge
+Prompt contract.
+V2 begins with a crucial division of authority: “The mathematical baseline owns absolute worldwide team strength.” The LLM must judge only how today’s attack and defence differ from the rolling state already represented by
+λ
+H
+\lambda_{H}
+and
+λ
+A
+\lambda_{A}
+. A value of 10.0 means 100% of that team’s own baseline, not a universal club rating. The required route is: interpret the baseline; infer lineup and roles; compare replacement functions; integrate the opponent-specific matchup, schedule, fitness, motivation, and expected game state; then derive residual indices with an explicit causal bridge. A causal-ownership ledger prevents one mechanism from being counted from both teams’ perspectives. Deterministic code alone maps final indices into capped log-
+λ
+\lambda
+changes through
+κ
+\kappa
+.
+Case V2-C1: Newcastle United versus Bournemouth.
+The V1 prior was
+(
+λ
+H
+,
+λ
+A
+)
+=
+(
+1.649
+,
+1.403
+)
+(\lambda_{H},\lambda_{A})=(1.649,1.403)
+, with a modal 1–1 and away-win probability 0.322. The LLM described Newcastle as needing to press at home while Bournemouth was structurally better suited to transition into the space behind the full-backs. Gordon remained Newcastle’s principal outlet, but Bournemouth had more simultaneous progression and finishing contributions. It returned home attack/defence indices
+(
+9.4
+,
+9.4
+)
+(9.4,9.4)
+and away indices
+(
+10.5
+,
+10.2
+)
+(10.5,10.2)
+with 0.69 confidence. Under the fitted
+κ
+=
+2.0
+\kappa=2.0
+adapter, the rates became
+(
+1.400
+,
+1.714
+)
+(1.400,1.714)
+and away-win probability rose to 0.445. The actual score was 1–2, so the adjustment moved the result distribution in the correct direction; nevertheless, the modal exact score remained 1–1. The case captures both the attraction and the limitation of the sandwich architecture: the LLM found a plausible matchup signal, while a single residual bridge could not fully express the score path.
+Why the prompt changed next.
+Across larger samples, the scalar bridge produced small, unstable gains. The system therefore stopped asking the LLM to be a noisy numerical parameter estimator and asked it instead to rank concrete score scenarios under explicit constraints.
+A.3
+V3: explicit score paths
+Prompt contract.
+V3 receives the frozen V1
+λ
+\lambda
+values, score matrix, Top-10 candidates, and complete pre-match packet. The prompt explains that the matrix is an unconditional prior and plausibility map, not a final answer. The LLM must expose three paths from 0–0. Each step increments only the home or away score by one, and every goal triggers a fresh judgment of tactical risk, space, fatigue, substitutes, response capacity, and matchup effects. The three terminals must be distinct and must equal the returned Top-3.
+Case V3-C1: Brentford versus Manchester City.
+The input rates were
+(
+1.315
+,
+1.884
+)
+(1.315,1.884)
+and V1’s first three cells were 1–1, 1–2, and 0–2. V3 returned 1–2, 0–2, and 1–3. Its three stories were: City score, Brentford equalize, and City find the winner; City score twice while suppressing the counter; or Brentford equalize before its higher line leaves space for a third City goal. The actual score was 0–1. V3 corrected the broad direction but missed the exact score because every leading path assumed either a Brentford response or a second City goal. The explicit simulation made the missing 0–1 stopping branch visible.
+This case is taken from the dedicated V3 audit artifact, not substituted into the first-150 score table. Its purpose is to show how an exact-score error becomes a specific path error.
+A.4
+V4: shared root, stopping, cascade, and tail candidates
+Prompt contract.
+V4 begins with one shared root before the three paths. The LLM must separately state evidence for no breakthrough and for at least one goal, distinguish theoretical channels from recently verified ones, and report a root verdict, information value, and confidence. Each path node then records current score, estimated time band, and remaining time; it must compare
+score holds
+with
+another goal
+before choosing a scorer. After the first goal, a shared cascade judgment identifies the mechanism and asks whether it is repeatable. The LLM separately judges the trailing side’s
+actual
+response capacity and the leader’s ability to reuse the mechanism or attack newly opened space. It distinguishes bilateral opening from one-sided expansion. The output includes
+closes_game
+,
+neutral
+, or
+opens_game
+; high-total and large-margin signals; runaway direction; timed paths; information value; and confidence.
+The deterministic input builder also appends at most five matrix-derived anchors: the highest-probability high-scoring draw, high-scoring home and away wins, and home and away runaway scores. The prompt repeatedly warns that these are candidates rather than mandatory tail selections.
+Case V4-C1: Arsenal versus Nottingham Forest.
+The root favoured a first goal, noting Arsenal’s recent striker and delivery output, Forest’s five goals conceded in three matches, and the conditional risk of a higher defensive line. The cascade classified the first goal as
+opens_game
+, with high-total adjustment
++
+1.3
++1.3
+, large-margin adjustment
++
+2.1
++2.1
+, home runaway direction, 0.80 information value, and 0.73 confidence. Its mechanism was asymmetric: Forest had a real Wood/Gibbs-White response route, but chasing the game was more likely to expose the same space Arsenal had already used. The leading-side expansion label was
+strong
+, while the trailing response was
+opens_more_space
+. The Top-3 became 2–0, 3–0, 2–1; the actual score was 3–0, a Top-2 hit.
+The result should be interpreted carefully. The correct 3–0 cell already belonged to V1’s Top-10, so the hit demonstrates successful cascade-driven
+reranking
+, not a direct success of the newly appended tail anchors. This distinction is exactly why V4 audits candidate coverage and ranking separately.
+A.5
+Cross-case lessons
+The cases reveal a consistent pattern. Prompt structure can make a useful football judgment more explicit, but cannot guarantee that the judgment is calibrated or transferred correctly:
+•
+V2 identified a useful matchup direction, but the global numerical bridge compressed a conditional story into one residual.
+•
+V3 made score selection auditable by exposing the missing 0–1 stopping path in a concrete failed case.
+•
+V4 could promote a plausible large-margin score when the cascade mechanism was specific, yet its shared root remained biased toward a first goal and its added tail anchors produced no exact Top-3 hit over the first 150 matches.
+For future versions, each new prompt field should therefore satisfy two tests: it must make a previously hidden football decision observable, and that observable decision must show calibration or ranking value on a genuinely forward sample. Interpretability is necessary for diagnosis, but it is not itself predictive improvement.
+Appendix B
+Audit Checklist
+For each target match, a valid archived run must satisfy all of the following:
+1.
+the packet cutoff precedes kickoff and contains no target result field;
+2.
+V1 prediction is generated before the match update;
+3.
+prompt and response are stored in full with hashes;
+4.
+the response passes the version-specific JSON schema;
+5.
+every returned score belongs to the frozen candidate pool;
+6.
+three Top-3 terminals are distinct and connected to explicit paths;
+7.
+prediction artifacts are synchronized before the result reader executes; and
+8.
+all matches on one date are predicted before any same-date state update.
+Appendix C
+Version Contracts
+V1 owns normalized probability. V2 alone may modify
+λ
+\lambda
+, and only through its deterministic
+κ
+\kappa
+adapter. V3’s path node permits three transitions: next home goal, next away goal, or stop. V4 places one shared first-breakthrough object before the paths, records score and time at every node, places one shared cascade object after the root, and expands the candidate pool deterministically. Earlier implementations and outputs remain immutable; no later field is silently backported.
+Appendix D
+Planned Confirmatory Evaluation
+A future protocol should be registered before fixtures begin. It should freeze: leagues and rounds; evidence cutoff; LLM model/version and sampling settings; prompt and schema hashes; candidate-generation rules; probability-calibration procedure; primary metric; and stopping rule. The primary outcome should be a proper score on normalized probabilities. Exact Top-1/Top-3, graded scoreline distance, 0–0 recall, high-total recall, and candidate coverage should be secondary diagnostics. All predictions should be timestamped and publicly committed before kickoff.
+◄
+Feeling
+lucky?
+Conversion
+report
+Report
+an issue
+View original
+on arXiv
+►

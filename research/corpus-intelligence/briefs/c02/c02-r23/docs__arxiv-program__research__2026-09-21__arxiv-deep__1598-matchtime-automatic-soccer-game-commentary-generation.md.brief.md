@@ -1,0 +1,22 @@
+# docs/arxiv-program/research/2026-09-21/arxiv-deep/1598-matchtime-automatic-soccer-game-commentary-generation.md
+## What it is (1-2 sentences)
+A 2024 Shanghai Jiao Tong University paper (arXiv:2406.18530) introducing MatchTime, a two-stage (ASR+LLM coarse → CLIP-contrastive fine) pipeline that repairs large text↔video timestamp misalignments in soccer commentary datasets, plus MatchVoice, a video-LLM commentary generator trained on the aligned data. Ledger verdict: ADAPT — the alignment front-end is transferable to NFL; the generator is soccer-bound and anonymous.
+## Key metrics/methods (formulas where given, else "not specified")
+- Coarse alignment: WhisperX ASR over match audio → LLaMA-3 summarizes narration into event descriptions per 10-s clip → LLaMA-3 re-times each textual commentary by sentence similarity.
+- Fine alignment: frozen CLIP ViT-B/32 text+vision encoders, trainable MLPs f(·), g(·) to 512-d, contrastive InfoNCE-style loss L_align = −(1/k)Σ_i log[Σ_j Y[i,j]exp(A[i,j]) / Σ_j exp(A[i,j])] on affinity matrix A[i,j] = C_i·V_j/(‖C_i‖‖V_j‖), trained on 45 manually aligned videos (2,975 pairs, frames 1 FPS in ±2-min windows). Inference: ~t_i := ^t_j, j = argmax A[i,:] over 1 FPS candidates in [t−45 s, t+30 s] (replay-robust).
+- Generator (MatchVoice): frozen visual encoder (C3D/ResNet/CLIP/InternVideo/Baidu) → 2-layer Perceiver-style temporal aggregator (32 learnable queries) → MLP projection to 768-d prefix tokens → LLaMA-3 decoder (frozen or LoRA rank 8–64), standard NLL loss, 30-s input window. Generation: ^C = Ψ_dec(Ψ_proj(Ψ_agg(v_1..v_n))).
+- Assumptions: audio narration correlates with on-screen events; manual alignment of 45 videos generalizes; 30-s window contains the event (window ablation supports this).
+## Data sources named
+SoccerNet-Caption (471 matches). SN-Caption-test-align: 49 matches, 3,267 video-text pairs manually re-aligned by 20 football fans (offsets range −108 to +152 s, mean abs offset 16.63 s; only 26.29% within 10 s, 85.03% within 60 s). MatchTime: 422 matches (373 train / 49 val), 29,476 pairs (26,058 train / 3,418 val), auto-corrected. Fine-alignment supervision: 45 videos, 2,975 pairs. Evaluation: 4 unseen annotated matches (292 samples). Project page: haoningwu3639.github.io/MatchTime (datasets, code, benchmarks released).
+## Findings (numbers and facts, not vibes)
+- Alignment: mean abs offset 13.89 s → 6.89 s; 10-s window compliance 35.32% → 80.73%; 60-s 88.07% → 98.17%. [OTHER]
+- Generation (MatchVoice + Baidu encoder + LoRA r=16, trained on MatchTime): BLEU-1 33.22, BLEU-4 10.10, METEOR 26.79, ROUGE-L 26.06, CIDEr 39.27, GPT-score 7.32 — vs same model on unaligned data (BLEU-1 30.32, CIDEr 33.84, GPT 7.07) and vs SN-Caption baseline (BLEU-1 29.74, CIDEr 23.74, GPT 6.84). [OTHER]
+- Window ablation: 30-s window best; coarse+fine alignment jointly best; LoRA r=16 peak CIDEr 39.27 vs frozen-LLM 38.42. [OTHER]
+- Limitations acknowledged: commentary remains anonymous (no player names); corner vs free-kick confusion; GPT-score is an LLM judge (GPT-3.5), not human eval; alignment evaluated on only 4 matches (292 samples); Baidu edge may partly reflect soccer-pretraining overlap; audio coarse alignment fails without commentary audio. [OTHER]
+- GSE overlap: no GSE text-alignment pipeline exists for broadcast audio/transcript streams — new capability; pairs with ledgers 1594/1595/1597 (commentary→event extraction), with alignment as the missing upstream step. [OTHER]
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- Timestamp repair (13.89 s → 6.89 s mean offset) as the upstream fix that makes text-signal models trainable on noisy NFL broadcast/transcript feeds: OTHER (signal-quality / event-extraction front-end)
+- Perceiver-style temporal aggregator + LLM decoder commentary generator (soccer-bound, anonymous): OTHER (media/NLP, not directly engine-usable)
+- Misalignment magnitude quantification (only 26.29% of pairs within 10 s before repair): TRUST-SIGNAL (adversarial skepticism toward raw scraped-timestamp training data)
+## Engine-actionable? (yes/no + one-line what)
+Yes — adapt the two-stage alignment to NFL (WhisperX on broadcast audio → LLM event summarization → contrastive fine-alignment of beat-writer/X text to play-by-play on a ~20–50-game manually aligned sample) as the front-end fixing timestamp noise for the 1594/1595/1597 event/injury classifiers.

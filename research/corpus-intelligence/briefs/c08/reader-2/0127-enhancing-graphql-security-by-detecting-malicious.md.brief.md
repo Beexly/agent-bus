@@ -1,0 +1,14 @@
+# docs/arxiv-program/research/2026-09-21/arxiv-deep/0127-enhancing-graphql-security-by-detecting-malicious.md
+## What it is (1-2 sentences)
+Ledger read of arXiv:2508.11711v2 (Irash Perera et al., 2025): detecting malicious GraphQL queries (SQLi, OS command injection, XSS) via layered defense — static AST analysis + LLM-generated schema-specific thresholds + SBERT+CNN / Doc2Vec+RF classifiers served via ONNX INT8. **Verdict in file: ADAPT (narrowly)** — the layered-defense doctrine transfers to Garrett's Vercel apps; GSE runs no GraphQL API, so the specific machinery does not.
+## Key metrics/methods (formulas where given, else "not specified")
+No numbered equations. (a) Static layer: GraphQL AST checks (query depth, alias overloading, batching, circular queries, directives, payload inflation, SSRF). (b) LLM layer: generates schema-specific thresholds and per-field complexity scores (claimed novel; unevaluated). (c) SQLi/OS-injection classifiers: SBERT all-MiniLM-L6-v2 (384-dim) + handcrafted counts → 1D CNN (filters 128/256/512, kernel 3, batch-norm+max-pool; dense 256, dropout 0.5, sigmoid; Adam lr 0.001, ≤20 epochs, batch 32, early-stop patience 5). (d) XSS: custom Doc2Vec (20-dim) + RF/MLP. (e) Serving: ONNX INT8, FastAPI + Gunicorn/Uvicorn, parallel CPU/I/O pools; load test Azure F-series 4vCPU/8GB, ramp 0→500 users at 10/s over 2 min — figures only, no exact latency/RPS numbers ("Not stated in paper").
+## Data sources named
+Three labeled corpora: SQLi ≈77K malicious / 75K benign; OS command injection 7.5K / 7.5K; XSS 38K / 44K. Split sizes, collection dates, dedup protocol: "Not stated in paper." No code or dataset URLs.
+## Findings (numbers and facts, not vibes)
+- SQLi CNN: accuracy 0.9678, precision 0.9940, recall 0.9403, F1 0.9664. OS-injection CNN: 0.9767 / 0.9950 / 0.9659 / 0.9802. XSS RF: 0.9938 / 0.9988 / 0.9879 / 0.9933. XSS MLP: 0.9948 / 0.9961 / 0.9926 / 0.9943.
+- No baseline vs pure-static-rules or vs existing GraphQL gateways; static layer's standalone performance never ablated; no adversarial evaluation; possible train/test leakage via near-duplicate payloads.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: transferable doctrine only — deterministic static gates authoritative, ML additive (never the sole block decision), which mirrors the paper's own architecture. Relevant to SignPreview/Kit landing pages (static forms: payload caps, character allowlists, edge rate limits). File rejects any LLM-in-the-security-path component (no evidence its thresholds beat static ones; expands attack surface).
+## Engine-actionable? (yes/no + one-line what)
+Narrowly yes — but as ops, not prediction: apply the static-gate doctrine to Kit/SignPreview form hardening (a few hours; test = 7-day log review showing ≥1 malicious-shape request blocked/week with zero false positives on legit leads); do not train any classifier from this paper.

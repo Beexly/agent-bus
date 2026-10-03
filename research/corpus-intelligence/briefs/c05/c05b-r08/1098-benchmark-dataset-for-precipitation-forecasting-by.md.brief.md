@@ -1,0 +1,23 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/1098-benchmark-dataset-for-precipitation-forecasting-by.md
+## What it is (1-2 sentences)
+Research brief (ledger 1098) on Kim et al. arXiv:2206.15241v2, which releases KoMet — the largest public dataset for deep-learning post-processing of numerical weather prediction (NWP) precipitation forecasts — with baseline architectures and full ablations. **Verdict: ADAPT** — the post-NWP pipeline (leakage-safe temporal splitting, class-imbalance handling, variable-selection ablations) is a transferable blueprint for turning raw weather-model grids into calibrated game-day weather features for NFL totals/props.
+## Key metrics/methods (formulas where given, else "not specified")
+- Objective (1): min_w L(w;D) = E_{(Xt,Yt)~D}[ℓ(Xt, Yt; w)]; probabilistic forecast (2): f(τ; Xt0, w, ws) = P(yτ | x(t,Δ−ws+1), …, x(t,Δ)) over classes {non-rain, rain, heavy rain}, window size ws of lead times concatenated channel-wise.
+- Metrics: Accuracy; POD (recall) = TP_k/(TP_k+FN_k); CSI = TP_k/(TP_k+FN_k+FP_k); FAR = FP_k/(TP_k+FP_k); Bias = (TP_k+FP_k)/(TP_k+FN_k) (1 = perfect frequency).
+- Baselines: raw GDAPS-KIM, U-Net, ConvLSTM, MetNet (encoder–temporal–spatial-aggregator). Training: Adam, lr 0.001, 20 epochs, best epoch by validation CSI, window size 3, lead times 6–87 h, 12 curated variables (T and rh_liq at 500/700/850 hPa + rain, q2m, rh2m, t2m, tsfc, ps); ~30 min/run on RTX 3090 Ti.
+- Class-imbalance fixes: (1) under-sampling "no rain" points, (2) balancing rain/no-rain ratio to 1:p.
+- Anti-leakage split: repeating ~4 days train / 2 days validation / 2 days test, split by simulation *origin* time (not valid time) so overlapping lead-time windows of the same simulation can't leak across splits.
+## Data sources named
+KoMet (Korea Meteorological Dataset), public, MIT-licensed code: https://github.com/osilab-kaist/KoMet-Benchmark-Dataset (Dropbox tarball). GDAPS-KIM NWP predictions (Korean Meteorological Administration global model), July 1–August 31, 2020 and 2021 (T=124 days), lead times 0–89 h (L=90), 122 atmospheric variables/grid cell (5 Pres × 22 isobaric surfaces = 110 + 12 Unis), 65×50 grid at 12 km × 12 km over [32.94°N, 39.06°N]×[124.00°E, 132.00°E]. Ground truth: 484 Automatic Weather Station (AWS) sites, hourly rainfall, h=3,120 hours; only 484 of 3,250 pixels have labels. Class distribution: no rain [0,0.1) mm/h: 87.24%; rain [0.1,10): 11.57%; heavy rain [10,∞): 1.19%.
+## Findings (numbers and facts, not vibes)
+- Rain class (Table 3, 12 variables, leads 6–87 h): GDAPS-KIM Acc 0.747 / POD 0.633 / CSI 0.263 / FAR 0.690 / Bias 2.042; U-Net 0.840/0.441/0.282/0.562/1.007; ConvLSTM 0.869/0.387/0.296/0.444/0.696; MetNet 0.854/0.468/0.314/0.512/0.959 — DL post-processing consistently improves rain over raw NWP, MetNet best.
+- Heavy-rain class: raw GDAPS-KIM beats ALL DL baselines (GDAPS-KIM CSI 0.045 vs MetNet 0.012, U-Net 0.029, ConvLSTM 0.006) — the DL post-processing *hurts* tail prediction; left as an open challenge.
+- Variable-selection ablations (Table 4): removing tsfc improves rain CSI to 0.317 (from curated 0.282); removing rh2m → 0.301 — fewer variables can beat more.
+- Heavy rain is extremely window-size sensitive (Figure 6); sampling-strategy ablations averaged over 10 seeds with 95% CIs.
+- Limitations: July–August monsoon season in Korea only; linear interpolation to fill sparse AWS labels creates synthetic supervision; single NWP model; one model for all lead times may be suboptimal; no probabilistic calibration assessment.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: weather-totals methodology — fills the research-map Gap 8 method gap: the missing preprocessing step between downloading NWS/NWP data and using weather in totals models (complements the barometric-pressure benchmark). Direct blueprint for stadium-scale wind/precip/temperature post-processing.
+- TRUST-SIGNAL: split-by-forecast-origin discipline is the template for leakage-safe backtests of any forecast-origin data (odds feeds, NWS forecasts); the heavy-tail degradation is an explicit failure mode GSE must check, not assume away.
+- SCHEME: game-day weather is a totals/props input — wind speed/direction at kickoff, precipitation probability, temperature — so this is upstream feature engineering for the totals lane.
+## Engine-actionable? (yes/no + one-line what)
+Yes — build the stadium-weather post-processor (NWP grids + METAR stadium observations, split by forecast origin, two-head occurrence + extreme-value-tail model to fix the paper's heavy-rain failure) and gate on CSI +≥0.02 / wind MAE −≥5% vs raw NWP plus totals-model log-loss improvement.
