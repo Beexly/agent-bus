@@ -1,0 +1,19 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0474-ratio-of-counts-vs-ratio-of.md
+## What it is (1-2 sentences)
+Deep read of D'Agostini (2020), arXiv:2012.04455v1: a didactic paper on exact Bayesian inference for ratios of Poisson rates, deriving the closed-form ratio-of-Gammas posterior (Beta-prime) with mode/mean/sd summaries. Corpus verdict: ADAPT (narrow) — ready-to-implement recipe for uncertainty on ratios of scoring rates in GSE's Poisson/Dixon-Coles goal models.
+## Key metrics/methods (formulas where given, else "not specified")
+Poisson f(x|λ)=λˣe^{−λ}/x!, λ=rT; conjugate prior Gamma(α₀,β₀) ⇒ posterior Gamma(α₀+x, β₀+T); prior elicitation α₀=μ₀²/σ₀², β₀=μ₀/σ₀² (eqs. 54–55). Ratio-of-Gammas pdf (eq. 64/76): f(ρ_z|α₁,β₁,α₂,β₂) = [1/B(α₁,α₂)]·β₁^{α₁}β₂^{α₂}·ρ_z^{α₁−1}(β₂+ρ_zβ₁)^{−(α₁+α₂)} (Beta-prime form). Flat-prior special case: f(ρ=r₁/r₂|x₁+1,T₁,x₂+1,T₂) = [(x₁+x₂+1)!/(x₁!x₂!)]·T₁^{x₁+1}T₂^{x₂+1}·ρ^{x₁}(T₂+T₁ρ)^{−(x₁+x₂+2)}. Summaries: mode(ρ)=(x₁/T₁)/((x₂+2)/T₂); E(ρ)=((x₁+1)/T₁)/(x₂/T₂) (x₂>0); σ(ρ)=(T₂/T₁)·√[((x₁+1)/x₂)·((x₁+2)/(x₂−1)−(x₁+1)/x₂)] (x₂>1). Model B (flat on (ρ,r₂) directly): mode(ρ)=(x₁/T₁)/((x₂+1)/T₂) (100); E(ρ)=((x₁+1)/T₁)/((x₂−1)/T₂) (x₂>1) (101); σ(ρ)=√[μ_ρ((T₂/T₁)(x₁+2)/(x₂−2)−μ_ρ)] (x₂>2) (102) — same structure with x₂→x₂−1. Trick: α₀ slightly above 1 to forbid r=0 while staying vague. Relative belief updating ratio ℛ(r;x,T,r_R)=ℒ(r;x,T)/ℒ(r_R;x,T) (44–45). Combining ratios across instances with constant ρ: pool counts directly (x_tot=Σx_j, T_tot=ΣT_j), no weighted average. Ratio-vs-covariate: ρ_j=m·v_j+c (140), v_Oj∼𝒩(v_j,σ_Ej) (147).
+## Data sources named
+None real — toy examples only (e.g., x₁=3 counts in T₁=3 s vs x₂=6 counts in T₂=6 s; 10⁷-sample Monte Carlo; JAGS/MCMC cross-checks; R and JAGS code in Appendix B).
+## Findings (numbers and facts, not vibes)
+- Toy comparison (x₁=3,T₁=3; x₂=6,T₂=6): Model A [flat on r₁,r₂]: r₁=1.33±0.67, r₂=1.17±0.44, ρ=1.33±0.94. Model B [flat on ρ,r₂]: r₁=1.33±0.67, r₂=1.00±0.41, ρ=1.60±1.20 — slightly wider and shifted; MCMC histograms agree "excellently" with closed forms. INFERENCE: results are prior-parametrization dependent, which undercuts any claim of objectivity in rate-ratio claims.
+- Prior-elicitation example: belief r=(5±2) s⁻¹ ⇒ α₀=6.25, β₀=1.25 s, equivalent to having observed ~5 counts in 1.2 s from a flat start.
+- Cross-influence (§6.2): flat priors on r₁,r₂ induce f(ρ)=1/2 for ρ≤1, 1/(2ρ²) for ρ>1 — P(1/10≤ρ≤10)=9/10.
+- The ratio-of-Gammas result is textbook (Beta-prime) — the paper presents it as a "lucky" closed form without naming the standard distribution; novelty is pedagogical, not mathematical.
+- NFL transfer caveat: goals/points are not Poisson-iid across teams (Dixon-Coles dependence), and rate ratios ignore attack/defense decomposition — use as quick-look uncertainty only, not as the model.
+## Intelligence connections (tag each finding: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- Closed-form Beta-prime posterior for "team A scores at ρ× the rate of team B" from raw goal counts — exact uncertainty for head-to-head scoring-rate matchup claims (OTHER)
+- α₀≳1 prior trick to exclude degenerate zero-rate Gamma posteriors (OTHER)
+- Model A vs B caution: when GSE publishes "X scores 1.4× more than Y" style claims, the uncertainty depends on prior parametrization — report the parametrization (TRUST-SIGNAL)
+## Engine-actionable? (yes/no + one-line what)
+Yes — implement the closed-form ratio posterior (eq. 76) as a <1-day utility (inputs: goals₁, minutes₁, goals₂, minutes₂, prior α₀/β₀; outputs: posterior mode/mean/sd/credible interval of scoring-rate ratio); adopt as GSE utility if on 2024–2025 nflverse data its 80% credible intervals hit empirical coverage in [0.75, 0.85] on forward rate ratios while being narrower than Gaussian-error-propagation intervals.
