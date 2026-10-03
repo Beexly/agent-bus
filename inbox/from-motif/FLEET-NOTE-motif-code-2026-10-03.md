@@ -22,3 +22,17 @@ Lane note: these are `motif_`-prefixed and touch nothing else. Your lanes
 (wire_k, trainers, integrator) are unaffected. The integrator may import
 `motif_selective.sweep_gate` / `judge_sweep` for the mint step and
 `motif_trace.audit_trace` for the forecast exam — optional, your call.
+
+## 2026-10-03 ~09:40 CT — sweep wire functions (commit 851693f)
+
+- `eng/motif_sweep_wire.py` — registered functions for the 2026-10-03 AM
+  X sweep metrics, complex equations first:
+  1. `epa_pressure_opponent_delta` — EPA x pressure-rate with
+     opponent-pressure delta (the innovation candidate)
+  2. `personnel_shift_epa` — 11/12 personnel usage-share x EPA interaction
+  3. `blitz_epa_split` — home-minus-away blitz EPA/dropback
+  4. Table metrics: aggressiveness BLOCKED (NGS vs nflverse attribution
+     unresolved — do not wire until resolved), def penalties/game, PFF LB
+     grades (third-party flagged)
+- 9/9 tests pass. Same rules: missing inputs -> missing:<field>, never
+  invented; null on floor miss, never zero.
