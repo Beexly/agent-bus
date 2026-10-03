@@ -1,0 +1,17 @@
+# docs/ops/SITUATION_SNAPSHOT_FREE_QUOTE_PRECEDENCE.md
+## What it is (1-2 sentences)
+An additive ops reminder (2026-09-23) defining the merge precedence ladder for assembling a SituationSnapshot (book market-state bundle) from free quote sources: six ordered tiers where earlier tiers always keep the line on conflict, plus a hard wall rejecting non-book inputs and a cite-vs-live-gate split.
+## Key metrics/methods (formulas where given, else "not specified")
+Merge order: 1) Rundown (TheRundown/therundown), 2) Sharp × 3 (sharp-leaning free/book legs bundle), 3) Odds-free (free-spine sportsbook odds adapters), 4) Parlay (multi-leg free surfaces — market-state only), 5) OddsPapi (secondary, credit-governed), 6) Apify (last — Tier-B market-state only). Rule: earlier tier always keeps the line on conflict; later tiers fill gaps only; a substantially fresher later tier emits only a `stale_higher_tier` divergence flag — no overwrite. Hard wall: `buildSituationSnapshotFromQuotes` rejects contributions with `sourceKind` in model_prior|synthetic_demo|prediction_market, `market` === "model", or `rights` in research_only|internal_synthetic. Cite/live-gate split: `citeEligibleSources` = kept line ∧ `citeAllowed(t)`; `liveGateEligibleSources` = kept line ∧ `certifiableForLiveGate(t)`. OddsPapi: citeAllowed=true, certifiableForLiveGate=false. Parlay: citeAllowed=false, certifiableForLiveGate=false. Apify: never cited, never live-gated. Tier doctrine: A (provenance-grade — licensed/official/cleared APIs) may be cited with source id; B (internal signal — scrapers, Apify actors, agreement mesh) NEVER as provenance. No formulas given beyond the predicate rules.
+## Data sources named
+TheRundown/therundown; sharp-leaning free/book legs (Sharp × 3 bundle); free-spine sportsbook odds adapters; parlay/multi-leg free surfaces; OddsPapi (credit-governed); Apify actors; Kalshi/Polymarket independence mesh (`KIND_RANK` in `aggregate.ts`, out of scope but first-class for fair q); ESPN/TeamRankings explicitly not in this encode (TeamRankings held — PR #884).
+## Findings (numbers and facts, not vibes)
+- Six-tier ladder committed; `FREE_QUOTE_PRECEDENCE` + helpers in `packages/quote-plane/src/precedence.ts`; `buildSituationSnapshotFromQuotes` and `isBookMarketStateLine` in `packages/quote-plane/src/situation-snapshot.ts`; tests in `packages/quote-plane/src/__tests__/situation-snapshot-precedence.test.ts`.
+- Rejected non-book contributions never enter winners/`sourcesUsed`; optional skip-reason flags `rejected_non_book:…`.
+- Never let Apify alone set headline consensus.
+- Operator notes: live keys/quotas for Rundown, OddsPapi, Sharp bundle are operator-env only; legal read required before OddsPapi live-gate certification.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- TRUST-SIGNAL: Tier-A vs Tier-B provenance doctrine and the cite-vs-live-gate split are the trust plumbing for any market-state claim the engine surfaces — nothing Tier-B ever becomes provenance for a public claim.
+- OTHER: precedence ladder as conflict-resolution method for quote aggregation (earlier tier wins; divergence flags instead of overwrites) — relevant to any engine consensus-line computation.
+## Engine-actionable? (yes/no + one-line what)
+Yes — wire `FREE_QUOTE_PRECEDENCE` into any market-state consensus computation: earlier tier wins on conflict, Apify never sets headline consensus, and only Tier-A sources may certify a live gate.
