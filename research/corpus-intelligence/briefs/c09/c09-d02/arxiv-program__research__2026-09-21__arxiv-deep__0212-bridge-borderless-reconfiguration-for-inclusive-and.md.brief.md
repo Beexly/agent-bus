@@ -1,0 +1,12 @@
+# arxiv-program/research/2026-09-21/arxiv-deep/0212-bridge-borderless-reconfiguration-for-inclusive-and.md
+## What it is (1-2 sentences)
+A full-text read of BRIDGE (arXiv:2602.23288v1, CHI '26), an HCI/accessibility paper on reconstructing stand-up basketball broadcast footage as 3D wheelchair-basketball simulations for parasport tactical learning. The corpus reader's verdict is REJECT: no predictive model, no reusable dataset, no transfer path to GSE.
+## Key metrics/methods (formulas where given, else "not specified")
+Pipeline: MixSort player tracking + YOLOv10/SAM2 ball tracking → court-keypoint homography → possession heuristics (ball bbox >70% overlap for ≥5 frames = possession; transfer = pass; separation at end = shot) → Kalman smoothing → SMPL pose (mL-CoMotion) → Unity rendering with embodiment-aware orientation mapping: θ_trunk = θ_base + clip(α(p)·(θ_trunk^raw − θ_base), −Δ^max_trunk(p), Δ^max_trunk(p)), and analogously for head; trunk rotation ranges ~10° (low-point) to ~45° (high-point). Evaluation: Cohen's κ = 0.89 coding reliability; three-way ANOVA / ART-ANOVA with partial η² and power.
+## Data sources named
+YouTube NBA broadcast clips (8 of 10 selected, M = 7.85 s, SD = 1.66; flare screens, pick-and-rolls, elevator screens); user studies with 10 Japanese national-team wheelchair-basketball players (age 31.6 ± 4.01, 12.9 ± 6.08 yrs experience, classification 3.0 ± 1.2) + 10 non-elite players. No public dataset release. Component benchmarks cited: MixSort SportsMOT 65.7 HOTA / 74.1 IDF1; mL-CoMotion >70% MOTA on PoseTrack21, ~60mm MPJPE on 3DPW.
+## Findings (numbers and facts, not vibes)
+Naturalness forced choice: mapped 66 vs baseline 3 vs no-difference 11; Likert M ≈ 5 vs ≈ 3, p < .001, partial η² = 0.776. Classification accuracy: simple plays M = .80 (95% CI [.71, .89]), complex M = .74 ([.65, .83]). Trunk mobility rated most influential cue in 62% (simple) / 70.0% (complex) of cases, χ² p = .0015. Self-efficacy condition main effect p = .00037, partial η² = .28. Pipeline performance: 85.4 ± 22.8 s per video on i7-13700K/RTX 4090; tactical-view conversion 669 ± 102 fps.
+## Intelligence connections (tag each: QB-BEHAVIOR, COACHING, OL, TRUST-SIGNAL, SCHEME, OTHER)
+- OTHER: an accessibility/HCI video-conversion paper; no NFL-transferable method beyond off-the-shelf CV components (MixSort/YOLO/SAM2/Kalman) GSE already knows.
+## Engine-actionable? (no — HCI parasport study; no model, no dataset, no NFL transfer path)
