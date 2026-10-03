@@ -2,7 +2,7 @@
 
 *Written 2026-10-02 by Motif. Run in order. Prompt 1 is the money — one Heavy run, maximum yield. Prompt 2 is optional, only if quota allows.*
 
-*Prerequisite: the `motif/research-push-all` branch on `Beexly/agent-bus` must show 5,102 files under `research/`. Verify the count before running.*
+*Prerequisite: `Beexly/agent-bus@main` must show 5,102 files under `research/` (3,728 corpus-intelligence + 1,374 arxiv-sweep, verified 2026-10-02, main SHA `aa0f9169`). Verify the count before running.*
 
 ---
 
@@ -16,8 +16,18 @@ MISSION
 Ingest every document in these two directories and turn them into an
 actionable build list for the Galaxy Sports Edge (GSE) NFL prediction engine:
 
-- https://github.com/Beexly/agent-bus/tree/motif/research-push-all/research/corpus-intelligence (~3,728 files: research briefs, metric catalogs, method writeups, digests)
-- https://github.com/Beexly/agent-bus/tree/motif/research-push-all/research/arxiv-sweep (~1,374 files: arXiv paper extractions on sports prediction, ML, calibration, causal inference)
+- https://github.com/Beexly/agent-bus/tree/main/research/corpus-intelligence (~3,728 files: research briefs, metric catalogs, method writeups, digests)
+- https://github.com/Beexly/agent-bus/tree/main/research/arxiv-sweep (~1,374 files: arXiv paper extractions on sports prediction, ML, calibration, causal inference)
+
+CURRENT REPO STATE — Beexly/Sports, main @ 2026-10-02 (so you don't recommend what's already built)
+- PR #1020 MERGED (merge 651f51f7a6fbb4d330c1c54f8f470de75fb661d7): head 9c7c7ac3 passed Test, Model freeze, Build. 6 files, +90 lines, no MODEL_VERSION change.
+- PR #1018 OPEN (OL deadline + GSI): Test, Build, Model freeze passed; Codacy failed. Not merged.
+- PR #1019 OPEN (DARK evaluators): Test failed (tsc exit 2 in worker-pick-generation). Not merged.
+- PR #1016 OPEN (trueProb quarantine): Test still running.
+- PR #860 OPEN ([cat:C5] edge-rank + offline bake-off): Test failed. The only C5-tagged PR; no C6 PR exists.
+- Signal registry: 47 signals, 46 no / 1 partial. T1 partial, analyze() returns INVALID. Props are the open frontier.
+- Do NOT recommend rebuilding bridge-model.ts (Brier 0.2237 vs spread-bucket 0.2120 on 285 sealed 2025 games) or re-litigating paper 1704.00197 (in-game logistic, not our least-squares rating model).
+- Rank your build list AFTER this state: skip anything already merged, flag anything that collides with an open PR.
 
 WHAT GSE IS (so you can judge what matters)
 GSE is an NFL prediction engine. It reasons over game signals (quarterback play,
