@@ -287,3 +287,133 @@ RULES
 ```
 
 *Run order for tonight: Prompt 4 (this floodgates run) → hand its build list to the builder. Prompts 1–3 are complete; do not re-run them.*
+
+---
+
+## PROMPT 4 v2 — ABYSSAL (supersedes v1; this is the run)
+
+```
+You are running as Grok Heavy: up to 16 parallel agents, independent work, then
+debate to a final answer. This is the deepest research run. Two prior passes are
+in this conversation. They read ONLY the slice maps (c01–c10), four search
+notes, and reconciliation files — roughly 20 files. They did NOT read the
+3,457 briefs, the 1,115 arXiv fulltext extracts, the scored batches, or the
+waves. Your job: read what they didn't, chase every citation outward, verify
+the math like a reviewer, pool the evidence like a meta-analyst, and find the
+gaps nobody covers.
+
+ACCESS RULES
+- Corpus files: fetch via raw.githubusercontent.com ONLY (the API rate-limits).
+  Pattern: https://raw.githubusercontent.com/Beexly/agent-bus/main/research/<path>
+- Sports repo docs (for citation chasing): https://raw.githubusercontent.com/Beexly/Sports/main/<path>
+- arXiv papers: arxiv.org/abs/<id>, export.arxiv.org API, ar5iv for full text.
+- Never use api.github.com. Fetch failing twice = log as unread, never silently skip.
+- Keep a COVERAGE LEDGER from the first fetch: every file read or unread, counts
+  per directory, every arXiv query run, every paper screened/kept/excluded.
+  The final report opens with this ledger.
+
+PHASE 1 — READ THE CORPUS (10 agents, divided by directory, priority-ordered)
+- 4 agents: research/corpus-intelligence/briefs/ (3,457 files). Read every one.
+  Where a brief makes a quantitative claim, record the source file it cites —
+  Phase 2 will open it.
+- 3 agents: research/arxiv-sweep/fulltext/ (1,115 files). Read every one.
+- 2 agents: research/arxiv-sweep/waves/ + research/corpus-intelligence/deep/ +
+  research/corpus-intelligence/handoff/.
+- 1 agent: scored_batch_*.jsonl + phase2-candidates-*.jsonl +
+  research/corpus-intelligence/chunks/ + intake/.
+Per file: method in one sentence, math/estimator, dataset and sample size,
+claimed result with metric, license/provenance, GSE relevance HIGH/MEDIUM/LOW/
+NONE. Deduplicate against the known dupes (2002.12860, 2004.14108, 2609.10615)
+and flag new ones.
+
+PHASE 2 — CITATION CHAINING, TWO HOPS (4 agents)
+For EVERY item rated HIGH in Phase 1:
+- Hop 1: open every source it cites — whether that's a Sports repo doc, an
+  arXiv paper, or another corpus file. Read it. Verify the claim is actually
+  in the source and quoted correctly. Log misattributions.
+- Hop 2: from each hop-1 source, open ITS references that bear on the claim
+  (the paper's own citations, the doc's linked files). Read the ones that
+  could confirm or overturn it.
+- This is how you catch map errors, telephone-game drift, and claims whose
+  only support is a citation to a citation. Report every break in the chain.
+
+PHASE 3 — REVIEWER-GRADE DEEP READS (all agents converge, top 50 by expected GSE value)
+For the 50 highest-value items, do not summarize — review:
+- Verify the math: is the estimator what the paper says it is? Are the
+  assumptions stated? What breaks if they're violated?
+- Audit the protocol: train/test split, sample size, leakage controls,
+  baseline strength. Would YOU accept this at a journal?
+- Replicability verdict: could a competent engineer rebuild this from the
+  paper alone? What's missing?
+- Extract implementation-grade pseudocode: inputs, exact steps, outputs —
+  enough that a builder could implement without re-reading the paper.
+- Time-test: has any later paper overturned, weakened, or superseded this?
+  Track the claim's history 2020→2026.
+
+PHASE 4 — OPEN ARXIV SCRAPE (4 agents, parallel with Phase 3)
+Everything on sports prediction, NFL modeling, calibration, forecasting,
+causal inference in sports, and betting markets NOT already in the corpus.
+- Exclusion set first: the 64 IDs in
+  research/arxiv-sweep/existing-research-map.md, every ID in fulltext/, every
+  ID cited in the maps. Build it, then search.
+- Sweep the arXiv API across stat.AP, cs.LG, cs.AI, econ.EM, q-fin.*,
+  physics.soc-ph — all years by relevance, 2024–2026 by date — plus a
+  targeted pass for 2026 preprints (the corpus may be stale on the newest work).
+- Abstract-screen everything; full-read via ar5iv anything relevant.
+  Same extraction fields as Phase 1.
+
+PHASE 5 — META-ANALYSIS (synthesizers)
+Where multiple sources estimate the SAME effect, pool them: home-field edge,
+pressure-to-sack conversion, EPA/dropback stability, calibration of the close,
+cover rates by spread bucket, injury absence effects. For each pooled effect:
+the estimates, their samples and protocols, the pooled value, the spread, and
+whether the spread is explained by era, sample, or method. A pooled estimate
+with a tight spread is worth more than any single paper.
+
+PHASE 6 — GAP ANALYSIS (synthesizers)
+After reading everything: what does NOBODY in the corpus answer? Which
+questions would a championship prediction engine need answered that have no
+paper, no brief, no ledger? Rank the gaps by GSE value. A gap is a research
+commission, not a shrug.
+
+PHASE 7 — SYNTHESIZE
+- Revisit the prior 6-item build list (conformal publish gate, QB
+  pressure-to-sack residual, per-QB EPA/dropback, trust-target props stack,
+  staleness provenance, within-player scale-fit). For each: strengthened,
+  weakened, or killed — with the new evidence cited.
+- New items from Phases 1–5, ranked by expected GSE value.
+- What compounds: specify JOINT implementations, not just lists — e.g. exactly
+  how the conformal gate composes with the QB residual in one pipeline.
+
+PHASE 8 — ADVERSARIAL REPLICATION (skeptics)
+For every HIGH item in the final list: attempt a paper-only replication in
+your head. Write the exact steps you'd take, then name the step where it
+breaks — missing hyperparameter, unstated preprocessing, unavailable data.
+If it can't be replicated from the materials, it ships as shadow with the
+missing piece named, not as a measured build.
+
+PHASE 9 — DELIVER
+1. COVERAGE LEDGER (honest numbers: read/unread per directory, queries run,
+   papers screened/kept/excluded, citation chains followed/broken).
+2. RANKED BUILD LIST with evidence deltas on the prior 6.
+3. PSEUDOCODE APPENDIX for every promoted item (from Phase 3).
+4. POOLED EFFECTS table (from Phase 5).
+5. GAP RANKING (from Phase 6).
+6. MISATTRIBUTION LOG (from Phase 2 — every broken citation chain).
+7. WHAT'S LEFT: if coverage < 100%, exactly what remains and the single most
+   valuable next read.
+
+RULES
+- Never invent a result, number, citation, or file path. Unread = unread.
+- The do-not-rebuild list stands: bridge-model.ts, paper 1704.00197 as anything
+  other than an in-game logistic, market-moneyline recalibration, team-level
+  pressure-to-sack, per-QB uncertainty bands. Settled kills (soft-Elo, coverage
+  transformer, CMP-SAS, Ising/KellyBoost) stay dead unless genuinely new
+  evidence appears — and if it does, say exactly what changed.
+- A restrictive license means learn-the-method, not copy-the-code. Flag licenses.
+- Sports repo state: PR #1020 merged; #1018 open (OL/GSI — QB-identity work
+  waits for it); #1019 open; #860 open; #1016 merged. Signal registry: 47
+  signals, props unwired. Nothing colliding with an open PR gets recommended.
+```
+
+*Run order for tonight: Prompt 4 v2 (this run) → hand its build list to the builder. Prompts 1–3 and Prompt 4 v1 are complete/superseded; do not re-run them.*
