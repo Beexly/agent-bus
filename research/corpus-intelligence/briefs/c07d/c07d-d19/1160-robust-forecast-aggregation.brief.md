@@ -1,0 +1,30 @@
+# arxiv-deep/1160-robust-forecast-aggregation.md
+## What it is (1-2 sentences)
+Full-read ledger of arXiv:1710.02838v3 (Arieli, Babichenko, Smorodinsky 2018, Technion): game-theoretic robust forecast aggregation — what an "ignorant aggregator" (who sees only experts' probabilities, not their information structure or the common prior) can guarantee under square loss vs an omniscient expert. Verdict: ADAPT — the precision-weighted two-forecast scheme and the average-prior Bayes scheme are directly implementable upgrades to how GSE combines its model probability with market-implied probabilities; the many-expert impossibility result is a guardrail against naive ensemble averaging.
+## Key metrics/methods (formulas where given, else "not specified")
+- Relative loss (Lemma 1): L(f,P) = E[(f(x(s)) − x̂(s))²]; regret R_C(f) = sup_{P∈C} L(f,P).
+- Bordley aggregation: P(ω=1|s) = (1−μ)^{n−1}Πx_i / [(1−μ)^{n−1}Πx_i + μ^{n−1}Π(1−x_i)] — prior + forecasts are sufficient.
+- Blackwell-ordered signals: precision scheme f_pre — weights ∝ φ(x) = 1/(x(1−x)) when |x₁−x₂| ≤ 0.4, ∝ √φ(x) when |x₁−x₂| > 0.4; adopts 0/1 forecasts at extremes, 1/2 on (0,1)/(1,0).
+- Conditionally independent signals: average-prior scheme f_avg — apply Bordley's Bayes formula with a dummy prior = (x₁+x₂)/2. Prop. 2 variant e_p: dummy prior 0.49(x₁+x₂), +0.02 if sum > 1.
+- Theorem 1 (Blackwell): min regret = (1/8)(5√5−11) ≈ 0.0225, achieved by f_pre. Naive schemes worse: DeGroot simple average = 1/16 = 0.0625; follow-the-most-extreme = 0.0714 (worse than averaging).
+- Theorem 2 (conditionally independent): R(f_avg) = 0.0260, lower bound 0.0225; Prop. 2 variant → 0.0250; Conjecture 3 (UNPROVEN): 0.0225 tight for i.i.d.
+- Theorem 4 (many i.i.d. experts): R ≥ 1/4 − 3√(log n/n) → 1/4 as n→∞ — with many conditionally-i.i.d. experts and unknown prior, no scheme beats predicting 1/2.
+- Assumptions: binary state, common prior, non-strategic experts, square loss, one-shot interaction; the many-expert result additionally needs conditional i.i.d. signals.
+## Data sources named
+Theory only — no empirical dataset. Adversarial information structures constructed via posterior-belief martingales (Aumann–Maschler splitting lemma). Motivating example: three conflicting rain forecasts (Accuweather 77%, Yahoo 60%, Weather Channel 90%). Worst-case optimizations verified numerically in Matlab over compact domains K₁–K₄. No code/data release stated.
+## Findings (numbers and facts, not vibes)
+- Precision scheme regret 0.0225 vs DeGroot simple average 0.0625 vs min-entropy/follow-the-extreme 0.0714 — precision weighting cuts worst-case regret by ~3× vs averaging; following the sharper forecast is worse than simple averaging.
+- Average-prior scheme: regret 0.0260 vs lower bound 0.0225 (gap 0.0035); Prop. 2 variant 0.0250.
+- n-expert impossibility: at n=10⁶ the guaranteed regret floor is already ≈ 1/4 − 0.011 — effectively 1/2-forecasting territory.
+- Caveats: worst-case regret, not average-case (minimax-optimal against adversarial structures; on typical structures simpler schemes may do as well — but the ordering precision > average > extreme-following is still informative); binary state only; square loss only; two-expert results; i.i.d. conjecture unproven; one-shot setting — GSE has repeated interactions and can learn the prior (the paper itself notes prior knowledge suffices for optimal aggregation, so this matters for combining sources with unknown joint structure, e.g. a new market or model); Prop. 1: with unrestricted correlation, nothing beats 1/2 — the schemes need Blackwell or conditional-independence structure.
+## Intelligence connections
+- OTHER (calibration/sizing lane — direct hit on the forecast-combination lane, pairing with ledger 1159's independence doctrine and 1161's partial-evidence aggregation): GSE routinely combines two probability sources with unknown joint structure (its model vs market-implied probability, or vs a second model); today the natural default is a simple average — the paper says the average carries 3× the worst-case regret of precision weighting, and "follow the sharper forecast" is provably worse than averaging. Mechanism: replace the simple average of GSE probability p_G and market-implied p_M with the precision scheme (w_i ∝ 1/(p_i(1−p_i)) when |p_G−p_M| ≤ 0.4, ∝ 1/√(p_i(1−p_i)) beyond; snap to 0/1 at extremes), or the average-prior scheme (dummy prior μ̂ = (p_G+p_M)/2 in Bordley's formula) where a base rate is unavailable.
+- OTHER (calibration): Ensemble guardrail — for combining >2 correlated sub-model probabilities without a fitted prior, do NOT average: select the single best-calibrated expert (mimicking expert 1 achieves best-expert loss under i.i.d., §7.1.2) or fit the joint structure first. Theorem 4 says with many correlated sub-model outputs and no calibrated prior, averaging is provably vacuous.
+- OTHER (calibration improvement): GSE is not one-shot — it can learn the prior; fit the empirical prior μ̂ per market/week from historical data and plug into the exact Bordley formula (optimal given prior + forecasts under conditional independence), then test whether learned-prior Bordley beats the minimax schemes and measure the crossover (how much history before learned-prior wins).
+## Engine-actionable? (yes — replace simple model+market averaging with the closed-form precision scheme or average-prior scheme; ADAPT the precision scheme iff it beats simple averaging on backtested Brier score; REJECT "follow the most extreme forecast" as a combination rule (0.0714 > 0.0625) and REJECT averaging >~3 correlated sub-model outputs without a fitted prior; ~1 day, both schemes closed-form)
+
+## Referenced files/papers/datasets
+- arXiv:1710.02838v3 — https://arxiv.org/abs/1710.02838 (Arieli, Babichenko, Smorodinsky 2018, q-fin.EC, Technion)
+- Ledger 1159 (independence doctrine — referenced as pairing paper, not in this batch)
+- Ledger 1161 (partial-evidence aggregation — referenced as pairing paper, not in this batch)
+- SelectiveNet-style prior work not cited here; Bordley Bayes formula; Aumann–Maschler splitting lemma
