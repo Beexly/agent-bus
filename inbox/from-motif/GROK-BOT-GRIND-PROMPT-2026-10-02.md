@@ -76,6 +76,42 @@ RULES
 
 ---
 
+## SECOND TASK — medium/low, GSE Main, tonight (docs only, after the grind or between checkpoints)
+
+Dispatch only. You do not design the scorer, the refusal proof, or the
+distillation gate. Those stay with Grok Build in Garrett's chat. Do not touch
+open PRs #1018, #1019, #860. Do not rebuild bridge-model.ts. Do not re-litigate
+arXiv 1704.00197. Do not run pretraining. Do not distill. Do not flip
+CALIBRATION_AUTO_PUBLISH or run selectivePublishSweep.
+
+1. **License cards, primary pages only** (unread if a fetch fails twice):
+   - DeepSeek-V4.1-Flash weight repo — MIT or not (the HF card, not a blog)
+   - nflverse play-by-play — CC-BY-4.0 or not
+   - Participation 2023+ — CC-BY-SA 4.0 and the exact FTN attribution line
+   - MiMo-V2.6-Pro weight-repo license — the weight repo file, not a marketing
+     page. MIT only on an Artificial Analysis page means unconfirmed.
+2. **Ontology checklist, no new coefficients** (copy, do not invent):
+   scheme/roster MEASURABLE nflverse; participation 2023+ MEASURABLE FTN via
+   nflverse; injury text MEASURABLE, effect size INVENTION; weather MEASURABLE
+   NWS; travel MEASURABLE schedule; sportsbook LICENSED or absent; close is
+   baseline not target; sleep/nutrition/cognition UNKNOWABLE this season;
+   play physics INVENTION, no tracking feed.
+3. **Do-not-touch note**: those PRs, bridge-model.ts, team-level
+   pressure-to-sack, market-moneyline recalibration, per-QB uncertainty bands,
+   scale-fit (shipped 2026-09-30), staleness age-gate (shipped). isPublished has
+   no provenance column — record the gap, do not add the column.
+4. **Blank trace template, no example probabilities**: week, event_id,
+   stated_p, feed_rows[{feed, row_id, field, value}], rejected[{fact, reason}],
+   shared_factors[], locked_at. A parlay with empty shared_factors is invalid.
+5. **Read-only**: confirm #1018, #1019, #860 still open and #1020, #1016 still
+   merged on Beexly/Sports (github.com web pages are fine). If GitHub fails,
+   say unread.
+
+Return one page: licenses confirmed vs unconfirmed, ontology copied, PR state,
+anything refused. Unread stays unread.
+
+---
+
 ## OPERATOR NOTES (for Garrett, not the bot)
 
 - The manifest is priority-ordered: 3,457 briefs → 1,115 fulltexts → scored batches → deep/handoff → waves → everything else.
