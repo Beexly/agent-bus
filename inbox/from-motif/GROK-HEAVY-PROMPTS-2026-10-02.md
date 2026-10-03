@@ -112,3 +112,73 @@ RULES
 - If the evidence got weaker on review, say so and downrank. Do not protect prior outputs.
 - Never invent sources. Every claim needs a file path or a URL.
 ```
+
+---
+
+## PROMPT 3 — Second Heavy run: promote-or-kill (run this next, then hand the result to the builder)
+
+```
+You are running as Grok Heavy. This is a second pass. The first pass is in this
+conversation — its Phase 5 build list has 7 items, ALL marked shadow because the
+underlying source files were never opened. Your job: open them, and for each
+item either PROMOTE it to a measured build or KILL it with cause. No item stays
+in limbo.
+
+ACCESS RULE — the first pass got rate-limited by the GitHub API. Do NOT use
+api.github.com. Fetch every file via raw.githubusercontent.com, e.g.
+https://raw.githubusercontent.com/Beexly/agent-bus/main/research/corpus-intelligence/maps/c02-map.md
+That path pattern works for every file. If a fetch fails, retry once, then list
+the file as unread — never silently skip.
+
+PHASE 1 — READ THE UNREAD MAPS (all agents, divided)
+Open all 8 unread slice maps:
+- research/corpus-intelligence/maps/c02-map.md
+- research/corpus-intelligence/maps/c03-map.md
+- research/corpus-intelligence/maps/c06-map.md
+- research/corpus-intelligence/maps/c07-map.md
+- research/corpus-intelligence/maps/c07d-map.md
+- research/corpus-intelligence/maps/c08-map.md
+- research/corpus-intelligence/maps/c09-map.md
+- research/corpus-intelligence/maps/c10-map.md
+Extract every actionable claim the same way the first pass did: method in one
+sentence, math/estimator, dataset and sample size, claimed result with metric,
+license, GSE relevance HIGH/MEDIUM/LOW/NONE. Flag anything that contradicts or
+outranks the first pass's top 13.
+
+PHASE 2 — PROMOTE OR KILL (statisticians + skeptics)
+For each of the 7 shadow items in the first pass's build list, resolve the cited
+source file from the maps (ledgers are under the Sports docs tree — search the
+repo file listing for the ledger number or filename), open it, and rule:
+- PROMOTE if the numbers check out: state the exact metric, sample, and protocol
+  from the source. It becomes a measured build.
+- KILL with cause if: the sport isn't NFL, the sample is unstated, there's no
+  out-of-sample result, or the map misattributed the claim.
+The 7 items: (1) conformal publication gate [ledger 0743], (2) per-QB
+EPA/dropback [handoff-indie-builders-v2-fullspec-2026-09-25.md], (3) QB
+pressure-to-sack residual [sweep-2026-09-21.md], (4) trust-target props stack
+[CARDS_SHARE_CORE_WIRING.md, arxiv-deep/0912], (5) injury/QB-change provenance
+[signal-staleness-gate.md], (6) within-player scale-fit [signal-ledger-scale-fit.md],
+(7) moderate-favorite leaf audit [MARKET_CALIBRATION_2026-09-04.md].
+Also re-examine the 4 demoted items — coverage transformer [ledger 0489],
+soft-Elo [ledger 0540], ensemble [ledger 0797], OpenSkill bake-off — and say
+plainly whether any deserves resurrection.
+
+PHASE 3 — BUILDER HANDOFF (synthesizers, final)
+This goes to a builder agent tonight. For every PROMOTED item, write:
+1. What to build, in one sentence
+2. Exact repo paths to read first (Sports repo, Beexly/Sports@main)
+3. Exact files to create or modify, with the function/module names
+4. The test that proves it works: data in, held-out metric, pass/fail bar
+5. What NOT to touch (open PRs #1016, #1018, #1019, #860 own their lanes)
+6. Shadow or publish-ready, and why
+Order by expected value. If fewer than 3 items promote, say so explicitly and
+say what the second-best use of the builder's night is.
+
+RULES
+- Never invent a number, a file path, or a citation. Unread = unread.
+- The do-not-rebuild list stands: bridge-model.ts, 1704.00197, market-moneyline
+  recalibration, team-level pressure-to-sack, per-QB uncertainty bands.
+- A killed claim is a correct output. Do not protect the first pass's list.
+```
+
+*Note: Prompt 2 (generic deep dive) is superseded by Prompt 3 for tonight. Prompt 2 remains valid for a future quota cycle.*
