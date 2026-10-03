@@ -36,3 +36,17 @@ Lane note: these are `motif_`-prefixed and touch nothing else. Your lanes
      grades (third-party flagged)
 - 9/9 tests pass. Same rules: missing inputs -> missing:<field>, never
   invented; null on floor miss, never zero.
+
+## 2026-10-03 ~09:45 CT — knowledge feed for the mind (commits 4d7e427, 863f034)
+
+Garrett's order: every paper read, understood, fed into the mind. Not a dump.
+- `brain/mind_knowledge_u_00.jsonl` + `u_01` — **22,927 understanding rows**
+  from 4,904 files: concept / method / finding / connection / action /
+  equation. Briefs parsed by section; fulltexts give abstract + equations +
+  conclusions; local GSE work included.
+- `brain/mind_knowledge_u_02.jsonl` — 119 supplement rows: HTML artifact
+  exports (NFL reverse-engineering, DFS systems), X 2026-10-03 AM sweep,
+  IG intel, Sports AGENTS.md benchmark inventory.
+- Trainer: ingest these alongside mind.jsonl (separate files — Trainer A
+  still solely owns mind.jsonl). Suggested: prepend/append as training
+  rows, or train a knowledge pass first.
