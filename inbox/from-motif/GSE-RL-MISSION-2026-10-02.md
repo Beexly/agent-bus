@@ -19,23 +19,25 @@ Every historical game is a labeled episode:
 - **Action:** reasoning trace + pick + probability
 - **Reward:** computed from the actual game outcome — no human labeler, no vibes
 
-## The reward function (the moat)
+## The reward function (the moat) — v2 (2026-10-02)
+
+v1 (`correctness ±1 minus K·|prob−outcome|`, K=2) FAILED its Phase 2 sanity
+gate: with a 54.9% home base rate, honest base-rate picking scored −0.87 while
+abstaining scored 0.0 — RL would have learned to never pick. The gate caught
+it before any GPU burned. v2 is a **Brier skill score**, a proper scoring rule:
 
 ```
-reward = correctness_term - miscalibration_penalty + honesty_bonus
-
-correctness_term  = +1 if pick correct, -1 if wrong, 0 if abstain
-miscalibration_penalty = |stated_prob - outcome| * k   (k=2: confident-wrong is the cardinal sin)
-honesty_bonus     = +0.1 for explicit DATA-GAP abstention on genuinely thin evidence
+reward = 1 − brier / BRIER_BASELINE
+brier = (stated_prob − outcome)²
+BRIER_BASELINE = P0·(1−P0), P0 = 0.5485 (frozen 2022–2024 home win rate)
 ```
 
-Properties:
-- Abstention is allowed (reward 0), never punished. The engine must keep its
-  right to say DATA-GAP — RL must not train that away.
-- Confident-and-wrong is punished 2x. This is the anti-hallucination gradient.
-- The reward is computed from HELD-OUT games only, walk-forward:
-  train episodes from 2022–2024, validate on 2025, live-check 2026 W1-3.
-  Never blend contaminated and clean fits (standing doctrine).
+- Perfect predictor → +1.0; base-rate predictor (no edge) → ~0.0, same as abstaining
+- Worse than base rate → negative; confident-and-wrong (P=0.9, wrong) → −2.27
+- Abstention → 0.0, never punished; +0.1 honesty bonus on genuinely thin evidence
+- Expected reward is maximized by stating true beliefs — honesty is the gradient
+- Verified: 8 unit tests pass; 2022 distribution sane (base-rate +0.003, abstain 0, perfect +1.0)
+- The training harness enforces pick/prob coherence separately (incoherent = format violation)
 
 ## Architecture
 
