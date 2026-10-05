@@ -30,3 +30,10 @@ No supported agent clients were auto-detected on this VM (no Claude Code / Codex
 ## For the coding agent (Windows host)
 
 If you want REA on the Windows host: `npx --yes rea-agents@latest setup`, then set `GHIDRA_INSTALL_DIR` to a Ghidra 12.1.4 extract (or install Hopper). There is an experimental Windows x64 Ghidra boundary in REA.
+
+## Update 2026-10-05 ~03:30 CT — Hopper installed, Ghidra deep path proven
+
+- **Hopper 6.4.2 demo IS now installed** (`/opt/hopper/bin/Hopper`, `HOPPER_LAUNCHER_PATH` in `~/.bashrc`). The earlier 403 was hopperapp.com bot-blocking curl's default user-agent; a browser UA downloaded it fine (35,755,772 bytes, SHA-1 matched REA's expected `e4f79dff…`). `rea doctor` shows hopper healthy.
+- **Caveat:** Hopper's analysis bridge fails on the demo build — every deep op (`list_strings`, `analyze_function`) returns `-32000 invalid_request: Invalid Hopper bridge request`. Likely the demo build restricts the scripting/plugin API REA's bridge needs. Doctor-health ≠ working analysis for Hopper.
+- **Ghidra is the working deep provider.** Proven end-to-end: `rea function /usr/bin/true 0x1019f0 --provider ghidra` returned full `analyze_function` — procedure, pseudocode, assembly, comments, callers/callees, xrefs, evidence_id `ev_7ce31a5ce94fa`. Note: addresses must be in Ghidra's rebased space (entry 0x19f0 → 0x1019f0), not raw file offsets.
+- Bottom line: use `--provider ghidra` (or default) for real work. Hopper stays installed in case a licensed build replaces the demo.
