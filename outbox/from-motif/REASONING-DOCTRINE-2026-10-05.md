@@ -70,3 +70,19 @@ The abstract doctrine above is nothing without worked examples. These are the st
 **3. The logistical disruption.** A player stuck in traffic, a flight delayed, three hours of sleep. This is the level of signal the models will never touch — it's not in any feed, it's in beat-reporter tweets and local news. The brain's job: a team lined at -7.5 on power ratings might be -3.5 after you account for the fact that half the defense slept in an airport. The number is the starting point. The situation is the adjustment. *Everything* goes through the process — if it can affect the game, it's a signal, and the brain weighs it.
 
 **The rule these teach:** the process is the product. Ingest everything — the lawsuit, the crowd, the delayed flight, the wind, the revenge, the rookie making his second road start. Reason over all of it. Adjust the number. Then bet, pass, or size accordingly. A pick that wins without this process is luck. A process that runs on everything wins over time.
+
+---
+
+## The stack (Garrett, 2026-10-05)
+
+The system has layers, in this order:
+
+**Layer 1 — the number everyone sees.** The market line. The spread, the total — 46.5/47.5, Saints -1.5. It's the consensus, the sharpest public number in existence. We start here, not from zero. If the base number is already liked before context, that's the foundation. Respect it.
+
+**Layer 2 — the reasoning overlay.** The hyper-intelligent situational, contextual, emotional, logistical reasoning goes ON TOP of the base number. Everything the line doesn't know: the atmosphere, the revenge layers, the delayed flight, the second start, the 11 days off, the three starters out. This is where the brain earns.
+
+**Output — the machine.** Base number + reasoning overlay = the smartest, most accurate prediction and probability machine. Not a better formula than the close. The close, *plus* understanding.
+
+**Ingestion rule.** Feed it everything — the datasets, the equations, all of it — even the pieces that don't matter in this moment. They are part of the bigger picture and HAVE to be added. The brain can't reason with a concept it was never taught. A dormant equation is not a wasted equation; it's a loaded one.
+
+**Testing rule.** Test way later down the line. Ingestion is not gated by testing. Don't slow the feed to validate each piece as it arrives — the corpus comes first, the bake-offs come when the brain is educated enough to run them.
