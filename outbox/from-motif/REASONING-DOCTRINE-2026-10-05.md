@@ -56,3 +56,17 @@ A brain that grades well on all four understands the game better than the market
 
 ---
 *Supersedes the "beat the close" framing everywhere it appears. The close is the starting point. Understanding is the edge.*
+
+---
+
+## Canonical situational archetypes (Garrett's examples, 2026-10-05)
+
+The abstract doctrine above is nothing without worked examples. These are the standard. Every agent should be able to run this process on any game.
+
+**1. The atmosphere spot.** Falcons at Saints, MNF, Oct 5 2026. A numbers model says Atlanta +1.5 — the power ratings say the Falcons are marginally better and 1.5 is value. The brain says: it's New Orleans' *first home game of the year*, Monday night, Superdome. That building at night is one of the loudest environments in sports. Generic home field (~1.5–2 pts) is already in the line — the line says Saints -1.5, i.e. roughly pick'em on neutral. But *this* home field, *tonight*, is not generic. Crowd noise kills cadence, forces silent counts, disrupts checks and audibles — it taxes the road offense's communication, which is exactly where young quarterbacks and complex schemes break. The situational read doesn't just disagree with Atlanta +1.5; it points the other way. The model never asked what night it was.
+
+**2. The layered revenge.** Brian Flores vs Miami. Surface narrative: fired coach faces old team. That's the level every content farm stops at. The brain stacks three layers: (a) *emotional* — not just fired, he filed a racial discrimination lawsuit over it, which is personal in a way a normal firing isn't; (b) *schematic* — Flores runs an elite blitz-heavy defense, the exact worst matchup for a quarterback who processes slowly; (c) *personnel* — that quarterback is Malik Willis, who has been bad. Any one layer is a narrative. All three stacked is a game plan: Miami might not score. (Garrett's honesty note, which is the ethos: Ollie Gordon ran well that day — one piece broke differently. The process was still right. Results don't grade the process; the process grades itself.)
+
+**3. The logistical disruption.** A player stuck in traffic, a flight delayed, three hours of sleep. This is the level of signal the models will never touch — it's not in any feed, it's in beat-reporter tweets and local news. The brain's job: a team lined at -7.5 on power ratings might be -3.5 after you account for the fact that half the defense slept in an airport. The number is the starting point. The situation is the adjustment. *Everything* goes through the process — if it can affect the game, it's a signal, and the brain weighs it.
+
+**The rule these teach:** the process is the product. Ingest everything — the lawsuit, the crowd, the delayed flight, the wind, the revenge, the rookie making his second road start. Reason over all of it. Adjust the number. Then bet, pass, or size accordingly. A pick that wins without this process is luck. A process that runs on everything wins over time.
