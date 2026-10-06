@@ -86,3 +86,19 @@ The system has layers, in this order:
 **Ingestion rule.** Feed it everything — the datasets, the equations, all of it — even the pieces that don't matter in this moment. They are part of the bigger picture and HAVE to be added. The brain can't reason with a concept it was never taught. A dormant equation is not a wasted equation; it's a loaded one.
 
 **Testing rule.** Test way later down the line. Ingestion is not gated by testing. Don't slow the feed to validate each piece as it arrives — the corpus comes first, the bake-offs come when the brain is educated enough to run them.
+
+---
+
+## The learning loop (Garrett, 2026-10-05)
+
+Testing is not a phase at the end. **We test as we go** — continuously, at every grain:
+
+**Game by game.** Every game is a test case. The brain's pregame read gets graded against what actually happened.
+
+**Play by play.** Every snap is a test case. Down, distance, formation, game state — the brain's expectation gets graded against the result.
+
+**Pre-play by pre-play.** Before every play, the brain states what it expects. Then the play happens. Then the grade. This is the tightest feedback loop in the system — predict, observe, update, repeat. It's how judgment is built: thousands of micro-predictions, each one scored.
+
+**Interviews and coaches.** What a coach says Tuesday gets tested against what happens Sunday. "We're going to establish the run" is a testable claim — did they? Coach-speak becomes a signal with a measured honesty rate. Player interviews, press conferences, beat-reporter notes — all of it goes through the same loop: stated, observed, graded.
+
+**The rule, complete:** ingest everything, always — and test everything, always. Ingestion is never gated by testing, and testing never waits for ingestion to finish. The formal bake-offs (does a candidate beat the bar) come later. The learning loop (predict → observe → grade) runs from the first snap. A brain that grades itself play by play doesn't need to be told when it's wrong. It knows.
