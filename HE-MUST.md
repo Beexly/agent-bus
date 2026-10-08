@@ -4,7 +4,7 @@ Only the steps this session could not finish. Do not paste tokens into the repo.
 
 1. Telegram. `TELEGRAM_BOT_TOKEN` and `TELEGRAM_CHAT_ID` were unset here. `scripts/freeze.py` writes `bus/FREEZE` and stops. Set those two env vars on the Windows box if you want a notify. Do not commit them.
 
-2. Hindsight. Not started. On the Motif VM, pin `ghcr.io/vectorize-io/hindsight:0.4.9` only after `docker inspect` records a digest. Require a named volume `hindsight-data:/home/hindsight/.pg0`. No `:latest`. No `--pull always`.
+2. Hindsight image is pinned. The container was not started. On the Motif VM only, from a current clone: `docker compose -f hindsight/docker-compose.yml up -d` after exporting `HINDSIGHT_API_LLM_API_KEY` in the shell. Digest `sha256:d1840062a5b79940ab7a9f4809ceb90fc776d4ad737cd9329e9b5836cc64ab70` (tag 0.10.2, resolved 2026-10-08). Named volume `hindsight-data` at `/home/hindsight/.pg0`. No `:latest`. No `--pull always`. Then `docker inspect` the running container and confirm the RepoDigest matches. This sandbox is not the Motif VM.
 
 3. Windows clone. `sh scripts/install-local.sh` was run on the setup clone in this session (`core.hooksPath=.githooks`, `core.autocrlf=false`). Run it once on the Windows box too. This sandbox is not that box.
 
