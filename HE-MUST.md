@@ -10,25 +10,6 @@ Only the steps this session could not finish. Do not paste tokens into the repo.
 
 4. Commit signing. Production identity is `git commit -S` plus a server that rejects unsigned commits. No signing key is on this machine. Not marked done.
 
-5. Branch protection. If the API call in this session failed, run:
+5. Branch protection is on for `main` as of 2026-10-08. Force-push disabled. Branch deletion disabled. Confirmed from the protection API: `allow_force_pushes: false`, `allow_deletions: false`.
 
-```
-gh api -X PUT repos/Beexly/agent-bus/branches/main/protection \
-  -H "Accept: application/vnd.github+json" \
-  --input - << 'EOF'
-{
-  "required_status_checks": null,
-  "enforce_admins": false,
-  "required_pull_request_reviews": null,
-  "restrictions": null,
-  "allow_force_pushes": false,
-  "allow_deletions": false,
-  "block_creations": false,
-  "required_conversation_resolution": false,
-  "lock_branch": false,
-  "allow_fork_syncing": false
-}
-EOF
-```
-
-Secret scanning push protection is a GitHub plan feature. If the API refuses it, the pre-commit hook is the control that exists today.
+Secret scanning push protection returned HTTP 404 on this repo. The pre-commit hook is the control that exists today. Do not treat the 404 as done.
