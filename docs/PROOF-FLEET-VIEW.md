@@ -14,4 +14,4 @@ Receipt shape: SHA-256 of the approved payload, 64 hex chars. Sample prefix `253
 
 Harness rule checked: only `hermes` has `may_claim: true`. Muse is Motif and does not claim.
 
-The fleet is not live. Installed is not connected. Connected means a claim on the bus and a result Motif can accept.
+OpenDots, Together LoRAs, and the 21 dark CLIs are not seats. The fleet is not live. Installed is not connected. Connected means a claim on the bus and a result Motif can accept.
