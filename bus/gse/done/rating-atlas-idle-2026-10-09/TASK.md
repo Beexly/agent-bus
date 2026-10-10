@@ -15,3 +15,5 @@ Summary:
 5. RESULT.md needs receipt, action_dependence, response_validity. Then move to done.
 
 Budget: 2 USD. One worker. No swarm.
+
+Pointer (claim): Sports branch research/rating-atlas-2026-10-09-packet, docs/research/2026-10-09/rating-atlas/. Exact files: glicko2.py (idle wire), BOARD.md (append), cfb_2026-10-10.md, DEEP_RESEARCH_AUDIT.md, run_cycle.py. Acceptance command: python3 glicko2.py.
