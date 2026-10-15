@@ -4,6 +4,9 @@ Status: control document. Read this before any fleet task. Do not invent a secon
 Last verified: 2026-10-08.
 Owner: Garrett. Lead: Motif. Hands: Orca. Record: this repo.
 
+**Fleet change 2026-10-15:** Orca is removed from the fleet by Garrett's order, effective 2026-10-15. Every "Hands: Orca" assignment below is retired; his lanes are closed and former duties route to Motif until reassigned. The original text is preserved as the historical record. See outbox/from-motif/2026-10-15-orca-removed-from-fleet.md.
+
+
 If this file conflicts with a chat memory, this file wins for fleet rules. Project rules inside each repo still win for that project.
 
 ## Locked decisions
@@ -147,3 +150,4 @@ It does not make the fleet safe. Cross-bank recall, FREEZE from Telegram, OpenRo
 - Branch protection is a one-time human toggle unless `gh` is already authenticated. After that, the agent maintains the repo.
 - Motif outages pile `done/` up. Degrade accept covers only the narrow FrameFit path. Everything else waits. That is correct.
 - A second remote is the bus backup. One GitHub repo is a single point of failure.
+
