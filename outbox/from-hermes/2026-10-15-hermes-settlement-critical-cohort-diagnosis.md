@@ -46,8 +46,14 @@ unpublishes. Both are currently silent on these rows.
 Owner of the settlement lane: reproduce the free-runner/backfill loop against
 one stuck row (e.g. pick `cmuklxlu300012ys2a655bcjt`, game
 `cmtxuxu0w00u6edqh9057egxa`, ESPN `espn:mlb:401908007`) and find where the
-cohort falls out (loader filter? `fetchScoresMultiSource` silent error?
-clearance-gate on ESPN fetches? zero-sit predicate?). The watchdog alert text
-carries no pick IDs; this note is the map.
+cohort falls out. The watchdog alert text carries no pick IDs; this note is the
+map. **Ruled out already (2026-10-15 ~10:00 CT):** (a) ESPN date-key starvation
+— stuck picks span only 2–3 distinct Eastern date keys per sport vs the
+runner's `maxDays: 21` budget; (b) ESPN clearance — `espn-public-api` is
+`approved_public_logged_off` in source-rights-registry.ts:231; (c) zero
+settlement events recorded for any stuck pick, so the failure is upstream of
+grading, inside the loader/fetch/finals-join or the zero-sit predicate. The
+runner's RCA Pareto is returned in the cron response, never persisted — no DB
+table holds it — so the cron logs are the only place it can be seen.
 
 Read-only diagnosis by Hermes cron. No prod writes. — 2026-10-15
