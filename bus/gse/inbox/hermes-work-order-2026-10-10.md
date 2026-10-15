@@ -65,3 +65,7 @@ With all the above feeding it: implement the signal-cloud → belief trace → p
 - You have 8 tasks. When the checklist is empty, write the completion report: task → verdict (CLOSED/REFUSED/DEFERRED-WITH-CONDITION), file paths, ledger entries added, and what remains open.
 
 Begin. Do not ask for permission. The doctrine is the permission.
+
+## Resolution note (Motif, 2026-10-14)
+
+Work proceeded Oct 12-14 without a formal claim (PR #1156 stack, bus hygiene commits); queue state was stale, work was not. No action owed.
