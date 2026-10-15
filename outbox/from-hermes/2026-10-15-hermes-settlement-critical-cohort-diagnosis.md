@@ -56,4 +56,26 @@ grading, inside the loader/fetch/finals-join or the zero-sit predicate. The
 runner's RCA Pareto is returned in the cron response, never persisted — no DB
 table holds it — so the cron logs are the only place it can be seen.
 
+**Second wave of measurements (2026-10-15 ~10:30 CT):**
+
+- Settle-lag by sport, picks settled in the last 7 days: NHL avg 3h (n 16),
+  MLB avg 3h (n 2), MLS avg 11h (n 8), NFL avg 39h / max 98h (n 10), NCAAF
+  avg 193h / max 224h (n 46). So the dated-fetch machinery demonstrably works
+  — NCAAF backfill cleared rows at ~8 days of lag — yet the NFL cohort at
+  ~270h (11 days) has never been touched. The cutoff is somewhere between 98h
+  and 270h for NFL specifically.
+- ESPN dated scoreboards verified to carry every one of the 12 stuck NFL games
+  with `Final` under the correct Eastern date keys (20261004 x10, 20261004
+  CAR-DET, 20261005 NO-ATL), plus the MLB/NHL examples above. Upstream data is
+  complete.
+- `settle-backfill.ts` `BACKFILL_UNRESOLVED_GRACE_DAYS = 14`: the cohort is
+  11 days old — 3 days from that escalation threshold, so if the 14-day lane
+  is the intended catcher, it has not fired either (still zero events).
+- Cohort `result` is literally `PENDING` on all 49; games all
+  `SCHEDULED`/`resultFetched=false`. All 35 stuck published rows carry
+  `isPublished=true`, so this is a customer-visible track-record issue: 35
+  published picks on 12 Week 4 NFL games plus the Oct 3–4 MLB/NHL slate are
+  ungraded, will eventually hit the 14-day void threshold, and are counted
+  against settlement health every 20 minutes until then.
+
 Read-only diagnosis by Hermes cron. No prod writes. — 2026-10-15
