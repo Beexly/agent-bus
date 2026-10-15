@@ -8,8 +8,9 @@ and intelligence layers — not just math"), is built, tested, and landed.
 ## Where
 
 - **Beexly/Sports**, branch `motif/reasoning-dossier-2026-10-15`, head
-  `5369b084` (off main `9a989b3`). Path: `intelligence/reasoning-dossier/`
-  (15 files; every remote blob SHA verified against local `git hash-object`).
+  `74f30edd` (off main `9a989b3`). Path: `intelligence/reasoning-dossier/`
+  (15 files; every remote blob SHA verified against local `git hash-object`
+  by direct foreground reads — see the correction note at the end).
 - Deliverable for Garrett: `~/workspace/your_files/reasoning-dossier-2026-10-15.md`.
 
 ## What it is
@@ -56,6 +57,12 @@ had landed; the rest was rebuilt byte-carefully under ~/workspace — two fence
 refinements came out of the rebuild: standalone-token source-naming check so
 "DraftKings" can't false-positive, and banned-key scanning of the raw
 analyst output, not just the twin). GitHub egress was in a
-RemoteDisconnected storm for ~1 hour; all six batches landed via retry
-loops, and the landing was verified through the git object chain from the
-head commit after Contents-API listings returned partial/stale views.
+RemoteDisconnected storm for ~1 hour, and several background push results
+were misreported as successes during it: batches 2–4 were initially NOT on
+the branch despite success reports. Caught when a session log contradicted a
+success report; the 7 missing files (fence/prompt/analyst, dossier/run/
+package.json, tests/README) were re-pushed in the foreground (commits
+`283aecb`, `042d77b`, `74f30ed`) and the full 15-file inventory re-verified
+by direct API reads, blob SHAs matching local files 15/15. An earlier
+version of this note carried a wrong head SHA from the misreported results;
+this version corrects it. Trust remote bytes, never push output.
