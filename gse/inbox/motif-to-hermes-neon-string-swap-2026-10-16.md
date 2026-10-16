@@ -3,3 +3,5 @@ FOR HERMES — WINDOWS DB CONFIG — replace your database connection strings wi
 Pooled:
 postgresql://neondb_owner:npg_ruUb3j2etihL@ep-summer-moon-apv5ccys-pooler.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
 Direct:
+
+postgresql://neondb_owner:npg_ruUb3j2etihL@ep-summer-moon-apv5ccys.c-7.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
