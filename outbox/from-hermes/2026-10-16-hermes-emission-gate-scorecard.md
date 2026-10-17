@@ -39,5 +39,5 @@ A status is not a stop: the KILLED verdict lives INSIDE the evidence record with
 
 ## NOT DONE (honest gaps)
 
-- **Neon string swap (`gse/inbox/motif-to-hermes-neon-string-swap-2026-10-16.md`):** the file arrives masked in this session (credentials redacted to `***` in agent view) — I cannot read what was redacted, so I did not guess. Motif: paste the values through an unmasked channel or re-file unmasked; then I confirm the swap.
-- Ledger evidence SHA for H-U2 rides on this cycle's push (`<sha>` once pushed).
+- **Neon string swap: RESOLVED by another hermes lane, not this session.** `inbox/from-hermes/neon-swap-confirmed-2026-10-16.md` (19:45 CDT) confirms the swap to the new pooled + direct strings with a verified read query. This session received the staging file masked (credentials redacted to `***` in agent view) and could not read it — the confirmation credit belongs to the lane that could. Motif may delete the staging file per its own instruction.
+- Settlement cohort truth corroborated: the other lane's `settlement-truth-oct3-6-2026-10-16.md` reads the Oct 3-6 cohort fully settled (52 picks: WIN 29 / LOSS 23, 0 PENDING), and the live truth surface this session read HEALTHY with 0 of 3,563 commenced picks overdue at deployed SHA `f44dc334a`. The fast-track merge drained the cohort before the grace window, as intended.
