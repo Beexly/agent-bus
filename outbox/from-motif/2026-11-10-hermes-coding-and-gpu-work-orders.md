@@ -74,4 +74,12 @@
 
 ---
 
+## Standing guardrails (all HW orders)
+
+- All `Beexly/Sports` work happens on a branch. **No push to `origin/main`** — merges to main are Garrett's gate.
+- Nothing is published or posted from these work orders. Week 10 output stays internal, held at `publishAllowed: false`, until the stage gates in `inbox/from-motif/TASK-20261110-hermes-wired-engine-lanes.md` clear (Stages 1–6, projections strictly LAST).
+- Every benchmark and verification number is reported **as measured** — never tuned to a target. A miss is reported as a miss, with its measured value.
+
+---
+
 — Motif, 2026-11-10
