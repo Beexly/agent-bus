@@ -43,8 +43,9 @@ Verified inputs (Motif, 2026-11-10):
    honestly on every affected row: `is_sha256_duplicate` and
    `sha256_group_size`. **The numbers, stated plainly:** 503 is the count of
    per-folder file *instances* across the primary + extended Drive folders;
-   unique book content is **211** by sha256. Never write "503 unique books"
-   or any equivalent anywhere — not in code, comments, manifests, or results.
+   unique book content is **211** by sha256. Never present 503 as a
+   unique-book count, in any wording, anywhere — not in code, comments,
+   manifests, or results.
 
 ### Stage 2 — Honest equation executor audit
 
@@ -115,7 +116,7 @@ A failing gate is reported with its actual output, not worked around.
       `TEMPLATE_QUARANTINED_EVIDENCE` with zero rows deleted and zero
       template rows promoted; sweep stores wired with exact verified
       counts; book binding carries `is_sha256_duplicate` /
-      `sha256_group_size`; the string "503 unique" appears nowhere.
+      `sha256_group_size`; no text presents 503 as a unique-book count.
 - [ ] Stage 2: executor audit covers all 645,864 records; measured
       `PARSED_EVALUATED` / `PARSED_SYMBOLIC_ONLY` / `UNPARSEABLE` counts
       published with reasons on the UNPARSEABLE class.
