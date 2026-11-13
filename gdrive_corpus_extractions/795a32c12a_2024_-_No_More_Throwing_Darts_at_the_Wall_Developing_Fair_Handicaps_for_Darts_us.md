@@ -1,0 +1,231 @@
+---
+source: "2024 - No More Throwing Darts at the Wall Developing Fair Handicaps for Darts using a Markov Decision Process - Unknown Authors.pdf"
+folder: "/GSE-Research/sports-research-papers/library/conferences/MIT Sloan Sports Analytics Conference/Research Paper Competition/2024"
+pages: 18
+model: deepseek/deepseek-v4.1-flash-1017
+words: 6538
+---
+
+<NATIVE_REASONING>
+We need answer with required XML sections and invariants. Need deep analysis of source. Need >=1000 words total, THINK_TRACE >=400. No betting lines. Avoid odds/moneylines/spreads/totals. Can discuss win probabilities? Invariant says zero betting lines: never mention spreads,totals,moneylines,odds. Win probability is okay, not odds. Need formal LaTeX equations, units, assumptions, singularity/breakdown. Cite [PAGE N] and verbatim quotes. We need analyze source, MDP, fairness, gray-zone audit, retrocausal genealogy, recursive theory of mind crisis habit regression vs counter-trap vs clock, cross-layer veto physical/biomechanical/weather, RLVR counterfactual vetoes 3 verifiable scenarios predictions. Need cite exact pages and quotes. Need probably focus on darts but also general frontier reasoning foundry. Need not invent fake ratios. Equations from paper plus formal. We can introduce metrics: expected turns E[T | s, pi, eps, beta], fair handicap condition P(win)=1/2? That's probability not betting. Mention "win probability" is okay. Need units: turns (dimensionless count / game), points, mm pixels, covariance matrix units mm^2, epsilon dimensionless, beta credits count, state cardinality. We need mention singularities: epsilon→0 perfect accuracy? covariance singular; epsilon→∞ uniform/board miss; beta>9 saturates; head-start impossible if weaker double-hitting expected turns > stronger full game. Need exact singularity/breakdown regimes.
+
+Need include formal LaTeX equations. Source equations: PPD = Total Points Scored / Total Number Darts Thrown (1), state s=(theta,beta,i,u), action sets, transition P(z|a), Gaussian N(mu, Sigma), perturbed N(mu, epsilon Sigma), Bellman V, optimal V*, pi*, heuristic starting score = 501 * (PPD_weaker / PPD_stronger) perhaps equation 6. Need parse exact: "Weaker Player Starting Score = 501 \ 𝑃𝑃𝐷(!26!& 𝑃𝑃𝐷7$&'"8!& ]" probably 501 × [PPD_weaker / PPD_stronger]. Need cite page 11-12. Need mention dynamic credit handicap equalizes expected turns but true fairness requires distribution matching; headstart shifts mean only; dynamic credits reshape distribution. Need note simulation 10,000 games alternating starter [PAGE 14]. Need mention heuristic still 70% win chance for stronger vs epsilon9 [PAGE 18]. Need mention optimized headstart creates disadvantage for stronger player [PAGE 14]. Need source operators: Bellman operator, policy iteration, integration over 2mm pixels, bivariate Gaussian, scalar epsilon. Need discuss units and assumptions. Need mention "players use optimal policy" and "both players use optimal policies" [PAGE 14], starter alternation. Need mention opponent not in state space, limitation. Need mention state count >1.8M, opponent incorporation >1B. Need mention action 729 targets, 62 credit regions. Need mention no credits beta=0 models original game. Need mention credits up to 9 due shortest path 9 throws. Need mention dynamic credits saved for end by optimal policy. Need mention first credit steepest slope removes cycle. Need mention T20 -> T19 as epsilon increases due neighboring scores. Need mention high epsilon center target. Need mention endgame oscillation due double checkout and bust. Need mention score 2 any non-D1 keeps same. Need mention score 40 miss D20 large safe area.
+
+Need produce multi-hop derivation. We can structure sections. Need not overdo but satisfy. Need ensure each exact XML section present. Need >=1000 words across exact XML sections. We can make long enough. Need no markdown? They require XML sections. We can include text inside. Need use LaTeX. Need cite [PAGE N] markers. Need verbatim quotes. Need maybe quote several exact. Need ensure quotes verbatim from source. Use quotes with page marker. Need not mention betting lines. Avoid "odds". Could mention "win probability" and "competitive balance". That's okay.
+
+Need maybe "DRIVE SOURCE" path irrelevant. We need answer as GSE + GSI Frontier Reasoning Foundry. We should maybe start directly with XML. Need include all sections. Need 1000+ word depth. Let's plan.
+
+Sections:
+<THINK_TRACE> ≥400 words. Deep multi-hop derivation & gray-zone audit. We can write ~600 words. Discuss translating paper into formal MDP, deriving fairness, checking assumptions, gray zones. Multi-hop: source claims heuristic unfair; MDP optimal policy; expected turns; headstart equalization; true fairness simulations; distribution shape. Audit: expected-turn equalization not sufficient for win probability because variance/skew and turn order; dynamic credits reshape distribution; but model assumes optimal policies and i.i.d. Gaussian execution per target; no opponent state; no pressure/clutch; fixed shape; epsilon scalar; starter alternation; finite simulation. Mention page citations. Use equations maybe.
+
+<SOURCE_OPERATORS_AND_EQUATIONS> Formal LaTeX with units and page citations. Include PPD, state, action, transition, Gaussian, Bellman, optimal, heuristic headstart, fair conditions, distribution matching. Cite pages. Mention breakdown regimes. Need use exact quotes. Maybe include "over 1.8 million distinct states" [PAGE 4]; "729 targets" [PAGE 4]; "62 regions" [PAGE 4]; "2mm-by-2mm pixels" [PAGE 5]; "expected number of turns" [PAGE 7? Actually page 7 Bellman]. Need quote.
+
+<RETROCAUSAL_GENEALOGY> Historical/scientific lineage & multi-week traps. Discuss Kohler 1982 dynamic programming, Tibshirani 2011 EM bivariate Gaussian, Haugh & Wang 2022 zero-sum MDP, Chan et al 2022 epsilon, Bingham & Swartz golf, Chan & Singal tennis MDP credits. Multi-week traps: treating PPD as skill, ignoring endgame double, assuming mean equalization is fairness, using headstart when unreconcilable, not estimating epsilon reliably, fixed covariance shape, no opponent, small sample 30 darts. Need cite pages 2, 17-18. Mention citations exact. Need not be too long but okay.
+
+<RECURSIVE_THEORY_OF_MIND> Crisis habit regression vs counter-trap vs clock. Need interpret. "Crisis habit regression" = under pressure players regress to heuristic PPD/headstart thinking? Need define. We can discuss recursive modeling: player models opponent's skill and policy; optimal policy in paper doesn't include opponent except related work. Haugh & Wang opponent consideration marginal 0.2-0.6% [PAGE 2]. Crisis habit regression: in high-pressure checkout, player abandons optimal T20/T19 and reverts to avoid-bust targeting; dynamic credits act as counter-trap by guaranteeing desired result at clutch; "clock" = turn/throw countdown i and credit budget beta; recursive ToM: weaker player anticipates stronger's checkout, uses credits at end; stronger anticipates weaker's credits? Since state excludes opponent, no full recursion. Need mention clutch throws identified. Need maybe "crisis habit regression vs counter-trap vs clock" as three lenses. Use page citations: optimal policy constricts center at high epsilon [PAGE 9]; credits saved for end [PAGE 11]; cut cycle of missing/bust [PAGE 11]; "clutch" throws [PAGE 4]. Need >=? not specified, but should be robust.
+
+<CROSS_LAYER_VETO_ADJUDICATION> Physical/biomechanical/weather veto proof. Need prove physical etc can veto model. Darts is indoor, but physical: board dimensions, 2mm discretization, dart tip, wire boundaries, bounce-outs, board wear, lighting, release variability, stance, fatigue, tremor, weather humidity affects sisal and flight. Need state that paper's bivariate Gaussian is coarse and does not explicitly include biomechanics/weather; however the model can absorb them only via P(z|a) and covariance, but not if non-Gaussian/nonstationary. Veto conditions: if actual landing distribution has heavy tails/angular correlation, Gaussian integral misestimates; if board geometry changes (soft tip/electronic) target regions differ; if weather/draft/humidity changes covariance over game, epsilon nonstationary; if bounce-outs not scored as board regions, transition h(z) undefined. Need mention physical veto proof: require zero-probability mass outside board? Actually Gaussian has mass outside board; model likely integrates over board and miss? Need check source: "integrate probability mass over each result" and "miss the board completely" [PAGE 9]; so outside board is a result perhaps zero score/bust? It says avoid missing board completely. Need mention if missing board has no score but turn counts; included as z? Not fully specified. Veto if bounce-out not represented. Weather: humidity changes sisal; physical. Biomechanical: asymmetric covariance and orientation in Fig 4 [PAGE 7]. Need cite. Need prove cross-layer: if any layer imposes variance not proportional to epsilon Sigma, the scalar epsilon model breaks. Need mention breakdown singularities. Need not overlong but enough.
+
+<RLVR_COUNTERFACTUAL_VETOES> 3 verifiable RLVR veto scenarios + predictions. Need define RLVR? Reinforcement Learning from Verifiable Rewards? Need 3 scenarios with predictions that can be verified. They must be counterfactual vetoes: if X occurs, reject/accept model. Need precise predictions. No betting lines. Example:
+1. Calibration veto: Hold out professional player throw data; if empirical covariance not within confidence region of epsilon Sigma or if residual non-Gaussianity (e.g., kurtosis) predicts missed targets, then P(z|a) invalid. Prediction: model's optimal policy for epsilon=9 should target T19 more than T20; in held-out data, if miss-neighbor score advantage doesn't correlate with realized points, veto. Hmm need verifiable.
+2. Fairness distribution veto: simulate 10,000 games with epsilon1 vs epsilon8 under dynamic credit; model predicts win probability near 50% and turns-to-checkout distributions approximately matched in mean/variance/skew [PAGE 15-16]. Counterfactual: if empirical tournament games with credits show win probability deviates >5 percentage points or variance ratio outside [0.8,1.25], veto fairness claim.
+3. Headstart irreconcilability veto: paper says if high epsilon player's expected double-hitting time exceeds stronger full-game expected turns, no head start can balance [PAGE 13]. Prediction: for sufficiently large epsilon gap, optimized headstart starting score would need ≤0 or impossible; simulate/verify no positive headstart yields win probability 50%; if positive headstart does balance, veto irreconcilability claim. Need include exact quotes. Another scenario: credit saturates at beta≥9, expected turns approaches 3 (9-dart finish) [PAGE 10-11]; if more than 9 credits changes optimal value beyond rounding, veto state truncation. But need 3. We can choose 3 strong.
+
+Need ensure "verifiable RLVR veto scenarios + predictions": each should have a verifier metric, threshold, prediction. Use LaTeX. No betting. Need mention "veto" explicitly. Need maybe "counterfactual" means if hold-out data contradicts. Use "RLVR" maybe not expand? We can define as reinforcement-learning-from-verifiable-rewards audit. Good.
+
+Need total >=1000 words. Let's aim ~2500-3500 words. Desired oververbosity 5, but requirements deep. We need exact sections. Need include all. Could be ~3000 words. Need be careful with XML special chars? Use &? Avoid unescaped & in XML. Need use LaTeX with < maybe problematic. Since XML sections, text can contain < and >? It may break XML if not escaped. We should avoid raw < and > inside text? Use \le, \ge, \to, \in. Use words instead. For XML, ampersand must be escaped if any. Avoid & in text. Use "and". Avoid < in equations? Use LaTeX commands \le, \ge. Need not use actual <. Use "greater than". Avoid & symbols. Use \text{...}. XML tags are okay. In LaTeX, braces okay. Use $...$ inside. Ampersand in LaTeX alignment? Avoid align environments with &; use separate equations. Use \begin{aligned} with no &? Better use display math single lines. Avoid raw &. Use \quad. Use \epsilon. Use \Sigma. Use \pi. Use \theta. Fine. Need avoid `<` or `>` in text; use \lt? In LaTeX \lt maybe. Better "less than" words. In equations use \le, \ge. XML parser may see backslash fine. Ampersand none. Need use "PAGE 10" markers with brackets. Fine.
+
+Need include verbatim quotes. Quotation marks okay. Need not escape apostrophes. Need maybe use "check out" quote.
+
+Let's draft.
+
+THINK_TRACE: ~600 words. Start: The paper's core move is to replace heuristic PPD head-start with MDP value. Multi-hop: state -> transition -> Bellman -> expected turns -> handicap condition -> simulation fairness. Then audit. Need cite pages. Use quotes. Mention state cardinality. Mention dynamic credits. Gray zones: expected-turn equalization vs win probability; turn order; starter alternation; opponent absent; fixed policy optimal; i.i.d. Gaussian; epsilon scalar; covariance shape; credit use optimal; fractional credits over multiple games. Mention "The first player to check out was recorded as the winner" [PAGE 14]. Need quote. Mention "alternating the starter (to control for the starters advantage)" [PAGE 14]. Good.
+
+SOURCE_OPERATORS_AND_EQUATIONS: Formal equations with units. Need include all source operators. Let's write:
+- PPD dimensionless points per dart: PPD = total points / darts [PAGE 4].
+- State s=(theta,beta,i,u) with theta in 0..501 points, beta 0..9 credits, i in {1,2,3} darts remaining, u in 0..120 points gained in turn. Absorbing s_win=(0,beta,i,u). Over 1.8M states. beta=0 original game.
+- Actions A = A_throw union A_credit; |A_throw|=729, |A_credit|=62. Policy pi:S->A.
+- Transition: P(z|a)=1 for credit chosen region; throw P from integration of bivariate Gaussian N(mu,epsilon Sigma) over 2mm×2mm pixels. Units: mu mm, Sigma mm^2, epsilon dimensionless.
+- State transition function s'=f(s,z), h(z) points. Cases win/bust/regular/end turn. Need maybe not list all 8 but mention.
+- Cost c(s')=1 when i'=3, so value expected turns. Bellman equations V_pi, V*, pi*. Use equations.
+- Heuristic headstart: Weaker starting score = 501 * (PPD_weaker / PPD_stronger) [PAGE 11]. Need cite.
+- Fairness condition: optimized headstart chooses theta0 such that E[T_strong(501)] = E[T_weak(theta0)] for expected-turn equalization. Dynamic credits chooses beta such that E[T_weak(501,beta)] = E[T_strong(501,0)]. True fairness: P(win_strong)=1/2 and distribution matching F_Tweak approx F_Tstrong. Need mention paper: "equalizing the expected turns to check out will also equalize win probability only if the variance and skew are also equal" [PAGE 16]. Verbatim.
+- Breakdown: epsilon→0 covariance singular, perfect accuracy, beta>9 saturation, epsilon→∞ mass outside board; headstart impossible if E[T_weak^double] > E[T_strong^full]. Quote "no head start will ever be able to achieve competitive balance" [PAGE 13]. Also state count and opponent extension >1 billion [PAGE 16]. Need cite.
+
+RETROCAUSAL_GENEALOGY: ~500 words. Lineage: Kohler 1982 DP, Tibshirani 2011 EM, Haugh & Wang 2022 zero-sum dynamic game, Chan et al 2022 epsilon, Bingham & Swartz 2000 golf, Chan & Singal 2016 tennis credits. This paper bridges. Multi-week traps: PPD conflation, heuristic headstart, mean-only fairness, covariance shape stationarity, epsilon estimation via 30 darts, saturation, opponent-free, no pressure. Use page citations. Quote "The determination of this head-start value relies on the main statistic measuring player skill in 501 darts: points per dart (PPD)" [PAGE 3]. Quote "a player may have a lower PPD because they take a more conservative policy regardless of their throw accuracy" [PAGE 4]. Good.
+
+RECURSIVE_THEORY_OF_MIND: ~500 words. Define crisis habit regression: player under checkout pressure reverts to safe/avoid-bust heuristics, but paper's optimal policy already handles; dynamic credit is counter-trap: guarantees target and removes cycle. Clock: i and beta are finite turn/credit clocks; beta saved for end. Recursive ToM: player models opponent epsilon? Paper not include opponent; Haugh & Wang marginal 0.2-0.6% [PAGE 2]. Dynamic credits can be used at clutch throws [PAGE 4]. Need quote "identify crucial (or “clutch”) throws" [PAGE 4]. Need mention "always save their credits for the end of the game" [PAGE 11]. Need mention "removes the cycle of missing the board or going bust" [PAGE 11]. Counter-trap: if weaker player uses credits early to chase high score, loses endgame guarantee; optimal policy reserves. Clock: if beta=0, no counter-trap; if beta≥9, perfect 9-dart finish limit 3 turns [PAGE 11]. Good.
+
+CROSS_LAYER_VETO_ADJUDICATION: ~500 words. Need physical/biomechanical/weather veto proof. Use equations maybe. Need cite Fig 4 [PAGE 7] asymmetric distributions for Cullen, Chisnall, Price. Quote "distribution shapes for three different professional players ... shown in Figure 4" [PAGE 7]. Need mention 2mm pixel discretization [PAGE 5], 729 targets [PAGE 4]. Physical veto: board geometry and wire; bounce-outs; sisal; humidity; lighting; release; fatigue. If actual P(z|a) not N(mu,epsilon Sigma) or epsilon not scalar, then value and handicaps unvalidated. Cross-layer proof: Let true transition P_true(z|a) = P_model(z|a)+Delta. If total variation distance ||Delta||_TV > tolerance, optimal policy can change. Need formal. We can introduce \|P_true - P_model\|_{TV} > delta. But "never invent fake ratios" - this is not fake ratio, it's TV distance. Fine. Need units. Need exact singularity: covariance determinant det(epsilon Sigma)=0 at epsilon=0 or Sigma singular. At large epsilon, probability mass outside board and bounce-outs. Weather nonstationary makes epsilon(t) not constant. Biomechanical asymmetry requires full Sigma(a,player), not scalar. Veto if residual tests reject Gaussian or stationarity. Need mention cross-layer veto adjudication: physical constraints override MDP if target region not physically reachable or if bounce-out not represented. Need maybe "proof" by contradiction: if true distribution differs and changes argmin, then paper's fairness lookup invalid. Use Bellman operator contraction? Hmm.
+
+RLVR_COUNTERFACTUAL_VETOES: 3 scenarios. Need be concise but verifiable. Maybe number with labels.
+
+Need ensure answer doesn't mention betting lines. Avoid "betting" maybe source mentions sports betting [PAGE 1]. Invariant says zero betting lines: never mention spreads totals moneylines odds. We can mention "sports betting" as source application? It says beyond creating competitive balance, handicaps can provide insights including player rankings and sports betting. But to be safe avoid "betting" entirely? The invariant says zero betting lines; mentioning "sports betting" not a line, but maybe avoid. We can omit. Avoid "odds" word. Need not mention "moneyline". Good.
+
+Need use exact XML tags. No extra outside? Could include an opening line? Better just XML sections. Need no markdown headings? XML tags are enough. Inside, can use paragraphs. Need maybe no bullet lists? Fine.
+
+Need check word count. Let's draft fully.
+
+Potential issue: <THINK_TRACE> text includes "<" maybe not. Avoid. Use "at least" etc. Avoid ampersand. Use "and". In LaTeX, \text{win} okay. Use \mathbb? Fine. Avoid raw underscore? XML okay. Backslashes okay. Need avoid `&` entirely. In math, use `\quad` not `&`. Good.
+
+Need include "PAGE N" exact markers. Use [PAGE 1], etc.
+
+Let's produce final. Ensure each section present. Need maybe total 3000 words. Let's write polished.
+
+Need use "RLVR" maybe "reinforcement-learning-from-verifiable-rewards (RLVR)" but okay.
+
+Let's draft with detailed content.
+
+Check quotes:
+- PAGE 1: "We focus on the popular sport of darts" maybe.
+- PAGE 1: "Players may use these credits dynamically throughout the game"
+- PAGE 3: "The determination of this head-start value relies on the main statistic measuring player skill in 501 darts: points per dart (PPD)"
+- PAGE 4: "a player may have a lower PPD because they take a more conservative policy regardless of their throw accuracy"
+- PAGE 4: "over 1.8 million distinct states"
+- PAGE 4: "729 targets" and "62 regions"
+- PAGE 5: "divide the board into discrete 2mm-by-2mm pixels"
+- PAGE 8: "By construction, we can interpret V as expected number of turns"
+- PAGE 10: "the expected number of turns approach a limit of 3"
+- PAGE 11: "always save their credits for the end of the game"
+- PAGE 11: "removes the cycle of missing the board or going bust"
+- PAGE 12: "a player with epsilon=9 would still require roughly two more turns"
+- PAGE 13: "no head start will ever be able to achieve competitive balance"
+- PAGE 14: "simulating 10,000 games" and "alternating the starter"
+- PAGE 16: "equalizing the expected turns to check out will also equalize win probability only if the variance and skew are also equal"
+- PAGE 18: "70% chance of winning"
+Need quote exact? "70% chance of winning" page 18. Good.
+
+Need mention "PAGE 7" for Bellman? Actually page 8 has Bellman. Use [PAGE 8].
+
+Need formula for headstart equation 6 from page 11. Need maybe write:
+\theta_0^{heuristic} = 501 \left( \frac{PPD_{weaker}}{PPD_{stronger}} \right)
+Units: points. Good.
+
+Need fair condition:
+E[T | \epsilon_s, \theta=501, \beta=0, i=3, u=0] = E[T | \epsilon_w, \theta=\theta_0, \beta=0, i=3, u=0]
+for optimized headstart. For credits:
+E[T | \epsilon_s,501,0] = E[T | \epsilon_w,501,\beta].
+True fairness:
+P_{\epsilon_s}(win) = 1/2 and F_{T_w} \approx F_{T_s} (CDF match) not just means. Need mention variance/skew.
+
+Need "singularity/breakdown regimes" explicit. Include:
+- \epsilon \to 0: \epsilon \Sigma singular if \Sigma positive definite times zero; deterministic perfect execution; policy can guarantee 9-dart finish with beta≥9; credits above 9 redundant due lower bound 9 throws.
+- \epsilon \to \infty: Gaussian spreads beyond board; model depends on out-of-board handling and bounce-outs; policy collapses to center [PAGE 9].
+- beta > 9 saturation; expected turns tends to 3 [PAGE 11].
+- headstart impossibility when weak endgame time > strong full-game time [PAGE 13].
+- state truncation beta≤9 not valid if do-over credits etc? But source says shortest path 9. Good.
+- opponent-free MDP: state lacks opponent score; extension >1B states [PAGE 16].
+Need mention "over one billion" [PAGE 16]. Good.
+
+Need cross-layer veto proof with equation:
+Let \Delta(a)=P_{\mathrm{true}}(z|a)-P_{\epsilon,\Sigma}(z|a). If \|\Delta(a)\|_{TV} > \delta and argmin changes, Bellman fixed point shifts. Need maybe "TV distance" in probability units [dimensionless]. Fine. But avoid fake ratio. This is formal.
+
+Need maybe "weather" not in darts indoor but can affect. Physical/biomechanical/weather veto proof: indoor darts has low weather coupling but not zero; humidity affects sisal board and dart flight; airflow; lighting. The model doesn't include these. Need be fair: not overstate. "Adjudication: the paper's model can remain valid only if these effects are absorbed into stationary covariance or if they are negligible relative to epsilon." Good.
+
+Need final answer with no extra. Let's write.
+</NATIVE_REASONING>
+
+<THINK_TRACE>
+The paper’s central inference chain is: replace a heuristic points-per-dart head start with an MDP value function; solve the optimal aiming policy; use expected turns to check out as the balancing metric; then test whether expected-turn equalization actually produces fair win probabilities. The first hop is definitional. The state is \(s=(\theta,\beta,i,u)\), where \(\theta\) is score in points, \(\beta\) is credits, \(i\) is throws left in the turn, and \(u\) is points gained so far in the turn [PAGE 4]. The authors state there are “over 1.8 million distinct states” and that setting \(\beta=0\) recovers ordinary darts [PAGE 4]. The second hop is action geometry: throw actions include “729 targets” while credit actions include “62 regions” [PAGE 4]. The third hop is stochastic execution: a throw action uses a bivariate Gaussian \(\mathcal{N}(\mu,\Sigma)\), with the board “divide[d] into discrete 2mm-by-2mm pixels” and probability mass integrated over each result [PAGE 5]. The fourth hop is skill perturbation: \(\mathcal{N}(\mu,\epsilon\Sigma)\), where \(\epsilon\) is a dimensionless scalar error multiple; \(\epsilon=1\) is professional accuracy and larger \(\epsilon\) is worse [PAGE 6]. The fifth hop is value: cost \(c(s')=1\) when a turn completes, so \(V\) is “the expected number of turns required for a player with execution error \(\epsilon\) to check out from state \(s\)” [PAGE 8]. The sixth hop is handicap: choose a starting score or credit count so the weaker player’s expected turns equal the stronger player’s expected turns [PAGE 12-13]. The final hop is simulation: “simulating 10,000 games” with “alternating the starter” and recording the first player to check out as winner [PAGE 14].
+
+The gray-zone audit is where the reasoning must slow down. Equalizing expected turns is not logically identical to equalizing win probability. The paper itself states that “equalizing the expected turns to check out will also equalize win probability only if the variance and skew are also equal” [PAGE 16]. Head-start handicaps “merely shift the mean” of the turns-to-check-out distribution, while dynamic credits reshape it [PAGE 15-16]. Thus the MDP’s expected-value calculation is necessary but not sufficient for true fairness. A second gray zone is the opponent. The state does not contain the opponent’s score or credit count; the paper later notes that incorporating the opponent’s score would bring the state space to “over one billion” states [PAGE 16]. Therefore the solved optimal policy is essentially single-player against the board, not a full zero-sum equilibrium. Related work found opponent consideration changed professional win probability only by “0.2-0.6%” [PAGE 2], but that does not prove the approximation holds for large skill gaps or credit handicaps. A third gray zone is policy optimality: the evaluation assumes “both players use their respective optimal policies” [PAGE 14], which is a normative assumption, not an observed behavioral fact. A fourth is covariance shape: the main analysis holds shape constant and perturbs only \(\epsilon\), although the paper explicitly shows asymmetric and rotated distributions for Cullen, Chisnall, and Price [PAGE 7]. A fifth is stationary execution: the model treats \(\epsilon\Sigma\) as fixed, but fatigue, pressure, lighting, board wear, and release variability could make covariance nonstationary. A sixth is identification of \(\epsilon\): Appendix A estimates \(\epsilon\) from 30 throws at the double-bullseye using a lookup table [PAGE 17-18], which is interpretable but statistically coarse. The correct audit conclusion is not that the MDP is wrong; it is that the MDP proves a conditional statement: if the Gaussian execution model, single-player value, optimal-policy assumption, and stationary covariance hold, then dynamic credits are the better fairness device. The paper’s own simulation supports that conditional claim: optimized head-start “does not equalize win probabilities and actually creates a disadvantage for the stronger player,” while dynamic credits are “much more successful at equalizing win probabilities” [PAGE 14]. The heuristic head start still gives the stronger player a “70% chance of winning” against a handicapped \(\epsilon=9\) player [PAGE 18]. That is the key empirical contrast that survives the audit.
+</THINK_TRACE>
+
+<SOURCE_OPERATORS_AND_EQUATIONS>
+The source’s first operator is the heuristic skill statistic:
+\[
+\mathrm{PPD}=\frac{\text{Total Points Scored}}{\text{Total Number of Darts Thrown}} .
+\]
+This is dimensionless in the sense of points per dart, though operationally it is points divided by dart count. The paper says the head-start value “relies on the main statistic measuring player skill in 501 darts: points per dart (PPD)” [PAGE 3]. The heuristic handicap is:
+\[
+\theta_0^{\mathrm{heuristic}}=501\left(\frac{\mathrm{PPD}_{\mathrm{weaker}}}{\mathrm{PPD}_{\mathrm{stronger}}}\right),
+\]
+where \(\theta_0\) is the weaker player’s starting score in points [PAGE 11-12]. The authors immediately identify a conceptual problem: “a player may have a lower PPD because they take a more conservative policy regardless of their throw accuracy” [PAGE 4]. Thus PPD conflates execution error with policy choice.
+
+The MDP state operator is:
+\[
+s=(\theta,\beta,i,u),\quad
+\theta\in\{0,\ldots,501\},\quad
+\beta\in\{0,\ldots,9\},\quad
+i\in\{1,2,3\},\quad
+u\in\{0,\ldots,120\}.
+\]
+Here \(\theta\) is score in points, \(\beta\) is credit count, \(i\) is darts remaining in the current turn, and \(u\) is points gained so far in the turn [PAGE 4]. The absorbing win state is \(s_{\mathrm{win}}=(0,\beta,i,u)\) for nonnegative \(\beta,i,u\) [PAGE 4]. The action set is:
+\[
+A=A_{\mathrm{throw}}\cup A_{\mathrm{credit}},\quad |A_{\mathrm{throw}}|=729,\quad |A_{\mathrm{credit}}|=62,
+\]
+where throw actions are minute board targets and credit actions are the 62 scoring regions: twenty singles, twenty doubles, twenty triples, single bullseye, and double bullseye [PAGE 4]. A policy is \(\pi:S\to A\) [PAGE 4].
+
+For throw actions, the transition kernel is generated by:
+\[
+P_{\epsilon}(z\mid a)=\int_{R_z} f_{\mathcal{N}(\mu,\epsilon\Sigma)}(x)\,dx,
+\]
+where \(R_z\) is the 2mm-by-2mm pixel region for result \(z\), \(\mu\) is in millimetres, \(\Sigma\) is in square millimetres, and \(\epsilon\) is dimensionless [PAGE 5-6]. For credit actions:
+\[
+P(z\mid a)=1 \text{ if } z=\text{chosen credit region},\qquad P(z\mid a)=0 \text{ otherwise}.
+\]
+The state transition function is \(s'=f(s,z)\), with \(h(z)\) giving points from result \(z\), for example \(h(\mathrm{T20})=60\) [PAGE 6]. The cost is \(c(s')=1\) when \(i'=3\), marking a completed turn [PAGE 5]. The Bellman value for policy \(\pi\) is:
+\[
+V_{\epsilon}^{\pi}(s)=\sum_{z} P_{\epsilon}\bigl(z\mid \pi(s)\bigr)\left[c\bigl(f(s,z)\bigr)+V_{\epsilon}^{\pi}\bigl(f(s,z)\bigr)\right],
+\]
+and the optimal value and policy are:
+\[
+V_{\epsilon}^{*}(s)=\min_{a\in A}\sum_{z}P_{\epsilon}(z\mid a)\left[c(f(s,z))+V_{\epsilon}^{*}(f(s,z))\right],
+\]
+\[
+\pi_{\epsilon}^{*}(s)=\arg\min_{a\in A}\sum_{z}P_{\epsilon}(z\mid a)\left[c(f(s,z))+V_{\epsilon}^{*}(f(s,z))\right].
+\]
+These are the source’s Bellman equations in rewritten form [PAGE 8]. The quantity \(V_{\epsilon}^{*}(s)\) has units of expected turns, because each turn-completion contributes cost 1.
+
+The optimized head-start handicap solves:
+\[
+V_{\epsilon_s}^{*}(501,0,3,0)
+=
+V_{\epsilon_w}^{*}(\theta_0^{\mathrm{opt}},0,3,0),
+\]
+where \(\epsilon_s\) is stronger skill and \(\epsilon_w\) is weaker skill [PAGE 12-13]. The dynamic credit handicap solves:
+\[
+V_{\epsilon_s}^{*}(501,0,3,0)
+=
+V_{\epsilon_w}^{*}(501,\beta,3,0),
+\]
+where \(\beta\) is credit count [PAGE 13]. The true-fairness target is stronger:
+\[
+P_{\epsilon_s}(\text{win})\approx \frac{1}{2},
+\]
+together with approximate equality of the turns-to-check-out distributions, not merely their means. The paper says equalizing expected turns also equalizes win probability “only if the variance and skew are also equal” [PAGE 16].
+
+Breakdown and singularity regimes are explicit. As \(\beta\) grows, expected turns approach a lower bound of 3 turns, corresponding to a nine-dart finish; the paper states “the expected number of turns approach a limit of 3” [PAGE 11]. Thus \(\beta>9\) is redundant under the paper’s assumptions because the shortest path from 501 to 0 is nine throws [PAGE 4]. As \(\epsilon\to 0\), the covariance \(\epsilon\Sigma\) becomes singular or degenerate in the limit, representing perfect execution; the model then places probability one on the intended region, and the credit and throw models coincide for that target. As \(\epsilon\to\infty\), Gaussian mass spreads outside the board; the model’s predictions then depend critically on how misses and bounce-outs are encoded, and the optimal policy collapses toward the board centre, as shown for \(\epsilon=100\) [PAGE 9]. Head-start handicaps break down when the weaker player’s endgame double difficulty exceeds the stronger player’s entire-game time; the authors say “no head start will ever be able to achieve competitive balance” [PAGE 13]. Finally, the state space truncates \(\beta\) at 9 and omits the opponent; the paper notes that adding opponent score would exceed “one billion” states [PAGE 16].
+</SOURCE_OPERATORS_AND_EQUATIONS>
+
+<RETROCAUSAL_GENEALOGY>
+The paper’s lineage is a sequence of increasingly realistic darts and handicap models. Kohler (1982) used dynamic programming for darts “albeit with several simplifying assumptions” [PAGE 2]. Tibshirani et al. (2011) modeled execution error as a bivariate Gaussian using the Expectation Maximization algorithm [PAGE 2]. Haugh and Wang (2022) used a zero-sum game plus an underlying MDP and a data set from 16 professional players [PAGE 2]. Chan et al. (2022) introduced the scalar execution-error level \(\epsilon\) that multiplies the covariance matrix in tennis [PAGE 2]. For handicapping, Bingham and Swartz (2000) found unfairness in golf handicaps and proposed a statistically fairer alternative [PAGE 2], while Chan and Singal (2016) developed an MDP-based dynamic credit handicap for tennis [PAGE 2]. This paper’s retrocausal move is to bring those strands together: it takes the \(\epsilon\)-scaled Gaussian execution model from tennis, the dynamic-credit idea from tennis handicapping, and the darts MDP tradition, then applies them to darts fairness. The genealogy matters because each ancestor contributes a different assumption: Kohler contributes dynamic programming but with simplifications; Tibshirani contributes Gaussian execution but not full adversarial policy; Haugh and Wang contribute opponent awareness but only a marginal effect for professionals; Chan et al. contribute scalar error but not board geometry; Chan and Singal contribute credits but in a different sport. The present paper’s novelty is therefore compositional, not a single new primitive.
+
+The multi-week traps are the places where later work could quietly inherit an ancestor’s limitation. Trap one is treating PPD as a pure skill measure. The paper explicitly warns that PPD can reflect “a more conservative policy regardless of their throw accuracy” [PAGE 4]. Trap two is assuming the current heuristic head start is fair; the simulation shows it is not, with the stronger player still at “70% chance of winning” against a handicapped \(\epsilon=9\) player [PAGE 18]. Trap three is mean-only fairness: equal expected turns can leave variance and skew mismatched, so win probability need not be balanced [PAGE 16]. Trap four is scalar-\(\epsilon\) overreach: the paper holds covariance shape constant for its main analysis, but Figure 4 shows asymmetric and rotated distributions for Cullen, Chisnall, and Price [PAGE 7]. Trap five is identification error: the appendix estimates \(\epsilon\) from 30 throws at the double-bullseye, with a lookup table for DB, SB, and Other counts [PAGE 17-18]. That is practical, but small-sample noise and target-specific covariance could misassign \(\epsilon\). Trap six is credit saturation: because nine throws is the shortest possible path, credits above nine cannot improve the lower bound, and the “limit of 3” turns is a hard floor under the model [PAGE 4, PAGE 11]. Trap seven is opponent omission: the solved policy is not a full zero-sum equilibrium with opponent score in the state, and the paper flags the billion-state extension as future work [PAGE 16]. Trap eight is behavioral validity: the evaluation assumes optimal policies, so it tests the fairness of ideal agents, not nervous pub players or pressure-sensitive professionals. These traps are not fatal to the paper’s contribution, but they define the boundary between a proof-of-concept MDP and a deployable handicapping system.
+</RETROCAUSAL_GENEALOGY>
+
+<RECURSIVE_THEORY_OF_MIND>
+Read through a recursive-theory-of-mind lens, the darts problem has three layers: crisis habit regression, counter-trap design, and the clock. Crisis habit regression is the tendency of a player under checkout pressure to abandon the long-run optimal policy and revert to a local heuristic such as avoiding bust, aiming at a safe single, or overprotecting the score. The paper’s MDP shows why this is tempting: near the end, “there is a high probability of going bust or missing the board,” and with a score of 2, “any throw result other than a D1 will keep their score the same” [PAGE 10]. That creates a cycle in which the player is “stuck in the same state until they finally check out” [PAGE 10]. The counter-trap is the dynamic credit. A credit guarantees the chosen region with probability one, so it removes the endgame cycle. The optimal policy “always save[s] their credits for the end of the game,” and the first credit brings the steepest value improvement because it “removes the cycle of missing the board or going bust” [PAGE 11]. The clock is the pair \((\beta,i)\): \(\beta\) is a finite credit budget and \(i\) is the three-dart turn clock. The weaker player must decide whether to spend a credit early to stabilize score or hold it for the checkout. The MDP’s answer is to hold, because the endgame double is the highest-variance bottleneck. This is a recursive-ToM counter-trap: the weaker player models the stronger player’s likely checkout and reserves the credit for the state where the stronger player’s advantage is largest.
+
+The paper does not solve a full recursive opponent model. Haugh and Wang found that considering one’s opponent changed professional win probability by only “0.2-0.6%” [PAGE 2], but that result is for professionals and does not include dynamic credits. In the credit game, the opponent’s credit count and score could change the value of saving versus spending. The present state space omits opponent score and credit count, so the policy is a best response to the board, not a best response to an opponent’s policy. The recursive-ToM gap is therefore clear: a stronger player who knows the weaker player has credits may change checkout strategy, and a weaker player who knows the stronger player knows may change credit timing. The paper’s own language points toward this: dynamic credits allow the framework to “identify crucial (or ‘clutch’) throws for players of varying skill levels” [PAGE 4]. A clutch throw is exactly a state where the player’s model of the opponent and the clock interacts with the credit budget. The paper’s simulation uses fixed optimal policies and alternates the starter [PAGE 14], which controls for first-turn advantage but not for strategic credit concealment or opponent-responsive credit use. Thus the recursive-ToM verdict is: the dynamic credit is a robust counter-trap against endgame habit regression, but its full strategic value requires the opponent-augmented state space that the authors leave to future work.
+</RECURSIVE_THEORY_OF_MIND>
+
+<CROSS_LAYER_VETO_ADJUDICATION>
+The physical, biomechanical, and weather layers can veto the MDP’s fairness conclusion if they alter the transition kernel enough to change the optimal policy or the value ordering. The paper’s model assumes a stationary bivariate Gaussian \(\mathcal{N}(\mu,\epsilon\Sigma)\) over a 2mm-by-2mm pixel grid [PAGE 5-6]. A physical veto occurs if the true landing distribution \(P_{\mathrm{true}}(z\mid a)\) differs from the model \(P_{\epsilon,\Sigma}(z\mid a)\) by more than a tolerance in total variation:
+\[
+\left\|P_{\mathrm{true}}(\cdot\mid a)-P_{\epsilon,\Sigma}(\cdot\mid a)\right\|_{\mathrm{TV}}>\delta,
+\]
+and if that difference changes \(\arg\min_a V_{\epsilon}^{*}(s)\). The total-variation distance is dimensionless. Physical sources of veto include wire deflection, bounce-outs, dart-tip deformation, board wear, sisal fibre direction, lighting, and release variability. The paper’s grid integration does not explicitly model bounce-outs as a separate outcome class; if a dart hits a wire and falls out, the result is not simply the nearest pixel’s score. That can change \(h(z)\), the points operator, and hence the Bellman fixed point.
+
+Biomechanical veto is stronger. The paper’s main analysis holds covariance shape constant and scales only \(\epsilon\), but Figure 4 shows “bi-variate Gaussian distribution shapes for three different professional players” with potentially asymmetric and rotated covariances [PAGE 7]. If a player’s covariance has off-diagonal terms or target-dependent orientation, then a single scalar \(\epsilon\) cannot represent skill. The correct model would need \(\Sigma(a,\text{player},t)\), not \(\epsilon\Sigma\). A biomechanical veto also arises if fatigue or pressure changes the covariance within a match. Then \(\epsilon\) is nonstationary, and the solved policy for a fixed \(\epsilon\) is not optimal for the actual player. The paper’s own high-\(\epsilon\) result—optimal policy moving from T20 to T19 and then toward the board centre [PAGE 8-9]—shows that policy is sensitive to covariance geometry. If the true geometry differs, the “fair” credit count can be wrong.
+
+Weather veto is weaker indoors but not zero. Humidity and temperature can affect sisal board hardness, dart flight, and grip; airflow can affect trajectory. These effects are not in the model. The adjudication rule is: if weather or environmental variation is small relative to the player’s \(\epsilon\Sigma\), it can be absorbed as noise; if it produces a bias or heavy-tailed miss distribution, the Gaussian integral misstates \(P(z\mid a)\). The cross-layer veto proof is by contradiction. Suppose the paper’s dynamic credit handicap equalizes expected turns under the model, but the true transition kernel has heavier tails or a different miss geometry. Then the true value \(V_{\mathrm{true}}^{*}\) can have a different minimizer, and the credit count that equalizes model expected turns need not equalize true win probability. The paper’s own simulation already shows that mean equalization is insufficient without variance and skew matching [PAGE 16]. Therefore the physical-layer veto condition is: reject the fairness claim whenever residual diagnostics reject Gaussianity, stationarity, or pixel-score measurability at a level that changes the optimal target. Accept it only when the cross-layer perturbation is dominated by the estimated \(\epsilon\Sigma\) and does not alter the checkout policy.
+</CROSS_LAYER_VETO_ADJUDICATION>
+
+<RLVR_COUNTERFACTUAL_VETOES>
+1. Calibration veto for the Gaussian execution model. Verifier: hold out professional throw data by player and target; fit \(\mathcal{N}(\mu,\epsilon\Sigma)\) on training throws and test the predicted distribution of DB, SB, and Other counts against Table 1’s expected counts for 30 throws [PAGE 18]. Prediction: for \(\epsilon=1\), the model predicts approximately 10 DB, 16 SB, and 4 Other; for \(\epsilon=9\), approximately 1 DB, 5 SB, and 24 Other [PAGE 18]. Counterfactual veto: if held-out data reject the predicted multinomial counts at a pre-registered confidence level, or if residual kurtosis and angular skew predict the optimal target better than the scalar-\(\epsilon\) Gaussian, then the calibrated \(P_{\epsilon}(z\mid a)\) is invalid and all downstream handicap lookups are vetoed. A second prediction within this scenario: for \(\epsilon=9\), the optimal policy should shift from T20 toward T19 because misses around T19 score more than misses around T20 [PAGE 8]. If held-out data show no realized scoring advantage for T19 over T20 at that error level, the policy claim is vetoed.
+
+2. Distributional fairness veto for dynamic credits. Verifier: replicate the paper’s 10,000-game simulation for \(\epsilon=1\) versus \(\epsilon=8\), alternating the starter, and compare the stronger player’s win proportion and the turns-to-check-out distributions [PAGE 14-15]. Prediction: the dynamic credit handicap should produce a stronger-player win proportion close to one half, and the weaker player’s turns distribution should approximately match the stronger player’s mean, variance, and skew; the head-start handicap should merely shift the mean and leave shape mismatch [PAGE 15-16]. Counterfactual veto: if the dynamic-credit win proportion deviates from one half by more than a pre-registered tolerance, or if the variance ratio or skew difference between the two players remains large while the head-start method performs equally well, then the claim that dynamic credits create “true fairness” is vetoed. A further prediction: optimized head-start should not merely fail to balance but should “create a disadvantage for the stronger player” in the simulation [PAGE 14]. If optimized head-start instead yields a balanced win proportion, the head-start critique is vetoed.
+
+3. Irreconcilability and saturation veto. Verifier: solve the MDP for increasing \(\epsilon_w\) against \(\epsilon_s=1\), and search for a nonnegative head-start score \(\theta_0\) that equalizes expected turns. Prediction: beyond a critical skill gap, no positive head start exists because the weaker player’s expected time to hit a checkout double exceeds the stronger player’s expected full-game time; the paper states “no head start will ever be able to achieve competitive balance” [PAGE 13]. Counterfactual veto: if a positive \(\theta_0\) is found that equalizes expected turns for a gap where the paper’s logic predicts impossibility, the irreconcilability claim is vetoed. Separately, test credit saturation: because nine throws is the shortest possible path from 501 to 0, the expected-turn value should approach the three-turn limit and should not materially improve for \(\beta>9\) [PAGE 4, PAGE 11]. Counterfactual veto: if adding a tenth or eleventh credit changes the optimal policy or lowers expected turns below the nine-dart lower bound under the stated rules, then the state truncation \(\beta\le 9\) or the transition model is invalid.
+</RLVR_COUNTERFACTUAL_VETOES>
