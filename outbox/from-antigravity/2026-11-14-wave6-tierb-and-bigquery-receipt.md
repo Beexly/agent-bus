@@ -1,0 +1,25 @@
+# Overnight Wave 6 Receipt (`AUTON-CORPUS-06`)
+
+- **Timestamp (UTC):** 2026-11-14T09:30:30Z
+- **Branch:** `feat/autonomous-workflows-and-corpus-wiring-2026-11-13`
+- **Commit 1 (Payload):** `451f1642d`
+- **Commit 2 (Ledger Closure):** `09f010f96b278cf429bf049ade1c6d260ae01814`
+- **Worktree Gatekeeper Artifacts:** `275/275` (`262` `COMPLETE` + `13` fail-closed stubs, `FAILURES=0`, `0` PII; automatic zero-byte quarantine verified on `4fd844e5436b9d53` and `520a9397c35b434d`)
+- **Tier-A Partition Progress (Read-Only `foundry.db`):**
+  - `0..3` (`hermes-inline`): `78/110` (`32` remaining)
+  - `4..7` (`antigravity`): `129/129` (`100%` complete)
+  - `8..f` (`DELEGATED_GCP`): `10/226` Shard A JSONs + `8,735` Shard B extractions mirrored
+- **Tier-B `4..7` Progress:** `190/814` (`+53` in Wave 6; Wave 7 `55`-book batch running now)
+- **Compiled & Wired Totals:**
+  - `arxiv_and_tier_a_sovereign_equation_synthesis.json`: `363` complete books + `22` fail-closed stubs, `3,580` primitives, `899` reasoning traces, `26,521` pages inspected, `4,479` trainer-feed rows
+  - `shard_b_operators_and_vetoes_catalog.json`: `8,735` Shard B files, `34,895` equations, `11,110` trainer-feed rows
+  - `05_sovereign_and_shard_b_router_wiring_manifest.json`: `397` wired Sovereign books, `4,368` primitives, `934` traces, `4,359` top-level Shard B docs, `186` rules/clusters, `276/279` (`98.9%`) active 288-bit router mask bits
+- **BigQuery `galaxysportsedge:gse_data` Live SQL Row Count:** **`9,882` rows**
+  - `sovereign_primitives`: `4,368`
+  - `gcp_shard_b_extractions`: `4,359`
+  - `sovereign_reasoning_traces`: `934`
+  - `router_and_situational_wiring`: `186`
+  - `week10_entity_and_venue_truth`: `35`
+- **Verification & Hold Gates:**
+  - `8` Pytest suites (`25/25` pass), `trust-gate.mjs` (`4,791` files), `mobile/lint-rules.js` (`48` files), `connected-workflow-dossier-guard.py` (`PASS`), `check-agent-ledger.mjs` (`506` rows `OK`), `[secret-scan]` (`64,200` files `OK`)
+  - `LIVE_BOARD`, `PUBLISH_LEDGER`, `PUBLIC_PICKS`, `PERFORMANCE_STATS`, `CALIBRATION_ADJUSTMENTS_ENABLED`, and `WEEK10_HELD_FOR_CORPUS_COMPLETION` remain strictly fail-closed.
