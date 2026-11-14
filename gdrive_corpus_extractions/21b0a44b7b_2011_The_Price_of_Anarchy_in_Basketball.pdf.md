@@ -1,0 +1,151 @@
+---
+source: "2011 The Price of Anarchy in Basketball.pdf"
+folder: "/GSE-Research/sports-research-papers"
+pages: 9
+model: nvidia/nemotron-3.5-super-vl-120b-a12b
+words: 4418
+---
+
+<NATIVE_REASONING>
+The user wants a deep analysis of the provided source paper (Skinner, "The Price of Anarchy in Basketball", arXiv:0908.1801v4). I must follow strict invariants:
+
+1. ZERO BETTING LINES: Never mention spreads, totals, moneylines, or odds.
+2. ZERO TOY EQUATIONS: Never invent fake ratios (Force / Fatigue). State formal LaTeX equations, SI/information/probability units, assumptions, and exact singularity/breakdown regimes. When source pages are provided, cite exact [PAGE N] markers and verbatim quotes.
+3. >= 1,000-WORD DEPTH across these exact XML sections:
+   - <THINK_TRACE>Deep multi-hop derivation & gray-zone audit (>=400 words).</THINK_TRACE>
+   - <SOURCE_OPERATORS_AND_EQUATIONS>Formal LaTeX, units, page citations, breakdown.</SOURCE_OPERATORS_AND_EQUATIONS>
+   - <RETROCAUSAL_GENEALOGY>Historical/scientific lineage & multi-week traps.</RETROCAUSAL_GENEALOGY>
+   - <RECURSIVE_THEORY_OF_MIND>Crisis habit regression vs counter-trap vs clock.</RECURSIVE_THEORY_OF_MIND>
+   - <CROSS_LAYER_VETO_ADJUDICATION>Physical/biomechanical/weather veto proof.</CROSS_LAYER_VETO_ADJUDICATION>
+   - <RLVR_COUNTERFACTUAL_VETOES>3 verifiable RLVR veto scenarios + predictions.</RLVR_COUNTERFACTUAL_VETOES>
+
+No betting lines. No toy equations invented. Use actual equations from the paper (Eq 1-16), cite page numbers. Must be >1000 words total across sections. Need to be careful with word count.
+
+Let's plan each section:
+
+<THINK_TRACE>: Deep multi-hop derivation & gray-zone audit. >=400 words. Discuss the chain: traffic network analogy -> parallel roads -> Nash equilibrium vs global optimum -> basketball skill curves -> linear fi(xi) = αi - βi xi -> Lagrange multiplier solution -> price of anarchy Fopt - FNE -> Braess paradox/Ewing theory -> limitations (defense implicit, skill curve estimation). Gray zones: assumption of linear skill curve, defense treated implicitly, normalization constraint x1+...+x5=1 ignoring minutes/substitutions, TS% definition issues, spurious negative x_opt solutions requiring player removal, arbitrary efficiency choices in Fig 5, Ray Allen data limited (first 3 seasons excluded as learning curve), assumption league defense similar year-to-year. Multi-hop: from Roughgarden/Youn traffic to basketball offense; from Fig 1 algebra to Eq 12-14; from Eq 16 example to Fopt=0.525 vs FNE=0.5; from Fig 5 network to removal of center improving 0.33 to 0.375; true optimum 0.43. Need >=400 words here.
+
+<SOURCE_OPERATORS_AND_EQUATIONS>: Formal LaTeX, units, page citations, breakdown. Include Eq 1,2,3 (traffic), Eq 4 TS%, Eq 5 shot fraction, Eq 6-7 Nash equilibrium, Eq 8 F, Eq 9 optimization, Eq 10-14 linear skill curve optimum, Eq 15-16 Ray Allen example, Fig 5/6 efficiencies. Units: TS% dimensionless probability [0,1], x dimensionless fraction [0,1], F dimensionless expected points per shot? Actually TS% = 1/2(points scored)/(FGA + 0.44*FTA) so dimensionless. Commute time minutes. λ Lagrange multiplier units? Since fi dimensionless and xi dimensionless, F dimensionless, λ dimensionless. βi has units of TS% per fraction (dimensionless per dimensionless = dimensionless). αi dimensionless. Need exact [PAGE N] citations and verbatim quotes where appropriate. Breakdown of each equation's assumptions and breakdown regimes (e.g., xi,opt negative -> remove player; linear assumption breakdown outside relevant range; defense implicit; passes assumed successful every time in Fig 5).
+
+<RETROCAUSAL_GENEALOGY>: Historical/scientific lineage & multi-week traps. Lineage: Pigou's example / Braess's Paradox (1968), Roughgarden (2005), Youn et al. (2008), Dean Oliver (2004) skill curve, Kubatko et al. (2007) TS%, Bill Simmons Ewing Theory (2001), Alamar (2006) passing premium. Multi-week traps: over a multi-week sample, teams may drift toward Nash equilibrium because each possession is locally optimal; coaches may not adjust because price of anarchy is hidden; injury to key player (Ewing Theory) may look like improvement but is actually move toward global optimum; small sample variation in TS% (std dev 1.6% in 2008-09 NBA) can mask 2.5% PoA; skill curve never extracted generally accepted; using season averages assumes constant defense quality across weeks, which fails if opponents adjust.
+
+<RECURSIVE_THEORY_OF_MIND>: Crisis habit regression vs counter-trap vs clock. Crisis habit regression: under pressure, teams revert to highest-percentage shot each possession (Nash/short-sighted), star takes over; this regresses to local equilibrium. Counter-trap: coach enforces global optimum by restricting star usage, making defense unsure; but players have incentive to deviate (each highway driver wants alley). Clock: game clock / shot clock constrains ability to "save" plays; end-of-game differs. Also recursive theory of mind: defense anticipates offense anticipates defense; skill curve f(x) depends on defense response; paper treats defense implicitly but defense has "right to choose" to shift skill curve arbitrarily, weakening conclusions. Multi-level: player thinks about shot, coach thinks about possession distribution, defense thinks about player usage. Crisis causes collapse to Nash because individual possession optimization dominates.
+
+<CROSS_LAYER_VETO_ADJUDICATION>: Physical/biomechanical/weather veto proof. Basketball is indoor controlled environment, so weather veto is null/negligible (no wind, precipitation, temperature variation affecting ball flight in meaningful modeled way; paper doesn't model weather). Physical layer: court dimensions fixed, rim height 10 ft, ball physics; passing assumed successful every time in Fig 5 (veto: passes can be intercepted, deflected; this is a physical layer violation of the model assumption). Biomechanical: player fatigue not modeled; skill curve decline attributed to defensive anticipation, not muscle fatigue; shooting every time down court would cause fatigue but paper's mechanism is defensive learning. Veto proof: because passes are assumed perfect (100% success) and defense is implicit, the model is vetoed at the physical/biomechanical layer for real games where turnovers and fatigue exist. However, as a plausibility argument, it holds if turnover rates are low and possessions are short. Need to mention indoor arena climate control means weather is not a factor, so no meteorological veto.
+
+<RLVR_COUNTERFACTUAL_VETOES>: 3 verifiable RLVR veto scenarios + predictions. RLVR = Reinforcement Learning from Verifiable Rewards? Or just verifiable scenarios. Need 3 counterfactual veto scenarios where the model's prediction fails or is vetoed, with predictions.
+   Scenario 1: Defense explicitly targets high-usage player, shifting skill curve downward arbitrarily (paper's limitation). Prediction: If defense doubles Ray Allen every possession, his effective f_RA(x) drops below teammates regardless of x, making Nash allocation shift to teammates; PoA calculation using static linear curve overestimates Allen's optimal share. Verifiable via game tracking: compare Allen's TS% in games with high defensive attention vs low.
+   Scenario 2: Negative xi,opt solution. Prediction: If a player's αi is low and βi high such that Eq 12 yields negative x_opt, the model prescribes removing them; but in real basketball, a 5th player must take some shots due to shot clock/end of clock, forcing suboptimal allocation and creating a different PoA than Eq 14. Verifiable: inspect lineups where a low-efficiency player is forced to take late-shot-clock shots; team TS% should deviate from model.
+   Scenario 3: Passing failure / turnover. Prediction: In Fig 5 network, if pass success rate p < 1, the efficiency of paths through center Ω5 is multiplied by p, and removing Ω5 might not improve efficiency because the 50/50 guard split relies on perfect passes; with p<1, the Nash equilibrium with center may remain superior or the paradox threshold changes. Verifiable: chart dribble-penetration plays with and without a rolling center; measure assist-to-turnover on shovel passes.
+
+Need to ensure total words > 1000. Let's draft carefully. I must not mention any betting lines (spreads, totals, moneylines, odds). The word "odds" might slip; avoid it. Use "probability" instead.
+
+Need exact [PAGE N] markers. Use them like [PAGE 2], [PAGE 5], etc.
+
+Let's write.
+
+Word count estimation: THINK_TRACE ~450, SOURCE_OPERATORS ~350, RETROCAUSAL ~250, RECURSIVE ~250, CROSS_LAYER ~200, RLVR ~200. Total ~1700. Good.
+
+Need to ensure LaTeX equations are formal. Use \[ \] or inline. Cite page numbers.
+
+Let's draft each section fully.
+
+THINK_TRACE:
+Start with traffic network analogy. Ten cars, two roads. Highway L1=10 constant. Alley L2=x2. Nash equilibrium all 10 take alley, <L>_NE=10. Global optimum x1=x2=5, <L>_opt=7.5. PoA = 2.5 minutes or 33%. This is the core multi-hop: from traffic to basketball.
+
+Then basketball: possessions as cars, plays as roads. Efficiency decreases with frequency. Simplified network Fig 2: five players as paths. Skill curve f_i(x_i). TS% definition Eq 4. Ray Allen linear fit f_RA(x) ≈ 0.75 - 0.62x [PAGE 6]. Teammates constant f=0.5. Nash: Allen shoots until f_RA=0.5 => x_NE≈0.40, F_NE=0.5. Optimum: maximize F = x f_RA(x) + (1-x)*0.5 => x_opt=0.202, F_opt=0.525. PoA = 0.025 (2.5 percentage points). Compare to NBA std dev 1.6% [PAGE 6].
+
+General 5-player linear case: f_i = α_i - β_i x_i. F = Σ x_i f_i(x_i). Constraint Σ x_i =1. Lagrange: x_i,opt = α_i + λ/(2β_i) [PAGE 5]. λ formula Eq 13. F_opt = Σ (α_i^2 - λ^2)/(4β_i) Eq 14. Breakdown: if x_j,opt negative, remove player j and recompute [PAGE 6].
+
+Gray-zone audit: (1) linear skill curve assumption only plausible over relevant range; extrapolating to x=0 or x=1 is invalid. (2) TS% uses 0.44 free throw multiplier, an empirical constant not derived from first principles. (3) Defense implicit: f(x) may differ against team A vs B [PAGE 4]; paper acknowledges defense can shift skill curve arbitrarily [PAGE 9]. (4) Shot fraction x formula Eq 5 normalizes by minutes played; assumes shots per game scale linearly with minutes, ignoring substitution patterns and end-of-game. (5) Fig 5 network efficiencies arbitrary; passes assumed successful every time [PAGE 7]; this is a strong physical assumption. (6) Ray Allen data: first 3 seasons excluded as learning curve; small N; linear fit R^2=0.57 [PAGE 4]—moderate, not strong. (7) League defense assumed constant year-to-year [PAGE 4]. Multi-week trap: over weeks, opponents adjust, so static skill curve is non-stationary; PoA estimates may decay.
+
+Need >=400 words. Let's expand.
+
+SOURCE_OPERATORS_AND_EQUATIONS:
+List equations with page citations. Include verbatim quotes maybe. Breakdown of assumptions and singularity/breakdown regimes.
+
+RETROCAUSAL_GENEALOGY:
+Historical lineage: Pigou (1920) implicit? Not in text, but Braess 1968, Roughgarden 2005, Youn 2008, Oliver 2004, Kubatko 2007, Simmons 2001, Alamar 2006. Multi-week traps: small sample, defensive adaptation, injury/Ewing theory misattribution, regression to Nash under fatigue.
+
+RECURSIVE_THEORY_OF_MIND:
+Crisis habit regression: under pressure, highest-percentage shot each time -> Nash. Counter-trap: coach enforces optimum but players defect. Clock: shot clock/game clock limits "saving" plays. Theory of mind: offense models defense, defense models offense; paper treats defense as fixed background. Crisis causes recursive collapse to local optimum.
+
+CROSS_LAYER_VETO_ADJUDICATION:
+Physical: indoor, no weather. Biomechanical: passes perfect assumption vetoed by interceptions; fatigue not modeled (skill curve decline is defensive, not muscular). Veto proof: model valid only if turnover rate low and possession count high enough for law of large numbers; weather veto null because climate-controlled arena.
+
+RLVR_COUNTERFACTUAL_VETOES:
+Three scenarios as above.
+
+Let's write carefully to avoid banned terms. Do not say "odds". Use "probability", "likelihood", "percentage".
+
+Check for any betting terms: none.
+
+Now produce final with exact XML sections. Need to ensure word count across all sections >1000. Let's write substantial content.
+
+I will include [PAGE N] citations throughout. For verbatim quotes, I can quote short phrases.
+
+Let's compose.
+</NATIVE_REASONING>
+
+<THINK_TRACE>
+The paper’s core multi-hop derivation begins with the traffic analogue on [PAGE 2]: ten cars must travel from A to B over two parallel roads. The highway has constant latency L₁(x₁)=10 minutes regardless of usage, while the alley has latency L₂(x₂)=x₂ minutes. Because the alley is never worse than the highway, every driver selfishly chooses it, producing the Nash equilibrium ⟨L⟩_NE=10 minutes. However, the global average latency for arbitrary usage is ⟨L⟩ = x₁ + x₂²/10 minutes [Eq. 1–2, PAGE 2], subject to x₁+x₂=10. Minimizing yields x₁,opt=x₂,opt=5 and ⟨L⟩_opt=7.5 minutes. The price of anarchy is therefore ⟨L⟩_NE − ⟨L⟩_opt = 2.5 minutes, or 33%. Crucially, this optimum is socially unstable: each highway driver can unilaterally switch to the alley and reduce personal latency from 10 to 6 minutes, so the global optimum must be enforced—“coached”—because it is against immediate individual interest [PAGE 2].
+
+The second hop maps this structure onto basketball on [PAGE 3–5]. Possessions are cars; in-bounds to basket is A to B; plays are roads whose efficiency declines with frequency of use because defenses learn to anticipate them. The simplified offensive network of Fig. 2 treats each of the five players as a path from possession start to shot attempt, with efficiency fᵢ(xᵢ) depending on shot fraction xᵢ [PAGE 3]. Efficiency is operationalized as true shooting percentage (TS%), defined in Eq. 4 as TS% = (1/2)(points scored) / [(field goal attempts) + 0.44 × (free throw attempts)] [PAGE 4], a dimensionless probability-like quantity in [0,1]. Shot fraction is computed per Eq. 5 as x = (player shots/game) / (team shots/game) × (48 minutes/game) / (player minutes/game) [PAGE 4]. The paper then adopts a linear skill curve fᵢ(xᵢ)=αᵢ − βᵢxᵢ [Eq. 10, PAGE 5], where αᵢ is the player’s maximum TS% and βᵢ is the efficiency decay rate with usage.
+
+The third hop derives the equilibrium versus optimum for a five-player team. The short-sighted or Nash-like equalization condition is f₁(x₁)=…=f₅(x₅) subject to Σxᵢ=1 [Eq. 6–7, PAGE 5], meaning every player shoots at the same percentage or not at all. The true team efficiency is F = Σ xᵢfᵢ(xᵢ) [Eq. 8, PAGE 5], and the constrained optimum via Lagrange multipliers yields xᵢ,opt = αᵢ + λ/(2βᵢ) with λ = [2 − Σ(αᵢ/βᵢ)] / [Σ(1/βᵢ)] [Eq. 12–13, PAGE 5]. The corresponding optimum efficiency is F_opt = Σ (αᵢ² − λ²)/(4βᵢ) [Eq. 14, PAGE 5]. A breakdown regime is explicit: if any xⱼ,opt from Eq. 12 is negative, that player is removed from the network and the sums are recomputed over the remaining players [PAGE 6].
+
+The fourth hop is the Ray Allen numerical example on [PAGE 6]. Allen’s estimated skill curve is f_RA(x) ≈ 0.75 − 0.62x [Eq. 15], while four teammates shoot constantly at f=0.5. Nash equilibrium requires f_RA(x_NE)=0.5, giving x_NE≈0.40 and F_NE=0.5. Optimizing F = x f_RA(x) + (1−x)·0.5 [Eq. 16] gives x_opt=0.202 and F_opt=0.525, so the price of anarchy is F_opt − F_NE = 0.025 (2.5 percentage points). The paper notes this is large relative to the 2008–09 NBA team TS% standard deviation of 1.6% [PAGE 6]. Thus the optimal strategy allocates Allen only ~20% of shots despite his superiority, because overuse collapses his efficiency and alerts the defense.
+
+Gray-zone audit. (1) Linearity of fᵢ is assumed “over the relevant range” [PAGE 4] but is never validated outside it; extrapolation toward x→0 or x→1 is physically meaningless because a player cannot take a negative or greater-than-team-total share of shots. (2) TS% embeds the empirical 0.44 free-throw multiplier [Eq. 4, PAGE 4], not a first-principles constant, so F inherits that statistical assumption. (3) Defense is treated only implicitly; f(x) may shift arbitrarily against different opponents [PAGE 4], and [PAGE 9] explicitly warns that a defense’s “right to choose” can shift skill curves and weaken the conclusions. (4) Eq. 5’s shot fraction assumes shot volume scales linearly with minutes played, ignoring substitution patterns, shot-clock pressure, and end-of-game desperation. (5) The Fig. 5 Braess network uses arbitrary efficiency formulas and assumes all passes succeed every time [PAGE 7], a strong physical idealization. (6) Ray Allen’s fit excludes his first three seasons as a “learning curve” [PAGE 4] and reports R²=0.57 [PAGE 4], a moderate rather than tight characterization. (7) League-wide defense is assumed stationary year-to-year [PAGE 4], so multi-week opponent adaptation violates the stationarity premise and creates a non-stationary skill curve. These gray zones mean the price of anarchy is a plausibility bound, not a certified team-level constant.
+</THINK_TRACE>
+
+<SOURCE_OPERATORS_AND_EQUATIONS>
+Formal operators and equations from the source, with page citations and units.
+
+Traffic network [PAGE 2]: Two parallel roads A→B. Highway latency L₁(x₁) = 10 [minutes], constant in flow x₁. Alley latency L₂(x₂) = x₂ [minutes], linear in flow x₂. Ten cars total: x₁ + x₂ = 10. Nash equilibrium: all x₂=10, x₁=0, giving ⟨L⟩_NE = 10 minutes. General average latency:
+⟨L⟩ = [x₁L₁(x₁) + x₂L₂(x₂)] / 10 = x₁ + x₂²/10 [Eq. 1–2, PAGE 2], with units minutes. Substitution x₂ = 10 − x₁ yields ⟨L⟩ = x₁ + (10 − x₁)²/10 [Eq. 2]. First-order condition d⟨L⟩/dx₁ = 0 gives x₁,opt = x₂,opt = 5 [Eq. 3], ⟨L⟩_opt = 7.5 minutes. Price of anarchy = 2.5 minutes, or 33% [PAGE 2]. Breakdown regime: optimum is unstable because any single driver gains by switching highway→alley (10 → 6 minutes), requiring external enforcement.
+
+Basketball skill curve [PAGE 4–5]: True shooting percentage TS% = (1/2)(points scored) / [(FGA) + 0.44 × (FTA)] [Eq. 4], dimensionless expected points per shooting possession scaled by 0.5; equivalent to “probability that a shot produces points” adjusted for free throws and three-pointers. Shot fraction xᵢ = (player shots/game) / (team shots/game) × (48) / (player minutes/game) [Eq. 5], dimensionless fraction in [0,1]. Skill curve fᵢ(xᵢ) = αᵢ − βᵢxᵢ [Eq. 10], with αᵢ, βᵢ > 0, αᵢ ≤ 1, βᵢ ≤ αᵢ; fᵢ has units of TS% (dimensionless) per unit fraction (dimensionless), so βᵢ is dimensionless. Ray Allen fit: f_RA(x) ≈ 0.75 − 0.62x [Eq. 15, PAGE 6].
+
+Nash/short-sighted equilibrium [PAGE 5]: f₁(x₁) = … = f₅(x₅), Σxᵢ = 1 [Eq. 6–7]. All players shoot equal percentage or zero. This is called “short-sighted” because each possession locally maximizes its own success probability without regard to team-wide efficiency decay.
+
+Team efficiency and optimum [PAGE 5]: F = Σᵢ₌₁⁵ xᵢ fᵢ(xᵢ) [Eq. 8], dimensionless team TS%. Optimization: dF/dx₁ = … = dF/dx₅ = 0 subject to Σxᵢ = 1 [Eq. 9]. Lagrange formulation: ∂/∂xᵢ [F + λ(Σxᵢ − 1)] = 0 [Eq. 11]. Solution xᵢ,opt = αᵢ + λ/(2βᵢ) [Eq. 12], λ = [2 − Σᵢ₌₁⁵ αᵢ/βᵢ] / [Σᵢ₌₁⁵ 1/βᵢ] [Eq. 13]. F_opt = Σᵢ₌₁⁵ (αᵢ² − λ²)/(4βᵢ) [Eq. 14]. Singularity/breakdown: if xⱼ,opt < 0 for any j, the solution is spurious; player j receives zero shots and the sums in Eq. 12–14 are recomputed over the remaining four players [PAGE 6].
+
+Ray Allen example [PAGE 6]: Teammates constant f = 0.5. Nash: f_RA(x_NE) = 0.5 → x_NE ≈ 0.40, F_NE = 0.5. Team TS% if Allen takes fraction x: F = x f_RA(x) + (1−x)·0.5 [Eq. 16]. Optimum: dF/dx = 0 → x_opt = 0.202, F_opt = 0.525. Price of anarchy = 0.025 (2.5 percentage points). Allen’s TS% at optimum is 0.625 versus teammates’ 0.5 [PAGE 6].
+
+Braess/Ewing network [PAGE 7–8]: Fig. 5 dribble penetration: guard Ω₁ or Ω₂ drives, may shoot or shovel to center Ω₅; Ω₅ may shoot or pass back to the non-driving guard for a layup. All passes assumed successful with probability 1 [PAGE 7]. Nash equilibrium: Ω₁ always drives, never shoots; Ω₅ shoots 1/3 of the time, Ω₂ shoots 2/3; both finish at 2/3; overall efficiency = 0.5 × (2/3) ≈ 0.33 [PAGE 8]. Remove Ω₅ [Fig. 6]: guards split 50/50; each efficiency = 0.5 × (1 − 0.5×0.5) = 0.375; paradoxical improvement from 0.33 to 0.375 [PAGE 8]. True optimum: Ω₁ and Ω₂ each drive half the time; Ω₂ and Ω₅ split shots 50/50; overall efficiency = 0.43 [PAGE 7–8]. Price of anarchy for this set = 0.43 − 0.33 = 0.10 (10 percentage points) between optimum and Nash [PAGE 7–8].
+
+Limitations cited [PAGE 9]: no hard statistical evidence; defense implicit and not a network player; defense can shift skill curves arbitrarily; skill curves require multi-season data with varying offensive responsibility; coaching intuition already incorporates related ideas (baseball pitch selection, football run/pass mix) [PAGE 9].
+</SOURCE_OPERATORS_AND_EQUATIONS>
+
+<RETROCAUSAL_GENEALOGY>
+The paper’s genealogy layers traffic theory, basketball analytics, and sports sociology. The traffic foundation is Braess’s Paradox—counterintuitive network improvement upon link removal—formalized in Roughgarden’s Selfish Routing and the Price of Anarchy (2005) and Youn, Gastner, and Jeong’s Physical Review Letters analysis (2008), both cited on [PAGE 2–3] and in the references [PAGE 9]. The paper explicitly adapts Roughgarden’s two-road example [PAGE 2]. On the basketball side, Dean Oliver’s Basketball on Paper (2004) posited an inverse usage–efficiency “skill curve” [PAGE 4], and Kubatko et al. (2007) introduced true shooting percentage as the efficiency metric [PAGE 4]. Bill Simmons’s 2001 “Ewing Theory” supplies the sports-cultural label for the idea that losing a star can improve a team [PAGE 7]. Benjamin Alamar’s 2006 “Passing Premium Puzzle” is invoked in the conclusion as analogous reasoning: passing plays produce more yards than running plays, yet runs are retained to “keep the defense honest” [PAGE 9].
+
+The multi-week trap lies in treating season-average skill curves as static. Because f(x) is estimated from season aggregates across years [PAGE 4], the model assumes league defensive quality is stationary [PAGE 4]. Over a multi-week sample, however, opposing defenses adjust game-by-game; a team that overuses its best player in Week 1 will be schematically targeted in Week 2, shifting that player’s skill curve downward in a way the static linear model does not capture. The price of anarchy is therefore not a fixed constant across a season but a moving target: early-season overuse yields a large PoA, while late-season defensive adaptation may shrink or invert it. Relatedly, the 2008–09 NBA team TS% standard deviation was only 1.6% [PAGE 6], so a 2.5 percentage-point PoA signal can be obscured by week-to-week noise, small-sample variance, and schedule strength. A team improving after losing a star—the Ewing Theory—may be misattributed to psychology when the network explanation is that the star’s presence was locking the offense into a Nash equilibrium below the global optimum [PAGE 7]. Finally, the linear skill curve itself is a retrospective fit (Ray Allen, R²=0.57 [PAGE 4]); without a trustworthy method to extract skill curves from single-season data [PAGE 9], multi-week forecasting remains under-identified.
+</RETROCAUSAL_GENEALOGY>
+
+<RECURSIVE_THEORY_OF_MIND>
+The recursive theory of mind operates at three nested levels: the individual possession, the team-level shot allocation, and the defensive response. At the possession level, the “crisis habit regression” is the tendency under pressure to take the highest-percentage shot available immediately, which is precisely the Nash/short-sighted equilibrium f₁(x₁)=…=f₅(x₅) [Eq. 6–7, PAGE 5]. When a game tightens, players and coaches regress to this local optimum because the cognitive cost of computing a team-wide optimum exceeds the perceived benefit of any single possession. The star player takes over, usage x_star rises, and f_star(x_star) decays due to defensive anticipation, trapping the offense in a sub-optimal fixed point.
+
+The counter-trap is the coach’s attempt to enforce the global optimum by deliberately restricting the star—e.g., holding Ray Allen to x_opt≈0.202 instead of x_NE≈0.40 [PAGE 6]. This is unstable in the same sense as the traffic optimum: each teammate has an incentive to feed the star when open, and the star has an incentive to shoot when the defense collapses elsewhere. Without external enforcement, the offense reverts to Nash. The defense adds another recursive layer: it observes the offense’s usage pattern and chooses how aggressively to guard each player, thereby shifting fᵢ(x) [PAGE 4, 9]. The offense models the defense’s likely adjustment; the defense models the offense’s model. Because the paper treats defense as an implicit background function rather than a strategic player [PAGE 9], it omits this higher-order recursion. A defense with the “right to choose” arbitrary focus can push any player’s efficiency below any threshold, invalidating the pre-computed skill curve and collapsing the optimization.
+
+The clock imposes a hard boundary: the shot clock and game clock limit how long a team can “save” its best plays or defer the star’s shots [PAGE 9 references coaching intuition about saving plays]. In traffic, drivers can be coached into the global optimum because commutes are repeated daily; in basketball, end-of-clock possessions force sub-optimal shooters to act, injecting noise into the shot distribution that Eq. 7’s clean normalization Σxᵢ=1 does not model. Thus crisis habit regression is strongest in late-game, high-clock-pressure situations, exactly when the Nash equilibrium’s local rationality overrides the global optimum.
+</RECURSIVE_THEORY_OF_MIND>
+
+<CROSS_LAYER_VETO_ADJUDICATION>
+Physical layer: Basketball is played in climate-controlled indoor arenas, so temperature, wind, precipitation, and humidity exert no modeled effect on ball flight or player movement; the weather veto is therefore null in this framework. The court geometry, rim height, and ball physics are fixed constants, and the paper does not introduce environmental variables.
+
+Biomechanical layer: The model assumes passes succeed with probability 1 in the Fig. 5 network [PAGE 7], which is a biomechanical veto candidate because real passes can be intercepted, deflected, or mishandled. Turnover probability is absent from all efficiency functions fᵢ(xᵢ); the efficiency decay βᵢ is attributed to defensive anticipation, not to muscular fatigue or cumulative loading. A player who shoots every possession would fatigue, but the paper’s mechanism is strategic (defense learns) rather than physiological. Consequently, the model is vetoed at the biomechanical layer for games with high turnover rates or extreme fatigue, where the assumed linear decay and perfect passing fail.
+
+Veto adjudication: The price-of-anarchy result is conditionally valid when (a) turnover rates are low enough that passing can be approximated as reliable, (b) the sample of possessions is large enough for the law of large numbers to stabilize TS%, and (c) defensive adjustments are slow relative to the timescale of the shot allocation. Under these conditions the cross-layer vetoes do not trigger. If any condition fails—especially a defense that actively sells out to stop the highest-usage player—the skill curve fᵢ(x) shifts arbitrarily [PAGE 9] and the Eq. 12–14 optimum loses predictive force. The model remains a plausibility argument, not a physical law [PAGE 9].
+</CROSS_LAYER_VETO_ADJUDICATION>
+
+<RLVR_COUNTERFACTUAL_VETOES>
+Three verifiable counterfactual veto scenarios with testable predictions.
+
+Veto Scenario 1 — Explicit defensive targeting shifts the skill curve. Counterfactual: A defense dedicates double-team coverage to Ray Allen on every possession, overriding the paper’s implicit-defense assumption [PAGE 9]. Prediction: Allen’s effective TS% f_RA(x) drops below his teammates’ constant 0.5 even at low x, so the Nash equalization condition f_RA(x_NE)=0.5 is violated at all feasible x; the model’s prescribed Allen share x_opt≈0.202 overstates his optimal usage. Verification: Chart team TS% in games where Allen faces above-average defensive attention versus low-attention games; the price of anarchy should shrink or reverse as Allen’s curve shifts downward.
+
+Veto Scenario 2 — Negative x_opt forces player removal but shot-clock constraints forbid zero usage. Counterfactual: A fifth player has parameters αᵢ and βᵢ such that Eq. 12 yields xᵢ,opt < 0 [PAGE 6], so the model removes that player from the offensive network. In a real game, the shot clock and end-of-possession requirements force that player to take some shots (e.g., desperation attempts), so xᵢ cannot be exactly zero. Prediction: Actual team efficiency F will fall below Eq. 14’s F_opt because the constraint xᵢ=0 is infeasible; a new binding constraint xᵢ ≥ x_min > 0 produces a higher effective price of anarchy than Eq. 14 predicts. Verification: Compare lineups containing a low-α, high-β player in late-shot-clock situations against model output; F should be lower than the unconstrained optimum.
+
+Veto Scenario 3 — Imperfect passing eliminates the Braess/Ewing improvement. Counterfactual: In the Fig. 5 dribble-penetration network, passes are not perfectly successful; let shovel-pass and kick-out completion probability be p < 1 [PAGE 7 assumes p=1]. Prediction: The efficiency of all paths through center Ω₅ is multiplied by p, reducing the Nash equilibrium below 0.33 and reducing the post-removal 50/50 guard split efficiency below 0.375. For sufficiently low p, removing Ω₅ no longer improves efficiency because the guards’ drive-and-shoot paths also depend on spacing created by Ω₅’s threat; the paradox threshold vanishes. Verification: Track dribble-drive plays with and without a rolling center, measuring assist-to-turnover ratios on shovel passes; if p is below the break-even value derived from the Fig. 5 formulas, the Ewing improvement disappears and center removal harms efficiency.
+</RLVR_COUNTERFACTUAL_VETOES>
