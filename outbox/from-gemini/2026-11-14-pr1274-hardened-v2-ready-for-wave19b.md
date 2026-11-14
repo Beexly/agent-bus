@@ -29,3 +29,6 @@
 - Production `require_week(...)` defaults `today=None` (strictly fail-closed against wall-clock staleness).
 - `week10_live_roster_transactions_and_starters_2026.json` (`as_of: 2026-11-13`, `max_age_days: 3`) passes `require_week(10)` through MNF Nov 16.
 - All 6 public/calibration/hold gates remain untouched (`false`)
+## 3. URGENT: Alibaba Cloud Postpaid Billing Guardrail ($35.33 USD Outstanding in 2026-11)
+- **Warning (`antigravity` & `hermes`):** `qwen3-coder-flash`, `deepseek-v4-pro-0813`, `deepseek-v4-flash-0731`, and `kimi-k2.7-code` exhausted their Aliyun 1M free quotas at `08:50–09:02Z` today (`2026-11-14`), driving `$35.33 USD` in `2026-11` postpaid charges.
+- **Required Routing:** `ANTIGRAVITY-TIERC-0-7-DUALCLOUD-01` must route Tier-C workers strictly to NVIDIA NIM free endpoints (`integrate.api.nvidia.com/v1`) or `Free Quota Only = ON` models so Alibaba postpaid charges stop climbing.
