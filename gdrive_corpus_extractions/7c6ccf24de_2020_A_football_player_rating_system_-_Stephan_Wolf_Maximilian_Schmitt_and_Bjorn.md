@@ -1,0 +1,269 @@
+---
+source: "2020 A football player rating system - Stephan Wolf, Maximilian Schmitt and Bjorn Schuller.pdf"
+folder: "/GSE-Research/sports-research-papers"
+pages: 15
+model: deepseek/deepseek-v4.1-flash-1017
+words: 8287
+---
+
+<NATIVE_REASONING>
+We need answer user asks DRIVE SOURCE with paper. Need produce analysis using exact XML sections, >=1000 words. Need zero betting lines: don't mention spreads totals moneylines odds. User prompt itself mentions betting lines in invariants, but we must not mention. Need avoid odds. Paper mentions betting agencies and quotas/odds in source, but we should avoid quoting betting line stuff. Need focus on source operators/equations, citations exact [PAGE N] and verbatim quotes. Need formal LaTeX equations, units, assumptions, singularity/breakdown regimes. Need deep think trace >=400 words. Need sections exact XML. Need likely goal? The user just gives source and asks with system invariants. Need analyze paper. We can provide a frontier reasoning foundry response. Need not make predictions about games? They want "DRIVE SOURCE" perhaps expects source-grounded analysis. Need include all required sections. Must be >=1000 words. Need ensure no "odds", "moneyline", "spread", "total" (except maybe "total" as word? Avoid betting context; can use "total games" but "totals" banned? Invariant says never mention spreads, totals, moneylines, or odds. Avoid word "total" entirely maybe safer. Use "aggregate" instead. Avoid "betting". Avoid "bookmaker". Need not quote paper's betting mentions. Need cite exact markers and verbatim quotes. Need formal LaTeX with units. Need discuss Elo algorithm adaptation for team sports. Need derive equations and audit. Need source operators and equations: E_A, S_A, C_A, k_A, R'_A, team rating R_A formula, home adjustment, E_Ai, S_Ai, C_Ai, new rating R'_Ai, team update, player impact I_Ai, Brier score, initial rating formulas. Units: Elo points dimensionless, minutes, goals, probability [0,1], Brier score squared probability units, k dimensionless? Actually Elo points. Need specify assumptions and breakdown/singularity regimes: denominators zero when no minutes; Mmax=0; D=0 piecewise; cube root for negative? They use |D| and sign from S-E; for D=0 minute fraction. Brier baseline. k/q update boundaries max/min; club change resets; player impact denominator zero if minutes absent, half-life exponential. Need source quotes and page markers.
+
+Need retrocausal genealogy: Elo 1960/FIDE 1970, FIFA adoption 2018, ClubElo, plus-minus, etc. Multi-week traps: player transfer resets, initialisation bias, youth bias, lineup availability, cross-league comparability, impact small sample, half-life weighting. Need recursive theory of mind: crisis habit regression vs counter-trap vs clock. Interpret: crisis habit regression = when model under pressure defaults to old subjective/cumulative stats? Counter-trap = avoid overreacting to recent results? Clock = time decay/minutes/half-life. Need discuss how a human analyst using this system might regress to habits, counter traps, and clock. Cross-layer veto adjudication: physical/biomechanical/weather veto proof. Need ensure no betting lines. We can state no physical/weather variables in model, so veto proof means any such context cannot be inferred from match reports; model's rating is only results/minutes/lineups; physical/biomechanical/weather are outside input and must veto causal claims. Need maybe "weather" not in paper; we can say source contains no weather/biomechanical operators; any claim requiring them lacks support [PAGE 3, 6]. Need cite page 3 for input solely official match reports and page 6 for data, page 5/6 for algorithm. Need "proof" maybe formal: model evidence E = {goals, lineups, substitutions, minutes}; no variables for weather, fatigue, biomechanics, so posterior cannot update on them; veto any explanatory claim. Need maybe mention physical contact/injury? Paper says injury affects k/q [PAGE 6]. But no biomechanics. Need avoid inventing. We can discuss assumptions.
+
+RLVR counterfactual vetoes: 3 verifiable scenarios + predictions. Need define RLVR? Reinforcement Learning Verification? Probably "RLVR counterfactual vetoes" means three scenarios where if source-grounded conditions fail, veto. Need make verifiable predictions: e.g., if a player has aggregate minutes with and without both <900, impact formula uses combined attenuation; prediction low confidence. If player changes club, k and q reset to max; prediction faster rating adaptation; if no lineup data, player rating cannot be computed; if denominator minutes zero, equation undefined and must veto. Need not mention betting. Need use exact page quotes.
+
+Need word count >=1000. We can write maybe 2500-3500 words. Need XML sections exactly. The XML tags: <THINK_TRACE>...</THINK_TRACE>, etc. Need no markdown? Can include LaTeX inside. Need exact section names. Need keep XML well-formed? Avoid unescaped ampersands? Use &amp;? In XML, ampersand must escape. But we can avoid ampersands or use &amp;. The source title has "&" maybe avoid. Need tags. If using < inside equations, XML parse issues. We can use LaTeX with \lt, \gt instead of < >. Use \( \) not raw <. Use [PAGE N]. Need not have raw "&". Use "and". Avoid unescaped <. Use \leq etc. Use "greater than" words. Need not use raw & in quotes. Use "and". Need ensure ">= 1,000-word" maybe not use >? Fine outside XML? Use words. Need no raw <. Use \text{...}. In XML text, curly braces okay. The XML tags themselves okay. Need maybe equations with \begin{cases} and \frac. No raw < or >. Use \lt, \gt. Use \le, \ge. Avoid "p < 0.05" use "p \lt 0.05". Need avoid ampersand. Use "and" instead of &.
+
+Need cite exact [PAGE 1] etc. Need verbatim quotes: exact quotes from source. Need quote with page markers. Examples:
+- [PAGE 3] "The input of the system is solely the information found in the official match reports, i. e., the goals scored by each team and the lineups with substitutions, including the respective minutes of play."
+- [PAGE 6] "In every game, the sum of the rating changes over all players is usually zero (different k-values can result in minimal deviations)."
+- [PAGE 6] "kAi is at least 24 and at most 40; qAi varies between 0.5 and 1"
+- [PAGE 7] "If the sum of minutes played with the player or the sum of minutes played without the player is less than 900 minutes (equivalent to 10 complete games), the results will be weighted weaker because of their low meaningfulness"
+- [PAGE 11] "The Brier Score is the average of all N games and can be calculated with the following formula:" and formula.
+- [PAGE 5] "For example, in a win with 8 goals difference, the change is twice as large as in a success with 1 goal difference."
+- [PAGE 6] "If a player is newly registered in the system, his ability to perform can initially only be estimated..."
+- [PAGE 8] top ratings? Maybe quote Pique. Need maybe use not too many.
+- [PAGE 9] "Again, the goal difference in relation to the playing minutes with Vidal on the pitch is better than the goal difference without Vidal." Maybe for impact/lineup.
+- [PAGE 10] Brier score results? Table 6: player rating 0.1490 aggregate vs team 0.1524 baseline 0.1894. Page 10? Table 6 on page 11. Need cite [PAGE 11]. Table 5 page 10. 
+- [PAGE 12] "In reality, however, the lineups will only be announced shortly before kick-off." This is a key limitation. Use for lineup clock veto. 
+- [PAGE 12] "With appropriate adjustment, it would also be possible to specify quotas for corresponding bets." Avoid quoting betting. Don't include.
+- [PAGE 3] "The developed system is able to: (a) rank the playing strengths of football players, (b) rank the playing strenghts of football teams, (c) predict the outcomes of future football matches, and (d) identify new talents in football." Good.
+- [PAGE 6] "The player is responsible for the result of the team and the team is responsible for the result of the player"
+- [PAGE 5] home advantage quote? "the home team's rating and the ratings of all home team players are adjusted before the expected values are calculated."
+- [PAGE 6] player initialization? Page 7 actually section 3.3 starts page 7? Source PAGE 7 includes 3.3. Quote "new players are initialised based on the team’s current Elo rating." [PAGE 7]. And "If more than half of the players of a lineup are already registered in the system, the initial rating of a new player is therefore the average score of his teammates." [PAGE 7].
+- [PAGE 12/13] conclusion.
+
+Need structure. Let's plan.
+
+<THINK_TRACE>
+- Deep multi-hop derivation and audit. Need >=400 words. Discuss source objective: adapt Elo to individual football players using only match reports. Input graph: match -> lineup -> player minutes -> goal difference while on pitch -> expectation from player rating vs opponent team average -> update player and team. Need derive formal chain. Need audit gray zones: (i) team rating formula weighted by minutes, (ii) individual expectation uses opponent team rating not opponent player rating, (iii) result uses on-pitch goal difference, (iv) change blends personal and team via q, (v) k/q dynamic, (vi) sum-zero approximate due to k differences. Discuss identification: player effect confounded by team strength and lineup selection; impact metric tries to difference with/without but small sample and nonrandom minutes. Include quotes. Need mention no betting. Need avoid "odds". Need mention "prediction accuracy" not betting. Need discuss Brier score. Need exact citations. Need say not a physical measurement; no biomechanics/weather. Need maybe "the model is a dynamic rating operator, not a causal physical model."
+
+Need maybe mention units:
+- Ratings R, E dimensionless? Actually Elo points, expectation probability. k in Elo points per unit score? k dimensionless relative to result? In equation C=(S-E)k; k has Elo-point units if S-E dimensionless. q dimensionless. D goals. M minutes. w dimensionless. H Elo points. I has points per 90? Equation I=(sum C / sum M - ...)*90 => Elo points per 90 min? Actually numerator C (points), denominator minutes, times 90 minutes -> points per 90. So units Elo points per 90 minutes. Brier score squared probability. Need state.
+
+Need singularity/breakdown:
+- Eq 6 denominator sum M_Ai = 0 if no players/minutes; undefined. In practice lineup has minutes >0; if lineup unknown cannot compute.
+- Eq 9 when D_Ai=0 uses M_Ai/M_max; if M_max=0 undefined; if player not on pitch M=0 then change zero? But only involved players? Need note.
+- Eq 10 q blend; q in [0.5,1], no singular but if Mmax=0.
+- Eq 11 impact denominators sum M with/without =0; Appendix A.2 attenuation if <900 avoids pure singularity but original Eq 11 undefined when denominator zero. Need mention.
+- Eq 12 Brier score N=0 undefined; average.
+- Eq 13/14 initial rating if LMax=1 denominator zero; formula breakdown. Need mention. Eq 14 denominator LMax-1; if only one league level, undefined; must override. Good.
+- k/q update boundaries: k min 24 max 40; q min 0.5 max 1; if reset club. If player absent, k increases by 0.5 q by 0.025 each match; if plays decreases by 0.25 q 0.025. Need cite PAGE 15.
+- Cube root: for negative D they use |D| and sign from S-E. If D negative and S=0, E positive, change negative * cube root positive; correct. If D positive and S=1, positive. If draw D=0. If D sign and S? The piecewise S matches sign; okay. But if team wins while player on pitch? D>0 S=1. If D<0 S=0. No conflict. But if D=0 S=0.5. The cube root homogeneous relation: 8^(1/3)=2 vs 1^(1/3)=1. Good.
+
+Need "source operators and equations" with formal LaTeX and citations. Use all major equations. Need be concise but thorough. Maybe include:
+- Team rating \(R_A = \frac{\sum_{i=0}^{n-1} R_{Ai} M_{Ai}}{\sum_{i=0}^{n-1} M_{Ai}}\) [PAGE 5].
+- Home advantage \(R_A := R_A + H\) [PAGE 5].
+- \(E_{Ai}=1/(1+10^{(R_B-R_{Ai})/400})\) [PAGE 5].
+- \(S_{Ai}=1 if D>0; 0.5 if D=0; 0 if D<0\) [PAGE 5].
+- \(C_{Ai}=w(S-E)\sqrt[3]{|D|}\) for D !=0; \(w(S-E) M/Mmax\) if D=0 [PAGE 6].
+- \(R'_{Ai}=R_{Ai}+k_{Ai}[(q_{Ai}C_{Ai})+(1-q_{Ai})C_A M_{Ai}/Mmax]\) [PAGE 6].
+- Team update \(R'_A=R_A+20 C_A\) [PAGE 6].
+- Impact \(I_{Ai}=(\sum C_A with / \sum M_A with - \sum C_A without / \sum M_A without)*90\) [PAGE 7]. Appendix attenuation.
+- Brier \(BS=\frac1N\sum (E_{At}-S_{At})^2\) [PAGE 10].
+- Initialisation \(R_A=4375-250(L_A-1)10/(Lmax-1)\) [PAGE 11]; general \(R_A=\bar R_{L1}-(\bar R_{L1}-1875)(L_A-1)/(Lmax-1)\) [PAGE 11].
+- k/q update [PAGE 15].
+Need mention assumptions: match report complete, minutes accurate, goals while player on pitch, team rating average, home advantage dynamic, k/q intuitive optimized. Need mention model uses actual lineup in evaluation and limitation [PAGE 12].
+
+Need <RETROCAUSAL_GENEALOGY>
+- Elo 1960, FIDE 1970, FIFA adoption 2018; paper extends to individual team sport players. Historical lineage: chess -> individual sports -> team Elo (ClubElo, FIFA) -> plus-minus (Kharrat, Schultze) -> event/tracking systems (Arndt, Decroos, Pappalardo) -> this match-report Elo. Need cite pages 2-5, 13-14. Multi-week traps: initialisation using teammate average creates youth/Bayern bias [PAGE 11]; club change reset k/q [PAGE 6,15]; no cross-league equivalence? Paper says cumulative models no cross-comparison [PAGE 2] and system aims cross-league; but initialisation across countries uses formula. Need mention season transfer and international weights w=1.5 CL and 1.25 EL [PAGE 8] — avoid "odds", okay. Home advantage H estimated 75 and updated [PAGE 8]. Multi-week trap: ratings depend on exposure; players in successful teams get high ratings; impact is attempt to counter [PAGE 7-8]. Need cite Pique/rank quotes? Maybe "The fact that the list of the 25 best players also includes players that most experts are unlikely to classify as world-class..." [PAGE 8] as gray-zone evidence. Good. Need discuss "retrocausal" as path dependence: initial conditions and transfer resets can make later ratings look like talent but are partly initialisation history. Need "traps" over multi-week: small sample impact, half-life, lineup selection, injury k/q. Need not mention betting.
+
+<RECURSIVE_THEORY_OF_MIND>
+- Crisis habit regression vs counter-trap vs clock. Need interpret with source. Crisis habit regression: when model sees surprising result, analyst may over-update by ignoring k/q bounds and reset? The paper explicitly resets k/q on club change and increases after missed games. Counter-trap: avoid taking high rating as direct physical quality; it's team-result and exposure dependent; use impact and minutes; avoid overinterpreting one match because k limits. Clock: half-life 1 year for impact; k/q decrement/increment per match; minutes; lineup announcement close to kickoff. Need maybe "theory of mind" about analysts/coaches: understand that a player's rating is from team context and time. Need quote "If the player does not play for a long time due to injury or other reasons, the accuracy of his rating will decrease, which is why kAi and qAi are increased in each match without Ai." [PAGE 6]. And "Current games are weighted more heavily than matches in the past. The half-life of a game is 1 year." [PAGE 7]. And "lineups will only be announced shortly before kick-off" [PAGE 12]. Need discuss counter-trap: don't treat impact as causal without randomized minutes; Vidal example [PAGE 12]. Need quote "Against this, one could argue that Vidal was just lucky and only played against supposedly easier opponents..." [PAGE 12]. This is good. Need no betting.
+
+<CROSS_LAYER_VETO_ADJUDICATION>
+- Physical/biomechanical/weather veto proof. Need state source's input space: goals, lineups, substitutions, minutes [PAGE 3]. No physical load, biomechanics, weather, pitch, travel, fatigue variables. Therefore any claim that a rating change is due to weather/biomechanics is unsupported; veto. Need maybe formal: Let evidence \(E_{model}\) be match report variables. If hypothesis \(h_{phys}\) requires variables not in \(E_{model}\), then \(P(h_{phys}|E_{model})\) not identifiable; model cannot adjudicate. Since Brier score and predictions only test outcome accuracy, not mechanism [PAGE 10-11]. Need cite Brier score and evaluation. Need mention "The dataset contains 17,086 matches ... 11,139 players and 438 club teams" [PAGE 6-7]. But no physical. Need mention home advantage is statistical not weather. Need "weather" not in source. Need maybe "biomechanical" not in source. So veto proof is absence-of-operator: no equation includes temperature, wind, surface, fatigue, injury load; only minutes and goals. Need state if a proposed explanation requires those, it is a cross-layer veto: cannot use rating as evidence. Need maybe "physical/biomechanical/weather veto proof" phrase. Need discuss injury: paper mentions injury affects accuracy and k/q but no injury severity variable [PAGE 6]. So injury can only be inferred via missed matches, not biomechanics. Good.
+
+<RLVR_COUNTERFACTUAL_VETOES>
+- 3 verifiable RLVR veto scenarios + predictions. Need define scenarios:
+1. Denominator-zero/incomplete match report veto: If any team's lineup minutes sum is zero or missing, Eq 6 cannot compute; model must veto. Prediction: no rating update should be produced; if forced, NaN/infinite or arbitrary; verifier checks denominator >0. Cite [PAGE 5] team rating formula and [PAGE 3] input. 
+2. Small-sample impact attenuation veto: If sum minutes with or without player <900, original Eq 11 is unstable; must use Appendix A.2 attenuation. Prediction: impact values shrink toward zero and confidence drops; verifier checks the attenuation factors \(0.1+\sum M/900\) [PAGE 15]. Cite [PAGE 7] and [PAGE 15]. 
+3. Club-change reset veto: If player transfers, k and q must reset to 40 and 1, respectively, before next match; if not, rating adaptation is slow and violates stated rule. Prediction: next updates have larger magnitude and more personal-result weight; verifier checks k=40 q=1 [PAGE 15] and [PAGE 6]. Maybe another: actual lineup vs expected lineup veto: If using pre-match expected lineup instead of actual lineup, evaluation claim not transferable; paper says actual lineup known in evaluation and real lineups announced shortly before kickoff [PAGE 12]. Prediction: uncertainty increases; must not claim same accuracy. Need choose 3. Could include Brier score N=0? Maybe 3 best: missing minutes, small-sample impact, club reset. Or lineup. Need "3 verifiable RLVR veto scenarios + predictions." We can include exactly three numbered. Need not mention betting. Use "RLVR" maybe "reinforcement-learning verification/reward" but no need. Need state verification predicate and prediction. Good.
+
+Need ensure word count. Need maybe not too verbose but enough. Need exact XML sections. Need maybe include title? Not necessary. Need no markdown headings outside XML. Could start with <THINK_TRACE>. Need all sections. Need ">=1,000-word depth" we can write ~3000 words. Need use no ampersands. Check for "&" none. Avoid "odds" entirely. Avoid "betting" entirely. Avoid "spread" maybe word "spread" not use. Avoid "totals". Avoid "moneyline". Avoid "line" maybe "lineup" contains "line" but not betting line. It's okay? "never mention spreads, totals, moneylines, or odds" "line" not banned if lineup. But "line" in "lineup" is fine. Avoid "bet" substring? "between" contains bet? Hmm invariant likely semantic not substring. But "between" has "bet"? Actually b-e-t? between = b e t w e e n, contains "bet"? letters b e t yes? "between" starts "bet"? b e t yes. Could be overly strict? The invariant says never mention betting lines, not avoid substring. But to be safe? Impossible avoid "between". Fine.
+
+Need exact quotes. Let's list quotes and page:
+PAGE 1: Abstract "The objective of this work was the development of a new rating system for determining the playing strength of football players." "The Elo algorithm, which has established itself as an objective and adaptive rating system in numerous individual sports, has been expanded in accordance with the requirements of team sports." Good.
+PAGE 2: "In both, subjective and objective methods, players can accumulate ratings in a monotonous fashion over a period of time—such cumulative procedures have the disadvantage that the ratings cannot be adjusted to current results, but only an average of past results is determined." Good. Also "Elo-based ranking systems for football have been proposed only—to the best knowledge of the authors—for teams and not for individual players." Good.
+PAGE 3: input quote. "The developed system is able to: (a) rank the playing strengths of football players, (b) rank the playing strenghts of football teams, (c) predict the outcomes of future football matches, and (d) identify new talents in football." [PAGE 3]. Note typo "strenghts" exact.
+PAGE 4: Elo equations and k. "The weight kA is a positive number between 10 and 40..." and FIDE rule. Maybe not needed.
+PAGE 5: "The rating of a team RA indicates the strength of the lineup of club A." and formula. "the home team's rating and the ratings of all home team players are adjusted before the expected values are calculated." "For example, in a win with 8 goals difference, the change is twice as large as in a success with 1 goal difference." This quote actually on PAGE 5? Yes page 5 includes from "Similar to Formula 3..."? Let's check: PAGE 5 begins at 247 includes section 3.1. It contains formula 6,7,8, then page 6 formula 9. The quote "For example, in a win with 8 goals difference..." appears PAGE 5 near bottom? In source, PAGE 5 includes "For example, in a win with 8 goals difference, the change is twice as large as in a success with 1 goal difference. If a match ends in a draw..." Yes PAGE 5. Good.
+PAGE 6: formula 9,10, team update. "In every game, the sum of the rating changes over all players is usually zero (different k-values can result in minimal deviations)." "If a player does not play for a long time due to injury or other reasons, the accuracy of his rating will decrease..." "A special case is present, if the player changes the club..." "kAi is at least 24 and at most 40; qAi varies between 0.5 and 1". Good.
+PAGE 7: section 3.3, 3.4. "If more than half of the players of a lineup are already registered in the system, the initial rating of a new player is therefore the average score of his teammates." "Current games are weighted more heavily than matches in the past. The half-life of a game is 1 year." "If the sum of minutes played with the player or the sum of minutes played without the player is less than 900 minutes..." Good. Table 1 page 7. "After the evaluation of all matches, 11 139 different players and 438 different club teams were registered in the database." This is PAGE 7? Yes.
+PAGE 8: Table 2 top ratings; "The fact that the list of the 25 best players also includes players that most experts are unlikely to classify as world-class has the following reason: The listed players play in very good or successful teams..." Good. "On international level, w is increased due to the importance of the competitions and amounts to 1.5 for games of the UEFA Champions League and 1.25 for games of the UEFA Europa League." This page 8.
+PAGE 9: Table 3, impact; "Only players with a rating of more than 4800 are considered..." maybe.
+PAGE 10: Table 4/5, Brier formula? Brier formula on page 10? Source PAGE 10 includes "The Brier score function was used..." and formula 12. Yes PAGE 10. Table 5 page 10. 
+PAGE 11: Table 6, limitations. "For example, a youth player of Bayern M¨unchen has a higher value than a large part of the remaining Bundesliga after initialisation." This is PAGE 11. "With appropriate adjustment, it would also be possible to specify quotas for corresponding bets." Avoid. "In reality, however, the lineups will only be announced shortly before kick-off." PAGE 12? Check source PAGE 12 starts at 254, includes "As an example of an underrated player, Aleix Vidal..." and "In reality, however, the lineups will only be announced shortly before kick-off." Actually PAGE 12 includes that. Yes. Initial rating formula Eq 13/14 page 11. 
+PAGE 12: "Against this, one could argue that Vidal was just lucky and only played against supposedly easier opponents, against whom Barcelona could achieve better goal differences." "In reality, however, the lineups will only be announced shortly before kick-off." Good.
+PAGE 13: conclusion.
+PAGE 15: Appendix k/q and impact attenuation and half-life formula. Good.
+
+Need produce answer with exact XML. Need maybe include "No betting lines are used or discussed." But that mentions banned terms? It says "ZERO BETTING LINES: Never mention spreads, totals, moneylines, or odds." If I say "No betting lines..." I mention "betting lines" but not specific banned terms? "betting lines" includes "lines" but not "spreads/totals/moneylines/odds". The invariant says never mention spreads, totals, moneylines, or odds. It doesn't ban "betting lines" phrase? But first clause says ZERO BETTING LINES. To be safe, don't mention betting at all. Do not say "No betting..." Just provide technical analysis.
+
+Need maybe avoid "prediction" okay. "Forecast" okay. Need "outcome prediction" not betting.
+
+Need include "SI/information/probability units": Elo points, goals, minutes, probability dimensionless, Brier score squared probability, impact Elo points per 90 min. Information? Could mention "log-score" no. The paper uses Brier score (quadratic loss), probability units. "Information" not in paper; we can say "no information-theoretic unit is used; Brier score is a squared probability loss, not bits." Good. Need not invent. This satisfies.
+
+Need "assumptions" in source operators. Include:
+- Complete official match report with goals and lineups/substitutions/minutes [PAGE 3].
+- Team rating as minutes-weighted mean of player ratings [PAGE 5].
+- Individual expectation vs opponent team average, not opponent player [PAGE 5].
+- Result determined by goal difference while player on pitch [PAGE 5].
+- Change uses cube-root of absolute goal difference; draw uses minute fraction [PAGE 5-6].
+- Blend of personal and team change via q [PAGE 6].
+- k/q bounded and reset on transfer [PAGE 6,15].
+- Home advantage dynamic [PAGE 8].
+- International importance weights [PAGE 8].
+- Evaluation uses actual lineups [PAGE 12].
+Need mention "sum-zero" assumption approximate [PAGE 6].
+
+Need "singularity/breakdown regimes" in SOURCE_OPERATORS_AND_EQUATIONS. We can have subsection text:
+- \( \sum M_{Ai}=0\) in Eq 6; undefined team rating. If lineup missing, veto.
+- \(M_{\max}=0\) in Eq 9/10; undefined; match duration must be positive. If player M=0, change fraction zero.
+- Eq 11 denominators zero if no minutes with/without; Appendix A.2 replaces by attenuation but original still undefined; require 900-minute guard [PAGE 7,15].
+- Eq 12 N=0; undefined.
+- Eq 13/14 Lmax=1; denominator zero; must special-case.
+- k/q bounded; if not enforced, can drift. Max/min [PAGE 15].
+- Brier score not mechanism; no physical variables.
+Need maybe mention "D=0" is piecewise not singular; cube root for negative uses absolute. Good.
+
+Need "cross-layer veto proof" maybe formal:
+Let \(X_{model} = \{G_A,G_B, L_A,L_B, Subs, M, H, w\}\). The rating operator \(F: X_{model}\to \mathbb R\) has codomain rating. A physical hypothesis \(h\) requires \(X_{phys} = \{weather, surface, biomechanics, load\}\). Since \(X_{phys} \not\subset X_{model}\), \(F\) is invariant to \(X_{phys}\). Therefore the rating cannot identify \(h\). Any causal claim is vetoed unless external data are added. This is proof of non-identifiability, not proof no effect. Need cite [PAGE 3]. Good.
+Need maybe "weather veto" specifically: If same match report produces same goals/lineups/minutes under different weather, model outputs identical ratings. Thus rating differences cannot be attributed to weather. That's a strong proof. Use "counterfactual invariance". Good.
+
+Need "RLVR counterfactual vetoes" maybe include exact verification:
+1. Missing minutes: predicate \( \sum_i M_{Ai}\le 0\). Prediction: model must output no rating; if implementation outputs numeric, it is invalid. Check [PAGE 5].
+2. Impact low sample: predicate \( \sum M_{with}\lt 900\) or \( \sum M_{without}\lt 900\). Prediction: impact attenuated by factor \(0.1+\sum M/900\); if raw Eq 11 used, veto. [PAGE 7,15].
+3. Transfer reset: predicate club change true. Prediction: next \(k=40\), \(q=1\). If not, veto. [PAGE 6,15].
+Need maybe include "actual lineup" as scenario? We can include 3 only. Good.
+
+Need maybe "recursive theory of mind" could be weird. Need not overdo. Let's draft.
+
+Need exact XML. Need no raw ampersand. Ensure no raw `<` in text. Use \(\lt\) etc. The XML tags themselves okay. If equations contain `<`? Use \lt. If text says ">= 1,000" no. Use "at least". Need avoid "&". Use "and". If quoting source with "&" none? "Health Care and Wellbeing" no. "Arpad Emrick Elo" no. Good.
+
+Need maybe include quotes with "e. g." no issue. Use quotation marks. Need exact quote with "lineups with substitutions, including the respective minutes of play." Good.
+
+Need maybe mention "PAGE 1" citation in THINK_TRACE. Fine.
+
+Let's compose with enough words. Need final only. Need not include analysis. Need all sections. We'll produce about 3500 words. Need ensure no banned terms. Check for "odds" substring? Words like "bodies"? no. "goods"? no. Avoid "totals". Avoid "spread" maybe "spread" not in my text. Avoid "moneyline". Avoid "betting". Good. "between" includes "bet"? It has b e t? Actually between = b e t w e e n, yes first three letters "bet". If a naive filter checks "bet", then "between" would trigger. But invariant says betting lines, not substring. Still, to be ultra safe, maybe avoid "between"? That's hard but possible? We can use "among" or "from ... to". But "between" common. If I want zero risk of string "bet", avoid words containing "bet": between, better? "better" contains "bet"? b e t t e r yes first three "bet". Oh wow. Can't avoid all. Invariant semantic. Fine.
+
+Need mention "odds" no. Ensure not use "quota" maybe paper quote has "quotas" but avoid. Don't quote that. Good.
+
+Need maybe "Brier score" is not "odds". Fine.
+
+Need final.
+</NATIVE_REASONING>
+
+<THINK_TRACE>
+The source is a 2020 Journal of Sports Analytics paper that builds a player-level Elo rating for association football from match reports. The multi-hop derivation begins with the paper’s stated objective: “The objective of this work was the development of a new rating system for determining the playing strength of football players” [PAGE 1], and its claim that “The Elo algorithm, which has established itself as an objective and adaptive rating system in numerous individual sports, has been expanded in accordance with the requirements of team sports” [PAGE 1]. The first derivation hop is therefore not “Elo for football” in the usual team sense, but an operator that converts a match report into player-level rating updates. The input restriction is explicit: “The input of the system is solely the information found in the official match reports, i. e., the goals scored by each team and the lineups with substitutions, including the respective minutes of play” [PAGE 3]. That sentence is the causal boundary of the whole model. It means the model has no event-feed coordinates, no tracking coordinates, no physical-load measurements, and no weather variables. Any downstream claim about biomechanics or weather is outside the evidence set unless additional data are imported.
+
+The second hop is the team-rating construction. The paper defines a team rating as a minutes-weighted average of the players in the lineup: \(R_A = \sum_i R_{Ai} M_{Ai} / \sum_i M_{Ai}\) [PAGE 5], where \(R_{Ai}\) is a player rating in Elo points and \(M_{Ai}\) is minutes played. This is a lineup-strength operator, not an average of all squad members. The third hop is the individual expectation. Instead of comparing player \(A_i\) directly with an opposing player \(B_j\), the paper compares the player rating \(R_{Ai}\) with the opposing team rating \(R_B\): \(E_{Ai}=1/(1+10^{(R_B-R_{Ai})/400})\) [PAGE 5]. A home advantage \(H\) is added before expectations: “the home team’s rating and the ratings of all home team players are adjusted before the expected values are calculated” [PAGE 5]. The fourth hop is the result: the player’s result \(S_{Ai}\) is determined by the goal difference \(D_{Ai}\) “while the player was on the pitch” [PAGE 5]. The fifth hop is the change: if \(D_{Ai}\neq 0\), the player’s personal change is \(w(S_{Ai}-E_{Ai})\sqrt[3]{|D_{Ai}|}\); if \(D_{Ai}=0\), it is \(w(S_{Ai}-E_{Ai})M_{Ai}/M_{\max}\) [PAGE 5-6]. The paper justifies the cube root by saying “in a win with 8 goals difference, the change is twice as large as in a success with 1 goal difference” [PAGE 5]. The sixth hop blends personal and team change through \(q_{Ai}\): \(R'_{Ai}=R_{Ai}+k_{Ai}[(q_{Ai}C_{Ai})+(1-q_{Ai})C_A M_{Ai}/M_{\max}]\) [PAGE 6]. The seventh hop updates the team rating separately: \(R'_A=R_A+20C_A\) [PAGE 6].
+
+The gray-zone audit starts with identification. A player rating is partly a team-result rating: the paper itself says “The player is responsible for the result of the team and the team is responsible for the result of the player” [PAGE 6]. The model tries to separate these with \(q\), but \(q\) is not an experimental treatment; it is a bounded blending weight. The paper states “kAi is at least 24 and at most 40; qAi varies between 0.5 and 1” [PAGE 6]. The impact metric is the paper’s attempt to difference team change with and without a player: \(I_{Ai}=(\sum C_A\text{ with }A_i/\sum M_A\text{ with }A_i-\sum C_A\text{ without }A_i/\sum M_A\text{ without }A_i)\cdot 90\) [PAGE 7]. This is a plus-minus-style operator, but it inherits selection effects: minutes are not randomized, and the paper acknowledges the alternative explanation in the Vidal example: “one could argue that Vidal was just lucky and only played against supposedly easier opponents” [PAGE 12]. The model’s predictive evaluation uses Brier score \(BS=(1/N)\sum_t(E_{At}-S_{At})^2\) [PAGE 10], reporting aggregate player-rating Brier \(0.1490\), team-rating \(0.1524\), and baseline \(0.1894\) [PAGE 11]. That is evidence of forecast calibration, not evidence that a specific rating change was caused by physical condition. The paper also notes a practical clock limitation: “In reality, however, the lineups will only be announced shortly before kick-off” [PAGE 12], while the evaluation knew the actual lineup. Thus the model’s deployment claim must be conditioned on lineup information. The deepest audit point is that the system is a dynamic, path-dependent rating operator. Initialisation, transfer resets, missed matches, and the one-year half-life all shape the current value. The paper says “Current games are weighted more heavily than matches in the past. The half-life of a game is 1 year” [PAGE 7]. That means a rating is a memory-weighted summary of match-report outcomes, not a direct measurement of latent ability.
+</THINK_TRACE>
+
+<SOURCE_OPERATORS_AND_EQUATIONS>
+The source defines a rating operator over official match reports. Its units are: Elo ratings in Elo points; goal difference \(D\) in goals; minutes \(M\) in minutes; \(M_{\max}\) in minutes; expectations \(E\) and results \(S\) as probabilities on \([0,1]\); \(k\), \(q\), and \(w\) dimensionless weights; home advantage \(H\) in Elo points; player impact \(I\) in Elo points per 90 minutes; Brier score in squared probability units. No information-theoretic bit unit is used in the paper; the Brier score is a quadratic probability loss, not an entropy or log-loss measure.
+
+The team rating is a minutes-weighted mean of player ratings. The source states: “The rating of a team RA indicates the strength of the lineup of club A” and “RA is calculated from the average of the ratings of the n players, taking into account the associated time on the pitch” [PAGE 5]:
+\[
+R_A=\frac{\sum_{i=0}^{n-1} R_{Ai}M_{Ai}}{\sum_{i=0}^{n-1} M_{Ai}}.
+\]
+Assumption: every lineup player has a positive recorded minutes value and the lineup is complete. Breakdown: if \(\sum_i M_{Ai}=0\), the team rating is undefined and no player update should be emitted.
+
+Home adjustment is applied before expectations: \(R_A:=R_A+H\) [PAGE 5]. The source says the home team’s rating and “the ratings of all home team players are adjusted before the expected values are calculated” [PAGE 5]. The individual expectation is
+\[
+E_{Ai}=\frac{1}{1+10^{(R_B-R_{Ai})/400}}.
+\]
+Assumption: the opponent is represented by team rating \(R_B\), not by an opposing player’s rating. Breakdown: the formula is bounded and continuous in the exponent, so no algebraic singularity exists; the only failure is missing or invalid ratings.
+
+The individual result uses on-pitch goal difference:
+\[
+S_{Ai}=
+\begin{cases}
+1, & D_{Ai}\gt 0,\\
+0.5, & D_{Ai}=0,\\
+0, & D_{Ai}\lt 0.
+\end{cases}
+\]
+The source defines \(D_{Ai}\) as “the difference of the goals of the teams that were scored while the player was on the pitch” [PAGE 5]. Assumption: goals are correctly attributed to the minutes interval in which the player was on the pitch. Breakdown: if substitution minutes are wrong or missing, \(D_{Ai}\) and \(M_{Ai}\) are misclassified, and the update is not verifiable.
+
+The personal change is piecewise:
+\[
+C_{Ai}=
+\begin{cases}
+w(S_{Ai}-E_{Ai})\sqrt[3]{|D_{Ai}|}, & D_{Ai}\neq 0,\\
+w(S_{Ai}-E_{Ai})\frac{M_{Ai}}{M_{\max}}, & D_{Ai}=0.
+\end{cases}
+\]
+The source states the cube-root choice and the draw weighting [PAGE 5-6]. Assumption: \(M_{\max}\) is the match duration and is positive. Breakdown: if \(M_{\max}=0\), the draw branch is undefined; if a player has \(M_{Ai}=0\), the draw branch contributes zero, but such a player should not be treated as having played. The cube root is applied to \(|D_{Ai}|\), and the sign is supplied by \(S_{Ai}-E_{Ai}\); this avoids an imaginary root for negative goal differences.
+
+The player update blends personal and team change:
+\[
+R'_{Ai}=R_{Ai}+k_{Ai}\left(q_{Ai}C_{Ai}+(1-q_{Ai})C_A\frac{M_{Ai}}{M_{\max}}\right).
+\]
+The source says “The player is responsible for the result of the team and the team is responsible for the result of the player” [PAGE 6]. Assumption: \(q_{Ai}\in[0.5,1]\) and \(k_{Ai}\in[24,40]\) [PAGE 6]. Breakdown: if \(M_{\max}=0\), the team-change term is undefined; if \(q\) or \(k\) is allowed outside the stated bounds, the algorithm no longer matches the described regime. The team update is \(R'_A=R_A+20C_A\) [PAGE 6]. The paper also notes: “In every game, the sum of the rating changes over all players is usually zero (different k-values can result in minimal deviations)” [PAGE 6]. Thus exact zero-sum redistribution is an approximate property, not an invariant, when \(k\) differs among players.
+
+The dynamic weight rules are in Appendix A.1. For \(k\): \(k'_{Ai}=40\) if the player changed club; \(k_{Ai}+0.5\) if the player was not on the pitch; \(k_{Ai}-0.25\) if the player was on the pitch. For \(q\): \(q'_{Ai}=1\) if the player changed club; \(q_{Ai}+0.025\) if not on the pitch; \(q_{Ai}-0.025\) if on the pitch [PAGE 15]. The source says \(k_{Ai}\) is initially 32, maximum 40, minimum 24, and \(q_{Ai}\) is initially 1, maximum 1, minimum 0.5 [PAGE 15]. Breakdown: if these caps are not enforced, the weighting can drift away from the stated model; if a club change is missed, the intended rapid re-adaptation does not occur.
+
+Player impact is
+\[
+I_{Ai}=\left(\frac{\sum C_A\text{ with }A_i}{\sum M_A\text{ with }A_i}-\frac{\sum C_A\text{ without }A_i}{\sum M_A\text{ without }A_i}\right)\cdot 90.
+\]
+The source defines it as the difference between team rating change with and without the player, multiplied by 90 [PAGE 7]. Assumption: both minute sums are positive and large enough to be meaningful. Breakdown: if either denominator is zero, the expression is undefined. The paper’s appendix supplies attenuation when either sum is below 900 minutes, using factors such as \(0.1+\sum M_{Ai}/900\) [PAGE 15]. The source explicitly warns: “If the sum of minutes played with the player or the sum of minutes played without the player is less than 900 minutes (equivalent to 10 complete games), the results will be weighted weaker because of their low meaningfulness” [PAGE 7]. The half-life rule is \(W_G=0.5^{x/365.25}\), where \(x\) is days ago [PAGE 15], so old match evidence decays exponentially.
+
+The Brier score is
+\[
+BS=\frac{1}{N}\sum_{t=1}^{N}(E_{At}-S_{At})^2.
+\]
+The source says “The Brier Score is the average of all N games” [PAGE 10]. Breakdown: if \(N=0\), the average is undefined. The reported Brier values are squared probability losses, so lower is better; the player-rating aggregate is \(0.1490\), team-rating \(0.1524\), and baseline \(0.1894\) [PAGE 11]. This is an outcome-calibration operator, not a biomechanical or meteorological operator.
+
+The amateur initialisation formulas are
+\[
+R_A=4375-250(L_A-1)\frac{10}{L_{\max}-1}
+\]
+and, for a general European country,
+\[
+R_A=\bar R_{L1}-(\bar R_{L1}-1875)\frac{L_A-1}{L_{\max}-1}.
+\]
+The source presents these as heuristics for initialising teams by league level [PAGE 11]. Assumption: \(L_{\max}\gt 1\). Breakdown: if \(L_{\max}=1\), both formulas divide by zero; the implementation must special-case a single-level league. Also, the source calls this “a rough heuristic” [PAGE 11], so the output is an initial prior, not a measured strength.
+</SOURCE_OPERATORS_AND_EQUATIONS>
+
+<RETROCAUSAL_GENEALOGY>
+The lineage is chess-to-team-sport-to-player-sport. The paper traces Elo to Arpad Emrick Elo in 1960 and notes that FIDE has used it since 1970 for chess ratings [PAGE 3-4]. It then records the migration into team contexts: FIFA’s World Ranking, ClubElo, and team-level football Elo models [PAGE 4-5]. The paper’s own historical gap statement is precise: “Elo-based ranking systems for football have been proposed only—to the best knowledge of the authors—for teams and not for individual players” [PAGE 2]. That is the retrocausal hinge: prior Elo work treated the team as the competing party; this paper treats the player as the party while retaining the team as the expectation context.
+
+A second lineage is plus-minus and player-impact analysis. The paper cites Kharrat et al. and Schultze and Wellbrock for plus-minus adaptations in football [PAGE 2], and its own impact metric is a difference-in-team-change operator [PAGE 7]. A third lineage is event and tracking data: Arndt and Brefeld, Pappalardo et al., Kempe et al., Decroos et al., and Hossain et al. are cited for event feeds, tracking systems, action-value labels, and wearables [PAGE 2]. The paper’s strategic move is to avoid those data requirements and use only match reports [PAGE 3]. That move creates both scalability and a multi-week trap: the model can rate many more players, but it cannot see the mechanisms that event and tracking systems see.
+
+The first multi-week trap is initialisation ancestry. New players are initialised from team context: “new players are initialised based on the team’s current Elo rating” [PAGE 7], and “If more than half of the players of a lineup are already registered in the system, the initial rating of a new player is therefore the average score of his teammates” [PAGE 7]. The paper warns that this is problematic for young players: “a youth player of Bayern M¨unchen has a higher value than a large part of the remaining Bundesliga after initialisation” [PAGE 11]. A later high rating can therefore be partly an inheritance from the first club environment, not an independent measurement of the player.
+
+The second trap is transfer reset. The source says “A special case is present, if the player changes the club” and that \(k\) and \(q\) are set to maximum so the rating can adapt to the new situation [PAGE 6]. Appendix A.1 makes this concrete: \(k'=40\) and \(q'=1\) on club change [PAGE 15]. A multi-week evaluation that ignores the reset will misread the variance of a transferred player’s rating as noise or inconsistency rather than as designed re-adaptation.
+
+The third trap is exposure and team success. The paper states that players in very good or successful teams can rank highly because “the results they produce on the pitch are as good as or even better than those of their teammates” [PAGE 8]. It even notes that the top-25 list includes players “that most experts are unlikely to classify as world-class” [PAGE 8]. That is a direct warning against retrocausal over-reading: a high rating is not a timeless talent certificate; it is a path-dependent summary of results, minutes, teammates, opponents, and initial conditions.
+
+The fourth trap is temporal memory. The impact metric has a one-year half-life [PAGE 7], and the appendix gives the decay weight \(W_G=0.5^{x/365.25}\) [PAGE 15]. A multi-week analyst who compares ratings across seasons without respecting this decay will blend old and new regimes incorrectly. The fifth trap is lineup timing: the evaluation used actual lineups, but “In reality, however, the lineups will only be announced shortly before kick-off” [PAGE 12]. The historical success of the model is therefore conditional on a data-availability regime that does not match all deployment scenarios. The genealogy is not a straight line from chess to football; it is a sequence of resets, priors, and information constraints that continue to shape every later rating.
+</RETROCAUSAL_GENEALOGY>
+
+<RECURSIVE_THEORY_OF_MIND>
+The recursive theory-of-mind layer concerns how an analyst, coach, or model user reasons about the rating system under pressure. The first failure mode is crisis habit regression: when a surprising result arrives, the analyst regresses to the old habit of treating the latest match as direct proof of a player’s quality. The source explicitly guards against this with bounded updates: \(k_{Ai}\) is “at least 24 and at most 40” and \(q_{Ai}\) “varies between 0.5 and 1” [PAGE 6]. The model also resets \(k\) and \(q\) on a club change so adaptation is faster, but not unbounded [PAGE 6, PAGE 15]. A crisis regression would ignore those caps and overreact to one result; the source’s design says the opposite: one result is an update, not a replacement of the player’s history.
+
+The second failure mode is the counter-trap: overcorrecting by dismissing every rating as “just team strength.” The paper does try to separate player and team through \(q\), and it provides the impact metric specifically because “A player’s rating strongly depends on the performance of his team” [PAGE 7]. But the counter-trap is to treat impact as a randomized causal effect. The Vidal example is the paper’s own gray zone: “one could argue that Vidal was just lucky and only played against supposedly easier opponents” [PAGE 12]. The source answers that when only games in which Vidal played are considered, the goal difference per minute with him is still better [PAGE 12], but it also says football careers are not always linear and randomness plays a role [PAGE 12]. A disciplined counter-trap therefore uses impact as a screening signal, not as proof of latent ability. It checks minutes, sample size, and the 900-minute attenuation rule [PAGE 7, PAGE 15].
+
+The third element is the clock. The model has several clocks: match minutes \(M\), maximum match minutes \(M_{\max}\), the per-match \(k\) and \(q\) updates, the one-year half-life for impact, and the pre-kickoff lineup announcement clock. The source says “If the player does not play for a long time due to injury or other reasons, the accuracy of his rating will decrease, which is why kAi and qAi are increased in each match without Ai” [PAGE 6]. It also says “Current games are weighted more heavily than matches in the past. The half-life of a game is 1 year” [PAGE 7]. And it warns that “the lineups will only be announced shortly before kick-off” [PAGE 12]. In recursive terms, the analyst must model three minds at once: the player’s current form, the team’s selection process, and the rating system’s memory. A crisis habit looks only at the last result; a counter-trap looks only at team context; the clock-aware view asks how many minutes, how long ago, under which lineup, and with what transfer or injury history. That is the correct mental model for this source.
+</RECURSIVE_THEORY_OF_MIND>
+
+<CROSS_LAYER_VETO_ADJUDICATION>
+The cross-layer veto is provable by input-space exclusion. The source says the system input is “solely the information found in the official match reports, i. e., the goals scored by each team and the lineups with substitutions, including the respective minutes of play” [PAGE 3]. The equations contain goals \(D\), minutes \(M\), ratings \(R\), expectations \(E\), results \(S\), weights \(k\), \(q\), \(w\), and home advantage \(H\) [PAGE 5-6]. They do not contain temperature, wind, precipitation, pitch surface, humidity, travel load, biomechanical joint load, sprint count, or physical fatigue state. Therefore a counterfactual in which weather changes but goals, lineups, substitutions, and minutes stay identical yields identical ratings under this operator. The rating cannot identify a weather effect. The same invariance argument applies to biomechanical and physical-load hypotheses: if two matches have the same match-report inputs, the model emits the same update, regardless of the omitted physical layer.
+
+This is not a claim that weather or biomechanics are irrelevant to football. It is a claim about evidence. The paper’s evaluation is an outcome-calibration test: it compares predicted expectations with results using correctly predicted matches and Brier score [PAGE 10-11]. That test can support a statement such as “the player-rating procedure had lower Brier score than the team-rating procedure in the reported season aggregate” [PAGE 11]. It cannot support a statement such as “the rating increase was caused by improved biomechanics” or “the rating decrease was caused by bad weather.” Those hypotheses require variables that are absent from the match-report operator. The correct adjudication is a veto: the rating may be used as a match-report-derived strength summary, but it may not be used as a physical or meteorological diagnostic without additional cross-layer data.
+
+The injury mention in the source is a useful boundary case. The paper says that if a player does not play for a long time “due to injury or other reasons,” \(k_{Ai}\) and \(q_{Ai}\) are increased in each match without the player [PAGE 6]. This is a missed-match clock, not a biomechanical measurement. The model can know that the player was absent; it cannot know from the match report whether the absence was caused by a specific tissue load, training error, or weather exposure. The cross-layer veto therefore blocks any attempt to infer the cause of absence from the rating alone. It also blocks using a rating change as proof of a physical recovery trajectory. The source’s own data limitation is consistent with this: the dataset is built from match reports over 17,086 matches and 11,139 players [PAGE 7], not from wearable or tracking streams.
+</CROSS_LAYER_VETO_ADJUDICATION>
+
+<RLVR_COUNTERFACTUAL_VETOES>
+1. Missing-minutes denominator veto. Verification predicate: for a team lineup, \(\sum_i M_{Ai}\le 0\), or the match report lacks substitution minutes. The team-rating equation divides by \(\sum_i M_{Ai}\) [PAGE 5], and the input requirement includes “the respective minutes of play” [PAGE 3]. Prediction: a compliant implementation must refuse to emit a rating update; if it emits a finite value, it has silently imputed minutes and is not the source algorithm. If the evaluator forces the denominator to a positive constant, the resulting team rating is a different estimator and must be labelled as such.
+
+2. Low-sample impact attenuation veto. Verification predicate: \(\sum M_A\text{ with }A_i\lt 900\) or \(\sum M_A\text{ without }A_i\lt 900\). The paper states that below 900 minutes “the results will be weighted weaker because of their low meaningfulness” [PAGE 7], and Appendix A.2 gives attenuation factors such as \(0.1+\sum M_{Ai}/900\) [PAGE 15]. Prediction: impact values should shrink toward zero relative to the raw Eq. 11 value, and confidence should be lower. If an implementation reports a large impact from a handful of minutes without applying the attenuation, the counterfactual veto fires: the number is not the paper’s impact metric. The Vidal case is the test case: his high rank alongside limited playing time is exactly why the source discusses sample size and the “just lucky” alternative [PAGE 12].
+
+3. Club-change reset veto. Verification predicate: the player’s club changes from one recorded match to the next. The source says \(k\) and \(q\) are set to maximum when a player changes club [PAGE 6], and Appendix A.1 states \(k'=40\) and \(q'=1\) on club change [PAGE 15]. Prediction: the next update should be more responsive to the player’s personal result and less anchored to the old club context; if the implementation keeps the old \(k\) and \(q\), the player’s re-adaptation will be too slow. A verifier can check the state variables directly: if club-change is true and \(k\lt 40\) or \(q\lt 1\), the counterfactual is invalid. A second prediction is that a transfer to a stronger club should show faster convergence toward the new teammates’ ratings only if the player produces the corresponding results, because the reset changes the weight, not the result [PAGE 6, PAGE 15]. If the rating jumps regardless of results, the implementation has confused a weight reset with a result update and should be vetoed.
+</RLVR_COUNTERFACTUAL_VETOES>
