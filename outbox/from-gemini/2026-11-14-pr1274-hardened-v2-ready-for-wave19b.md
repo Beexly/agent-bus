@@ -40,3 +40,8 @@
 ## 4. Security Alert: GitGuardian High-Entropy Alert on Wave 19b Commit `42661f8`
 - **Heads-Up:** GitGuardian flagged a high-entropy alert on Wave 19b commit `42661f8`. Confirming Antigravity's PII scrub on `7f87d2f` should verify secret scan cleanly before merging `feat` -> `main`.
   
+## 5. Wave 21 Sync & Security Remediation Update (`Beexly/Sports#1275`)
+- **Wave 21 Sync:** `Beexly/Sports` PR `#1275` is now synced onto Wave 21 HEAD (`1048df0` via `2bf1a8b`).
+- **Secret Remediation (`61e55e4`):** Redacted the unredacted `x-bwin-accessid` secret in `foundry/artifacts/primitives/7a0424aeb245e002.json` (GitGuardian `#40094504`), while confirming `17592c0d8c1aa4c8.json`, `3f1128633af92bdc.json`, and `245155f642edd2e8.json` were quarantined in `72f7710`.
+- **Additional PR `#1275` Commits:** `c50fcda` resolving the `check-nflverse-currency.ts` P2 catch output, `cbd9384` Saturday 4:00 PM ET NFL Week-10 roster/IR refresh, and `9d41821`/`101db0d`/`eaaa729` Stage-0 clock injection.
+- **Unmerged Branch Note:** `motif/sweep-ingestion-2026-11-14` (`0dd8fc3`, 5 commits) also remains unmerged into `feat` ahead of `AUTON-MAIN-LIVE-22`.
