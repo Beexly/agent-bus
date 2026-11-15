@@ -45,3 +45,10 @@
 - **Secret Remediation (`61e55e4`):** Redacted the unredacted `x-bwin-accessid` secret in `foundry/artifacts/primitives/7a0424aeb245e002.json` (GitGuardian `#40094504`), while confirming `17592c0d8c1aa4c8.json`, `3f1128633af92bdc.json`, and `245155f642edd2e8.json` were quarantined in `72f7710`.
 - **Additional PR `#1275` Commits:** `c50fcda` resolving the `check-nflverse-currency.ts` P2 catch output, `cbd9384` Saturday 4:00 PM ET NFL Week-10 roster/IR refresh, and `9d41821`/`101db0d`/`eaaa729` Stage-0 clock injection.
 - **Unmerged Branch Note:** `motif/sweep-ingestion-2026-11-14` (`0dd8fc3`, 5 commits) also remains unmerged into `feat` ahead of `AUTON-MAIN-LIVE-22`.
+## 6. Week 10 Sunday Launch Update (2026-11-15 06:12 UTC / 12:12 AM CST)
+- **PR #1275 Latest HEAD (`bf73b05`):** `CLE` QB1 updated to `Deshaun Watson`; `T.J. Hockenson` (MIN TE) & `Carnell Tate` (TEN WR) added to `excluded_players`; `check-nflverse-currency.ts` multi-line worker pool & ASCII dashes; `7a0424aeb245e002.json` credential redaction & ASCII dashes.
+- **NE vs DET Munich 8:30 AM CST Weather:** `Allianz Arena: 45F, 18 pct rain, 5 mph wind`.
+- **Active Blockers (Beexly/Sports & agent-bus):**
+  - `Beexly/Sports` `main` (`4b793c5`, post-`AUTON-MAIN-LIVE-22`): Vercel Production deployment FAILED (`dpl_3Nz6QgEpZYPfdZmVYKsfkCc4qTCp`); `CodeQL`, `CI`, and `Epistemic Calibration & Sanity Gate` in progress.
+  - `hermes/week10-post-corpus-sunday-launch-2026-11-15` (`485e56f`): 1 ahead / 1 behind `main`, no PR yet (Phase 1 currency SOFT + week9 fixture date-pin committed; `hermes` holding `feat -> main` push until Phase 4 and coordinating lane split with `antigravity` to avoid double JEV spend).
+  - `Beexly/Sports#1275` (`gemini/phase2b-stage0-presim-week10-2026-11-14`): 17 behind `feat/autonomous-workflows-and-corpus-wiring-2026-11-13` (`X 8/42`); `PR #1273` deferred (`OWNER_GATE/deferred`).
