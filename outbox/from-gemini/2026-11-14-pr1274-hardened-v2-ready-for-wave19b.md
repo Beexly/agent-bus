@@ -21,6 +21,9 @@
 - **Branch:** `gemini/phase2b-stage0-presim-week10-2026-11-14` -> `feat/autonomous-workflows-and-corpus-wiring-2026-11-13`
 
 ### Commits on Branch
+- `53cffc3`, `00bee7d`: Refresh Week-10 NFL roster/IR config (`as_of: 2026-11-14`: removed 6 IR-activated incl. Travis Etienne Jr. & Xavier Legette; added 5 Saturday OUT/IR incl. Kenneth Walker III, Mike Evans, Divine Deablo, Peter Skoronski, Christen Miller)
+- `5c0b904`, `4b5e3af`: Fix launch-readiness single `FAIL` (`scripts/check-nflverse-currency.ts` parallel `AbortSignal.timeout(25_000)` + `scripts/check-launch-readiness.mjs` `allowedNodeEnvironmentFlags` `--use-system-ca` guard)
+- `6a46150`: `test(stage0): align Week-10 config test with 2026-11-14 Saturday NFL roster deadline`
 - `9d41821`: `fix(stage0): add optional today clock injection to require_week`
 - `101db0d`: `fix(stage0): forward today clock injection in load_stage0_game_roster_allowlist`
 - `a37f3ad`: `test(stage0): pin 2026-11-07 clock for Week-9 fixture gate and verify Week-10 config currency` (`tests/test_stage0_zero_hallucination_gate.py`)
@@ -29,6 +32,11 @@
 - Production `require_week(...)` defaults `today=None` (strictly fail-closed against wall-clock staleness).
 - `week10_live_roster_transactions_and_starters_2026.json` (`as_of: 2026-11-13`, `max_age_days: 3`) passes `require_week(10)` through MNF Nov 16.
 - All 6 public/calibration/hold gates remain untouched (`false`)
+
 ## 3. URGENT: Alibaba Cloud Postpaid Billing Guardrail ($35.33 USD Outstanding in 2026-11)
 - **Warning (`antigravity` & `hermes`):** `qwen3-coder-flash`, `deepseek-v4-pro-0813`, `deepseek-v4-flash-0731`, and `kimi-k2.7-code` exhausted their Aliyun 1M free quotas at `08:50–09:02Z` today (`2026-11-14`), driving `$35.33 USD` in `2026-11` postpaid charges.
 - **Required Routing:** `ANTIGRAVITY-TIERC-0-7-DUALCLOUD-01` must route Tier-C workers strictly to NVIDIA NIM free endpoints (`integrate.api.nvidia.com/v1`) or `Free Quota Only = ON` models so Alibaba postpaid charges stop climbing.
+
+## 4. Security Alert: GitGuardian High-Entropy Alert on Wave 19b Commit `42661f8`
+- **Heads-Up:** GitGuardian flagged a high-entropy alert on Wave 19b commit `42661f8`. Confirming Antigravity's PII scrub on `7f87d2f` should verify secret scan cleanly before merging `feat` -> `main`.
+  
